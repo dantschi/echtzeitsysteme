@@ -1,5 +1,10 @@
 name: Publish Quarto Website
 
+# Deploy-Ziel: Branch `gh-pages` (einmalig initialisiert, siehe Repo-Branches).
+# Solange das Repository privat ist, ist die Site ggf. nicht öffentlich erreichbar;
+# der Workflow rendert und pusht trotzdem auf `gh-pages`, damit beim Wechsel auf
+# public nur noch Settings → Pages → Deploy from branch `gh-pages` (/) nötig ist.
+
 on:
   push:
     branches:
@@ -21,6 +26,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Quarto publish verlangt einen bestehenden Remote-Branch `gh-pages`.
+      - name: Fetch gh-pages branch
+        run: |
+          git fetch origin gh-pages:gh-pages
+          git branch -vv | grep -E 'gh-pages|main' || true
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -154,6 +165,7 @@ jobs:
           mkdir -p _site/labs
           ls -la _site/labs/ || echo "Keine Labor-PDFs vorhanden."
 
+      # Rendern erfolgt oben separat (Website + Handouts + Labs); hier nur Deploy.
       - name: Publish to GitHub Pages
         uses: quarto-dev/quarto-actions/publish@v2
         with:
