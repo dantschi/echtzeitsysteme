@@ -1,131 +1,61 @@
-<!-- ==========================================================================
-     TODO — LÖSCHEN (nach dem Kopieren des Templates)
-     Gesamten Block von TEMPLATE-START bis TEMPLATE-ENDE entfernen,
-     damit er nicht auf der GitHub-Pages-Startseite erscheint.
-     ========================================================================== -->
-<!-- TEMPLATE-START -->
+# Echtzeitsysteme (EZS)
 
-# DHBW Quarto Vorlesungstemplate
+Herzlich willkommen zur Vorlesung **Echtzeitsysteme (EZS)** an der Dualen Hochschule Baden-Württemberg Stuttgart.
 
-> **Hinweis:** Dies ist ein **inoffizielles Dozenten-Template**, keine offizielle DHBW-Software.
+**Dozent:** Prof. Dr.-Ing. Daniel Klünder  
+**Kurswebsite:** [dantschi.github.io/echtzeitsysteme](https://dantschi.github.io/echtzeitsysteme/)  
+**Repository:** [github.com/dantschi/echtzeitsysteme](https://github.com/dantschi/echtzeitsysteme)
 
-> **Hinweis zur Startseite:** Diese `README.md` wird von `index.qmd` eingebunden und ist damit der Inhalt der **GitHub-Pages-Startseite** (und der Repo-README auf GitHub). Nach dem Einrichten Ihres Moduls den gesamten Template-Block (**TODO — LÖSCHEN**) entfernen und unten nur noch den Kursinhalt belassen (**TODO — ERSETZEN**).
+Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten und weichen Echtzeitanforderungen über Aufgabenmodelle und Scheduling bis zu Antwortzeitanalyse, Ressourcenprotokollen und Echtzeitbetriebssystemen. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis mit einem RTOS umzusetzen — mit klarem Blick auf die Trennung von **Korrektheit der Funktion** und **Korrektheit im Zeitbereich**.
 
-GitHub-Template-Repository für Vorlesungswebsites an der **DHBW Stuttgart**: Quarto-Website, Reveal.js-Folien (Apple-/DHBW-Design) und automatisches Publish inkl. PDF-Handout über GitHub Actions.
+## Kursübersicht
 
-## Was enthalten ist
+Der rote Faden der Veranstaltung:
 
-| Bereich | Inhalt |
-|---------|--------|
-| Website | Quarto-Projekt (`_quarto.yml`); Startseite = diese README via `index.qmd` |
-| Folien | Reveal.js unter `vorlesungen/*.qmd`, Design in `assets/styles/` |
-| Handout | Profil `handout` (`_quarto-handout.yml`) → PDF mit Folie + Dozentennotizen |
-| Übungsblätter | `labs/*.qmd` mit Profil `solution` (Studierende / Musterlösung) |
-| CI/CD | `.github/workflows/publish.yml` → Website auf `gh-pages` + Handout- + Lab-PDFs |
-| KI-Kontext | Cursor-Rules unter `.cursor/rules/` |
+**Anforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS**
 
-## Neues Modul anlegen
+Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.
 
-1. Auf GitHub **Use this template** → neues Repository erstellen.
-2. Repository klonen; mit [Quarto](https://quarto.org/) lokal arbeiten.
-3. **TODO — ERSETZEN:** Alle `[…]`-Platzhalter in `_quarto.yml`, in diesem Dateiteil unten (Kursinhalt), in `vorlesungen/01_kickoff.qmd` und optional in `.cursor/rules/`.
-4. **TODO — LÖSCHEN:** Diesen gesamten Template-Abschnitt (bis `TEMPLATE-ENDE`) entfernen.
-5. Weitere Vorlesungen als `vorlesungen/0N_….qmd` anlegen (`format: revealjs`, Notizen in `::: notes`).
-6. Übungsblätter als `labs/lab_NN_….qmd` anlegen (Lösungen in `::: {.content-visible when-profile="solution"}`).
-7. Design/Mermaid in `assets/styles/` möglichst unverändert lassen.
+| Einheit | Thema | Schwerpunkt | Folien | Handout | Übungsblatt | Musterlösung |
+|--------:|-------|-------------|:------:|:-------:|:-----------:|:------------:|
+| 1 | Kickoff und Grundlagen | Harte/weiche Echtzeit, Deadlines, Determinismus | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_kickoff.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_kickoff-handout.pdf) | — | — |
+| 2 | Zeit und Aufgabenmodelle | Periodizität, WCET/BCET, Release/Deadline, Jitter | folgt | folgt | folgt | folgt |
+| 3 | Scheduling-Grundlagen | Präemption, Prioritäten, Online/Offline, Metriken | folgt | folgt | folgt | folgt |
+| 4 | Statisches Priority Scheduling | Rate Monotonic (RM), Deadline Monotonic (DM) | folgt | folgt | folgt | folgt |
+| 5 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
+| 6 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt | folgt | folgt |
+| 7 | Ressourcen und Synchronisation | Priority Inversion, PCP, Stack Resource Policy | folgt | folgt | folgt | folgt |
+| 8 | Echtzeitbetriebssysteme | Tasks, Queues, ISRs, FreeRTOS-Praxis | folgt | folgt | folgt | folgt |
+| 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt | folgt | folgt |
 
-| Datei | Aktion |
-|-------|--------|
-| `_quarto.yml` | **Ersetzen:** `[Modulname]`, `[Modulkürzel]`, `[GITHUB-USER]`, `[REPO]` |
-| `README.md` (dieser Block) | **Löschen** nach dem Einrichten |
-| `README.md` (Kursinhalt unten) | **Ersetzen:** Beschreibung, Literatur, Tools |
-| `index.qmd` | Titel anpassen; behält `{{< include README.md >}}` |
-| `vorlesungen/01_kickoff.qmd` | **Ersetzen:** Folieninhalt und Notizen |
-| `labs/lab_01_beispiel.qmd` | **Ersetzen** oder weitere `lab_NN_….qmd` ergänzen |
-| `.cursor/rules/dhbw-*.mdc` | optional **Ersetzen:** Modulbezug |
+**Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
 
-## Lokal arbeiten
-
-```bash
-quarto preview
-quarto preview vorlesungen/01_kickoff.qmd
-quarto render vorlesungen/01_kickoff.qmd --profile handout --to pdf
-# → _handout/vorlesungen/01_kickoff.pdf
-
-# Übungsblätter: Studierende bzw. Musterlösung
-quarto render labs/lab_01_beispiel.qmd --to pdf
-quarto render labs/lab_01_beispiel.qmd --to pdf --profile solution
-# oder beide Varianten gebündelt:
-./build_labs.sh
-# → labs/_output/*-studierende.pdf und *-musterloesung.pdf
-```
-
-PDF-Handout: Quarto, TinyTeX/LaTeX; für Mermaid: `quarto install chrome-headless-shell`.
-
-**Übungsblätter:** Lösungen stehen in Divs mit `when-profile="solution"` und erscheinen nur mit `--profile solution` (siehe `labs/_quarto-solution.yml`). Dateien mit `template` im Namen werden in der CI übersprungen.
-## Publish mit GitHub Actions
-
-Workflow: [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
-
-**Trigger:** Push auf `main` oder manuell (*Actions* → *Publish Quarto Website*).
-
-**Ablauf:** Website rendern → PDF-Handouts für alle `vorlesungen/*.qmd` → Übungsblatt-PDFs (Studierende + Musterlösung) nach `_site/labs/` → Publish auf Branch **`gh-pages`**.
-
-Scheitert ein Handout oder Übungsblatt (z. B. Mermaid/Chrome), erscheint eine **Warnung**; die Website wird trotzdem veröffentlicht und der Job bleibt grün.
-
-Nach dem Publish sind Materialien z. B. erreichbar unter:
-
-- Folien: [`vorlesungen/01_kickoff.html`](vorlesungen/01_kickoff.html)
-- PDF-Handout: [`vorlesungen/01_kickoff-handout.pdf`](vorlesungen/01_kickoff-handout.pdf)
-- Übungsblatt: [`labs/lab_01_beispiel.pdf`](labs/lab_01_beispiel.pdf)
-- Musterlösung: [`labs/lab_01_beispiel-musterloesung.pdf`](labs/lab_01_beispiel-musterloesung.pdf)
-Vollständige URL typischerweise `https://[GITHUB-USER].github.io/[REPO]/` (Startseite = Inhalt dieser README über `index.qmd`).
-
-**Einmalig:** Branch `gh-pages` vorhanden; *Settings → Pages* → Deploy from branch `gh-pages`; Actions mit Schreibrechten; für öffentliche Kursseiten Repo **public** stellen.
-
-**Hinweis:** Dies ist ein **inoffizielles Dozenten-Template**, keine offizielle DHBW-Software. Das DHBW-Logo (`assets/dhbw_logo.svg`) und andere geschützte Markenzeichen sind nicht Teil der CC-BY-Lizenz — siehe [`LICENSE`](LICENSE) und den Abschnitt *OER & Lizenz* unten.
-
-<!-- TEMPLATE-ENDE -->
-
-<!-- ==========================================================================
-     TODO — ERSETZEN (Kursinhalt für Studierende / GitHub Pages)
-     Platzhalter […] durch Ihre Moduldaten ersetzen.
-     ========================================================================== -->
-
-# [Modulname] ([Modulkürzel])
-
-Herzlich willkommen zur Vorlesung **[Modulname] ([Modulkürzel])** an der Dualen Hochschule Baden-Württemberg Stuttgart.
-
-[Beschreibung]
-
-## Materialien
-
-| Format | Link |
-|--------|------|
-| Folien (Reveal.js) | [Kickoff](vorlesungen/01_kickoff.html) |
-| PDF-Handout (Skript) | [Kickoff-Handout (PDF)](vorlesungen/01_kickoff-handout.pdf) |
-| Übungsblatt | [Beispielblatt (PDF)](labs/lab_01_beispiel.pdf) |
-| Musterlösung | [Beispielblatt Musterlösung (PDF)](labs/lab_01_beispiel-musterloesung.pdf) |
-
-Das PDF-Handout enthält die Folien inklusive Dozentennotizen. Übungsblätter und Musterlösungen werden bei jedem Publish über GitHub Actions aktualisiert.
 ## Literatur
 
-Die zentrale Referenz dieses Moduls ist:
+Zentrale Referenz dieses Moduls:
 
-> **[Autor:innen]**  
-> *[Werktitel]*  
-> [Verlag]
+> **Giorgio C. Buttazzo**  
+> *Hard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications*  
+> Springer
 
 Definitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.
 
-## Tools & Ressourcen
+Zur Vertiefung empfohlen:
+
+> **Hermann Kopetz**  
+> *Real-Time Systems: Design Principles for Distributed Embedded Applications*  
+> Springer
+
+## Tools und Ressourcen
 
 | Tool | Einsatz | Link |
 |------|---------|------|
-| **[Tool 1]** | [Beschreibung/Tools] | [Link] |
-| **[Tool 2]** | [Beschreibung/Tools] | [Link] |
+| **FreeRTOS** | Praxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern | [freertos.org](https://www.freertos.org/) |
+| **FreeRTOS Kernel Docs** | Referenz zu Scheduling, Interrupts und Synchronisation | [freertos.org/Documentation](https://www.freertos.org/Documentation/RTOS_book.html) |
+| **Cheddar** | Scheduling-Simulation und Schedulability-Analysen zum Üben | [beru.univ-brest.fr/cheddar](http://beru.univ-brest.fr/~singhoff/cheddar/) |
+| **Tracealyzer** (optional) | Laufzeit-Tracing von Tasks und Prioritätswechseln | [percepio.com/tracealyzer](https://percepio.com/tracealyzer/) |
 
-## OER & Lizenz
+## OER und Lizenz
 
 Dieses Vorlesungsmaterial ist eine **Open Educational Resource (OER)**. Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz **[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)**.
 
