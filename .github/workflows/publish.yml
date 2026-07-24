@@ -1,0 +1,174 @@
+name: Publish Quarto Website
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    # Früher abbrechen statt bis 6h zu hängen
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          tinytex: true
+
+      - name: Render website
+        uses: quarto-dev/quarto-actions/render@v2
+
+      # --- PDF-Handout (kann an Mermaid/Chrome scheitern; Website trotzdem publishen) ---
+      - name: Install Chrome Headless Shell (Mermaid → PNG)
+        timeout-minutes: 10
+        run: quarto install chrome-headless-shell --no-prompt
+
+      - name: Install rsvg (optional diagram conversion)
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends librsvg2-bin
+
+      # Optionaler Vorsorge-Schritt: Quarto/TinyTeX kann fehlende Pakete oft selbst nachziehen.
+      # || true verhindert Abbruch bei temporären CTAN-Spiegel-Problemen.
+      - name: Install LaTeX packages for handout
+        timeout-minutes: 10
+        run: |
+          tlmgr update --self || true
+          # tex-gyre: TeX Gyre Heros/Cursor (PDF-Fonts in _quarto*.yml)
+          tlmgr install \
+            tcolorbox needspace sectsty xcolor pgf environ trimspaces \
+            pdfcol fancyvrb framed booktabs setspace float mdwtools \
+            caption unicode-math fontspec lm lm-math tex-gyre \
+            || true
+
+      - name: Render PDF handouts
+        id: handout
+        # Bei Hänger (z. B. Mermaid/Chrome) nach 20 Min abbrechen — nicht 6h warten
+        timeout-minutes: 20
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          failed=0
+          shopt -s nullglob
+          for qmd in vorlesungen/*.qmd; do
+            echo "Rendering handout: $qmd"
+            if ! quarto render "$qmd" --profile handout --to pdf; then
+              echo "::warning::Handout fehlgeschlagen: $qmd"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      # Erfolgreiche PDFs anhängen, auch wenn einzelne Handouts fehlgeschlagen sind
+      - name: Attach handout PDFs to website
+        if: always() && !cancelled()
+        run: |
+          mkdir -p _site/vorlesungen
+          shopt -s nullglob
+          pdfs=(_handout/vorlesungen/*.pdf)
+          if [ ${#pdfs[@]} -eq 0 ]; then
+            echo "Keine Handout-PDFs vorhanden."
+            exit 0
+          fi
+          for pdf in "${pdfs[@]}"; do
+            base=$(basename "$pdf" .pdf)
+            cp "$pdf" "_site/vorlesungen/${base}-handout.pdf"
+          done
+          ls -la _site/vorlesungen/*-handout.pdf
+
+      # --- Übungsblätter (Studierende + Musterlösung) ---
+      - name: Render lab exercise sheets (student version)
+        id: labs
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          failed=0
+          shopt -s nullglob
+          mkdir -p _site/labs
+          cd labs
+          for qmd in lab_[0-9][0-9]_*.qmd probeklausur.qmd; do
+            [ -f "$qmd" ] || continue
+            case "$qmd" in
+              *template*) continue ;;
+            esac
+            base="${qmd%.qmd}"
+            echo "Rendering lab (student): $qmd"
+            if ! quarto render "$qmd" --to pdf; then
+              echo "::warning::Uebungsblatt (Studierende) fehlgeschlagen: $qmd"
+              failed=1
+              continue
+            fi
+            cp "${base}.pdf" "../_site/labs/${base}.pdf"
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Render lab exercise sheets (solution version)
+        id: labs_solution
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          failed=0
+          shopt -s nullglob
+          mkdir -p _site/labs
+          cd labs
+          for qmd in lab_[0-9][0-9]_*.qmd probeklausur.qmd; do
+            [ -f "$qmd" ] || continue
+            case "$qmd" in
+              *template*) continue ;;
+            esac
+            base="${qmd%.qmd}"
+            echo "Rendering lab (solution): $qmd"
+            if ! quarto render "$qmd" --to pdf --profile solution; then
+              echo "::warning::Uebungsblatt (Musterloesung) fehlgeschlagen: $qmd"
+              failed=1
+              continue
+            fi
+            cp "${base}.pdf" "../_site/labs/${base}-musterloesung.pdf"
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: List published lab PDFs
+        if: always() && !cancelled()
+        run: |
+          mkdir -p _site/labs
+          ls -la _site/labs/ || echo "Keine Labor-PDFs vorhanden."
+
+      - name: Publish to GitHub Pages
+        uses: quarto-dev/quarto-actions/publish@v2
+        with:
+          target: gh-pages
+          render: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fehlendes PDF ist nur eine Warnung — Website-Build und Publish bleiben grün.
+      - name: Warn if handout PDF did not build
+        if: steps.handout.outcome != 'success'
+        run: |
+          echo "::warning::Mindestens ein PDF-Handout ist fehlgeschlagen oder timed out (siehe Schritt „Render PDF handouts“)."
+
+      - name: Warn if lab PDF did not build
+        if: steps.labs.outcome != 'success' || steps.labs_solution.outcome != 'success'
+        run: |
+          echo "::warning::Mindestens ein Übungsblatt-PDF ist fehlgeschlagen oder timed out (siehe Schritte „Render lab exercise sheets“)."

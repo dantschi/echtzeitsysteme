@@ -1,0 +1,147 @@
+<script>
+/**
+ * Fit Quarto/Reveal Mermaid SVGs to remaining slide space.
+ * Dimensions from getBoundingClientRect are viewport pixels; CSS sizes inside
+ * Reveal slides are unscaled — divide by Reveal.getScale().
+ */
+(function () {
+  const BOTTOM_PAD = 36;
+  const SIDE_PAD_RATIO = 0.92;
+  const MAX_SCALE = 3.4;
+
+  function presentSlide() {
+    var present = document.querySelector("section.present");
+    if (!present) return null;
+    var nested = present.querySelector(":scope > section.present");
+    return nested || present;
+  }
+
+  function revealScale() {
+    if (window.Reveal && typeof Reveal.getScale === "function") {
+      var s = Reveal.getScale();
+      return s > 0.05 ? s : 1;
+    }
+    return 1;
+  }
+
+  function ensureWrap(svg) {
+    var parent = svg.parentElement;
+    if (!parent) return null;
+    if (parent.classList.contains("mermaid-fit")) return parent;
+    var wrap = document.createElement("div");
+    wrap.className = "mermaid-fit";
+    parent.insertBefore(wrap, svg);
+    wrap.appendChild(svg);
+    return wrap;
+  }
+
+  function contentBottomAbove(slide, wrap) {
+    var top = slide.getBoundingClientRect().top;
+    var bottom = top + 8;
+    var children = slide.children;
+    for (var i = 0; i < children.length; i++) {
+      var el = children[i];
+      if (el === wrap || el.classList.contains("mermaid-fit")) break;
+      if (el.querySelector && el.querySelector("svg.mermaid-js")) break;
+      if (el.tagName === "ASIDE") continue;
+      var r = el.getBoundingClientRect();
+      if (r.height > 1) bottom = Math.max(bottom, r.bottom);
+    }
+    return bottom;
+  }
+
+  function naturalSize(svg) {
+    if (svg.dataset.natW && svg.dataset.natH) {
+      return { w: +svg.dataset.natW, h: +svg.dataset.natH };
+    }
+    var vb = svg.viewBox && svg.viewBox.baseVal;
+    if (vb && vb.width > 0 && vb.height > 0) {
+      svg.dataset.natW = String(vb.width);
+      svg.dataset.natH = String(vb.height);
+      return { w: vb.width, h: vb.height };
+    }
+    var wAttr = parseFloat(svg.getAttribute("width"));
+    var hAttr = parseFloat(svg.getAttribute("height"));
+    if (wAttr > 0 && hAttr > 0) {
+      svg.dataset.natW = String(wAttr);
+      svg.dataset.natH = String(hAttr);
+      return { w: wAttr, h: hAttr };
+    }
+    var r = svg.getBoundingClientRect();
+    var rs = revealScale();
+    var w = r.width / rs || 320;
+    var h = r.height / rs || 120;
+    svg.dataset.natW = String(w);
+    svg.dataset.natH = String(h);
+    return { w: w, h: h };
+  }
+
+  function fitMermaids() {
+    var slide = presentSlide();
+    if (!slide) return;
+
+    var rs = revealScale();
+    var slideRect = slide.getBoundingClientRect();
+    var svgs = slide.querySelectorAll("svg.mermaid-js");
+
+    for (var i = 0; i < svgs.length; i++) {
+      var svg = svgs[i];
+      var wrap = ensureWrap(svg);
+      if (!wrap) continue;
+
+      svg.style.removeProperty("transform");
+      svg.style.removeProperty("max-width");
+      svg.style.removeProperty("zoom");
+      wrap.style.zoom = "";
+
+      var nat = naturalSize(svg);
+      var above = contentBottomAbove(slide, wrap);
+      var availW = (slideRect.width * SIDE_PAD_RATIO) / rs;
+      var availH = Math.max(72, (slideRect.bottom - above - BOTTOM_PAD) / rs);
+
+      var scale = Math.min(availW / nat.w, availH / nat.h, MAX_SCALE);
+      if (!(scale > 0)) scale = 1;
+
+      var targetW = Math.max(1, Math.round(nat.w * scale));
+      var targetH = Math.max(1, Math.round(nat.h * scale));
+
+      svg.setAttribute("width", targetW);
+      svg.setAttribute("height", targetH);
+      svg.style.width = targetW + "px";
+      svg.style.height = targetH + "px";
+      svg.style.display = "block";
+      svg.style.margin = "0.35rem auto 0";
+    }
+  }
+
+  function scheduleFit() {
+    requestAnimationFrame(function () {
+      fitMermaids();
+      setTimeout(fitMermaids, 150);
+      setTimeout(fitMermaids, 500);
+      setTimeout(fitMermaids, 1100);
+    });
+  }
+
+  window.addEventListener("load", scheduleFit);
+
+  function bindReveal() {
+    if (!window.Reveal || !Reveal.on) return false;
+    Reveal.on("ready", scheduleFit);
+    Reveal.on("slidechanged", scheduleFit);
+    if (Reveal.isReady && Reveal.isReady()) scheduleFit();
+    return true;
+  }
+
+  if (!bindReveal()) {
+    window.addEventListener("load", function () {
+      var tries = 0;
+      var id = setInterval(function () {
+        if (bindReveal() || ++tries > 50) clearInterval(id);
+      }, 100);
+    });
+  }
+
+  window.dhbwMermaidFit = fitMermaids;
+})();
+</script>

@@ -1,0 +1,31 @@
+---
+description: UTF-8-Schutz für deutsche Quarto-Folien (Pfeile, Umlaute, Gedankenstriche)
+globs: "vorlesungen/**/*.qmd"
+alwaysApply: false
+---
+
+# UTF-8 bei Folien-Edits
+
+Deutsche `.qmd`-Folien sind unter Windows **UTF-8-fragil**: Editor-/Patch-Tools können Unicode stillschweigend zerstören (typisch: `?` wird zu `?`, Umlaute/`—` zu Mojibake). Vor dem finalen Rebuild immer prüfen.
+
+## Nach jedem Edit prüfen
+
+```powershell
+python -c "from pathlib import Path; t=Path(r'vorlesungen/DATEI.qmd').read_text(encoding='utf-8'); print('arrows', t.count('\u2192'), 'qmarks', t.count(' ? '), 'fffd', t.count('\ufffd'))"
+```
+
+- `arrows` sollte zum Inhalt passen (nicht plötzlich 0)
+- ` ? ` zwischen Wörtern (z. B. `Software ? Hardware`) deutet auf verlorene `?`
+- `\ufffd` oder typische CP1252-Mojibake (`Ã¤`, `â€”`) ? Encoding kaputt
+
+## Sicher editieren
+
+- **Bevorzugt:** Python-Skript mit `\uXXXX`-Escapes und `Path.write_text(..., encoding='utf-8', newline='\n')`
+- **Vermeiden:** PowerShell `Set-Content -Encoding UTF8` (BOM; bricht Mermaid — siehe Tech-Stack-Regel)
+- Kein UTF-8-BOM in `.qmd`
+
+## Typische Reparatur
+
+1. Datei als `utf-8` lesen; falls kaputt, Herkunftscode (oft `cp1252`) ? korrekt als `utf-8` speichern
+2. Ersetzungen: ` ? ` ? `?` (`\u2192`); Umlaute und `—` (`\u2014`) gezielt wiederherstellen
+3. Vor Rebuild erneut zählen/prüfen — erst dann Quarto rendern
