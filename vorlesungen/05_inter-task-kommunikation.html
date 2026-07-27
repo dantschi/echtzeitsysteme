@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<link href="../assets/dhbw_logo.svg" rel="icon" type="image/svg+xml">
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-html/tabby.min.js"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-contrib/livefigures-0.8.0/livefigures.css" rel="stylesheet"><meta charset="utf-8">
+  <meta name="generator" content="quarto-1.10.18">
+
+  <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
+  <title>Echtzeitsysteme – 05 · Inter-Task-Kommunikation und Interrupts</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/reset.css">
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/reveal.css">
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      { color: #003b4f; background-color: #f1f3f5; }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span { color: #003b4f; } /* Normal */
+    code span.al { color: #ad0000; } /* Alert */
+    code span.an { color: #5e5e5e; } /* Annotation */
+    code span.at { color: #657422; } /* Attribute */
+    code span.bn { color: #ad0000; } /* BaseN */
+    code span.bu { } /* BuiltIn */
+    code span.cf { color: #003b4f; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #20794d; } /* Char */
+    code span.cn { color: #8f5902; } /* Constant */
+    code span.co { color: #5e5e5e; } /* Comment */
+    code span.cv { color: #5e5e5e; font-style: italic; } /* CommentVar */
+    code span.do { color: #5e5e5e; font-style: italic; } /* Documentation */
+    code span.dt { color: #ad0000; } /* DataType */
+    code span.dv { color: #ad0000; } /* DecVal */
+    code span.er { color: #ad0000; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #ad0000; } /* Float */
+    code span.fu { color: #4758ab; } /* Function */
+    code span.im { color: #00769e; } /* Import */
+    code span.in { color: #5e5e5e; } /* Information */
+    code span.kw { color: #003b4f; font-weight: bold; } /* Keyword */
+    code span.op { color: #5e5e5e; } /* Operator */
+    code span.ot { color: #003b4f; } /* Other */
+    code span.pp { color: #ad0000; } /* Preprocessor */
+    code span.sc { color: #5e5e5e; } /* SpecialChar */
+    code span.ss { color: #20794d; } /* SpecialString */
+    code span.st { color: #20794d; } /* String */
+    code span.va { color: #111111; } /* Variable */
+    code span.vs { color: #20794d; } /* VerbatimString */
+    code span.wa { color: #5e5e5e; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/theme/quarto-f355cf95444bdbe7a358cd689c441e6f.css">
+  <link href="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
+  <style type="text/css">
+    .reveal div.sourceCode {
+      margin: 0;
+      overflow: auto;
+    }
+    .reveal div.hanging-indent {
+      margin-left: 1em;
+      text-indent: -1em;
+    }
+    .reveal .slide:not(.center) {
+      height: 100%;
+    }
+    .reveal .slide.scrollable {
+      overflow-y: auto;
+    }
+    .reveal .footnotes {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide .absolute {
+      position: absolute;
+      display: block;
+    }
+    .reveal .footnotes ol {
+      counter-reset: ol;
+      list-style-type: none; 
+      margin-left: 0;
+    }
+    .reveal .footnotes ol li:before {
+      counter-increment: ol;
+      content: counter(ol) ". "; 
+    }
+    .reveal .footnotes ol li > p:first-child {
+      display: inline-block;
+    }
+    .reveal .slide ul,
+    .reveal .slide ol {
+      margin-bottom: 0.5em;
+    }
+    .reveal .slide ul li,
+    .reveal .slide ol li {
+      margin-top: 0.4em;
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide ul[role="tablist"] li {
+      margin-bottom: 0;
+    }
+    .reveal .slide ul li > *:first-child,
+    .reveal .slide ol li > *:first-child {
+      margin-block-start: 0;
+    }
+    .reveal .slide ul li > *:last-child,
+    .reveal .slide ol li > *:last-child {
+      margin-block-end: 0;
+    }
+    .reveal .slide .columns:nth-child(3) {
+      margin-block-start: 0.8em;
+    }
+    .reveal blockquote {
+      box-shadow: none;
+    }
+    .reveal .tippy-content>* {
+      margin-top: 0.2em;
+      margin-bottom: 0.7em;
+    }
+    .reveal .tippy-content>*:last-child {
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide > img.stretch.quarto-figure-center,
+    .reveal .slide > img.r-stretch.quarto-figure-center {
+      display: block;
+      margin-left: auto;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-left,
+    .reveal .slide > img.r-stretch.quarto-figure-left  {
+      display: block;
+      margin-left: 0;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-right,
+    .reveal .slide > img.r-stretch.quarto-figure-right  {
+      display: block;
+      margin-left: auto;
+      margin-right: 0; 
+    }
+  </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+</head>
+<body class="quarto-light">
+  <div class="reveal">
+    <div class="slides">
+
+<section id="title-slide" class="quarto-title-block center">
+  <h1 class="title">05 · Inter-Task-Kommunikation und Interrupts</h1>
+  <p class="subtitle">Queues, Mailboxes und ISR-Anbindung · EZS · DHBW Stuttgart</p>
+
+<div class="quarto-title-authors">
+<div class="quarto-title-author">
+<div class="quarto-title-author-name">
+Prof.&nbsp;Dr.-Ing. Daniel Klünder
+</div>
+</div>
+</div>
+
+</section>
+<section id="willkommen-zurück-zu-echtzeitsysteme" class="slide level2">
+<h2>Willkommen zurück zu Echtzeitsysteme!</h2>
+<ul>
+<li>Herzlich willkommen zum 5. Termin unserer Vorlesung</li>
+<li>Halbzeit! Sie kennen nun die Grundlagen von Scheduling und Ressourcenverwaltung</li>
+<li>Letzte Woche: Die dunkle Seite der Präemption (Race Conditions, Priority Inversion)</li>
+<li>Heute: Wie transportieren wir Daten sicher von A nach B?</li>
+<li>Außerdem: Wie binden wir Hardware-Interrupts professionell an ein RTOS an?</li>
+</ul>
+<aside class="notes">
+<p>Guten Morgen und herzlich willkommen zur fünften Vorlesung! Wir haben Bergfest, die Hälfte des Semesters ist geschafft. Sie haben bis hierhin ein tiefes Verständnis dafür entwickelt, wie der Scheduler funktioniert und welche Gefahren lauern, wenn wir Variablen einfach wild zwischen Tasks teilen. Letzte Woche: Mutexe zum Schutz geteilter Daten. Heute: Daten aktiv und sicher transportieren. Im zweiten Teil: Hardware-Interrupts fehlerfrei in FreeRTOS integrieren.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="agenda-für-heute" class="slide level2">
+<h2>Agenda für heute</h2>
+<ol type="1">
+<li>Recap: Mutexe und Priority Inversion</li>
+<li>Das Problem: Transport kontinuierlicher Datenströme</li>
+<li>Inter-Process Communication (IPC): Queues</li>
+<li>CMSIS-API für Queues und Value vs.&nbsp;Reference</li>
+<li>Der Spezialfall: Mailboxes (Status vs.&nbsp;Events)</li>
+<li><em>[Nach der Pause]</em> Interrupts im RTOS: Top-Half und Bottom-Half</li>
+<li>Ausblick Labor: Deferred Interrupt Processing am STM32H755</li>
+</ol>
+<aside class="notes">
+<p>Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann IPC und Warteschlangen (Queues), C-API, Pointer vs.&nbsp;Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="recap-die-lehren-aus-termin-4" class="slide level2">
+<h2>Recap: Die Lehren aus Termin 4</h2>
+<ul>
+<li>Race Conditions: asynchrone Präemption in geteilten Variablen (Read-Modify-Write zerreißt)</li>
+<li>Mutex: exklusives Schloss mit Besitzrecht (Ownership) für Critical Sections</li>
+<li>Priority Inversion: Low-Task blockiert High-Task</li>
+<li>Rettung (Priority Inheritance): OS boostet die Low-Task temporär auf die Priorität der wartenden High-Task</li>
+</ul>
+<aside class="notes">
+<p>Kurzer Rückblick: <code>counter++</code> sind drei Assembler-Befehle — SysTick dazwischen → Race Condition. Mutexe schützen. Prioritätsinversion (Pathfinder). CMSIS-Mutex löst das über Priority Inheritance in FreeRTOS.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="mutexe-schützen-aber-transportieren-nicht" class="slide level2">
+<h2>Mutexe schützen, aber transportieren nicht!</h2>
+<ul>
+<li>Ein Mutex eignet sich perfekt für:
+<ul>
+<li>Den UART-Port (eine Task schreibt, die andere wartet)</li>
+<li>Ein Setup-Struct (einmal schreiben, oft lesen)</li>
+</ul></li>
+<li>Problem: kontinuierlicher Datenstrom (Audio-Samples, Sensordaten)
+<ul>
+<li>Task A produziert jede Millisekunde einen neuen Wert</li>
+<li>Task B liest und filtert</li>
+<li>Globale Variable + Mutex → mehr Zeit am Schloss als beim Rechnen</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Mutexe sind Zugangskontrolle, nicht Transport. Bei 44.000 Samples/s wäre jedes Sample sperren/entsperren ein Flaschenhals: CPU rechnet Mutex-Logik statt Audiofilter. Wir brauchen einen besseren Weg.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="motivation-producer-consumer" class="slide level2">
+<h2>Motivation: Producer &amp; Consumer</h2>
+<ul>
+<li>Das häufigste Software-Muster in eingebetteten Systemen</li>
+<li>Producer (Erzeuger): liest Sensoren, empfängt Pakete, generiert schnell Rohdaten</li>
+<li>Consumer (Verbraucher): filtert, rechnet, Display — oft langsamer oder in Blöcken</li>
+<li>Leitfrage: Wie überbrücken wir unterschiedliche Geschwindigkeiten sicher?</li>
+</ul>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph TD
+    P[Task A: Producer]
+    C[Task B: Consumer]
+    P --&gt;|Schreibt Daten| C
+    style P fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style C fill:#F5F5F7,stroke:#1D1D1F,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<aside class="notes">
+<p>Producer-Consumer-Pattern: schneller Erzeuger (z. B. ADC) und langsamerer Verbraucher (FFT, Display). Geschwindigkeitsgefälle → zeitliche Entkopplung nötig.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-falle-der-globalen-variable" class="slide level2">
+<h2>Die Falle der globalen Variable</h2>
+<ul>
+<li>Annahme: globale Variable <code>adc_value</code></li>
+<li>Producer überschreibt jede <span class="math inline">\(1\,\mathrm{ms}\)</span></li>
+<li>Consumer kommt nur alle <span class="math inline">\(5\,\mathrm{ms}\)</span> dazu</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">// Producer (jede 1 ms)</span></span>
+<span id="cb1-2"><a aria-label="2"></a><span class="dt">void</span> Task_ADC<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-3"><a aria-label="3"></a>    adc_value <span class="op">=</span> Hardware_Read<span class="op">();</span></span>
+<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span>
+<span id="cb1-5"><a aria-label="5"></a></span>
+<span id="cb1-6"><a aria-label="6"></a><span class="co">// Consumer (alle 5 ms)</span></span>
+<span id="cb1-7"><a aria-label="7"></a><span class="dt">void</span> Task_Filter<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-8"><a aria-label="8"></a>    <span class="co">// Nur EIN Wert da — die 4 vorherigen sind überschrieben!</span></span>
+<span id="cb1-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Ergebnis: Datenverlust, obwohl das OS fehlerfrei läuft</li>
+</ul>
+<aside class="notes">
+<p>Producer feuert jede ms, Consumer alle 5 ms (niedrige Prio oder FFT). Consumer sieht nur den letzten Wert; vier Werte davor sind verloren — massiver Datenverlust bei korrektem OS.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-lösung-ipc-via-betriebssystem" class="slide level2">
+<h2>Die Lösung: IPC via Betriebssystem</h2>
+<ul>
+<li>Wir brauchen Inter-Process Communication (IPC)</li>
+<li>Das Betriebssystem muss die Datenverwaltung übernehmen</li>
+<li>Lösung: ein Puffer (Buffer)
+<ul>
+<li>Speicherbereich für mehrere Werte</li>
+<li>Producer legt Daten vorne hinein</li>
+<li>Consumer holt Daten hinten heraus</li>
+</ul></li>
+<li>In RTOS-Systemen: Queue (Warteschlange)</li>
+</ul>
+<aside class="notes">
+<p>Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der IPC.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="lernziele-des-heutigen-tages" class="slide level2">
+<h2>Lernziele des heutigen Tages</h2>
+<ol type="1">
+<li>Das Producer-Consumer-Pattern verstehen</li>
+<li>Queues in CMSIS-RTOS anlegen, beschreiben und lesen</li>
+<li>Vor- und Nachteile von Copy by Value vs.&nbsp;Copy by Reference kennen</li>
+<li>Semantischen Unterschied Queue vs.&nbsp;Mailbox erklären</li>
+<li><em>[Nach der Pause]</em> Hardware-Interrupts über Deferred Interrupt Processing anbinden</li>
+</ol>
+<aside class="notes">
+<p>Block 1: Queues, API, Value vs.&nbsp;Reference, Mailbox. Nach der Pause: Deferred Interrupt Processing — ISR-Latenz minimieren.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-queue-warteschlange" class="slide level2">
+<h2>Die Queue (Warteschlange)</h2>
+<ul>
+<li>Queue = Array im RAM, exklusiv vom OS verwaltet</li>
+<li>FIFO-Prinzip (First-In, First-Out)
+<ul>
+<li>Was zuerst hineinlegt wird, kommt zuerst heraus (Supermarktkasse)</li>
+</ul></li>
+<li>Threadsicher: FreeRTOS schützt intern mit Interrupt-Sperren</li>
+<li>Keine eigenen Mutexe nötig beim Schreiben in eine Queue</li>
+</ul>
+<aside class="notes">
+<p>Technisch ein Array, verwaltet von FreeRTOS. FIFO erhält die Reihenfolge. Thread-safe: kein <code>osMutexAcquire</code> vor dem Schreiben — das OS sichert Zugriffe ab.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-lebenszyklus-einer-queue" class="slide level2">
+<h2>Der Lebenszyklus einer Queue</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph LR
+    A[Create] --&gt; B(Put / Write)
+    B --&gt; C(Get / Read)
+    C --&gt; B
+    C --&gt; D[Delete]
+    style A fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important
+    style B fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style C fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style D fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<ul>
+<li>Create: OS reserviert RAM für <span class="math inline">\(N\)</span> Elemente der Größe <span class="math inline">\(X\)</span> Bytes</li>
+<li>Put (Schreiben): Kopie der Daten hinten in die Queue</li>
+<li>Get (Lesen): vorderstes Element herausnehmen (wird entfernt!)</li>
+<li>Delete: RAM freigeben (auf MCUs oft ungenutzt — Queues leben ewig)</li>
+</ul>
+<aside class="notes">
+<p>Create einmal, dann Put/Get im Kreis. Get entfernt das Element — Platz wird frei. Delete gibt es, wird auf Mikrocontrollern kaum genutzt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="speichermanagement-einer-queue" class="slide level2">
+<h2>Speichermanagement einer Queue</h2>
+<ul>
+<li>Vor der Nutzung dem OS zwei Dinge mitteilen:
+<ul>
+<li>Länge: maximal wie viele Elemente? (z. B. 10)</li>
+<li>Elementgröße: Bytes pro Element? (z. B. <code>sizeof(uint32_t)</code> <span class="math inline">\(= 4\)</span>)</li>
+</ul></li>
+<li>RAM-Bedarf: FreeRTOS reserviert sofort <span class="math inline">\(10 \times 4 = 40\)</span> Bytes aus dem Heap
+<ul>
+<li>plus OS-Overhead für die Queue-Verwaltung</li>
+</ul></li>
+<li>Dieser RAM ist reserviert, auch wenn die Queue leer ist</li>
+</ul>
+<aside class="notes">
+<p>Länge und Elementgröße festlegen. 10 <span class="math inline">\(\times\)</span> 4 Bytes = mindestens 40 Bytes Heap, auch bei leerer Queue.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-magie-blockieren-bei-leerlauf" class="slide level2">
+<h2>Die Magie: Blockieren bei Leerlauf</h2>
+<ul>
+<li>Was passiert, wenn der Consumer <code>Get()</code> aufruft und die Queue leer ist?</li>
+<li>Bare-Metal: leere Variable lesen oder in <code>while</code> festsitzen</li>
+<li>RTOS: Consumer sofort in den Blocked-Zustand</li>
+<li>Task verbraucht <span class="math inline">\(0\%\)</span> CPU, bis der Producer ein <code>Put()</code> ausführt</li>
+<li>Sobald ein Wert eintrifft: Consumer wird (bei ausreichender Prio) sofort aufgeweckt</li>
+</ul>
+<aside class="notes">
+<p>Beste Task-Zustand aus VL3: Blocked. Timeout <code>osWaitForever</code> → leere Queue schickt Consumer schlafen (<span class="math inline">\(0\%\)</span> CPU). Put weckt sofort auf — kein Polling.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-magie-blockieren-bei-überlast" class="slide level2">
+<h2>Die Magie: Blockieren bei Überlast</h2>
+<ul>
+<li>Was passiert, wenn der Producer <code>Put()</code> aufruft und die Queue voll ist?</li>
+<li>Option A (Timeout <span class="math inline">\(= 0\)</span>): Fehler <code>osErrorResource</code>, Wert verwerfen (Datenverlust)</li>
+<li>Option B (Timeout <span class="math inline">\(&gt; 0\)</span>): Producer geht in den Blocked-Zustand
+<ul>
+<li>Wartet, bis der Consumer Platz schafft</li>
+</ul></li>
+<li>Eleganter Mechanismus zur Drosselung (Throttling)</li>
+</ul>
+<aside class="notes">
+<p>Volle Queue: Timeout 0 = sofort Fehler/Datenverlust. Timeout <span class="math inline">\(&gt; 0\)</span> = Producer schläft, bis Consumer liest. OS drosselt Überlast von allein.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-ipc-vorteile" class="slide level2">
+<h2>Zusammenfassung: IPC-Vorteile</h2>
+<ul>
+<li>Datentransfer: Werte sicher von Task A nach Task B</li>
+<li>Synchronisation: automatisches Blockieren und Wecken (keine leeren <code>while</code>-Schleifen)</li>
+<li>Pufferung: Geschwindigkeitsunterschiede (Bursts) ausgleichen</li>
+<li>Thread-Safe: keine eigenen Mutexe nötig — das OS regelt den Zugriff</li>
+</ul>
+<aside class="notes">
+<p>Queues: Transfer, Synchronisation, Pufferung und Thread-Safety in einem Mechanismus — Schweizer Taschenmesser der RTOS-Entwicklung.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="cmsis-api-queue-anlegen" class="slide level2">
+<h2>CMSIS-API: Queue anlegen</h2>
+<ul>
+<li>CMSIS-RTOS v2 Abstraktion:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="co">// Globale Variable (Handle) für die Queue</span></span>
+<span id="cb2-2"><a aria-label="2"></a>osMessageQueueId_t sensorQueue<span class="op">;</span></span>
+<span id="cb2-3"><a aria-label="3"></a></span>
+<span id="cb2-4"><a aria-label="4"></a><span class="dt">void</span> System_Init<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-5"><a aria-label="5"></a>    <span class="co">// Parameter 1: Anzahl der Elemente (z. B. 10)</span></span>
+<span id="cb2-6"><a aria-label="6"></a>    <span class="co">// Parameter 2: Größe eines Elements (z. B. sizeof(uint32_t))</span></span>
+<span id="cb2-7"><a aria-label="7"></a>    <span class="co">// Parameter 3: Optionale Attribute (meist NULL)</span></span>
+<span id="cb2-8"><a aria-label="8"></a>    sensorQueue <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">10</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint32_t</span><span class="op">),</span> NULL<span class="op">);</span></span>
+<span id="cb2-9"><a aria-label="9"></a></span>
+<span id="cb2-10"><a aria-label="10"></a>    <span class="cf">if</span> <span class="op">(</span>sensorQueue <span class="op">==</span> NULL<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-11"><a aria-label="11"></a>        <span class="co">// Fehler! Heap ist voll, kein RAM mehr.</span></span>
+<span id="cb2-12"><a aria-label="12"></a>    <span class="op">}</span></span>
+<span id="cb2-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Handle global, <code>osMessageQueueNew</code> vor Scheduler-Start. <code>sizeof</code> für plattformunabhängige Elementgröße. Rückgabe <code>NULL</code> prüfen: Heap voll.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="cmsis-api-daten-schreiben-put" class="slide level2">
+<h2>CMSIS-API: Daten schreiben (Put)</h2>
+<ul>
+<li>Der Producer legt Daten in die Queue:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> Task_ADC_Producer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> value <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-3"><a aria-label="3"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb3-4"><a aria-label="4"></a>        value <span class="op">=</span> Read_ADC_Hardware<span class="op">();</span></span>
+<span id="cb3-5"><a aria-label="5"></a></span>
+<span id="cb3-6"><a aria-label="6"></a>        <span class="co">// Handle, Pointer auf Daten, Prio (immer 0), Timeout</span></span>
+<span id="cb3-7"><a aria-label="7"></a>        osStatus_t status <span class="op">=</span> osMessageQueuePut<span class="op">(</span></span>
+<span id="cb3-8"><a aria-label="8"></a>            sensorQueue<span class="op">,</span></span>
+<span id="cb3-9"><a aria-label="9"></a>            <span class="op">&amp;</span>value<span class="op">,</span></span>
+<span id="cb3-10"><a aria-label="10"></a>            <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb3-11"><a aria-label="11"></a>            <span class="dv">0</span>  <span class="co">// Timeout = 0 (nicht warten!)</span></span>
+<span id="cb3-12"><a aria-label="12"></a>        <span class="op">);</span></span>
+<span id="cb3-13"><a aria-label="13"></a></span>
+<span id="cb3-14"><a aria-label="14"></a>        <span class="cf">if</span> <span class="op">(</span>status <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-15"><a aria-label="15"></a>            <span class="co">// Queue ist voll, Wert verworfen!</span></span>
+<span id="cb3-16"><a aria-label="16"></a>        <span class="op">}</span></span>
+<span id="cb3-17"><a aria-label="17"></a>        osDelay<span class="op">(</span><span class="dv">10</span><span class="op">);</span>  <span class="co">// Ticks; bei 1000 Hz = 10 ms</span></span>
+<span id="cb3-18"><a aria-label="18"></a>    <span class="op">}</span></span>
+<span id="cb3-19"><a aria-label="19"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Adresse der Variable (<code>&amp;value</code>): FreeRTOS kopiert die Bytes. Prio-Parameter historisch, in FreeRTOS immer 0. Timeout 0: bei voller Queue sofort Fehler, Wert verloren.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="cmsis-api-daten-lesen-get" class="slide level2">
+<h2>CMSIS-API: Daten lesen (Get)</h2>
+<ul>
+<li>Der Consumer wartet auf Daten:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> Task_Filter_Consumer<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> received_value <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb4-4"><a aria-label="4"></a>        <span class="co">// Warte ewig (osWaitForever) auf neue Daten!</span></span>
+<span id="cb4-5"><a aria-label="5"></a>        osMessageQueueGet<span class="op">(</span></span>
+<span id="cb4-6"><a aria-label="6"></a>            sensorQueue<span class="op">,</span></span>
+<span id="cb4-7"><a aria-label="7"></a>            <span class="op">&amp;</span>received_value<span class="op">,</span></span>
+<span id="cb4-8"><a aria-label="8"></a>            NULL<span class="op">,</span>  <span class="co">// Prio-Pointer ignorieren</span></span>
+<span id="cb4-9"><a aria-label="9"></a>            osWaitForever</span>
+<span id="cb4-10"><a aria-label="10"></a>        <span class="op">);</span></span>
+<span id="cb4-11"><a aria-label="11"></a></span>
+<span id="cb4-12"><a aria-label="12"></a>        <span class="co">// Hier: ganz sicher ein gültiger Wert</span></span>
+<span id="cb4-13"><a aria-label="13"></a>        Filter_Data<span class="op">(</span>received_value<span class="op">);</span></span>
+<span id="cb4-14"><a aria-label="14"></a>    <span class="op">}</span></span>
+<span id="cb4-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p><code>osWaitForever</code>: leere Queue → Blocked an dieser Zeile. Erreicht der Code <code>Filter_Data</code>, liegt ein gültiges Paket vor — sauberer, deterministischer Flow.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="unter-der-haube-copy-by-value" class="slide level2">
+<h2>Unter der Haube: Copy by Value</h2>
+<ul>
+<li>FreeRTOS-Queues nutzen standardmäßig Copy by Value</li>
+<li>Put: OS kopiert den Wert byteweise in den eigenen Queue-RAM</li>
+<li>Get: OS kopiert den Wert zurück in die lokale Variable des Consumers</li>
+<li>Vorteil: Original-Variable des Producers ist danach völlig entkoppelt</li>
+</ul>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph LR
+    A[Var Producer] -- "Kopie 1" --&gt; B[(OS Queue)]
+    B -- "Kopie 2" --&gt; C[Var Consumer]
+    style A fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style B fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
+    style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<aside class="notes">
+<p>Zwei physikalische Kopien. Nach Put darf die Producer-Variable überschrieben, gelöscht oder der Scope verlassen werden — der Wert liegt sicher in der Queue.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-feind-der-queue-große-daten" class="slide level2">
+<h2>Der Feind der Queue: Große Daten!</h2>
+<ul>
+<li>Copy by Value ist ideal für kleine Daten (z. B. <code>uint32_t</code>, 4 Bytes)</li>
+<li>Große Daten? Kamerabild <span class="math inline">\(320 \times 240\)</span> Pixel <span class="math inline">\(= 76\,800\)</span> Bytes</li>
+<li>Probleme:
+<ul>
+<li>Queue wäre gigantisch (RAM-Verschwendung)</li>
+<li>Zweimaliges Kopieren von <span class="math inline">\(\approx 76\,\mathrm{KB}\)</span> blockiert die CPU</li>
+<li><code>memcpy</code> zerstört Latenzgarantien</li>
+</ul></li>
+<li>Für große Daten ist Copy by Value streng verboten</li>
+</ul>
+<aside class="notes">
+<p>76 KB per Value: Heap reicht oft nicht; doppeltes Kopieren vernichtet Echtzeit. CPU nur noch Speicherschieben.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-lösung-copy-by-reference-pointer" class="slide level2">
+<h2>Die Lösung: Copy by Reference (Pointer)</h2>
+<ul>
+<li>Statt 76 KB: nur die Speicheradresse (Pointer) in die Queue</li>
+<li>Pointer auf Cortex-M4: immer exakt 4 Bytes</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="co">// Queue für POINTER (Elementgröße = 4 Bytes!)</span></span>
+<span id="cb5-2"><a aria-label="2"></a>ptrQueue <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">10</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint8_t</span><span class="op">*),</span> NULL<span class="op">);</span></span>
+<span id="cb5-3"><a aria-label="3"></a></span>
+<span id="cb5-4"><a aria-label="4"></a><span class="dt">void</span> Task_Camera<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-5"><a aria-label="5"></a>    <span class="dt">uint8_t</span><span class="op">*</span> image_buffer <span class="op">=</span> Get_Image_From_Hardware<span class="op">();</span></span>
+<span id="cb5-6"><a aria-label="6"></a></span>
+<span id="cb5-7"><a aria-label="7"></a>    <span class="co">// Nicht das Bild, sondern die Adresse (4 Bytes)</span></span>
+<span id="cb5-8"><a aria-label="8"></a>    osMessageQueuePut<span class="op">(</span>ptrQueue<span class="op">,</span> <span class="op">&amp;</span>image_buffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb5-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Consumer liest 4 Bytes, hat die Adresse und liest das Bild direkt aus dem RAM</li>
+</ul>
+<aside class="notes">
+<p>Bild bleibt im RAM. Queue speichert nur Pointer. Consumer folgt der Adresse — wenige Zyklen statt Millionen.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="gefahren-von-copy-by-reference" class="slide level2">
+<h2>Gefahren von Copy by Reference</h2>
+<ul>
+<li>Lebensgefahr: Producer darf <code>image_buffer</code> nicht mehr überschreiben, sobald der Pointer in der Queue liegt</li>
+<li>Sonst: Race Condition — Consumer liest korrupte Pixel</li>
+<li>Lösung: Buffer-Ping-Pong (Double Buffering)
+<ul>
+<li>Zwei getrennte Arrays</li>
+<li>Producer beschreibt Array 1, sendet Pointer 1</li>
+<li>Während Consumer Array 1 liest, beschreibt Producer Array 2</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Ohne schützende Kopie: Überschreiben vor Fertigstellung des Consumers = Race Condition. Double Buffering / Ping-Pong: zwei Puffer abwechselnd.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-spezialfall-die-mailbox" class="slide level2">
+<h2>Der Spezialfall: Die Mailbox</h2>
+<ul>
+<li>Oft verwechselt: Unterschied Queue vs.&nbsp;Mailbox?</li>
+<li>CMSIS/FreeRTOS: keine separate Mailbox-API — Spezialfall der Queue</li>
+<li>Mailbox = Queue der Länge 1</li>
+<li>Speichert exakt ein einziges Element</li>
+<li>Wichtigster Verhaltensunterschied: Überschreiben (Overwrite) ist ausdrücklich erwünscht</li>
+</ul>
+<aside class="notes">
+<p>Mailbox = Queue Länge 1. Semantik: bei Statusdaten ist absichtliches Überschreiben oft das Feature, nicht der Bug.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="wann-queue-wann-mailbox" class="slide level2">
+<h2>Wann Queue, wann Mailbox?</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p>Queue (Events &amp; Ströme)</p>
+<ul>
+<li>Tastendrücke (A, B, C abarbeiten)</li>
+<li>Audio-Daten</li>
+<li>Philosophie: kein Element darf verloren gehen</li>
+<li>Verhalten: blockiert, wenn voll</li>
+</ul>
+</div><div class="column" style="width:50%;">
+<p>Mailbox (Zustand / Status)</p>
+<ul>
+<li>Aktuelle Temperatur, GPS-Position</li>
+<li>Philosophie: nur der neueste Wert zählt</li>
+<li>Verhalten: überschreibt alten Wert, blockiert nicht beim Schreiben</li>
+</ul>
+</div></div>
+<ul>
+<li>FreeRTOS-Sonderfunktion: <code>xQueueOverwrite()</code></li>
+</ul>
+<aside class="notes">
+<p>Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: <code>xQueueOverwrite</code>.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-broadcast-konzept-mailbox" class="slide level2">
+<h2>Das Broadcast-Konzept (Mailbox)</h2>
+<ul>
+<li>Queue-<code>Get</code> entnimmt das Element — danach ist die Queue leer</li>
+<li>Status-Mailboxen: oft ein Producer, viele Consumer (Broadcast)
+<ul>
+<li>Sensor schreibt Drehzahl</li>
+<li>Motor-, Display- und Logging-Task wollen lesen</li>
+</ul></li>
+<li>Peek (Spicken): Wert lesen, ohne ihn zu entfernen
+<ul>
+<li><code>osMessageQueueGet()</code> entfernt</li>
+<li>Native FreeRTOS: <code>xQueuePeek()</code></li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Bei Broadcast darf Get den Wert nicht vernichten. Peek kopiert und lässt den Wert in der Mailbox — sauberes State-Management.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-halbzeit" class="slide level2">
+<h2>Zusammenfassung Halbzeit</h2>
+<ul>
+<li>Producer-Consumer: entkoppelt langsame Verarbeitung von schnellen Rohdaten</li>
+<li>Queues: Puffer im RAM, vom OS verwaltet</li>
+<li>Volle Queue blockiert beim Schreiben, leere Queue beim Lesen (<span class="math inline">\(0\%\)</span> CPU)</li>
+<li>Value vs.&nbsp;Reference: kleine Werte kopieren; große Daten (Bilder) als Pointer + Ping-Pong</li>
+<li>Mailbox: 1er-Queue für Zustände, die alte Daten überschreibt</li>
+</ul>
+<aside class="notes">
+<p>Erste Hälfte: Entkopplung durch Queues, Value vs.&nbsp;Reference, Mailboxen für aktuellen Sensorwert. Fragen zum Datenaustausch? Nach der Pause: Anbindung an echte Hardware-Interrupts.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="block-4-interrupts-im-rtos" class="slide level2">
+<h2>Block 4: Interrupts im RTOS</h2>
+<ul>
+<li>Wir wissen jetzt, wie Tasks untereinander reden</li>
+<li>Aber wie kommuniziert die Hardware (Außenwelt) mit unseren Tasks?</li>
+<li>Die Herausforderung:
+<ul>
+<li>Ein Hardware-Interrupt (ISR) reißt die CPU aus dem RTOS-Kontext heraus</li>
+<li>Die ISR ist mächtiger als der Scheduler</li>
+<li>Wie bringen wir Hardware-Events und Software-Scheduling sicher zusammen?</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Willkommen zurück nach der Pause! Bisher: Tasks, Queues, Mutexe unter Kontrolle des Schedulers. Ein MCU ohne Außenwelt ist wertlos. Tasten, Sensoren und Netzwerke laufen über Hardware-Interrupts (ISRs). ISRs kennen FreeRTOS nicht: sie grätschen in laufende Berechnungen, ignorieren Task-Prioritäten und können sogar den SysTick blockieren. Wie wir beide Welten verheiraten, ohne Echtzeit-Timing zu sprengen, ist das Thema dieses Blocks.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="rückblick-die-goldene-regel-der-isr" class="slide level2">
+<h2>Rückblick: Die goldene Regel der ISR</h2>
+<ul>
+<li>Erinnern Sie sich an Termin 1?</li>
+<li>Eine ISR muss extrem kurz sein!</li>
+<li>Warum ist das im RTOS noch wichtiger?
+<ul>
+<li>Solange die ISR läuft, ist die CPU komplett blockiert</li>
+<li>Bei höherer HW-Priorität als SysTick: der RTOS-Herzschlag kann nicht feuern</li>
+<li>Das Betriebssystem friert in der Zeit ein</li>
+<li>Alle Deadlines aller Tasks verschieben sich nach hinten</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>VL1-Regel: ISR kurz → kein <code>printf</code>, keine Zählschleife, kein Warten. Im RTOS überlebenswichtig: Timing über SysTick. Lange UART-ISR mit höherer HW-Priorität als SysTick → SysTick wird verzögert, OS verpasst Herzschläge, Zeit friert ein. Nach 10 ms ISR denkt das OS, es sei keine Millisekunde vergangen → Deadlines gescheitert.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-architektur-muster-deferred-interrupt-processing" class="slide level2">
+<h2>Das Architektur-Muster: Deferred Interrupt Processing</h2>
+<ul>
+<li>Wie lesen wir komplexe Sensordaten (z. B. 10 KB Bilddaten per SPI) ein, wenn die ISR kurz sein muss?</li>
+<li>Lösung der Industrie: Deferred Interrupt Processing (verzögerte Interrupt-Verarbeitung)</li>
+<li>Arbeit in zwei Hälften:
+<ol type="1">
+<li>Top-Half (die ISR): reagiert blitzschnell auf die Hardware</li>
+<li>Bottom-Half (die Task): übernimmt die zeitaufwändige Datenverarbeitung</li>
+</ol></li>
+</ul>
+<aside class="notes">
+<p>Dilemma: SPI-Bild plus CRC dauert. Nicht in der ISR → wo dann? Deferred Interrupt Processing: Top-Half und Bottom-Half. Muster in jedem modernen OS, von FreeRTOS bis Linux-Kernel.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-top-half-die-isr" class="slide level2">
+<h2>Die Top-Half (Die ISR)</h2>
+<ul>
+<li>Läuft im echten Hardware-Interrupt-Kontext (z. B. <code>EXTI15_10_IRQHandler</code>)</li>
+<li>Unterbricht alles im System</li>
+<li>Aufgaben der Top-Half:
+<ol type="1">
+<li>Hardware-Flag (Interrupt) löschen, damit er nicht endlos feuert</li>
+<li>Kritische Rohdaten aus Hardwareregistern (z. B. UART <code>RDR</code>) in den RAM retten</li>
+<li>Das RTOS wecken (signalisieren)</li>
+<li>Sofort beenden</li>
+</ol></li>
+</ul>
+<aside class="notes">
+<p>Top-Half = echte HW-ISR. Quittieren, Byte/Daten retten, Signal an RTOS, sofort Return. Dauer: oft unter einer Mikrosekunde.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-bottom-half-die-task" class="slide level2">
+<h2>Die Bottom-Half (Die Task)</h2>
+<ul>
+<li>Ist eine ganz normale C-Task in FreeRTOS</li>
+<li>Bekommt meist eine sehr hohe RTOS-Priorität</li>
+<li>Befindet sich zu <span class="math inline">\(99\%\)</span> der Zeit im Zustand Blocked</li>
+<li>Aufgaben der Bottom-Half:
+<ol type="1">
+<li>Wartet auf das Signal der Top-Half (<code>osWaitForever</code>)</li>
+<li>Wacht auf</li>
+<li>Führt die aufwändige Logik durch (Filter, CRC, Float-Mathe, Display)</li>
+<li>Geht wieder schlafen</li>
+</ol></li>
+</ul>
+<aside class="notes">
+<p>Bottom-Half ist keine ISR, sondern eine FreeRTOS-Task mit <code>for(;;)</code>. Hohe Prio, fast immer Blocked. Signal → Scheduler weckt Task. Im Task-Kontext läuft SysTick weiter → Millisekunden rechnen, Float, <code>printf</code> sind legal. Das System atmet.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="visualisierung-top-half-und-bottom-half" class="slide level2">
+<h2>Visualisierung: Top-Half und Bottom-Half</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">sequenceDiagram
+    participant HW as Hardware (Sensor)
+    participant ISR as Top-Half (ISR)
+    participant OS as FreeRTOS
+    participant Task as Bottom-Half (Task)
+
+    Note over Task: Task schläft (Blocked)
+
+    HW-&gt;&gt;ISR: 1. Pin-Flanke (Interrupt)
+    Note over ISR: CPU blockiert
+    ISR-&gt;&gt;ISR: 2. Daten ins RAM kopieren
+    ISR-&gt;&gt;OS: 3. Sende Signal (z. B. Semaphore)
+    ISR--&gt;&gt;HW: 4. ISR beendet (Return)
+
+    Note over OS: Context Switch
+    OS-&gt;&gt;Task: 5. Weckt Task (Ready -&gt; Running)
+
+    Note over Task: 6. CPU im RTOS-Modus
+    Task-&gt;&gt;Task: 7. Führt CRC und Filterung aus
+    Task-&gt;&gt;OS: 8. Warte auf nächstes Event
+    Note over Task: Task schläft wieder
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<aside class="notes">
+<p>Flow: Hardware alarmiert → Top-Half kopiert und signalisiert → ISR Return → OS weckt Bottom-Half → Task rechnet und blockiert erneut. Ping-Pong ISR/Task = Goldstandard der Embedded-Architektur.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="wie-signalisiert-die-top-half" class="slide level2">
+<h2>Wie signalisiert die Top-Half?</h2>
+<ul>
+<li>Die ISR muss der Bottom-Half eine Nachricht zukommen lassen</li>
+<li>Was eignet sich dafür perfekt? (Erinnerung an Termin 4)</li>
+<li>Der binäre Semaphor!
+<ul>
+<li>Bottom-Half: <code>osSemaphoreAcquire(..., osWaitForever)</code> und blockiert</li>
+<li>Top-Half: <code>osSemaphoreRelease(...)</code></li>
+<li>Ergebnis: Task wacht auf → keine CPU-Zeit verschwendet</li>
+</ul></li>
+<li>Alternative für Daten: Queue (ISR: <code>osMessageQueuePut</code>)</li>
+</ul>
+<aside class="notes">
+<p>Signal = binärer Semaphor aus VL4: kein Ownership. Task: Acquire und schlafen. ISR: Release. Für Messwerte dasselbe Muster mit Queue: Task Get, ISR Put.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-große-hürde-os-aufrufe-in-der-isr" class="slide level2">
+<h2>Die große Hürde: OS-Aufrufe in der ISR</h2>
+<ul>
+<li>Massives Problem: OS-Funktionen (Put, Release) in einer Hardware-ISR</li>
+<li>OS-Funktionen können blockierend sein</li>
+<li>Was, wenn die Queue voll ist und die ISR <code>Put()</code> aufruft?
+<ul>
+<li>OS würde versuchen, die ISR in die Blocked-Liste zu schieben</li>
+<li>Eine ISR kann man nicht schlafen legen</li>
+<li>Die CPU würde mit einem fatalen HardFault abstürzen</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>OS-APIs sind für Tasks geschrieben. Volle Queue → Task schläft. ISR hat keinen TCB, keine RTOS-Prio → Blockieren einer ISR ist physikalisch unmöglich und führt zum HardFault.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="native-freertos-lösung-eigene-isr-funktionen" class="slide level2">
+<h2>Native FreeRTOS-Lösung: Eigene ISR-Funktionen</h2>
+<ul>
+<li>FreeRTOS besitzt eine doppelte API</li>
+<li>Für jede Funktion: Variante mit Suffix <code>...FromISR</code>
+<ul>
+<li>Task: <code>xSemaphoreGive(mySem)</code></li>
+<li>ISR: <code>xSemaphoreGiveFromISR(mySem, ...)</code></li>
+</ul></li>
+<li>Unterschied: FromISR-Funktionen sind abgespeckt
+<ul>
+<li>Blockieren niemals (Queue: z. B. <code>errQUEUE_FULL</code>; Semaphor: <code>pdFALSE</code>)</li>
+<li>Manipulieren Listen unterbrechungssicher</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Richard Barry: API verdoppelt. In nativer ISR niemals die normale API → immer <code>FromISR</code>. Kein Blockieren; Error-Code bei voller Queue. Ready-Listen ISR-sicher.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-cmsis-rtos-v2-abstraktion" class="slide level2">
+<h2>Die CMSIS-RTOS v2 Abstraktion</h2>
+<ul>
+<li>CMSIS: keine doppelten Funktionen (<code>FromISR</code> existiert in der API nicht)</li>
+<li><code>osSemaphoreRelease()</code> ist intelligent
+<ul>
+<li>Liest heimlich das ARM-Register IPSR (Interrupt Program Status Register)</li>
+<li>Wenn <span class="math inline">\(\mathrm{IPSR} \neq 0\)</span> (Handler Mode): wir sind in einer ISR → intern Umleitung auf <code>...FromISR</code></li>
+<li>Wenn <span class="math inline">\(\mathrm{IPSR} = 0\)</span> (Thread Mode): wir sind in einer Task → normaler Aufruf</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>CMSIS-V2: immer <code>osSemaphoreRelease</code>. Wrapper prüft IPSR (<span class="math inline">\(\neq 0\)</span> = Interrupt). Automatisches Routing auf FreeRTOS-FromISR bzw. normale API. Riesiger Portabilitätsvorteil.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-eine-cmsis-regel-für-isrs" class="slide level2">
+<h2>Die eine CMSIS-Regel für ISRs</h2>
+<ul>
+<li>CMSIS nimmt uns fast alles ab → aber: eine ISR darf niemals warten!</li>
+<li>Goldene Regel: in einer ISR (Top-Half) muss <code>timeout</code> immer <span class="math inline">\(0\)</span> sein</li>
+<li><code>osWaitForever</code> in einer ISR → Aufruf schlägt fehl (<code>osErrorParameter</code>)</li>
+</ul>
+<aside class="notes">
+<p>Physik bleibt: ISR darf nicht warten. Timeout <code>osWaitForever</code> oder <span class="math inline">\(&gt; 0\)</span> in ISR → CMSIS bricht mit <code>osErrorParameter</code> ab (kein Absturz). Merke: in der ISR ist der Timeout ausnahmslos <span class="math inline">\(0\)</span>.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-context-switch-aus-der-isr-yielding" class="slide level2">
+<h2>Der Context-Switch aus der ISR (Yielding)</h2>
+<ul>
+<li>Szenario:
+<ul>
+<li>Task A (Prio Low) läuft</li>
+<li>ISR unterbricht Task A</li>
+<li>ISR ruft <code>Release()</code> und weckt Task B (Prio High, Bottom-Half)</li>
+<li>ISR beendet sich</li>
+</ul></li>
+<li>Was sollte passieren? Task B (High) sollte sofort rechnen</li>
+<li>Aber: OS schaltet standardmäßig erst beim nächsten SysTick (bis zu <span class="math inline">\(1\,\mathrm{ms}\)</span>)</li>
+<li>Folge: bis zu <span class="math inline">\(1\,\mathrm{ms}\)</span> Reaktionslatenz verschenkt</li>
+</ul>
+<aside class="notes">
+<p>Nach ISR-Return springt die CPU oft zurück in die Low-Prio-Task. High-Prio ist Ready, aber Scheduler wartet auf SysTick. Bis zu 1 ms Latenz verschenkt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="wie-löst-freertos-das-yielding" class="slide level2">
+<h2>Wie löst FreeRTOS das Yielding?</h2>
+<ul>
+<li>Die ISR muss dem OS sagen: wichtige Task geweckt → wechsle sofort nach ISR-Ende</li>
+<li>Native FreeRTOS über Parameter:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a>BaseType_t xHigherPriorityTaskWoken <span class="op">=</span> pdFALSE<span class="op">;</span></span>
+<span id="cb6-2"><a aria-label="2"></a></span>
+<span id="cb6-3"><a aria-label="3"></a><span class="co">// true, wenn Task B wichtiger ist als Task A</span></span>
+<span id="cb6-4"><a aria-label="4"></a>xSemaphoreGiveFromISR<span class="op">(</span>mySem<span class="op">,</span> <span class="op">&amp;</span>xHigherPriorityTaskWoken<span class="op">);</span></span>
+<span id="cb6-5"><a aria-label="5"></a></span>
+<span id="cb6-6"><a aria-label="6"></a><span class="co">// Fordert sofortigen Context-Switch (PendSV) an</span></span>
+<span id="cb6-7"><a aria-label="7"></a>portYIELD_FROM_ISR<span class="op">(</span>xHigherPriorityTaskWoken<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Dadurch triggert die ISR den PendSV-Interrupt manuell</li>
+</ul>
+<aside class="notes">
+<p>Native API: Pointer <code>xHigherPriorityTaskWoken</code>, danach <code>portYIELD_FROM_ISR</code>. Makro setzt PendSV-Bit. Nach ISR-Ende: PendSV-Handler statt Rückkehr zur alten Task.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="cmsis-ist-unser-freund" class="slide level2">
+<h2>CMSIS ist unser Freund!</h2>
+<ul>
+<li>Müssen wir <code>portYIELD_FROM_ISR</code> in CMSIS schreiben?</li>
+<li>Nein!</li>
+<li>Wrapper <code>osSemaphoreRelease()</code> macht Yielding intern automatisch</li>
+<li>Höhere Prio der geweckten Task → CMSIS triggert PendSV von allein</li>
+<li>Sie schreiben nur: <code>osSemaphoreRelease(mySem);</code></li>
+</ul>
+<aside class="notes">
+<p>CMSIS-V2: FromISR-Umleitung und Yield-Handling automatisch. Eine saubere Zeile in der HW-ISR: <code>osSemaphoreRelease</code>.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="visualisierung-präemption-aus-der-isr" class="slide level2">
+<h2>Visualisierung: Präemption aus der ISR</h2>
+<p><img data-src="../_livefigures/inline-plantuml-bf20b878.svg" class="livefigure"></p>
+<ul>
+<li>Latenz zwischen Hardware-Event (<span class="math inline">\(t=1\)</span>) und Start der Bottom-Half (<span class="math inline">\(t=3\)</span>) ist minimal</li>
+</ul>
+<aside class="notes">
+<p><span class="math inline">\(t=1\)</span>: HW-Interrupt. <span class="math inline">\(t=2\)</span>: Release stellt Task B Ready (noch nicht Running). <span class="math inline">\(t=3\)</span>: ISR-Return + PendSV → CPU an Task B. Task B fertig, bevor Task A es merkt → präemptives Interrupt-Handling.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="laborvorbereitung-deferred-interrupts" class="slide level2">
+<h2>Laborvorbereitung: Deferred Interrupts</h2>
+<ul>
+<li>Ziel: Hardware-Taster via EXTI-Interrupt und Semaphor an FreeRTOS-Task anbinden</li>
+<li>Hardware: blauer User-Button (B1) auf dem STM32H755 Nucleo, meist Pin PC13</li>
+<li>Setup in CubeMX:
+<ul>
+<li>Pin PC13 als <code>GPIO_EXTI13</code> (External Interrupt)</li>
+<li>NVIC: Haken bei <code>EXTI line[15:10] interrupts</code> (sonst feuert die ISR nicht)</li>
+<li>FreeRTOS: binären Semaphor <code>ButtonSem</code> anlegen</li>
+<li>Task <code>ButtonTask</code> (Bottom-Half) mit Priorität High</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Labor: blauer Button an PC13. CubeMX: EXTI13, NVIC-Haken setzen! Binary Semaphore + ButtonTask mit hoher Priorität.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-1-die-top-half-isr-in-c" class="slide level2">
+<h2>Schritt 1: Die Top-Half (ISR) in C</h2>
+<ul>
+<li>CubeIDE generiert die ISR; wir nutzen den sicheren HAL-Callback</li>
+<li>In <code>main.c</code> den leeren <code>HAL_GPIO_EXTI_Callback</code> füllen:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> 4 */</span></span>
+<span id="cb7-2"><a aria-label="2"></a><span class="dt">void</span> HAL_GPIO_EXTI_Callback<span class="op">(</span><span class="dt">uint16_t</span> GPIO_Pin<span class="op">)</span></span>
+<span id="cb7-3"><a aria-label="3"></a><span class="op">{</span></span>
+<span id="cb7-4"><a aria-label="4"></a>    <span class="cf">if</span> <span class="op">(</span>GPIO_Pin <span class="op">==</span> USER_Btn_Pin<span class="op">)</span> <span class="op">{</span>  <span class="co">// War es unser Taster?</span></span>
+<span id="cb7-5"><a aria-label="5"></a>        <span class="co">// 1. Wecke die Bottom-Half auf</span></span>
+<span id="cb7-6"><a aria-label="6"></a>        osSemaphoreRelease<span class="op">(</span>ButtonSemHandle<span class="op">);</span></span>
+<span id="cb7-7"><a aria-label="7"></a></span>
+<span id="cb7-8"><a aria-label="8"></a>        <span class="co">// 2. ISR sofort beenden</span></span>
+<span id="cb7-9"><a aria-label="9"></a>        <span class="co">// (CMSIS fordert intern PendSV an)</span></span>
+<span id="cb7-10"><a aria-label="10"></a>    <span class="op">}</span></span>
+<span id="cb7-11"><a aria-label="11"></a><span class="op">}</span></span>
+<span id="cb7-12"><a aria-label="12"></a><span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> 4 */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>HAL fängt den Assembler-Interrupt ab, löscht das Flag, ruft den Callback. Nur prüfen und <code>osSemaphoreRelease</code> → keine <code>printf</code>, keine Berechnung. Perfekte kurze Top-Half.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-2-die-bottom-half-task-in-c" class="slide level2">
+<h2>Schritt 2: Die Bottom-Half (Task) in C</h2>
+<ul>
+<li>In der Endlosschleife der Task auf das Signal warten:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="dt">void</span> StartButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span></span>
+<span id="cb8-2"><a aria-label="2"></a><span class="op">{</span></span>
+<span id="cb8-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb8-4"><a aria-label="4"></a>        <span class="co">// 1. Schlafe (0% CPU), bis ISR signalisiert</span></span>
+<span id="cb8-5"><a aria-label="5"></a>        osSemaphoreAcquire<span class="op">(</span>ButtonSemHandle<span class="op">,</span> osWaitForever<span class="op">);</span></span>
+<span id="cb8-6"><a aria-label="6"></a></span>
+<span id="cb8-7"><a aria-label="7"></a>        <span class="co">// 2. WACH — hier die aufwändige Arbeit</span></span>
+<span id="cb8-8"><a aria-label="8"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
+<span id="cb8-9"><a aria-label="9"></a>        printf<span class="op">(</span><span class="st">"BUTTON PRESSED!</span><span class="sc">\n</span><span class="st">"</span><span class="op">);</span></span>
+<span id="cb8-10"><a aria-label="10"></a></span>
+<span id="cb8-11"><a aria-label="11"></a>        <span class="co">// Demo-Last (nur Demo!): busy-wait, Task bleibt Running</span></span>
+<span id="cb8-12"><a aria-label="12"></a>        <span class="co">// In Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms</span></span>
+<span id="cb8-13"><a aria-label="13"></a>        HAL_Delay<span class="op">(</span><span class="dv">100</span><span class="op">);</span>  <span class="co">// Demo only — nicht in Produktion</span></span>
+<span id="cb8-14"><a aria-label="14"></a>    <span class="op">}</span></span>
+<span id="cb8-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Acquire mit <code>osWaitForever</code> → Blocked. Nach Knopfdruck: LED, <code>printf</code>, Demo-Last. <code>HAL_Delay</code> busy-waitet und hält die Task im Running-Zustand → nur zur Demo. In Produktion <code>osDelay</code> (Ticks!), damit die Task Blocked geht und andere Tasks rechnen können. In der ISR hätte jedes Delay den Chip gekillt; im Task-Kontext überlebt das OS.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="was-werden-wir-im-labor-beobachten" class="slide level2">
+<h2>Was werden wir im Labor beobachten?</h2>
+<ul>
+<li>Button drücken → LED und Console verzögerungsfrei (für das Auge)</li>
+<li>Beweis der RTOS-Architektur:
+<ul>
+<li>Trotz <code>printf</code> und Delay stürzen parallel laufende Tasks (z. B. blinkende LED) nicht ab</li>
+<li>Eine noch wichtigere Task könnte unser <code>printf</code> präemptieren</li>
+</ul></li>
+<li>Hardware-Interrupts und Software-Scheduling sind sicher vereint</li>
+</ul>
+<aside class="notes">
+<p>Keine Polling-Latenz, ISR-Regeln eingehalten, Scheduler bleibt Herr der Lage. Demo-Delay auf Prio High; Realtime-Task mit höherer Prio könnte präemptieren. Finale der Woche: Hardware-Welt und FreeRTOS vereint.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-des-tages" class="slide level2">
+<h2>Zusammenfassung des Tages</h2>
+<ul>
+<li>Queues: transportieren Daten (Values oder Pointer) threadsicher zwischen Tasks; blockieren bei Über-/Unterlast</li>
+<li>Mailboxes: Zustandskommunikation (Overwrite erlaubt)</li>
+<li>ISRs müssen extrem kurz sein, damit der RTOS-SysTick nicht blockiert</li>
+<li>Deferred Interrupt Processing: Top-Half-ISR löst nur ein Event (Semaphor) aus; Bottom-Half-Task erledigt die Arbeit</li>
+<li>CMSIS-RTOS v2: FromISR-Logik und Context-Yielding automatisch</li>
+</ul>
+<aside class="notes">
+<p>Heute: Queues (Value/Pointer), Mailboxes, Top-/Bottom-Half über binären Semaphor in CMSIS. Ins Labor → EXTI-Interrupt ausprobieren. Viel Erfolg!</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+
+
+</section>
+    </div>
+  <div class="quarto-auto-generated-content" style="display: none;">
+<p><img src="../assets/dhbw_logo.svg" class="slide-logo"></p>
+<div class="footer footer-default">
+
+</div>
+</div></div>
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script>
+  <script src="../site_libs/revealjs/dist/reveal.js"></script>
+  <!-- reveal.js plugins -->
+  <script src="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
+  <script src="../site_libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
+  <script src="../site_libs/revealjs/plugin/reveal-menu/menu.js"></script>
+  <script src="../site_libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
+  <script src="../site_libs/revealjs/plugin/quarto-support/support.js"></script>
+  
+
+  <script src="../site_libs/revealjs/plugin/notes/notes.js"></script>
+  <script src="../site_libs/revealjs/plugin/search/search.js"></script>
+  <script src="../site_libs/revealjs/plugin/zoom/zoom.js"></script>
+  <script src="../site_libs/revealjs/plugin/math/math.js"></script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
+
+  <script>
+
+      // Full list of configuration options available at:
+      // https://revealjs.com/config/
+      Reveal.initialize({
+'controlsAuto': true,
+'previewLinksAuto': true,
+'pdfSeparateFragments': false,
+'autoAnimateEasing': "ease",
+'autoAnimateDuration': 1,
+'autoAnimateUnmatched': true,
+'jumpToSlide': true,
+'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
+'smaller': false,
+ 
+        // Display controls in the bottom right corner
+        controls: false,
+
+        // Help the user learn the controls by providing hints, for example by
+        // bouncing the down arrow when they first encounter a vertical slide
+        controlsTutorial: false,
+
+        // Determines where controls appear, "edges" or "bottom-right"
+        controlsLayout: 'edges',
+
+        // Visibility rule for backwards navigation arrows; "faded", "hidden"
+        // or "visible"
+        controlsBackArrows: 'faded',
+
+        // Display a presentation progress bar
+        progress: true,
+
+        // Display the page number of the current slide
+        slideNumber: 'c/t',
+
+        // 'all', 'print', or 'speaker'
+        showSlideNumber: 'all',
+
+        // Add the current slide number to the URL hash so that reloading the
+        // page/copying the URL will return you to the same slide
+        hash: true,
+
+        // Start with 1 for the hash rather than 0
+        hashOneBasedIndex: false,
+
+        // Flags if we should monitor the hash and change slides accordingly
+        respondToHashChanges: true,
+
+        // Push each slide change to the browser history
+        history: true,
+
+        // Enable keyboard shortcuts for navigation
+        keyboard: true,
+
+        // Enable the slide overview mode
+        overview: true,
+
+        // Disables the default reveal.js slide layout (scaling and centering)
+        // so that you can use custom CSS layout
+        disableLayout: false,
+
+        // Vertical centering of slides
+        center: false,
+
+        // Enables touch navigation on devices with touch input
+        touch: true,
+
+        // Loop the presentation
+        loop: false,
+
+        // Change the presentation direction to be RTL
+        rtl: false,
+
+        // see https://revealjs.com/vertical-slides/#navigation-mode
+        navigationMode: 'linear',
+
+        // Randomizes the order of slides each time the presentation loads
+        shuffle: false,
+
+        // Turns fragments on and off globally
+        fragments: true,
+
+        // Flags whether to include the current fragment in the URL,
+        // so that reloading brings you to the same fragment position
+        fragmentInURL: false,
+
+        // Flags if the presentation is running in an embedded mode,
+        // i.e. contained within a limited portion of the screen
+        embedded: false,
+
+        // Flags if we should show a help overlay when the questionmark
+        // key is pressed
+        help: true,
+
+        // Flags if it should be possible to pause the presentation (blackout)
+        pause: true,
+
+        // Flags if speaker notes should be visible to all viewers
+        showNotes: false,
+
+        // Global override for autoplaying embedded media (null/true/false)
+        autoPlayMedia: null,
+
+        // Global override for preloading lazy-loaded iframes (null/true/false)
+        preloadIframes: null,
+
+        // Number of milliseconds between automatically proceeding to the
+        // next slide, disabled when set to 0, this value can be overwritten
+        // by using a data-autoslide attribute on your slides
+        autoSlide: 0,
+
+        // Stop auto-sliding after user input
+        autoSlideStoppable: true,
+
+        // Use this method for navigation when auto-sliding
+        autoSlideMethod: null,
+
+        // Specify the average time in seconds that you think you will spend
+        // presenting each slide. This is used to show a pacing timer in the
+        // speaker view
+        defaultTiming: null,
+
+        // Enable slide navigation via mouse wheel
+        mouseWheel: false,
+
+        // The display mode that will be used to show slides
+        display: 'block',
+
+        // Hide cursor if inactive
+        hideInactiveCursor: true,
+
+        // Time before the cursor is hidden (in ms)
+        hideCursorTime: 5000,
+
+        // Opens links in an iframe preview overlay
+        previewLinks: false,
+
+        // Transition style (none/fade/slide/convex/concave/zoom)
+        transition: 'none',
+
+        // Transition speed (default/fast/slow)
+        transitionSpeed: 'default',
+
+        // Transition style for full page slide backgrounds
+        // (none/fade/slide/convex/concave/zoom)
+        backgroundTransition: 'none',
+
+        // Number of slides away from the current that are visible
+        viewDistance: 3,
+
+        // Number of slides away from the current that are visible on mobile
+        // devices. It is advisable to set this to a lower number than
+        // viewDistance in order to save resources.
+        mobileViewDistance: 2,
+
+        // The "normal" size of the presentation, aspect ratio will be preserved
+        // when the presentation is scaled to fit different resolutions. Can be
+        // specified using percentage units.
+        width: 1280,
+
+        height: 720,
+
+        // Factor of the display size that should remain empty around the content
+        margin: 8.0e-2,
+
+        math: {
+          mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@2.7.9/MathJax.js',
+          config: 'TeX-AMS_HTML-full',
+          tex2jax: {
+            inlineMath: [['\\(','\\)']],
+            displayMath: [['\\[','\\]']],
+            balanceBraces: true,
+            processEscapes: false,
+            processRefs: true,
+            processEnvironments: true,
+            preview: 'TeX',
+            skipTags: ['script','noscript','style','textarea','pre','code'],
+            ignoreClass: 'tex2jax_ignore',
+            processClass: 'tex2jax_process'
+          },
+        },
+
+        // reveal.js plugins
+        plugins: [QuartoLineHighlight, PdfExport, RevealMenu, QuartoSupport,
+
+          RevealMath,
+          RevealNotes,
+          RevealSearch,
+          RevealZoom
+        ]
+      });
+    </script>
+    <script>
+    /**
+     * Fit Quarto/Reveal Mermaid SVGs to remaining slide space.
+     * Dimensions from getBoundingClientRect are viewport pixels; CSS sizes inside
+     * Reveal slides are unscaled — divide by Reveal.getScale().
+     */
+    (function () {
+      const BOTTOM_PAD = 36;
+      const SIDE_PAD_RATIO = 0.92;
+      const MAX_SCALE = 3.4;
+
+      function presentSlide() {
+        var present = document.querySelector("section.present");
+        if (!present) return null;
+        var nested = present.querySelector(":scope > section.present");
+        return nested || present;
+      }
+
+      function revealScale() {
+        if (window.Reveal && typeof Reveal.getScale === "function") {
+          var s = Reveal.getScale();
+          return s > 0.05 ? s : 1;
+        }
+        return 1;
+      }
+
+      function ensureWrap(svg) {
+        var parent = svg.parentElement;
+        if (!parent) return null;
+        if (parent.classList.contains("mermaid-fit")) return parent;
+        var wrap = document.createElement("div");
+        wrap.className = "mermaid-fit";
+        parent.insertBefore(wrap, svg);
+        wrap.appendChild(svg);
+        return wrap;
+      }
+
+      function contentBottomAbove(slide, wrap) {
+        var top = slide.getBoundingClientRect().top;
+        var bottom = top + 8;
+        var children = slide.children;
+        for (var i = 0; i < children.length; i++) {
+          var el = children[i];
+          if (el === wrap || el.classList.contains("mermaid-fit")) break;
+          if (el.querySelector && el.querySelector("svg.mermaid-js")) break;
+          if (el.tagName === "ASIDE") continue;
+          var r = el.getBoundingClientRect();
+          if (r.height > 1) bottom = Math.max(bottom, r.bottom);
+        }
+        return bottom;
+      }
+
+      function naturalSize(svg) {
+        if (svg.dataset.natW && svg.dataset.natH) {
+          return { w: +svg.dataset.natW, h: +svg.dataset.natH };
+        }
+        var vb = svg.viewBox && svg.viewBox.baseVal;
+        if (vb && vb.width > 0 && vb.height > 0) {
+          svg.dataset.natW = String(vb.width);
+          svg.dataset.natH = String(vb.height);
+          return { w: vb.width, h: vb.height };
+        }
+        var wAttr = parseFloat(svg.getAttribute("width"));
+        var hAttr = parseFloat(svg.getAttribute("height"));
+        if (wAttr > 0 && hAttr > 0) {
+          svg.dataset.natW = String(wAttr);
+          svg.dataset.natH = String(hAttr);
+          return { w: wAttr, h: hAttr };
+        }
+        var r = svg.getBoundingClientRect();
+        var rs = revealScale();
+        var w = r.width / rs || 320;
+        var h = r.height / rs || 120;
+        svg.dataset.natW = String(w);
+        svg.dataset.natH = String(h);
+        return { w: w, h: h };
+      }
+
+      function fitMermaids() {
+        var slide = presentSlide();
+        if (!slide) return;
+
+        var rs = revealScale();
+        var slideRect = slide.getBoundingClientRect();
+        var svgs = slide.querySelectorAll("svg.mermaid-js");
+
+        for (var i = 0; i < svgs.length; i++) {
+          var svg = svgs[i];
+          var wrap = ensureWrap(svg);
+          if (!wrap) continue;
+
+          svg.style.removeProperty("transform");
+          svg.style.removeProperty("max-width");
+          svg.style.removeProperty("zoom");
+          wrap.style.zoom = "";
+
+          var nat = naturalSize(svg);
+          var above = contentBottomAbove(slide, wrap);
+          var availW = (slideRect.width * SIDE_PAD_RATIO) / rs;
+          var availH = Math.max(72, (slideRect.bottom - above - BOTTOM_PAD) / rs);
+
+          var scale = Math.min(availW / nat.w, availH / nat.h, MAX_SCALE);
+          if (!(scale > 0)) scale = 1;
+
+          var targetW = Math.max(1, Math.round(nat.w * scale));
+          var targetH = Math.max(1, Math.round(nat.h * scale));
+
+          svg.setAttribute("width", targetW);
+          svg.setAttribute("height", targetH);
+          svg.style.width = targetW + "px";
+          svg.style.height = targetH + "px";
+          svg.style.display = "block";
+          svg.style.margin = "0.35rem auto 0";
+        }
+      }
+
+      function scheduleFit() {
+        requestAnimationFrame(function () {
+          fitMermaids();
+          setTimeout(fitMermaids, 150);
+          setTimeout(fitMermaids, 500);
+          setTimeout(fitMermaids, 1100);
+        });
+      }
+
+      window.addEventListener("load", scheduleFit);
+
+      function bindReveal() {
+        if (!window.Reveal || !Reveal.on) return false;
+        Reveal.on("ready", scheduleFit);
+        Reveal.on("slidechanged", scheduleFit);
+        if (Reveal.isReady && Reveal.isReady()) scheduleFit();
+        return true;
+      }
+
+      if (!bindReveal()) {
+        window.addEventListener("load", function () {
+          var tries = 0;
+          var id = setInterval(function () {
+            if (bindReveal() || ++tries > 50) clearInterval(id);
+          }, 100);
+        });
+      }
+
+      window.dhbwMermaidFit = fitMermaids;
+    })();
+    </script>
+    <script id="quarto-html-after-body" type="application/javascript">
+      window.document.addEventListener("DOMContentLoaded", function (event) {
+        const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+        tabsets.forEach(function(tabset) {
+          const tabby = new Tabby('#' + tabset.id);
+        });
+        const isCodeAnnotation = (el) => {
+          for (const clz of el.classList) {
+            if (clz.startsWith('code-annotation-')) {                     
+              return true;
+            }
+          }
+          return false;
+        }
+        const onCopySuccess = function(e) {
+          // button target
+          const button = e.trigger;
+          // don't keep focus
+          button.blur();
+          // flash "checked"
+          button.classList.add('code-copy-button-checked');
+          var currentTitle = button.getAttribute("title");
+          button.setAttribute("title", "Copied!");
+          let tooltip;
+          if (window.bootstrap) {
+            button.setAttribute("data-bs-toggle", "tooltip");
+            button.setAttribute("data-bs-placement", "left");
+            button.setAttribute("data-bs-title", "Copied!");
+            tooltip = new bootstrap.Tooltip(button, 
+              { trigger: "manual", 
+                customClass: "code-copy-button-tooltip",
+                offset: [0, -8]});
+            tooltip.show();    
+          }
+          setTimeout(function() {
+            if (tooltip) {
+              tooltip.hide();
+              button.removeAttribute("data-bs-title");
+              button.removeAttribute("data-bs-toggle");
+              button.removeAttribute("data-bs-placement");
+            }
+            button.setAttribute("title", currentTitle);
+            button.classList.remove('code-copy-button-checked');
+          }, 1000);
+          // clear code selection
+          e.clearSelection();
+        }
+        const getTextToCopy = function(trigger) {
+          const outerScaffold = trigger.parentElement.cloneNode(true);
+          const codeEl = outerScaffold.querySelector('code');
+          for (const childEl of codeEl.children) {
+            if (isCodeAnnotation(childEl)) {
+              childEl.remove();
+            }
+          }
+          return codeEl.innerText;
+        }
+        const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+          text: getTextToCopy
+        });
+        clipboard.on('success', onCopySuccess);
+        if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+          const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+            text: getTextToCopy,
+            container: window.document.getElementById('quarto-embedded-source-code-modal')
+          });
+          clipboardModal.on('success', onCopySuccess);
+        }
+          var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+          var mailtoRegex = new RegExp(/^mailto:/);
+            var filterRegex = new RegExp("https:\/\/dantschi\.github\.io\/echtzeitsysteme\/");
+          var isInternal = (href) => {
+              return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+          }
+          // Inspect non-navigation links and adorn them if external
+         var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+          for (var i=0; i<links.length; i++) {
+            const link = links[i];
+            if (!isInternal(link.href)) {
+              // undo the damage that might have been done by quarto-nav.js in the case of
+              // links that we want to consider external
+              if (link.dataset.originalHref !== undefined) {
+                link.href = link.dataset.originalHref;
+              }
+            }
+          }
+        function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+          const config = {
+            allowHTML: true,
+            maxWidth: 500,
+            delay: 100,
+            arrow: false,
+            appendTo: function(el) {
+                return el.closest('section.slide') || el.parentElement;
+            },
+            interactive: true,
+            interactiveBorder: 10,
+            theme: 'light-border',
+            placement: 'bottom-start',
+          };
+          if (contentFn) {
+            config.content = contentFn;
+          }
+          if (onTriggerFn) {
+            config.onTrigger = onTriggerFn;
+          }
+          if (onUntriggerFn) {
+            config.onUntrigger = onUntriggerFn;
+          }
+            config['offset'] = [0,0];
+            config['maxWidth'] = 700;
+          window.tippy(el, config); 
+        }
+        const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+        for (var i=0; i<noterefs.length; i++) {
+          const ref = noterefs[i];
+          tippyHover(ref, function() {
+            // use id or data attribute instead here
+            let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+            try { href = new URL(href).hash; } catch {}
+            const id = href.replace(/^#\/?/, "");
+            const note = window.document.getElementById(id);
+            if (note) {
+              return note.innerHTML;
+            } else {
+              return "";
+            }
+          });
+        }
+        const findCites = (el) => {
+          const parentEl = el.parentElement;
+          if (parentEl) {
+            const cites = parentEl.dataset.cites;
+            if (cites) {
+              return {
+                el,
+                cites: cites.split(' ')
+              };
+            } else {
+              return findCites(el.parentElement)
+            }
+          } else {
+            return undefined;
+          }
+        };
+        var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+        for (var i=0; i<bibliorefs.length; i++) {
+          const ref = bibliorefs[i];
+          const citeInfo = findCites(ref);
+          if (citeInfo) {
+            tippyHover(citeInfo.el, function() {
+              var popup = window.document.createElement('div');
+              citeInfo.cites.forEach(function(cite) {
+                var citeDiv = window.document.createElement('div');
+                citeDiv.classList.add('hanging-indent');
+                citeDiv.classList.add('csl-entry');
+                var biblioDiv = window.document.getElementById('ref-' + cite);
+                if (biblioDiv) {
+                  citeDiv.innerHTML = biblioDiv.innerHTML;
+                }
+                popup.appendChild(citeDiv);
+              });
+              return popup.innerHTML;
+            });
+          }
+        }
+      });
+      </script>
+    
+
+</body></html>
