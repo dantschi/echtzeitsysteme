@@ -90,26 +90,45 @@ local function norm_path(p)
   return (tostring(p):gsub("\\", "/"))
 end
 
-local function cache_dir()
-  -- MUST stay relative: pandoc io.open on Windows cannot encode absolute
-  -- paths that contain non-ASCII characters (e.g. ü in the user profile).
-  local dir = "_livefigures"
+local function ensure_dir(dir)
   local marker = path.join({ dir, ".keep" })
   local probe = io.open(marker, "a")
   if probe then
     probe:close()
+    return true
+  end
+  if pandoc.system.os == "mingw32" or pandoc.system.os == "windows" then
+    os.execute('mkdir "' .. dir .. '" 2>nul')
   else
-    if pandoc.system.os == "mingw32" or pandoc.system.os == "windows" then
-      os.execute('mkdir "' .. dir .. '" 2>nul')
-    else
-      os.execute('mkdir -p "' .. dir .. '"')
+    os.execute('mkdir -p "' .. dir .. '"')
+  end
+  local again = io.open(marker, "a")
+  if again then
+    again:close()
+    return true
+  end
+  return false
+end
+
+local function cache_dir()
+  -- MUST stay relative: pandoc io.open on Windows cannot encode absolute
+  -- paths that contain non-ASCII characters (e.g. ü in the user profile).
+  -- Always prefer the Quarto project-root cache so revealjs and handout/PDF
+  -- share the same assets even when the filter CWD is vorlesungen/ or _handout/.
+  local prefixes = { "", "../", "../../" }
+  for _, prefix in ipairs(prefixes) do
+    local yml = io.open(prefix .. "_quarto.yml", "r")
+    if yml then
+      yml:close()
+      local dir = prefix .. "_livefigures"
+      if ensure_dir(dir) then
+        return dir
+      end
     end
-    local again = io.open(marker, "a")
-    if again then
-      again:close()
-    else
-      fail("cannot create livefigures cache directory '" .. dir .. "'")
-    end
+  end
+  local dir = "_livefigures"
+  if not ensure_dir(dir) then
+    fail("cannot create livefigures cache directory '" .. dir .. "'")
   end
   return dir
 end
@@ -212,13 +231,16 @@ end
 local function relative_to(target, from)
   target = norm_path(target)
   from = norm_path(from)
-  -- Project-root relative cache: "_livefigures/..."
-  if target:match("^_livefigures/") or target:match("^%./_livefigures/") then
+  -- Normalize cache targets written as "_livefigures/..." or "../_livefigures/..."
+  local cache_file = target:match("^%./?_livefigures/(.+)$")
+    or target:match("^%.%./_livefigures/(.+)$")
+    or target:match("^%.%./%.%./_livefigures/(.+)$")
+  if cache_file then
     local input = norm_path(quarto.doc.input_file)
     if input:match("/vorlesungen/") or input:match("^vorlesungen/") then
-      return "../" .. target:gsub("^%./", "")
+      return "../_livefigures/" .. cache_file
     end
-    return target:gsub("^%./", "")
+    return "_livefigures/" .. cache_file
   end
   local t, f = {}, {}
   for seg in target:gmatch("[^/]+") do t[#t + 1] = seg end

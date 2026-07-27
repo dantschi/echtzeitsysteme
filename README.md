@@ -19,13 +19,13 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 | Einheit | Thema | Schwerpunkt | Folien | Handout | Übungsblatt | Musterlösung |
 |--------:|-------|-------------|:------:|:-------:|:-----------:|:------------:|
 | 1 | Was ist Echtzeit | Definition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit-handout.pdf) | — | — |
-| 2 | Scheduling-Theorie | Task-Modell, WCET, Utilization, kooperativ/präemptiv, RMS-Einstieg | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie-handout.pdf) | folgt | folgt |
-| 3 | Scheduling-Grundlagen | Präemption, Prioritäten, Online/Offline, Metriken | folgt | folgt | folgt | folgt |
+| 2 | Scheduling-Theorie | Task-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie-handout.pdf) | folgt | folgt |
+| 3 | Einführung Echtzeitbetriebssysteme | FreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32 | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos-handout.pdf) | folgt | folgt |
 | 4 | Statisches Priority Scheduling | Rate Monotonic (RM), Deadline Monotonic (DM) | folgt | folgt | folgt | folgt |
 | 5 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
 | 6 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt | folgt | folgt |
 | 7 | Ressourcen und Synchronisation | Priority Inversion, PCP, Stack Resource Policy | folgt | folgt | folgt | folgt |
-| 8 | Echtzeitbetriebssysteme | Tasks, Queues, ISRs, FreeRTOS-Praxis | folgt | folgt | folgt | folgt |
+| 8 | FreeRTOS-Praxis (fortgeschritten) | Queues, ISRs, Synchronisation in FreeRTOS | folgt | folgt | folgt | folgt |
 | 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt | folgt | folgt |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
