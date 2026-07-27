@@ -1,0 +1,2173 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<link href="../assets/dhbw_logo.svg" rel="icon" type="image/svg+xml">
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-html/tabby.min.js"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/light-border.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-contrib/livefigures-0.8.0/livefigures.css" rel="stylesheet"><meta charset="utf-8">
+  <meta name="generator" content="quarto-1.10.18">
+
+  <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
+  <title>Echtzeitsysteme – 08 · Multicore-Synchronisation &amp; Safety</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/reset.css">
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/reveal.css">
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      { color: #003b4f; background-color: #f1f3f5; }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span { color: #003b4f; } /* Normal */
+    code span.al { color: #ad0000; } /* Alert */
+    code span.an { color: #5e5e5e; } /* Annotation */
+    code span.at { color: #657422; } /* Attribute */
+    code span.bn { color: #ad0000; } /* BaseN */
+    code span.bu { } /* BuiltIn */
+    code span.cf { color: #003b4f; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #20794d; } /* Char */
+    code span.cn { color: #8f5902; } /* Constant */
+    code span.co { color: #5e5e5e; } /* Comment */
+    code span.cv { color: #5e5e5e; font-style: italic; } /* CommentVar */
+    code span.do { color: #5e5e5e; font-style: italic; } /* Documentation */
+    code span.dt { color: #ad0000; } /* DataType */
+    code span.dv { color: #ad0000; } /* DecVal */
+    code span.er { color: #ad0000; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #ad0000; } /* Float */
+    code span.fu { color: #4758ab; } /* Function */
+    code span.im { color: #00769e; } /* Import */
+    code span.in { color: #5e5e5e; } /* Information */
+    code span.kw { color: #003b4f; font-weight: bold; } /* Keyword */
+    code span.op { color: #5e5e5e; } /* Operator */
+    code span.ot { color: #003b4f; } /* Other */
+    code span.pp { color: #ad0000; } /* Preprocessor */
+    code span.sc { color: #5e5e5e; } /* SpecialChar */
+    code span.ss { color: #20794d; } /* SpecialString */
+    code span.st { color: #20794d; } /* String */
+    code span.va { color: #111111; } /* Variable */
+    code span.vs { color: #20794d; } /* VerbatimString */
+    code span.wa { color: #5e5e5e; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/theme/quarto-f355cf95444bdbe7a358cd689c441e6f.css">
+  <link href="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
+  <link href="../site_libs/revealjs/plugin/quarto-support/footer.css" rel="stylesheet">
+  <style type="text/css">
+    .reveal div.sourceCode {
+      margin: 0;
+      overflow: auto;
+    }
+    .reveal div.hanging-indent {
+      margin-left: 1em;
+      text-indent: -1em;
+    }
+    .reveal .slide:not(.center) {
+      height: 100%;
+    }
+    .reveal .slide.scrollable {
+      overflow-y: auto;
+    }
+    .reveal .footnotes {
+      height: 100%;
+      overflow-y: auto;
+    }
+    .reveal .slide .absolute {
+      position: absolute;
+      display: block;
+    }
+    .reveal .footnotes ol {
+      counter-reset: ol;
+      list-style-type: none; 
+      margin-left: 0;
+    }
+    .reveal .footnotes ol li:before {
+      counter-increment: ol;
+      content: counter(ol) ". "; 
+    }
+    .reveal .footnotes ol li > p:first-child {
+      display: inline-block;
+    }
+    .reveal .slide ul,
+    .reveal .slide ol {
+      margin-bottom: 0.5em;
+    }
+    .reveal .slide ul li,
+    .reveal .slide ol li {
+      margin-top: 0.4em;
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide ul[role="tablist"] li {
+      margin-bottom: 0;
+    }
+    .reveal .slide ul li > *:first-child,
+    .reveal .slide ol li > *:first-child {
+      margin-block-start: 0;
+    }
+    .reveal .slide ul li > *:last-child,
+    .reveal .slide ol li > *:last-child {
+      margin-block-end: 0;
+    }
+    .reveal .slide .columns:nth-child(3) {
+      margin-block-start: 0.8em;
+    }
+    .reveal blockquote {
+      box-shadow: none;
+    }
+    .reveal .tippy-content>* {
+      margin-top: 0.2em;
+      margin-bottom: 0.7em;
+    }
+    .reveal .tippy-content>*:last-child {
+      margin-bottom: 0.2em;
+    }
+    .reveal .slide > img.stretch.quarto-figure-center,
+    .reveal .slide > img.r-stretch.quarto-figure-center {
+      display: block;
+      margin-left: auto;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-left,
+    .reveal .slide > img.r-stretch.quarto-figure-left  {
+      display: block;
+      margin-left: 0;
+      margin-right: auto; 
+    }
+    .reveal .slide > img.stretch.quarto-figure-right,
+    .reveal .slide > img.r-stretch.quarto-figure-right  {
+      display: block;
+      margin-left: auto;
+      margin-right: 0; 
+    }
+  </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+</head>
+<body class="quarto-light">
+  <div class="reveal">
+    <div class="slides">
+
+<section id="title-slide" class="quarto-title-block center">
+  <h1 class="title">08 · Multicore-Synchronisation &amp; Safety</h1>
+  <p class="subtitle">HSEM, Watchdogs, MPU · EZS · DHBW Stuttgart</p>
+
+<div class="quarto-title-authors">
+<div class="quarto-title-author">
+<div class="quarto-title-author-name">
+Prof.&nbsp;Dr.-Ing. Daniel Klünder
+</div>
+</div>
+</div>
+
+</section>
+<section id="willkommen-in-der-welt-der-robustheit" class="slide level2">
+<h2>Willkommen in der Welt der Robustheit!</h2>
+<ul>
+<li>Herzlich Willkommen zum 8. Termin unserer Vorlesung.</li>
+<li>Letzte Woche: Timing-Analyse mit der BlueBox.</li>
+<li>Davor (Termin 6): Unser erstes Multicore-Projekt mit Shared Memory und Cache-Kohärenz.</li>
+<li>Heute lösen wir das letzte große architektonische Multicore-Problem.</li>
+<li>Und wir widmen uns dem Thema <strong>Safety</strong> (Ausfallsicherheit).</li>
+<li>Ziel: Wir bauen Systeme, die sich selbst überwachen und im Notfall retten können!</li>
+</ul>
+<aside class="notes">
+<p>Guten Morgen und herzlich willkommen zur achten Vorlesung! In den vergangenen Wochen haben Sie gelernt, wie man Systeme programmiert und wie man beweist, dass sie hartes Echtzeit-Timing einhalten. Sie haben zwei Kerne miteinander kommunizieren lassen und das gefährliche Cache-Problem gelöst. Aber wenn wir ehrlich sind: Unser Code von damals war naiv. Wir haben uns darauf verlassen, dass immer nur ein Kern zur selben Zeit in das geteilte RAM-Struct schreibt. Was aber, wenn beide das gleichzeitig tun? Heute lösen wir dieses Problem auf Silizium-Ebene. Im zweiten Teil der Vorlesung beschäftigen wir uns mit Safety. Wir klären die Frage: Wer rettet eigentlich das Auto, wenn Ihre Software trotz all unserer Bemühungen in einen Deadlock rennt?</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="agenda-für-heute" class="slide level2">
+<h2>Agenda für heute</h2>
+<ul>
+<li>Recap: Unser Multicore-Handshake (Ping-Pong).</li>
+<li>Das ungelöste Problem: Multicore Race Conditions.</li>
+<li>Hardware Semaphores (HSEM): Atomarität auf Bus-Ebene.</li>
+<li>Safety in Embedded Systems: IWDG und WWDG (Fenster, EWI).</li>
+<li>Speicherschutz mit der MPU (Null-Pointer, Stack Guard).</li>
+<li>Labor: HSEM-Ping-Pong umbauen und WWDG live crashen.</li>
+</ul>
+<aside class="notes">
+<p>Unsere heutige Agenda teilt sich in zwei große Blöcke. Zuerst werfen wir einen Blick zurück auf unser Multicore-Labor. Wir zeigen auf, warum unser Ping-Pong-Protokoll zwar funktionierte, für asynchrone Sensordaten aber völlig ungeeignet ist. Wir führen das HSEM-Modul unseres Chips ein, um Hardware-Schlösser über Core-Grenzen hinweg zu bauen. Im zweiten Block wechseln wir zur Safety: Independent und Window Watchdog inklusive Early Wakeup Interrupt, danach die Memory Protection Unit als physikalisches Sicherheitsnetz. Zum Abschluss bereiten wir das Labor vor: HSEM-Synchronisation und WWDG-Crash-Tests.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="recap-der-ping-pong-datenaustausch" class="slide level2">
+<h2>Recap: Der Ping-Pong Datenaustausch</h2>
+<ul>
+<li>In Woche 6 haben wir Daten über den SRAM4 ausgetauscht.</li>
+<li>Wir nutzten ein strenges Handshake-Protokoll:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb1-2"><a aria-label="2"></a>    <span class="dt">uint8_t</span> m7_ready<span class="op">;</span></span>
+<span id="cb1-3"><a aria-label="3"></a>    <span class="dt">uint8_t</span> m4_ready<span class="op">;</span></span>
+<span id="cb1-4"><a aria-label="4"></a>    <span class="dt">uint32_t</span> payload<span class="op">;</span></span>
+<span id="cb1-5"><a aria-label="5"></a><span class="op">}</span> SharedData_t<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Der Ablauf: Der M7 schreibt den Payload, setzt <code>m7_ready = 1</code> und wartet.</li>
+<li>Der M4 liest, schreibt und setzt <code>m4_ready = 1</code>.</li>
+<li>Das System war strikt synchron. Es gab keine Kollisionen.</li>
+</ul>
+<aside class="notes">
+<p>Erinnern wir uns an die Struktur unseres Shared Memorys. Wir hatten ein C-Struct im SRAM4 abgelegt, der Cache war per MPU deaktiviert. Wir haben die Kommunikation über zwei Flags orchestriert: m7_ready und m4_ready. Es war wie beim Funkverkehr: Ein Kern sprach, schloss mit “Over”, und erst dann durfte der andere Kern antworten. Dieses strikt synchrone Handshake-Protokoll verhinderte, dass jemals beide Kerne in exakt derselben Mikrosekunde auf den payload-Wert schreibend zugreifen wollten.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-ungelöste-problem" class="slide level2">
+<h2>Das ungelöste Problem</h2>
+<ul>
+<li>Was passiert in der Realität?</li>
+<li>Beide Kerne arbeiten völlig asynchron.</li>
+<li>Der Cortex-M7 (Ethernet-Stack) und der Cortex-M4 (Motor-Regler) wollen gleichzeitig auf einen globalen Fehler-Counter im SRAM4 zugreifen.</li>
+<li>Wir wollen <code>shared_data.error_count++</code> ausführen.</li>
+<li>Beide Kerne rufen (ohne Handshake) diesen Befehl auf.</li>
+<li>Ergebnis: Datenkorruption.</li>
+</ul>
+<aside class="notes">
+<p>In einem echten Steuergerät läuft das aber meist asynchron ab. Stellen Sie sich vor, wir speichern in unserem Shared Memory einen globalen System-Fehlerzähler. Der Cortex-M7 detektiert einen fehlerhaften Netzwerk-Frame und möchte den Zähler erhöhen. In exakt derselben Nanosekunde detektiert der Cortex-M4 eine Überspannung am Motor und möchte ebenfalls diesen globalen Zähler erhöhen. Es gibt kein “Over”-Flag. Beide greifen stumpf und asynchron auf den Speicher zu. Das Ergebnis ist eine Multicore Race Condition.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="warum-ein-freertos-mutex-hier-versagt" class="slide level2">
+<h2>Warum ein FreeRTOS-Mutex hier versagt</h2>
+<ul>
+<li>„Wir wissen doch, wie man das löst! Wir nehmen einen Mutex!“</li>
+<li>Falsch! Ein FreeRTOS-Mutex (<code>osMutexAcquire</code>) funktioniert hier nicht.</li>
+<li>Warum?
+<ul>
+<li>Der Cortex-M7 läuft bei uns Bare-Metal (er kennt die FreeRTOS-API gar nicht).</li>
+<li>Selbst wenn beide Kerne FreeRTOS nutzen würden: Jeder Kern hat sein eigenes, isoliertes OS im RAM!</li>
+<li>Der Scheduler des M4 hat keine physikalische Kontrolle über die Register des M7.</li>
+</ul></li>
+<li>Ein reines Software-Schloss reicht bei Multicore nicht aus.</li>
+</ul>
+<aside class="notes">
+<p>Sie werden jetzt sofort denken: “Halt, das Problem kenne ich doch aus Vorlesung 4! Das ist eine Race Condition. Dafür haben wir doch den Mutex gelernt!”. Das ist ein gefährlicher Trugschluss. Ein FreeRTOS-Mutex ist ein Software-Konstrukt. Er ist nichts weiter als eine kleine Variable im lokalen RAM des Cortex-M4, verwaltet vom lokalen Scheduler des M4. Der Cortex-M7 läuft aber Bare-Metal. Er kennt die C-Funktion osMutexAcquire überhaupt nicht. Und selbst wenn wir auf beiden Kernen FreeRTOS installieren würden: Jedes OS ist isoliert. Der Scheduler von Core 2 kann Core 1 nicht schlafen legen. Ein Software-Schloss ist für Multicore-Systeme völlig nutzlos, da sich die Kerne logisch nicht gegenseitig blockieren können.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-multicore-race-condition" class="slide level2">
+<h2>Die Multicore Race Condition</h2>
+<ul>
+<li>Wie sieht die Zerstörung auf dem Bus aus?</li>
+<li>Zähler steht auf <span class="math inline">\(5\)</span> (im SRAM4).</li>
+<li>Der M7 liest die <span class="math inline">\(5\)</span> in sein CPU-Register und addiert zu <span class="math inline">\(6\)</span>.</li>
+<li>Der M4 liest (1 Taktzyklus später) ebenfalls die <span class="math inline">\(5\)</span> in sein Register und addiert zu <span class="math inline">\(6\)</span>.</li>
+<li>Der M7 schreibt die <span class="math inline">\(6\)</span> in den SRAM4.</li>
+<li>Der M4 schreibt seine <span class="math inline">\(6\)</span> in den SRAM4.</li>
+<li>Zwei Fehler aufgetreten, aber der Zähler stieg nur um 1!</li>
+</ul>
+<aside class="notes">
+<p>Schauen wir uns das auf Hardware-Ebene an. Wir wissen, dass ein counter++ Befehl aus Load, Add und Store besteht. Bei Single-Core war die Präemption durch Interrupts das Problem. Bei Multicore ist es noch drastischer: Die Befehle laufen wirklich in physikalischer Gleichzeitigkeit ab! Der M7 lädt die 5 aus dem SRAM über die Bus-Matrix. Fast im selben Taktzyklus sendet auch der M4 einen Lese-Befehl an die Matrix. Die Matrix schickt beiden die 5. Beide Kerne addieren intern in ihrer ALU eine 1. Und dann schicken beide Kerne einen Schreib-Befehl für die 6 an die Bus-Matrix. Der Zähler steht auf 6, ein kompletter Fehler wurde verschluckt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="visualisierung-multicore-zerstörung" class="slide level2">
+<h2>Visualisierung: Multicore-Zerstörung</h2>
+<p><img data-src="../_livefigures/inline-plantuml-a1c4a54a.svg" class="livefigure"></p>
+<ul>
+<li>Die AXI-Bus-Matrix regelt zwar den Stau beim Schreiben (Takt 3 und 4), aber der logische Schaden ist bereits angerichtet!</li>
+</ul>
+<aside class="notes">
+<p>Hier sehen Sie dieses Drama im Timing-Diagramm. Die Bus-Matrix des STM32H755 verhindert zwar, dass Signale elektrisch kollidieren. Bei T=3 will der M7 schreiben, und der M4 muss kurz warten. Die Matrix reiht die Schreibzugriffe brav hintereinander auf. Das Problem ist nur: Der logische Schaden ist schon passiert, weil beide Cores bei T=1 denselben alten Wert ausgelesen haben. Wir brauchen einen Mechanismus, der verhindert, dass Core 2 den Wert überhaupt ausliest, solange Core 1 seinen Dreisatz aus Load, Add und Store nicht komplett abgeschlossen hat.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-anforderung-ein-hardware-schloss" class="slide level2">
+<h2>Die Anforderung: Ein Hardware-Schloss</h2>
+<ul>
+<li>Wir brauchen ein Schloss, das:
+<ul>
+<li>Für beide Kerne physikalisch sichtbar ist.</li>
+<li>Auf Hardware-Ebene atomar arbeitet.</li>
+<li>Eine Lese- und Schreib-Operation in einem einzigen Bus-Takt garantiert (Test-and-Set).</li>
+</ul></li>
+<li>Die Antwort von ARM / STMicroelectronics: Das HSEM-Modul.</li>
+</ul>
+<aside class="notes">
+<p>Die Lösung kann also nicht in der Software liegen. Wir benötigen ein Schloss, das in das Silizium gebrannt ist. Ein Schloss, auf das beide Kerne über den Bus zugreifen können, und das hardwareseitig garantiert, dass immer nur exakt ein Kern den Schlüssel bekommt, selbst wenn beide Signale auf die Nanosekunde genau ankommen. Dafür hat die Halbleiterindustrie spezielle Schaltungen entwickelt, sogenannte “Test-and-Set” Register, die eine Lese- und Schreiboperation atomar in einem unteilbaren Bus-Zyklus durchführen. Auf unserem Board heißt dieses Modul HSEM.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="einführung-in-hardware-semaphores-hsem" class="slide level2">
+<h2>Einführung in Hardware Semaphores (HSEM)</h2>
+<ul>
+<li>HSEM = Hardware Semaphore.</li>
+<li>Ein dediziertes Hardware-Modul im STM32H755.</li>
+<li>Es bietet 32 unabhängige, physikalische Schlösser (HSEM 0 bis HSEM 31).</li>
+<li>Jeder Kern kann jedes dieser 32 Schlösser sperren oder freigeben.</li>
+<li>Wichtig: HSEM ist konzeptionell ein Mutex (mit Ownership), obwohl „Semaphore“ im Namen steht!</li>
+</ul>
+<aside class="notes">
+<p>HSEM steht für Hardware Semaphore. Es ist ein eigener Peripherie-Block auf dem Die unseres Mikrocontrollers, ähnlich wie ein UART- oder Timer-Modul. Es stellt uns 32 völlig unabhängige physikalische Schlösser zur Verfügung, nummeriert von 0 bis 31. Wir könnten also 32 verschiedene Shared-Memory-Variablen unabhängig voneinander absichern. Lassen Sie sich vom Namen “Semaphore” nicht verwirren: Ein Hardware-Semaphor auf dem STM32 funktioniert konzeptionell wie ein Mutex. Es merkt sich ganz genau, welcher Kern ihn abgeschlossen hat, und nur dieser Kern darf ihn wieder aufsperren.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="hsem-architektur-im-stm32h755" class="slide level2">
+<h2>HSEM Architektur im STM32H755</h2>
+<ul>
+<li>Wo liegt das HSEM-Modul?</li>
+<li>Es sitzt zentral am AHB4-Bus und ist für den M7 und den M4 gleichwertig erreichbar.</li>
+<li>Der 2-Step-Lock:
+<ul>
+<li>Wenn ein Kern das Schloss sperrt, trägt die Hardware die Core ID (z. B. M4) in das HSEM-Register ein.</li>
+<li>Gleichzeitig wird eine Process ID eingetragen (z. B. welche FreeRTOS-Task den Lock angefordert hat).</li>
+</ul></li>
+<li>Das Schloss gehört nun diesem spezifischen Task auf diesem spezifischen Kern!</li>
+</ul>
+<aside class="notes">
+<p>Das HSEM-Modul sitzt strategisch günstig an einem zentralen Bus-Knoten, den beide Kerne gut erreichen können. Wenn der Cortex-M4 ein Schloss anfordert, liest die HSEM-Hardware über den Bus die ID des Kerns aus und brennt diese sogenannte Core ID in das Schloss-Register ein. Zusätzlich können wir aus der Software noch eine Process ID mitgeben. Wir können also sagen: “Dieses Schloss gehört dem Cortex-M4, und zwar speziell der Task 5”. Die Hardware verriegelt nun dieses Register. Versucht der Cortex-M7 daraufhin abzuschließen, weist die Hardware den Befehl sofort ab, weil die Core ID nicht passt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="atomarität-auf-silizium-ebene" class="slide level2">
+<h2>Atomarität auf Silizium-Ebene</h2>
+<ul>
+<li>Was passiert, wenn M7 und M4 exakt in derselben Nanosekunde den HSEM-Sperrbefehl senden?</li>
+<li>Die AXI-Arbiter-Magie:
+<ul>
+<li>Die Bus-Matrix hat einen Hardware-Arbiter (Schiedsrichter).</li>
+<li>Dieser Arbiter erzwingt physikalisch, dass ein Zugriffs-Request immer um mindestens einen Taktzyklus verzögert wird.</li>
+</ul></li>
+<li>Der erste Request, der durchkommt, führt ein atomares „Read-Lock“ aus.</li>
+<li>Der zweite Request liest bereits den gesperrten Zustand aus.</li>
+<li>Auf Hardware-Ebene gibt es keine Gleichzeitigkeit!</li>
+</ul>
+<aside class="notes">
+<p>Was aber, wenn wirklich beide Kerne auf die Nanosekunde genau den Sperr-Befehl für Schloss Null abschicken? Hier greift die Magie des AXI-Bus-Arbiters. Ein Schiedsrichter in Silizium. Auf digitaler Gatter-Ebene ist physikalische Gleichzeitigkeit ausgeschlossen. Der Arbiter wird eines der beiden Signale hardwareseitig verwerfen oder um einen winzigen Taktzyklus verzögern. Das Signal, das gewinnt, führt eine atomare Read-Lock-Operation im HSEM-Modul aus. Wenn das Signal des zweiten Kerns den Bruchteil einer Nanosekunde später ankommt, ist der Schalter im Flip-Flop des Registers bereits umgelegt, und der zweite Kern bekommt eine Abweisung zurück. Wir haben absolute Sicherheit.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-hal-api-für-hsem" class="slide level2">
+<h2>Die HAL-API für HSEM</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<ul>
+<li>Sperren (Acquire)
+<ul>
+<li><code>HAL_HSEM_FastTake(HSEM_ID)</code></li>
+<li>Liefert <code>HAL_OK</code>, wenn wir das Schloss bekommen haben.</li>
+<li>Liefert <code>HAL_ERROR</code>, wenn der andere Kern (oder eine andere Task) es bereits besitzt.</li>
+</ul></li>
+</ul>
+</div><div class="column" style="width:50%;">
+<ul>
+<li>Entsperren (Release)
+<ul>
+<li><code>HAL_HSEM_Release(HSEM_ID, ProcessID)</code></li>
+<li>Gibt das Schloss frei, aber nur, wenn wir der rechtmäßige Besitzer sind!</li>
+</ul></li>
+</ul>
+</div></div>
+<ul>
+<li>Achtung: <code>FastTake</code> blockiert nicht! Es liefert sofort das Ergebnis (Try-Lock).</li>
+</ul>
+<aside class="notes">
+<p>Wie binden wir das in unseren C-Code ein? STMicroelectronics liefert uns dafür zwei extrem schnelle HAL-Funktionen. Mit HAL_HSEM_FastTake greifen wir nach dem Schloss. Wir übergeben nur die ID, zum Beispiel 0 für Schloss Null. Ganz wichtig: Diese Funktion ist kein RTOS-Mutex! Sie blockiert nicht. Sie ist ein sogenannter “Try-Lock”. Sie greift nach dem Schloss und liefert sofort, ohne jede Verzögerung, ein Ergebnis zurück. Entweder HAL_OK, dann gehört das Schloss uns. Oder HAL_ERROR, dann gehört es jemand anderem. Mit HAL_HSEM_Release geben wir das Schloss wieder frei.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="flowchart-hsem-take" class="slide level2">
+<h2>Flowchart: HSEM Take</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph TD
+    classDef action fill:#FFFFFF,stroke:#1D1D1F,stroke-width:2px;
+    classDef decision fill:#F5F5F7,stroke:#E2001A,stroke-width:2px;
+
+    A((Start Task)) --&gt; B(HAL_HSEM_FastTake):::action
+    B --&gt; C{Resultat?}:::decision
+    C -- HAL_ERROR --&gt; D[Warten...]:::action
+    D --&gt; B
+    C -- HAL_OK --&gt; E(Critical Section: RAM ändern!):::action
+    E --&gt; F(HAL_HSEM_Release):::action
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<ul>
+<li>Wenn wir <code>HAL_ERROR</code> bekommen, müssen wir die Anforderung wiederholen.</li>
+</ul>
+<aside class="notes">
+<p>Die Logik in unserem C-Code sieht also wie folgt aus: Wir fordern das Schloss mit FastTake an. Wir prüfen das Resultat. Wenn wir einen Error bekommen, ist der Bus belegt. Wir müssen warten und es später noch einmal versuchen. Wenn wir ein OK bekommen, dürfen wir endlich unsere counter++ Operation auf dem Shared Memory im SRAM4 ausführen. Danach müssen wir zwingend den HSEM-Release aufrufen, damit der andere Kern weiterarbeiten kann. Die große Frage, die sich hier stellt, ist: Wie implementieren wir den Kasten “Warten…” auf eine Weise, die unser Betriebssystem nicht zerstört?</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="warten-auf-den-hsem-polling-vs.-interrupts" class="slide level2">
+<h2>Warten auf den HSEM: Polling vs.&nbsp;Interrupts</h2>
+<ul>
+<li>Wir erinnern uns: Spinlocks (<code>while(take != OK)</code>) verbrennen CPU-Zeit.</li>
+<li>Bare-Metal (M7):
+<ul>
+<li>Hier können wir pollen. Eine kurze <code>while</code>-Schleife um den <code>FastTake</code> ist vertretbar, wenn die Critical Section des M4 sehr kurz ist.</li>
+</ul></li>
+<li>FreeRTOS (M4):
+<ul>
+<li>Polling zerstört unsere Task-Auslastung!</li>
+<li>Wir müssen das OS nutzen (<code>osWaitForever</code>), aber <code>FastTake</code> hat kein Timeout!</li>
+</ul></li>
+<li>Wie lösen wir das? Mit HSEM-Interrupts!</li>
+</ul>
+<aside class="notes">
+<p>Das Warten ist das Kernproblem. Wenn wir im Cortex-M7 Bare-Metal Code sind, können wir einfach eine schnelle While-Schleife um das FastTake bauen. Da der M7 kein OS hat, verliert er keine Task-Prioritäten, er verbrennt nur ein paar Taktzyklen Strom. Auf dem Cortex-M4 haben wir aber FreeRTOS laufen! Eine While-Schleife blockiert hier den Kernel und führt zur Prioritätsinversion, die wir letzte Woche stundenlang diskutiert haben. Wir müssen unsere RTOS-Task zwingend in den “Blocked”-Zustand schlafen schicken, während wir auf den M7 warten. Aber FastTake hat keinen Timeout-Parameter, es schläft nicht!</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="hsem-interrupts-m7-weckt-m4-task" class="slide level2">
+<h2>HSEM Interrupts: M7 weckt M4-Task</h2>
+<ul>
+<li>Das HSEM-Modul kann Hardware-Interrupts auslösen!</li>
+<li>Der smarte Workflow für den M4:
+<ol type="1">
+<li>M4 ruft <code>FastTake</code> auf <span class="math inline">\(\rightarrow\)</span> Besetzt (Fehler).</li>
+<li>M4 aktiviert den HSEM-Interrupt für dieses Schloss und legt seine FreeRTOS-Task über einen Binären Semaphor schlafen (<code>osWaitForever</code>).</li>
+<li>M7 rechnet fertig und ruft <code>Release</code> auf.</li>
+<li>Hardware löst einen Interrupt auf dem M4 aus!</li>
+<li>Die ISR des M4 gibt den Binären Semaphor frei <span class="math inline">\(\rightarrow\)</span> Die M4-Task wird vom OS blitzschnell geweckt und holt sich das Hardware-Schloss!</li>
+</ol></li>
+</ul>
+<aside class="notes">
+<p>Die Lösung ist architektonisch brillant: Das HSEM-Modul kann Hardware-Interrupts über Bus-Grenzen hinweg abfeuern. Der Workflow für unser FreeRTOS auf dem M4 sieht so aus: Wir rufen FastTake auf. Es schlägt fehl. Also weisen wir die HSEM-Hardware an: “Bitte schick mir einen Interrupt, sobald dieses Schloss entriegelt wird!”. Dann rufen wir die CMSIS-API auf und legen unsere Task per Software-Semaphor in den “Blocked”-Zustand. Die CPU Auslastung fällt auf 0. Sobald der M7 den Release-Befehl ausführt, feuert die Hardware einen Interrupt auf den M4. Unsere kleine ISR fängt den Interrupt ab, ruft osSemaphoreRelease für FreeRTOS auf und weckt unsere blockierte Task auf, die sich dann das HSEM-Schloss sichert. Das ist Non-Blocking-Multicore-Synchronisation.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="multicore-deadlock-gefahr" class="slide level2">
+<h2>Multicore Deadlock-Gefahr</h2>
+<ul>
+<li>Ein Horrorszenario im Multicore-System:
+<ul>
+<li>Der M7 sperrt das Hardware-Schloss (HSEM).</li>
+<li>Genau in diesem Moment führt ein fehlerhafter Pointer auf dem M7 zu einem Hard Fault Exception (Crash).</li>
+<li>Der M7 hängt für immer in der Fehlerschleife.</li>
+<li>Der M4 versucht den HSEM zu holen, wird blockiert und wartet ewig.</li>
+</ul></li>
+<li>Das gesamte System ist durch einen toten Kern verklemmt!</li>
+</ul>
+<aside class="notes">
+<p>Aber auch Hardware-Schlösser bringen Gefahren mit sich. Stellen Sie sich ein Horrorszenario vor. Der M7 holt sich das HSEM-Schloss, um in den Shared Memory zu schreiben. In seiner Critical Section tritt ein Bug auf. Er greift auf einen Null-Pointer zu und der Cortex-M7 stürzt mit einem Hard Fault ab. Der Kern ist effektiv tot. Was passiert mit unserem HSEM? Da der M7 nie wieder den Release-Befehl ausführen wird, bleibt das Schloss für die Ewigkeit verriegelt. Der M4 auf der anderen Seite des Busses wartet auf ein Interrupt-Signal, das niemals kommen wird. Ein Fehler auf Core 1 hat das RTOS auf Core 2 vollständig lahmgelegt. Ein Multicore-Deadlock.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-lösung-hsem-clear-by-core-id" class="slide level2">
+<h2>Die Lösung: HSEM Clear by Core ID</h2>
+<ul>
+<li>Die ST-Ingenieure haben diesen Fall bedacht.</li>
+<li>Wenn der M4 feststellt (z. B. durch einen Heartbeat-Timeout), dass der M7 abgestürzt ist, kann er die Regeln brechen!</li>
+<li>Die Funktion: <code>HAL_HSEM_ClearAll(CORE_ID_M7)</code></li>
+<li>Der M4 sendet ein Notsignal an das HSEM-Modul: „Brich alle Schlösser auf, die dem M7 gehörten!“</li>
+<li>Der M4 kann das System danach selbstständig neustarten oder in einen sicheren Zustand überführen.</li>
+</ul>
+<aside class="notes">
+<p>Zum Glück haben die Hardware-Designer von STMicroelectronics mitgedacht. Die HSEM-Hardware verfügt über einen Brecheisen-Befehl. Wenn der Cortex-M4 feststellt, dass der M7 nicht mehr reagiert – weil beispielsweise ein Heartbeat-Timer abgelaufen ist – kann der M4 das Besitzrecht überstimmen. Er ruft HAL_HSEM_ClearAll auf und übergibt die Core-ID des Cortex-M7. Das weist die HSEM-Hardware an: “Schließe sofort alle 32 Schlösser auf, auf denen der Name des M7 steht!”. Damit bekommt der M4 wieder Zugriff auf alle Daten, kann die Motorsteuerung sicher herunterfahren und das Gesamtsystem geordnet neu starten.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-hardware-semaphoren" class="slide level2">
+<h2>Zusammenfassung Hardware-Semaphoren</h2>
+<ul>
+<li>Normale Mutexe (Software) funktionieren nicht über OS/Core-Grenzen hinweg.</li>
+<li>Das HSEM-Modul löst Race Conditions auf der Ebene der AXI-Bus-Matrix.</li>
+<li>Locks vergeben die Core ID für exklusives Besitzrecht.</li>
+<li>Wir nutzen Interrupts statt Polling, um FreeRTOS-Tasks bei belegten Schlössern schlafen zu legen.</li>
+<li>Im Notfall können Schlösser eines abgestürzten Kerns aufgebrochen werden.</li>
+</ul>
+<aside class="notes">
+<p>Fassen wir den ersten Block zusammen. Sie haben gelernt, dass Software-Locks bei Multicore wirkungslos sind. Wir brauchen Hardware-Schlösser, die HSEM-Register. Diese garantieren uns durch Bus-Arbitrierung absolute Atomarität. Wir können sie elegant mit FreeRTOS-Blockaden und Interrupts verbinden, um die CPU zu entlasten, und wir haben einen Notfallplan, falls ein Kern abstürzt. Dieses Wissen qualifiziert Sie für die Entwicklung sicherer, asynchroner Multicore-Systeme.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="was-ist-safety-in-embedded-systems" class="slide level2">
+<h2>Was ist „Safety“ in Embedded Systems?</h2>
+<ul>
+<li>Bisher haben wir uns auf „Synchronisation“ konzentriert (Fehler vermeiden).</li>
+<li>Was passiert aber, wenn der Fehler trotzdem auftritt?</li>
+<li>Safety (Funktionale Sicherheit):
+<ul>
+<li>Schutz von Menschenleben und Umwelt vor Fehlfunktionen der Software/Hardware.</li>
+<li>Reguliert in Normen wie der ISO 26262 (Automotive).</li>
+</ul></li>
+<li>Ziel: Wenn das RTOS in einem Deadlock hängt, muss ein unabhängiges System den Stecker ziehen und neustarten!</li>
+</ul>
+<aside class="notes">
+<p>Damit wechseln wir nahtlos zum zweiten großen Thema des heutigen Tages: Safety, zu Deutsch die funktionale Sicherheit. Bisher waren wir als Programmierer sehr optimistisch. Wir haben Mutexe und HSEMs gebaut und uns darauf verlassen, dass wir Fehler damit vermeiden. Aber was, wenn wir einen Fehler machen? Was, wenn wir einen Deadlock in den Code einbauen? Safety bedeutet, dass wir nicht nur versuchen, Fehler zu vermeiden, sondern dass wir Architekturen entwerfen, die uns retten, WENN der Fehler auftritt. Normen wie die ISO 26262 für Autos fordern zwingend Mechanismen, die das System notfalls neu starten, bevor Schlimmeres passiert.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="ursachen-für-system-crashes" class="slide level2">
+<h2>Ursachen für System-Crashes</h2>
+<ul>
+<li>Warum stürzt eine eigentlich gut getestete Software plötzlich ab?</li>
+<li>Interne Ursachen:
+<ul>
+<li>Deadlocks durch falsch gesetzte Mutexes.</li>
+<li>Endlosschleifen (<code>while</code>) durch fehlerhafte Sensorwerte.</li>
+<li>Stack Overflow im RAM.</li>
+</ul></li>
+<li>Externe Ursachen (Umwelteinflüsse):
+<ul>
+<li>EMI (Elektromagnetische Interferenz): Ein Funke an einem dicken Elektromotor induziert Spannung auf der Platine.</li>
+<li>Bit-Flips: Kosmische Strahlung ändert physikalisch eine 0 im RAM zu einer 1 (aus einer Schleife bis 100 wird plötzlich eine Schleife bis 65535!).</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Warum stürzt Code, der monatelang auf dem Schreibtisch lief, im Feld plötzlich ab? Natürlich gibt es interne Software-Fehler: Der gefürchtete Stack Overflow oder ein versteckter Deadlock. Aber noch viel gefährlicher sind Umwelteinflüsse. Wenn direkt neben Ihrem Steuergerät ein 100-Kilowatt Elektromotor anläuft, schlagen elektromagnetische Pulse auf Ihre Platine ein. Das kann die CPU verwirren. In der Luft- und Raumfahrt, aber auch schon auf der Erde, gibt es Bit-Flips durch Höhenstrahlung. Ein Neutron trifft den Transistor Ihres RAM-Speichers und kippt eine 0 in eine 1. Plötzlich ist Ihr Schleifenzähler gigantisch groß, und das System friert ein. Dagegen hilft kein C-Code der Welt. Wir brauchen Hardware-Unterstützung.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-konzept-des-hardware-watchdogs" class="slide level2">
+<h2>Das Konzept des Hardware-Watchdogs</h2>
+<ul>
+<li>Die Analogie: Der Totmannschalter in Zügen. Der Lokführer muss regelmäßig ein Pedal treten. Tut er es nicht, bremst der Zug automatisch.</li>
+<li>Der Watchdog (Wachhund) in der Hardware:
+<ul>
+<li>Ein eigenständiger Zähler-Chip auf der Platine (oder im STM32).</li>
+<li>Der Zähler zählt unerbittlich rückwärts: <span class="math inline">\(1000 \rightarrow 999 \rightarrow 998\ldots\)</span></li>
+<li>Fällt er auf <span class="math inline">\(0\)</span>, zieht die Hardware die RESET-Leitung der CPU! Das gesamte System startet hart neu.</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Die Lösung dafür ist so alt wie die Elektronik selbst: Der Hardware-Watchdog. Das Konzept entspricht dem Totmannschalter aus dem Schienenverkehr. Der Lokführer muss alle paar Sekunden ein Pedal treten. Tut er es nicht, geht die Technik davon aus, dass er ohnmächtig ist, und zieht die Notbremse. Genau das ist ein Watchdog. Es ist ein dummer, aber robuster Hardware-Zähler. Er kennt nur eine Aufgabe: Er zählt gnadenlos rückwärts. Von 1000 auf 0. Und wenn er die Null erreicht, triggert er hardwareseitig den Master-Reset-Pin Ihres Mikrocontrollers. Der Chip wird zwangsweise neu gebootet.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-pflicht-der-software-kicking" class="slide level2">
+<h2>Die Pflicht der Software (Kicking)</h2>
+<ul>
+<li>Damit das System nicht ständig neustartet, muss die Software den Watchdog „füttern“ (Kicking / Refreshing).</li>
+<li>Die Software sendet periodisch einen Befehl an das Hardware-Register.</li>
+<li>Der Befehl setzt den Zähler wieder auf seinen Maximalwert (z. B. <span class="math inline">\(1000\)</span>).</li>
+<li>Die Logik:
+<ul>
+<li>Läuft die Software fehlerfrei, wird der Zähler regelmäßig zurückgesetzt.</li>
+<li>Hängt die CPU in einer Endlosschleife, wird der Refresh-Befehl nicht erreicht.</li>
+<li>Der Zähler fällt auf <span class="math inline">\(0\)</span> <span class="math inline">\(\rightarrow\)</span> Reset!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Damit dieser Wachhund unser laufendes System nicht ständig neustartet, müssen wir ihn streicheln, oder auf Englisch “kicking the dog” beziehungsweise füttern. Unsere Software muss, solange sie gesund ist, in regelmäßigen Abständen ein bestimmtes Register beschreiben. Das setzt den Rückwärtszähler wieder zurück auf seinen Startwert. Die Logik ist absolut wasserdicht: Wenn unsere Task in einen Deadlock gerät oder die CPU wegen eines Bit-Flips in den Wald springt, wird der C-Code für das Füttern nicht mehr ausgeführt. Der Zähler fällt unweigerlich auf Null und der Reset befreit uns aus der Blockade.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="watchdog-typ-1-independent-watchdog-iwdg" class="slide level2">
+<h2>Watchdog Typ 1: Independent Watchdog (IWDG)</h2>
+<ul>
+<li>Der STM32H755 besitzt zwei verschiedene Watchdogs. Der erste ist der IWDG.</li>
+<li>Er heißt „Independent“ (Unabhängig), weil er seine eigene, isolierte Taktquelle besitzt.</li>
+<li>Er läuft auf dem LSI-Oszillator (Low-Speed Internal).</li>
+<li>Eigenschaften des LSI:
+<ul>
+<li>Frequenz: <span class="math inline">\(\approx 32\,\mathrm{kHz}\)</span> (sehr langsam, sehr unpräzise).</li>
+<li>Aber: Völlig unabhängig vom Haupt-Quarz und den PLL-Schaltungen der CPU!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Der STM32H755 bietet uns gleich zwei verschiedene Wachhunde an. Der erste ist fürs Grobe zuständig: Der Independent Watchdog, kurz IWDG. Das Wort “Independent” ist hier Programm. Dieser Watchdog nutzt nicht den schnellen CPU-Takt. Er hat tief im Silizium einen komplett eigenen, isolierten Oszillator verbaut: den LSI (Low-Speed Internal). Dieser LSI tuckert gemütlich mit 32 Kilohertz vor sich hin. Er ist furchtbar ungenau, schwankt je nach Temperatur, hat aber eine unschlagbare Eigenschaft: Er ist physikalisch unabhängig vom Hauptquarz des Chips.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-vorteil-des-lsi" class="slide level2">
+<h2>Der Vorteil des LSI</h2>
+<ul>
+<li>Warum ist diese Unabhängigkeit so wichtig?</li>
+<li>Wenn ein Hardware-Schaden auftritt (z. B. der Haupt-Quarz auf der Platine reißt durch Vibration ab), bleibt die gesamte CPU stehen.</li>
+<li>Ein normaler Timer würde stoppen.</li>
+<li>Der IWDG läuft auf seinem separaten <span class="math inline">\(32\,\mathrm{kHz}\)</span>-Takt unbeirrt weiter!</li>
+<li>Er erkennt, dass die tote CPU nicht mehr füttert, und zwingt das Board in den Reset.</li>
+<li>Der IWDG ist der Retter für Hardware- und grobe Software-Ausfälle.</li>
+</ul>
+<aside class="notes">
+<p>Warum spendiert STMicroelectronics einen extra Oszillator nur für den Watchdog? Weil Safety auch Hardware-Ausfälle abdecken muss! Stellen Sie sich vor, Ihr Auto fährt über ein Schlagloch, und durch die Vibration reißt die Lötstelle des externen Takt-Quarzes ab. Die CPU bleibt sofort stehen, da sie keinen Takt mehr hat. Jeder Timer, der am Haupt-Bus hängt, stoppt ebenfalls. Ein normaler Watchdog würde einfrieren und das Auto wäre ein toter Stein. Nicht so der IWDG. Da er seinen eigenen internen Taktgeber hat, läuft sein Countdown völlig unbeeindruckt weiter. Er merkt, dass die CPU tot ist, triggert den Reset und rettet das System. Er ist die ultimative Rückversicherung gegen das totale Versagen.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="konfiguration-des-iwdg" class="slide level2">
+<h2>Konfiguration des IWDG</h2>
+<ul>
+<li>Die Hardware des IWDG besteht aus zwei Werten, die wir im CubeMX einstellen:
+<ul>
+<li>Prescaler (Vorteiler): Teilt die <span class="math inline">\(32\,\mathrm{kHz}\)</span> des LSI (z. B. durch <span class="math inline">\(32 \rightarrow 1\,\mathrm{kHz} = 1\,\mathrm{ms}/\mathrm{Tick}\)</span>).</li>
+<li>Reload-Wert: Der Wert, auf den der Zähler beim „Füttern“ gesetzt wird (z. B. <span class="math inline">\(500\)</span>).</li>
+</ul></li>
+<li>Ergebnis: Das System muss zwingend alle <span class="math inline">\(500\,\mathrm{ms}\)</span> gefüttert werden!</li>
+<li>Der Code zum Füttern (Refresh) in der CubeIDE ist simpel:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a>HAL_IWDG_Refresh<span class="op">(&amp;</span>hiwdg<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Die Konfiguration des IWDG ist denkbar einfach. Wir stellen im Cube-Configurator einen Prescaler ein, um den langsamen 32-kHz-Takt auf etwas Brauchbares wie 1 kHz herunterzuteilen. Dann geben wir einen Reload-Wert vor, zum Beispiel 500. Das bedeutet, unser Watchdog hat eine Frist von 500 Millisekunden. In unserem C-Code rufen wir dann periodisch das HAL-Makro HAL_IWDG_Refresh auf, was den Zähler hardwareseitig immer wieder auf 500 hochschießt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-gefahr-im-rtos-wo-füttern-wir" class="slide level2">
+<h2>Die Gefahr im RTOS: Wo füttern wir?</h2>
+<ul>
+<li>In einem Bare-Metal-Programm rufen wir den Refresh einfach am Ende der <code>while(1)</code>-Schleife auf.</li>
+<li>Aber in einem Multitasking-System (FreeRTOS) laufen 10 verschiedene Tasks!</li>
+<li>Die absolute Kernfrage: Wo platzieren wir den <code>HAL_IWDG_Refresh()</code>-Aufruf?</li>
+<li>Wenn wir es falsch machen, verliert der Watchdog jeglichen Sinn!</li>
+</ul>
+<aside class="notes">
+<p>Doch hier beginnt die Architektendebatte. Bei einem alten C-Programm ohne Betriebssystem ist das Füttern einfach: Wir schreiben den Befehl ans Ende unserer Super-Loop. Solange die Schleife rotiert, leben wir. Aber wir nutzen FreeRTOS! Wir haben 10 unabhängige Tasks. Wir haben Idle-Tasks, Hardware-Interrupts und SysTicks. Die Kernfrage der funktionalen Sicherheit in RTOS lautet: Wer hat die Ehre, den Watchdog zu füttern? Wenn Sie den Befehl an die falsche Stelle schreiben, wird das System füttern, obwohl das halbe Gerät bereits im Deadlock festhängt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="anti-pattern-füttern-im-timer-interrupt" class="slide level2">
+<h2>Anti-Pattern: Füttern im Timer-Interrupt</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<ul>
+<li>„Bauen wir uns einen Timer, der jede Sekunde feuert und den Hund füttert!“</li>
+<li>Warum das tödlich ist:
+<ul>
+<li>Timer-Interrupts basieren auf Hardware. Sie laufen auch dann weiter, wenn FreeRTOS komplett im Deadlock hängt!</li>
+<li>Alle Tasks sind eingefroren, aber die ISR füttert stoisch den Watchdog.</li>
+<li>Der Reset wird niemals ausgelöst.</li>
+</ul></li>
+</ul>
+</div><div class="column" style="width:50%;">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="co">// NIEMALS TUN!</span></span>
+<span id="cb3-2"><a aria-label="2"></a><span class="dt">void</span> HAL_TIM_PeriodElapsedCallback<span class="op">(</span></span>
+<span id="cb3-3"><a aria-label="3"></a>        TIM_HandleTypeDef <span class="op">*</span>htim<span class="op">)</span></span>
+<span id="cb3-4"><a aria-label="4"></a><span class="op">{</span></span>
+<span id="cb3-5"><a aria-label="5"></a>    <span class="co">// Die Tasks sind alle deadlocked,</span></span>
+<span id="cb3-6"><a aria-label="6"></a>    <span class="co">// aber wir füttern trotzdem!</span></span>
+<span id="cb3-7"><a aria-label="7"></a>    HAL_IWDG_Refresh<span class="op">(&amp;</span>hiwdg<span class="op">);</span></span>
+<span id="cb3-8"><a aria-label="8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div></div>
+<aside class="notes">
+<p>Lassen Sie uns mit der schlechtesten aller Ideen anfangen, dem Anti-Pattern Nummer eins: Wir bauen uns einen Hardware-Timer, lassen diesen alle 200 Millisekunden feuern und packen den Fütter-Befehl in den Interrupt-Callback. Warum ist das tödlich? Weil Hardware-Interrupts unabhängig von unseren RTOS-Warteschlangen feuern! Nehmen wir an, Ihre wichtigste Motor-Task und Ihre Netzwerk-Task rennen beide in einen brutalen Mutex-Deadlock. Das RTOS steht. Keine Task rechnet mehr. Aber der Hardware-Timer feuert fröhlich weiter und füttert den Wachhund! Der Watchdog denkt, das System sei gesund, und löst den rettenden Reset niemals aus. Füttern Sie niemals in Hardware-Interrupts!</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="pattern-1-füttern-in-der-idle-task" class="slide level2">
+<h2>Pattern 1: Füttern in der Idle-Task</h2>
+<ul>
+<li>Die FreeRTOS Idle-Task (Prio 0) läuft nur, wenn alle anderen Tasks „Blocked“ oder fertig sind.</li>
+<li>Wir können einen Hook (<code>vApplicationIdleHook</code>) nutzen, um dort zu füttern.</li>
+<li>Vorteil: Wenn eine Task (z. B. Prio High) in einer <code>while(1)</code>-Endlosschleife hängt, kommt die Idle-Task nie wieder ran <span class="math inline">\(\rightarrow\)</span> Watchdog-Reset!</li>
+<li>Nachteil: Wenn das System gewollt auf 100 % Auslastung läuft (z. B. durch viele kleine Tasks), hat die Idle-Task keine Zeit zum Füttern <span class="math inline">\(\rightarrow\)</span> ungewollter Reset, obwohl alles okay war!</li>
+</ul>
+<aside class="notes">
+<p>Ein besserer Ansatz ist das Füttern in der FreeRTOS Idle-Task. Erinnern Sie sich? Sie läuft nur auf Prio 0, wenn sonst niemand etwas zu tun hat. Das ist elegant: Wenn irgendeine Task im System Amok läuft und in eine Endlosschleife gerät, wird die Idle-Task verdrängt. Sie kommt nicht mehr dran. Das Füttern stoppt, der Watchdog resettet das fehlerhafte System. Aber auch das hat einen Haken: Was, wenn Sie das System perfekt programmiert haben, aber es ist einfach wahnsinnig viel los? Die CPU läuft gewollt auf 99% Auslastung, um Netzwerkkryptographie zu berechnen. Die Idle-Task kommt kaum zu Wort, der Fütter-Befehl kommt zu spät, und das Gerät resettet, obwohl gar kein Fehler vorlag. Das nennt man einen False Positive, einen ungewollten Reset.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="pattern-2-best-practice-die-watchdog-task" class="slide level2">
+<h2>Pattern 2 (Best Practice): Die Watchdog-Task</h2>
+<ul>
+<li>Wir bauen uns eine eigene Task nur für die Safety!</li>
+<li>Priorität: Die allerhöchste im System!</li>
+<li>Ablauf:
+<ol type="1">
+<li>Die Watchdog-Task fragt alle anderen Tasks ab: „Lebt ihr noch?“ (via Event-Flags oder Mailboxes).</li>
+<li>Jede Task muss regelmäßig ein „Ich lebe“-Bit setzen.</li>
+<li>Die Watchdog-Task prüft: Sind alle Bits gesetzt?</li>
+<li>Wenn ja <span class="math inline">\(\rightarrow\)</span> Füttere den IWDG.</li>
+<li>Wenn nein <span class="math inline">\(\rightarrow\)</span> Füttere nicht. Löse den Reset aus.</li>
+</ol></li>
+<li>So wissen wir, dass jede einzelne Task fehlerfrei läuft.</li>
+</ul>
+<aside class="notes">
+<p>Die Industrie-Best-Practice ist deshalb die dedizierte Watchdog-Task. Wir legen eine eigene Task an und geben ihr die absolute Höchstpriorität. Sie läuft zum Beispiel alle 100 Millisekunden. Aber sie füttert nicht einfach blind. Sie holt sich “Lebenszeichen” von allen anderen Tasks ein. Die Motor-Task muss ein Flag setzen, die Display-Task muss ein Flag setzen. Wenn die Watchdog-Task erwacht, prüft sie alle diese Flags. Wenn auch nur eine einzige Task seit dem letzten Durchlauf ihr Flag nicht gesetzt hat, weiß die Safety-Task: “Oh, das Display hängt!”. Und dann entscheidet sie aktiv, den Fütter-Befehl zu überspringen und den System-Reset auszulösen. Das ist professionelles RTOS-Safety-Design.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-schwäche-des-iwdg" class="slide level2">
+<h2>Die Schwäche des IWDG</h2>
+<ul>
+<li>Der Independent Watchdog ist super gegen Deadlocks und Systemhänger.</li>
+<li>Was er nicht erkennt: Zu schnelle oder chaotische Ausführung!</li>
+<li>Beispiel: Ein Pointer-Bug bringt die CPU dazu, wichtige Sicherheits-Checks einfach zu überspringen. Der Code läuft rasend schnell ab.</li>
+<li>Da der Fütter-Befehl immer noch erreicht wird, merkt der IWDG von diesem Chaos nichts.</li>
+<li>Wir brauchen einen Wächter, der prüft, ob der Code exakt in der vorherberechneten Zeit abläuft.</li>
+</ul>
+<aside class="notes">
+<p>Der Independent Watchdog ist hervorragend für das Grobe. Er fängt Hardwareausfälle und klassische Deadlocks ab. Aber er hat eine Schwachstelle. Was passiert, wenn die Software nicht stehenbleibt, sondern wegen eines zerschossenen Pointers wichtige Sicherheitschecks überspringt? Der Code rast durch die Main-Loop, viel schneller als normal, und feuert den Refresh-Befehl viel zu früh ab. Dem IWDG ist das egal, er ist glücklich, wenn er Futter bekommt, egal wie oft. Wir brauchen für sicherheitskritische Code-Pfade, wie die Zündung eines Airbags, eine zweite Überwachungsinstanz, die genau misst, ob die Ausführung exakt so lange gedauert hat, wie sie physikalisch hätte dauern müssen.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="typ-2-window-watchdog-wwdg-einführung" class="slide level2">
+<h2>Typ 2: Window Watchdog (WWDG) Einführung</h2>
+<ul>
+<li>Hier greift Typ 2: Der Window Watchdog (WWDG).</li>
+<li>Er hängt nicht am langsamen LSI, sondern direkt am schnellen Haupt-Bus der CPU (APB1).</li>
+<li>Eigenschaften:
+<ul>
+<li>Taktiert extrem präzise.</li>
+<li>Stoppt, wenn der Haupt-Takt (die PLL) ausfällt.</li>
+</ul></li>
+<li>Das Feature: Das „Fenster“-Konzept. Sie dürfen den Hund nicht nur nicht zu spät füttern, Sie dürfen ihn auch nicht zu früh füttern!</li>
+</ul>
+<aside class="notes">
+<p>Hier betritt der zweite Watchdog unseres Chips die Bühne: Der Window Watchdog, kurz WWDG. Im Gegensatz zum IWDG ist er tief in das System integriert. Er hängt direkt am schnellen Haupttakt der CPU. Er ist damit genauso präzise getaktet wie Ihre CPU-Befehle, stürzt aber logischerweise mit ab, wenn der Quarz kaputtgeht. Sein absolut herausragendes Feature ist das Fenster-Konzept. Beim WWDG reicht es nicht, einfach irgendwann vor Ablauf der Frist zu füttern. Sie müssen exakt in einem definierten Zeit-Fenster füttern. Nicht zu spät, aber eben auch nicht zu früh! Als Nächstes schauen wir uns an, wie dieses Fenster aussieht — und wie wir es im Labor programmieren.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-fenster-konzept-window-watchdog" class="slide level2">
+<h2>Das Fenster-Konzept (Window Watchdog)</h2>
+<ul>
+<li>Beim WWDG dürfen Sie nicht einfach „irgendwann“ füttern.</li>
+<li>Er definiert ein zeitliches <strong>Fenster (Window)</strong>.</li>
+<li><strong>Die Phasen des Zählers:</strong>
+<ol type="1">
+<li><strong>Early Phase (Zu früh):</strong> Der Zähler ist frisch gestartet. Wenn Sie <em>jetzt</em> füttern, geht die Hardware von einer außer Kontrolle geratenen Software aus <span class="math inline">\(\rightarrow\)</span> <strong>RESET!</strong></li>
+<li><strong>Allowed Window (Erlaubt):</strong> Der Zähler hat einen definierten Schwellenwert unterschritten. Nur hier ist das Füttern (<code>Refresh</code>) legal!</li>
+<li><strong>Late Phase (Zu spät):</strong> Der Zähler fällt auf <span class="math inline">\(0\)</span>. Die Deadline wurde verpasst <span class="math inline">\(\rightarrow\)</span> <strong>RESET!</strong></li>
+</ol></li>
+</ul>
+<aside class="notes">
+<p>Wie funktioniert dieses Fenster-Konzept? Beim IWDG waren wir froh, wenn die Software überhaupt noch am Leben war und irgendwann vor Ablauf der Null gefüttert hat. Der Window Watchdog verlangt Präzision. Er unterteilt seinen Countdown in drei Phasen. Wenn der Countdown startet, befinden wir uns in der „Early Phase“. Die Logik dahinter: Wenn Ihr Code für die Ausführung der Berechnungen normalerweise 15 Millisekunden braucht, Sie den Watchdog aber schon nach 2 Millisekunden füttern, muss ein Programmfehler vorliegen – vielleicht hat ein kaputter Pointer die Berechnungen übersprungen! Die Hardware bestraft dieses zu frühe Füttern mit einem sofortigen Reset. Sie dürfen den Befehl nur in einem exakt definierten „Allowed Window“ aufrufen.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="visualisierung-des-wwdg-fensters" class="slide level2" data-background-color="#F5F5F7">
+<h2>Visualisierung des WWDG-Fensters</h2>
+<ul>
+<li>Zeitlicher Verlauf des WWDG-Countdowns (abwärts zählend):</li>
+</ul>
+<p><img data-src="../_livefigures/inline-wavedrom-8cad8cae.svg" class="livefigure"></p>
+<ul>
+<li>Hinweis: Ein Refresh im „Erlaubten Fenster“ setzt den Zähler wieder auf „Start“ und das Spiel beginnt von vorn.</li>
+</ul>
+<aside class="notes">
+<p>Hier sehen Sie das Prinzip im WaveDrom-Diagramm. Der Zähler startet ganz links. Wenn Ihr C-Code in dieser Early Phase den Refresh-Trigger auslöst (das Signal in der Mitte geht auf 1), zieht die WWDG-Hardware sofort gnadenlos die Reset-Leitung (unterstes Signal). Das System stirbt. Wenn Sie sich brav an die Spielregeln halten und warten, bis die Hardware das „Window“ öffnet, und dann den Refresh senden, springt der Zähler einfach wieder an den Start zurück. Verpassen Sie das Fenster und der Zähler erreicht die Null, wird ebenfalls der Reset ausgelöst.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="iwdg-und-wwdg-im-doppelpack" class="slide level2">
+<h2>IWDG und WWDG im Doppelpack</h2>
+<ul>
+<li>Der WWDG ist präzise (APB1), aber abhängig vom Haupt-Takt.</li>
+<li>Wenn die PLL abstürzt, friert auch der WWDG ein!</li>
+<li>Daher in der Automobilindustrie oft kombiniert:
+<ul>
+<li><strong>IWDG:</strong> grobe Hardware-Ausfälle und Deadlocks (autarker LSI).</li>
+<li><strong>WWDG:</strong> präzise Überwachung von Software-Routinen und Echtzeit-Timing.</li>
+</ul></li>
+<li>Faustregel: Robustheit <em>und</em> Timing — nicht entweder/oder.</li>
+</ul>
+<aside class="notes">
+<p>Warum brauchen wir diesen Watchdog überhaupt, wenn wir doch schon den unabhängigen IWDG haben? Weil der WWDG nicht am ungenauen 32-kHz-Oszillator hängt. Der WWDG ist fest mit dem schnellen APB1-Bus der CPU verdrahtet. Seine Takte sind absolut präzise. Er kann überwachen, ob eine zeitkritische DSP-Berechnung exakt zwischen 10 und 12 Millisekunden gedauert hat. Wenn der Code 9 oder 13 Millisekunden braucht, greift er ein. Der Preis für diese Präzision: Wenn der Hauptquarz kaputtgeht, stirbt auch dieser Watchdog. Deshalb nutzen professionelle Systeme oft beide! Den IWDG für den absoluten Worst-Case-Hardware-Ausfall, und den WWDG für das feingranulare Software-Timing.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="warum-wwdg-fehlerhafte-ausführung" class="slide level2">
+<h2>Warum WWDG? (Fehlerhafte Ausführung)</h2>
+<ul>
+<li>Das Szenario:
+<ul>
+<li>Eine hochpriore Task soll Sensordaten validieren (dauert <span class="math inline">\(10\,\mathrm{ms}\)</span>).</li>
+<li>Ein Bit-Flip (kosmische Strahlung) verändert den Programmzähler (PC) oder einen Pointer.</li>
+<li>Die Task überspringt die Validation und erreicht nach <span class="math inline">\(1\,\mathrm{ms}\)</span> das Ende.</li>
+</ul></li>
+<li>Beim IWDG: Die Task füttert nach <span class="math inline">\(1\,\mathrm{ms}\)</span>. Der IWDG sagt: „Super, du lebst!“. Die falschen Daten gehen ins System.</li>
+<li>Beim WWDG: Die Task füttert nach <span class="math inline">\(1\,\mathrm{ms}\)</span> (Early Phase). Der WWDG sagt: „Du bist zu schnell, da stimmt was nicht!“ <span class="math inline">\(\rightarrow\)</span> RESET.</li>
+</ul>
+<aside class="notes">
+<p>Um den Mehrwert noch einmal greifbar zu machen: Stellen Sie sich vor, ein Neutron aus der Höhenstrahlung schlägt in Ihr RAM-Modul ein und kippt ein Bit in einer C-Schleifen-Bedingung. Ihre Validierungsfunktion, die sonst 10 Millisekunden läuft, ist nach 1 Millisekunde plötzlich „fertig“. Dem Independent Watchdog ist das egal. Er ist einfach froh, dass er seinen Refresh-Befehl bekommen hat. Er winkt den fehlerhaften Zustand durch und Ihr Auto beschleunigt, obwohl es bremsen sollte. Der Window Watchdog fängt diesen subtilen Fehler ab, weil er erkennt, dass der Refresh physikalisch unmöglich schon nach 1 Millisekunde hätte eintreffen dürfen.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="das-sicherheitsnetz-ewi" class="slide level2" data-background-color="#FFFFFF">
+<h2>Das Sicherheitsnetz: EWI</h2>
+<ul>
+<li>Wenn der Watchdog auf <span class="math inline">\(0\)</span> fällt, zieht er hart die Reset-Leitung. Alles ist sofort tot.</li>
+<li>Was ist, wenn wir vorher noch Motoren sicher abschalten oder ein Crash-Log in den Flash schreiben müssen?</li>
+<li>Die Lösung: Der Early Wakeup Interrupt (EWI).</li>
+<li>Der WWDG kann so konfiguriert werden, dass er kurz vor der Null (z. B. bei Zählerstand <code>0x40</code>) einen Hardware-Interrupt mit höchster Priorität (NMI) auslöst!</li>
+</ul>
+<aside class="notes">
+<p>Ein harter Hardware-Reset ist brutal. Wenn die Pins des Controllers stromlos geschaltet werden, während ein großer Roboterarm gerade mit Vollgas dreht, haben Sie ein mechanisches Problem. Wir brauchen eine Vorwarnung. Der STM32 bietet beim Window Watchdog genau das an: den EWI, den Early Wakeup Interrupt. Sie können die Hardware so konfigurieren, dass sie kurz vor dem Erreichen der tödlichen Null – beim STM32 ist das exakt der Zählerstand 0x40 – einen Interrupt abfeuert. Und zwar keinen normalen Interrupt, sondern einen Non-Maskable Interrupt (NMI). Er ist die höchste Instanz im System und kann von Software nicht deaktiviert werden.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="nutzen-des-ewi-safe-shutdown" class="slide level2">
+<h2>Nutzen des EWI (Safe Shutdown)</h2>
+<ul>
+<li>Der EWI feuert einige Mikrosekunden vor dem tödlichen Reset.</li>
+<li>In dieser speziellen ISR (<code>HAL_WWDG_EarlyWakeupCallback</code>) können wir:
+<ul>
+<li>PWM-Signale für Motoren sofort auf <span class="math inline">\(0\)</span> (Safe State) ziehen.</li>
+<li>Wichtige Variablen (Fehlercodes) in den Backup-SRAM retten.</li>
+<li>Die rote Fehler-LED einschalten.</li>
+</ul></li>
+<li><strong>Wichtig:</strong> Wir dürfen den Watchdog im EWI nicht mehr füttern! (Der Reset ist unausweichlich).</li>
+</ul>
+<aside class="notes">
+<p>Dieser Early Wakeup Interrupt verschafft Ihnen auf dem Sterbebett des Mikrocontrollers noch ein paar wertvolle Mikrosekunden Lebenszeit. In der Callback-Routine dieses Interrupts dürfen Sie keine aufwändigen Berechnungen mehr starten. Ihr einziger Job hier lautet Schadensbegrenzung. Sie schreiben Nullen in die Register der Motor-PWMs, um mechanische Schäden zu verhindern. Sie kopieren vielleicht noch schnell einen Fehlercode in den batteriegestützten Backup-SRAM, damit Sie nach dem Reboot wissen, warum das System abgestürzt ist. Und ganz wichtig: Versuchen Sie nicht, in diesem EWI den Watchdog noch schnell zu füttern, um den Reset zu verhindern! Wenn Sie hier gelandet sind, ist das System korrupt. Der Reset ist die einzig richtige Konsequenz.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="hal-api-für-den-wwdg" class="slide level2">
+<h2>HAL-API für den WWDG</h2>
+<ul>
+<li>So nutzen wir den Window Watchdog in C:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="co">// 1. Initialisierung (oft im CubeMX generiert)</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="co">// Prescaler, Window-Wert und Counter-Reload definieren.</span></span>
+<span id="cb4-3"><a aria-label="3"></a></span>
+<span id="cb4-4"><a aria-label="4"></a><span class="co">// 2. Füttern in der RTOS-Task (nur im erlaubten Fenster!)</span></span>
+<span id="cb4-5"><a aria-label="5"></a>HAL_WWDG_Refresh<span class="op">(&amp;</span>hwwdg<span class="op">);</span></span>
+<span id="cb4-6"><a aria-label="6"></a></span>
+<span id="cb4-7"><a aria-label="7"></a><span class="co">// 3. Notfall-Rettung (wenn EWI aktiviert)</span></span>
+<span id="cb4-8"><a aria-label="8"></a><span class="dt">void</span> HAL_WWDG_EarlyWakeupCallback<span class="op">(</span>WWDG_HandleTypeDef <span class="op">*</span>hwwdg<span class="op">)</span></span>
+<span id="cb4-9"><a aria-label="9"></a><span class="op">{</span></span>
+<span id="cb4-10"><a aria-label="10"></a>    <span class="co">// MOTOR AUS!</span></span>
+<span id="cb4-11"><a aria-label="11"></a>    Motor_SafeShutdown<span class="op">();</span></span>
+<span id="cb4-12"><a aria-label="12"></a>    <span class="co">// System stirbt in wenigen Taktzyklen...</span></span>
+<span id="cb4-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Die C-API für den WWDG ist fast identisch zum IWDG. Sie haben einen Refresh-Befehl, den Sie in Ihrer überwachten Task aufrufen. Die Kunst liegt darin, das Timing des Schedulers so zu designen, dass diese C-Zeile immer exakt im erlaubten Zeitfenster der Hardware ausgeführt wird. Falls nicht, landen Sie unwiderruflich in der EarlyWakeupCallback-Funktion, Ihrem Safe-Shutdown-Code.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-watchdogs" class="slide level2" data-background-color="#F5F5F7">
+<h2>Zusammenfassung: Watchdogs</h2>
+<table class="caption-top">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 45%">
+<col style="width: 34%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Feature</th>
+<th>IWDG (Independent)</th>
+<th>WWDG (Window)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Taktquelle</td>
+<td>Separater LSI (<span class="math inline">\(32\,\mathrm{kHz}\)</span>)</td>
+<td>Hauptbus APB1 (schnell)</td>
+</tr>
+<tr class="even">
+<td>Fehler-Szenario</td>
+<td>Deadlocks, Hardware-Hänger</td>
+<td>Zu schnelle/langsame Ausführung</td>
+</tr>
+<tr class="odd">
+<td>Refresh-Regel</td>
+<td>Vor Ablauf der Deadline</td>
+<td>Nur im erlaubten Zeit-Fenster</td>
+</tr>
+<tr class="even">
+<td>Vorwarnung (EWI)</td>
+<td>Nein, sofortiger Hard-Reset</td>
+<td>Ja (Interrupt kurz vor Reset)</td>
+</tr>
+<tr class="odd">
+<td>Einsatz im RTOS</td>
+<td>Watchdog-Task überwacht alle anderen</td>
+<td>Kritische Steuer-Task überwacht sich selbst</td>
+</tr>
+</tbody>
+</table>
+<aside class="notes">
+<p>Wir fassen das Safety-Kapitel der Watchdogs zusammen. Der IWDG ist unser robuster Panzer. Er läuft immer, selbst wenn die System-Clock abstürzt. Er schützt uns vor Deadlocks, bietet aber keine Vorwarnung. Wir füttern ihn meist aus einer dedizierten, hochprioren OS-Safety-Task. Der WWDG ist unser Präzisionswerkzeug. Er prüft, ob die Takte der Ausführung exakt stimmen, und zwingt uns ins „Allowed Window“. Er gibt uns durch den EWI die Chance auf einen sauberen mechanischen Shutdown und wird direkt in der sicherheitskritischen Task (z. B. der Motorregelung) platziert. Gibt es Fragen zu den Watchdogs, bevor wir uns dem letzten Safety-Feature, dem Speicherschutz, widmen?</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="speicherschutz-die-mpu-erinnerung" class="slide level2">
+<h2>Speicherschutz: Die MPU (Erinnerung)</h2>
+<ul>
+<li>In Vorlesung 6 haben wir die MPU (Memory Protection Unit) kennengelernt, um den Cache für den SRAM4 abzuschalten.</li>
+<li>Aber der eigentliche Name lautet „Protection“ (Schutz).</li>
+<li>Das Problem in C und RTOS:
+<ul>
+<li>Task A legt ein Array <code>uint8_t buffer[10]</code> an.</li>
+<li>Ein Bug in Task A schreibt in <code>buffer[15]</code>.</li>
+<li>Dieser Bereich im RAM gehört aber eigentlich Task B!</li>
+<li>Task A überschreibt heimlich die Variablen von Task B <span class="math inline">\(\rightarrow\)</span> Datenkorruption ohne Fehlermeldung!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Damit betreten wir das finale Gebiet der System-Safety: Speicherschutz. Sie kennen die MPU, die Memory Protection Unit, bereits aus Vorlesung 6, als wir sie missbraucht haben, um den L1-Cache zu deaktivieren. Aber ihr eigentlicher Zweck ist der Schutz vor fehlerhafter Software. In C gibt es keine automatische Array-Grenzen-Überprüfung. Wenn Sie ein Array der Größe 10 anlegen und aus Versehen in den 15. Index schreiben, tut die Hardware das klaglos. In einem RTOS liegen die Stacks der Tasks oft direkt hintereinander im RAM. Task A schreibt also blind in den privaten Stack von Task B. Das Programm stürzt nicht sofort ab, aber Task B rechnet plötzlich mit völlig falschen Sensorwerten. Ein Albtraum für die funktionale Sicherheit.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-primäre-zweck-der-mpu" class="slide level2" data-background-color="#FFFFFF">
+<h2>Der primäre Zweck der MPU</h2>
+<ul>
+<li>Die MPU ist ein Hardware-Modul, das den Adressbus der CPU überwacht.</li>
+<li>Wir können RAM-Regionen definieren und Zugriffsrechte vergeben:
+<ul>
+<li>Read/Write (Lesen &amp; Schreiben erlaubt).</li>
+<li>Read-Only (Schreiben verboten <span class="math inline">\(\rightarrow\)</span> gut für Konstanten).</li>
+<li>No Access (komplett gesperrt).</li>
+<li>Execute Never (verhindert, dass Schadcode aus dem RAM ausgeführt wird).</li>
+</ul></li>
+<li>Ein illegaler Zugriff löst in derselben Nanosekunde einen MemManage Fault (Hardware-Interrupt) aus.</li>
+</ul>
+<aside class="notes">
+<p>Um das zu verhindern, nutzen wir die MPU. Die MPU überwacht jeden einzelnen Adressaufruf der CPU, bevor er auf den Bus geht. Wir können den RAM in Regionen einteilen und Rechte vergeben. Wir können sagen: „Dieser Bereich ist Read-Only“. Versucht eine Task dorthin zu schreiben, feuert die MPU in exakt derselben Nanosekunde den MemManage Fault Interrupt ab. Die CPU wird hardwareseitig gestoppt, BEVOR das falsche Byte in den RAM geschrieben werden kann.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="use-case-1-null-pointer-protection" class="slide level2">
+<h2>Use-Case 1: Null-Pointer-Protection</h2>
+<ul>
+<li>Ein häufiger C-Fehler: Zugriff auf einen uninitialisierten Pointer (<code>NULL</code> = Adresse <code>0x00000000</code>).</li>
+<li>Normalerweise liegt bei Adresse <code>0x0</code> der Flash-Speicher. Die CPU liest bei einem Null-Pointer-Dereference also einfach den Assembler-Code und interpretiert ihn als Daten. Kein Absturz, aber falsche Berechnungen!</li>
+<li>Die Safety-Lösung:
+<ul>
+<li>Wir konfigurieren MPU Region 0 für die allerersten Bytes im Adressraum.</li>
+<li>Wir setzen die Rechte auf „No Access“.</li>
+<li>Ein Null-Pointer-Zugriff löst nun sofort einen Absturz aus, der abgefangen und geloggt werden kann!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Ein genialer Einsatzzweck für die MPU ist die Null-Pointer-Protection. Was passiert in C, wenn Sie vergessen, einen Zeiger zu initialisieren? Er zeigt auf Null, also auf die physikalische Speicheradresse 0x00000000. Bei Cortex-M-Controllern beginnt dort meistens der Flash-Speicher. Wenn Ihr Code nun Daten aus diesem Pointer liest, stürzt er nicht ab! Er liest einfach den Binärcode Ihres eigenen Programms aus und interpretiert ihn als Sensorwert. Das ist fatal. Ein Safety-Ingenieur legt deshalb eine kleine MPU-Region auf die Adresse Null und deklariert sie als „No Access“. Sobald Ihr Code nun einen uninitialisierten Pointer nutzt, greift die Hardware hart ein und wirft die Fault-Exception. Sie haben den C-Bug isoliert.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="use-case-2-stack-overflow-erkennung" class="slide level2" data-background-color="#F5F5F7">
+<h2>Use-Case 2: Stack-Overflow Erkennung</h2>
+<ul>
+<li>In FreeRTOS hat jede Task ihren eigenen Stack.</li>
+<li>Wenn der Stack voll ist, läuft er in den Speicherbereich der Nachbar-Task über.</li>
+<li>Die MPU-Lösung:
+<ul>
+<li>Das OS legt am Ende jedes Task-Stacks eine winzige MPU-Region („Guard Block“) an.</li>
+<li>Diese Region wird auf „No Access“ gesetzt.</li>
+<li>Wenn der Stack wächst und in diesen Bereich eindringen will, löst die MPU sofort aus!</li>
+</ul></li>
+</ul>
+<div class="columns">
+<div class="column" style="width:50%;">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource text number-lines code-with-copy"><code class="sourceCode"><span id="cb5-1"><a aria-label="1"></a>[ Stack Task 2 ]</span>
+<span id="cb5-2"><a aria-label="2"></a>[ MPU Guard Block ] &lt;- NO ACCESS!</span>
+<span id="cb5-3"><a aria-label="3"></a>[ Stack Task 1 ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div><div class="column" style="width:50%;">
+<ul>
+<li>Die Fehlersuche wird trivial, da der Debugger exakt bei der C-Zeile stoppt, die den Stack gesprengt hat.</li>
+</ul>
+</div></div>
+<aside class="notes">
+<p>Noch eleganter ist die Stack-Overflow-Erkennung. FreeRTOS bietet hierfür spezielle MPU-Ports an. Wenn das Betriebssystem eine Task anlegt, setzt es ganz ans Ende des reservierten RAM-Bereichs eine unsichtbare „rote“ MPU-Grenze, einen Guard Block, mit den Rechten „No Access“. Wenn Ihre C-Funktion nun ein riesiges Array deklariert und der Stack-Pointer nach unten in diesen verbotenen Bereich wächst, schlägt die MPU zu. Der gigantische Vorteil: Die Hardware friert die CPU exakt bei der Zeile C-Code ein, die den Stack gesprengt hat. Ohne MPU würde das System vielleicht erst Minuten später abstürzen, weil Task 2 korrupte Daten findet.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="privileged-vs.-user-mode" class="slide level2">
+<h2>Privileged vs.&nbsp;User Mode</h2>
+<ul>
+<li>Wie schützt sich das OS vor den eigenen Tasks?</li>
+<li>Die ARM-Architektur kennt zwei Betriebsmodi:
+<ul>
+<li><strong>Privileged Mode (Kernel):</strong> Darf alles, darf alle MPU-Regionen ändern.</li>
+<li><strong>User Mode (Task):</strong> Ist eingeschränkt, darf nur auf den eigenen RAM zugreifen.</li>
+</ul></li>
+<li>In sicherheitskritischen Anwendungen (wie AUTOSAR oder FreeRTOS-MPU):
+<ul>
+<li>Das Betriebssystem läuft „Privileged“.</li>
+<li>Alle User-Tasks laufen im „User Mode“ und sind in ihren eigenen MPU-Sandkästen eingesperrt.</li>
+</ul></li>
+<li>Eine fehlerhafte Task crasht durch die MPU nur sich selbst, kann aber das OS nicht zerstören!</li>
+</ul>
+<aside class="notes">
+<p>Um dieses Sicherheitsnetz perfekt zu machen, stützt man sich auf die Privilege-Level der ARM-Hardware. Normalerweise läuft Ihr gesamter Code im Kernel-Modus, dem „Privileged Mode“. Er darf alles. In der Luftfahrt oder im modernen Automotive-Bereich nutzt man stattdessen OS-Ports wie FreeRTOS-MPU. Hier läuft nur noch der OS-Kernel (wie PendSV und SysTick) im Privileged Mode. Ihre selbst geschriebenen Tasks werden von der Hardware in den sogenannten User Mode gezwungen. Sie können keine MPU-Regeln mehr ändern und sind in ihrem Sandkasten eingesperrt. Wenn Ihre Task Amok läuft, reißt sie sich selbst in den Abgrund, aber der RTOS-Kern läuft unbeeindruckt weiter und kann eine Fehlerbehandlung einleiten.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-mpu-safety" class="slide level2">
+<h2>Zusammenfassung MPU &amp; Safety</h2>
+<ul>
+<li>Safety-Mechanismen schützen Menschen vor Software-Bugs.</li>
+<li>Der IWDG läuft autark und schützt vor System-Deadlocks.</li>
+<li>Der WWDG überwacht das präzise Timing der Softwareausführung (EWI für Safe-Shutdown).</li>
+<li>Die MPU isoliert Tasks physikalisch voneinander und verhindert Silent-Data-Corruption (z. B. durch Stack Overflows).</li>
+</ul>
+<aside class="notes">
+<p>Fassen wir den Safety-Block zusammen. Wenn wir Systeme bauen, bei denen Fehler gefährlich werden, müssen wir Redundanzen auf Siliziumebene nutzen. Der autarke IWDG rettet uns vor Totalausfällen. Der hochpräzise Window Watchdog stellt sicher, dass unsere Software nicht zu früh und nicht zu spät antwortet. Die Memory Protection Unit sichert unseren Arbeitsspeicher hardwareseitig gegen korrupte Pointer ab. Wenn Sie diese Werkzeuge beherrschen, bauen Sie Systeme auf Industrie-Niveau.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="laborvorbereitung-multicore-safety" class="slide level2" data-background-color="#FFFFFF">
+<h2>Laborvorbereitung: Multicore-Safety</h2>
+<ul>
+<li>Ziel für heute Nachmittag:
+<ul>
+<li>Wir bauen das Multicore-Ping-Pong aus Termin 6 um.</li>
+<li>Wir entfernen das asymmetrische Ping-Pong-Protokoll und ersetzen es durch robuste Hardware-Semaphoren (HSEM).</li>
+<li>Anschließend überwachen wir den RTOS-Kern mit dem WWDG.</li>
+</ul></li>
+<li><strong>Schritt 1: CubeMX Dual-Core Setup</strong>
+<ul>
+<li>Projekt von Woche 6 öffnen.</li>
+<li>Unter System Core <span class="math inline">\(\rightarrow\)</span> HSEM aktivieren.</li>
+<li>Weisen Sie das HSEM-Modul beiden Kernen (Cortex-M7 und M4) zu!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Kommen wir zur Laboraufgabe für heute. Wir bauen unsere Multicore-Kommunikation von Woche 6 um. Wir werfen die Flags „m7_ready“ und „m4_ready“ komplett weg. Wir machen das System brutal asynchron und zwingen beide Kerne, exakt denselben Wert im SRAM4 hochzuzählen. Damit das nicht in der Zerstörung endet, müssen Sie im Cube-Configurator das HSEM-Modul aktivieren. Achten Sie darauf, den Haken bei beiden Kernen zu setzen, damit STMicroelectronics den C-Code für beide Kerne generiert.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-2-der-asynchrone-multicore-zugriff" class="slide level2">
+<h2>Schritt 2: Der asynchrone Multicore-Zugriff</h2>
+<ul>
+<li>Gehen Sie in den Code beider Kerne (<code>CM7/main.c</code> und <code>CM4/.../freertos.c</code>).</li>
+<li>Ersetzen Sie die Logik durch eine schnelle Endlosschleife, die auf den Payload zugreift:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">// Sowohl M7 als auch M4 führen dies asynchron aus!</span></span>
+<span id="cb6-2"><a aria-label="2"></a><span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-3"><a aria-label="3"></a>    <span class="co">// 1. Hardware Schloss (ID 0) anfordern (Blockierend im RTOS!)</span></span>
+<span id="cb6-4"><a aria-label="4"></a>    <span class="cf">while</span> <span class="op">(</span>HAL_HSEM_FastTake<span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="op">!=</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-5"><a aria-label="5"></a>        osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">// Wichtig auf dem M4! (Auf dem M7 reicht Polling)</span></span>
+<span id="cb6-6"><a aria-label="6"></a>    <span class="op">}</span></span>
+<span id="cb6-7"><a aria-label="7"></a></span>
+<span id="cb6-8"><a aria-label="8"></a>    <span class="co">// 2. --- CRITICAL SECTION ---</span></span>
+<span id="cb6-9"><a aria-label="9"></a>    shared_data<span class="op">.</span>payload<span class="op">++;</span></span>
+<span id="cb6-10"><a aria-label="10"></a>    <span class="co">// ---------------------------</span></span>
+<span id="cb6-11"><a aria-label="11"></a></span>
+<span id="cb6-12"><a aria-label="12"></a>    <span class="co">// 3. Hardware Schloss freigeben (Process ID 0)</span></span>
+<span id="cb6-13"><a aria-label="13"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb6-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<aside class="notes">
+<p>Im C-Code sieht das dann so aus. Beide Kerne rufen diese Schleife auf. Zuerst fordern wir das Schloss Nummer 0 per FastTake an. Da FastTake sofort zurückkehrt, packen wir es auf dem Cortex-M4 in eine While-Schleife mit einem osDelay(1). So gibt die FreeRTOS-Task die CPU brav ab, solange der M7 das Schloss hat. Sobald wir das „HAL_OK“ bekommen, sind wir sicher. Wir addieren unseren Zähler im SRAM4 und geben das Schloss mit HAL_HSEM_Release wieder frei.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-3-den-wwdg-integrieren" class="slide level2" data-background-color="#F5F5F7">
+<h2>Schritt 3: Den WWDG integrieren</h2>
+<ul>
+<li>Öffnen Sie CubeMX und aktivieren Sie den WWDG für den Cortex-M4.</li>
+<li>Konfiguration:
+<ul>
+<li>WWDG clock prescaler: <span class="math inline">\(8\)</span> (oder passen Sie es an Ihren Takt an).</li>
+<li>Window value: <span class="math inline">\(80\)</span> (Erlaubtes Fenster beginnt bei Zählerstand <span class="math inline">\(80\)</span>).</li>
+<li>Free-running downcounter value: <span class="math inline">\(120\)</span> (Startwert).</li>
+</ul></li>
+<li>Aktivieren Sie den Early Wakeup Interrupt (EWI) im NVIC-Reiter!</li>
+<li>Code generieren.</li>
+</ul>
+<aside class="notes">
+<p>Wenn die Hardware-Schlösser funktionieren und Ihr Terminal zeigt, dass der Zähler fehlerfrei und ohne Verluste in die Höhe schnellt, bauen wir das Safety-Netz ein. Aktivieren Sie den Window Watchdog für den Cortex-M4. Konfigurieren Sie die Zählerwerte so, dass wir ein solides Fenster haben, zum Beispiel Start bei 120, Fenster öffnet bei 80, Tod bei 0. Ganz wichtig: Aktivieren Sie den Early Wakeup Interrupt, den EWI, im NVIC, damit wir im Notfall reagieren können.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-4-den-wachhund-füttern-crashen" class="slide level2">
+<h2>Schritt 4: Den Wachhund füttern &amp; Crashen</h2>
+<ul>
+<li>In der FreeRTOS-Task des M4 füttern wir nun periodisch:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">void</span> StartDefaultTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-2"><a aria-label="2"></a>  <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb7-3"><a aria-label="3"></a>    <span class="co">// ... HSEM Logik ...</span></span>
+<span id="cb7-4"><a aria-label="4"></a></span>
+<span id="cb7-5"><a aria-label="5"></a>    <span class="co">// Wir warten exakt so lange, dass wir im "Allowed Window" landen!</span></span>
+<span id="cb7-6"><a aria-label="6"></a>    osDelay<span class="op">(</span><span class="dv">15</span><span class="op">);</span></span>
+<span id="cb7-7"><a aria-label="7"></a></span>
+<span id="cb7-8"><a aria-label="8"></a>    <span class="co">// FÜTTERN!</span></span>
+<span id="cb7-9"><a aria-label="9"></a>    HAL_WWDG_Refresh<span class="op">(&amp;</span>hwwdg<span class="op">);</span></span>
+<span id="cb7-10"><a aria-label="10"></a>  <span class="op">}</span></span>
+<span id="cb7-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><strong>Crash-Test 1:</strong> Ändern Sie das Delay auf <code>osDelay(50)</code>.
+<ul>
+<li><span class="math inline">\(\rightarrow\)</span> Zähler fällt auf <span class="math inline">\(0\)</span> (Late). Das Board stirbt und blinkt kurz neu.</li>
+</ul></li>
+<li><strong>Crash-Test 2:</strong> Ändern Sie das Delay auf <code>osDelay(5)</code>.
+<ul>
+<li><span class="math inline">\(\rightarrow\)</span> Wir füttern in der Early-Phase. Das Board stürzt sofort ab!</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Im C-Code müssen wir das System nun haargenau kalibrieren. Fügen Sie in die Task ein osDelay ein, das dafür sorgt, dass Ihr Refresh-Befehl immer exakt im grünen Bereich, dem Allowed Window, landet. Das System läuft stabil. Danach prüfen Sie, ob Ihre Safety-Mechanismen wirklich funktionieren! Verlängern Sie das Delay auf 50, flashen Sie, und beobachten Sie den Reset, weil Sie zu spät füttern. Verkürzen Sie das Delay auf 5, flashen Sie, und beobachten Sie den Absturz durch die Early-Phase.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="schritt-5-den-safe-shutdown-implementieren" class="slide level2">
+<h2>Schritt 5: Den Safe-Shutdown implementieren</h2>
+<ul>
+<li>Fügen Sie in der <code>main.c</code> des CM4 den Callback ein:</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="dt">void</span> HAL_WWDG_EarlyWakeupCallback<span class="op">(</span>WWDG_HandleTypeDef <span class="op">*</span>hwwdg<span class="op">)</span></span>
+<span id="cb8-2"><a aria-label="2"></a><span class="op">{</span></span>
+<span id="cb8-3"><a aria-label="3"></a>    <span class="co">// Die letzten Mikrosekunden vor dem Reset!</span></span>
+<span id="cb8-4"><a aria-label="4"></a>    HAL_GPIO_WritePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">,</span> GPIO_PIN_SET<span class="op">);</span> <span class="co">// Rote LED AN</span></span>
+<span id="cb8-5"><a aria-label="5"></a></span>
+<span id="cb8-6"><a aria-label="6"></a>    <span class="co">// HIER NIEMALS REFRESH AUFRUFEN!</span></span>
+<span id="cb8-7"><a aria-label="7"></a>    <span class="co">// System bootet gleich hart neu.</span></span>
+<span id="cb8-8"><a aria-label="8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Wenn Sie den Crash-Test (z. B. Late-Refresh) nun ausführen, blitzt die rote LED auf dem Board extrem kurz auf, bevor der Reset zuschlägt.</li>
+<li>Sie haben den EWI live gesehen!</li>
+</ul>
+<aside class="notes">
+<p>Als Krönung implementieren wir die letzte Notfallmaßnahme. Überschreiben Sie in der main.c den Callback für das Early Wakeup. Schalten Sie dort zur Verifikation eine rote LED ein oder ziehen Sie einen Pin auf HIGH, den Sie mit dem Oszilloskop messen können. Wenn Sie nun den Fehlerfall im Code provozieren, werden Sie sehen, wie die Hardware unbarmherzig eingreift, Ihre Callback-Routine für wenige Taktzyklen aufruft und das gesamte Chip-Design neu bootet.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-essenz-des-tages" class="slide level2" data-background-color="#FFFFFF">
+<h2>Die Essenz des Tages</h2>
+<ul>
+<li>Sie bauen heute Nachmittag keine Labor-Software mehr.</li>
+<li>Sie bauen eine ausfallsichere Serien-Architektur.</li>
+<li>Asynchrone Multicore-Zugriffe sind durch HSEM physikalisch abgeriegelt.</li>
+<li>Ein unvorhergesehener Software-Hänger auf dem M4 wird durch den WWDG erkannt.</li>
+<li>Das System versetzt sich vor dem Absturz über den EWI in einen sicheren Zustand (Motor aus).</li>
+<li>Viel Erfolg im Labor!</li>
+</ul>
+<aside class="notes">
+<p>Damit entlasse ich Sie in das heutige Labor. Was Sie heute programmieren, ist keine akademische Fingerübung mehr. Sie bauen eine Architektur, die Sie exakt so in ein Automotive-Steuergerät für die Serie flashen könnten. Sie verriegeln Speicherzugriffe auf der untersten Silizium-Ebene, und Sie sichern das Echtzeit-Verhalten Ihres C-Codes mit dem stahlharten Zeit-Fenster des Window-Watchdogs ab. Das ist Embedded Engineering auf höchstem Niveau. Viel Erfolg dabei!</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+
+
+</section>
+    </div>
+  <div class="quarto-auto-generated-content" style="display: none;">
+<p><img src="../assets/dhbw_logo.svg" class="slide-logo"></p>
+<div class="footer footer-default">
+
+</div>
+</div></div>
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script>
+  <script src="../site_libs/revealjs/dist/reveal.js"></script>
+  <!-- reveal.js plugins -->
+  <script src="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.js"></script>
+  <script src="../site_libs/revealjs/plugin/pdf-export/pdfexport.js"></script>
+  <script src="../site_libs/revealjs/plugin/reveal-menu/menu.js"></script>
+  <script src="../site_libs/revealjs/plugin/reveal-menu/quarto-menu.js"></script>
+  <script src="../site_libs/revealjs/plugin/quarto-support/support.js"></script>
+  
+
+  <script src="../site_libs/revealjs/plugin/notes/notes.js"></script>
+  <script src="../site_libs/revealjs/plugin/search/search.js"></script>
+  <script src="../site_libs/revealjs/plugin/zoom/zoom.js"></script>
+  <script src="../site_libs/revealjs/plugin/math/math.js"></script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script>
+
+  <script>
+
+      // Full list of configuration options available at:
+      // https://revealjs.com/config/
+      Reveal.initialize({
+'controlsAuto': true,
+'previewLinksAuto': true,
+'pdfSeparateFragments': false,
+'autoAnimateEasing': "ease",
+'autoAnimateDuration': 1,
+'autoAnimateUnmatched': true,
+'jumpToSlide': true,
+'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
+'smaller': false,
+ 
+        // Display controls in the bottom right corner
+        controls: false,
+
+        // Help the user learn the controls by providing hints, for example by
+        // bouncing the down arrow when they first encounter a vertical slide
+        controlsTutorial: false,
+
+        // Determines where controls appear, "edges" or "bottom-right"
+        controlsLayout: 'edges',
+
+        // Visibility rule for backwards navigation arrows; "faded", "hidden"
+        // or "visible"
+        controlsBackArrows: 'faded',
+
+        // Display a presentation progress bar
+        progress: true,
+
+        // Display the page number of the current slide
+        slideNumber: 'c/t',
+
+        // 'all', 'print', or 'speaker'
+        showSlideNumber: 'all',
+
+        // Add the current slide number to the URL hash so that reloading the
+        // page/copying the URL will return you to the same slide
+        hash: true,
+
+        // Start with 1 for the hash rather than 0
+        hashOneBasedIndex: false,
+
+        // Flags if we should monitor the hash and change slides accordingly
+        respondToHashChanges: true,
+
+        // Push each slide change to the browser history
+        history: true,
+
+        // Enable keyboard shortcuts for navigation
+        keyboard: true,
+
+        // Enable the slide overview mode
+        overview: true,
+
+        // Disables the default reveal.js slide layout (scaling and centering)
+        // so that you can use custom CSS layout
+        disableLayout: false,
+
+        // Vertical centering of slides
+        center: false,
+
+        // Enables touch navigation on devices with touch input
+        touch: true,
+
+        // Loop the presentation
+        loop: false,
+
+        // Change the presentation direction to be RTL
+        rtl: false,
+
+        // see https://revealjs.com/vertical-slides/#navigation-mode
+        navigationMode: 'linear',
+
+        // Randomizes the order of slides each time the presentation loads
+        shuffle: false,
+
+        // Turns fragments on and off globally
+        fragments: true,
+
+        // Flags whether to include the current fragment in the URL,
+        // so that reloading brings you to the same fragment position
+        fragmentInURL: false,
+
+        // Flags if the presentation is running in an embedded mode,
+        // i.e. contained within a limited portion of the screen
+        embedded: false,
+
+        // Flags if we should show a help overlay when the questionmark
+        // key is pressed
+        help: true,
+
+        // Flags if it should be possible to pause the presentation (blackout)
+        pause: true,
+
+        // Flags if speaker notes should be visible to all viewers
+        showNotes: false,
+
+        // Global override for autoplaying embedded media (null/true/false)
+        autoPlayMedia: null,
+
+        // Global override for preloading lazy-loaded iframes (null/true/false)
+        preloadIframes: null,
+
+        // Number of milliseconds between automatically proceeding to the
+        // next slide, disabled when set to 0, this value can be overwritten
+        // by using a data-autoslide attribute on your slides
+        autoSlide: 0,
+
+        // Stop auto-sliding after user input
+        autoSlideStoppable: true,
+
+        // Use this method for navigation when auto-sliding
+        autoSlideMethod: null,
+
+        // Specify the average time in seconds that you think you will spend
+        // presenting each slide. This is used to show a pacing timer in the
+        // speaker view
+        defaultTiming: null,
+
+        // Enable slide navigation via mouse wheel
+        mouseWheel: false,
+
+        // The display mode that will be used to show slides
+        display: 'block',
+
+        // Hide cursor if inactive
+        hideInactiveCursor: true,
+
+        // Time before the cursor is hidden (in ms)
+        hideCursorTime: 5000,
+
+        // Opens links in an iframe preview overlay
+        previewLinks: false,
+
+        // Transition style (none/fade/slide/convex/concave/zoom)
+        transition: 'none',
+
+        // Transition speed (default/fast/slow)
+        transitionSpeed: 'default',
+
+        // Transition style for full page slide backgrounds
+        // (none/fade/slide/convex/concave/zoom)
+        backgroundTransition: 'none',
+
+        // Number of slides away from the current that are visible
+        viewDistance: 3,
+
+        // Number of slides away from the current that are visible on mobile
+        // devices. It is advisable to set this to a lower number than
+        // viewDistance in order to save resources.
+        mobileViewDistance: 2,
+
+        // The "normal" size of the presentation, aspect ratio will be preserved
+        // when the presentation is scaled to fit different resolutions. Can be
+        // specified using percentage units.
+        width: 1280,
+
+        height: 720,
+
+        // Factor of the display size that should remain empty around the content
+        margin: 8.0e-2,
+
+        math: {
+          mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@2.7.9/MathJax.js',
+          config: 'TeX-AMS_HTML-full',
+          tex2jax: {
+            inlineMath: [['\\(','\\)']],
+            displayMath: [['\\[','\\]']],
+            balanceBraces: true,
+            processEscapes: false,
+            processRefs: true,
+            processEnvironments: true,
+            preview: 'TeX',
+            skipTags: ['script','noscript','style','textarea','pre','code'],
+            ignoreClass: 'tex2jax_ignore',
+            processClass: 'tex2jax_process'
+          },
+        },
+
+        // reveal.js plugins
+        plugins: [QuartoLineHighlight, PdfExport, RevealMenu, QuartoSupport,
+
+          RevealMath,
+          RevealNotes,
+          RevealSearch,
+          RevealZoom
+        ]
+      });
+    </script>
+    <script>
+    /**
+     * Fit Quarto/Reveal Mermaid SVGs to remaining slide space.
+     * Dimensions from getBoundingClientRect are viewport pixels; CSS sizes inside
+     * Reveal slides are unscaled — divide by Reveal.getScale().
+     */
+    (function () {
+      const BOTTOM_PAD = 36;
+      const SIDE_PAD_RATIO = 0.92;
+      const MAX_SCALE = 3.4;
+
+      function presentSlide() {
+        var present = document.querySelector("section.present");
+        if (!present) return null;
+        var nested = present.querySelector(":scope > section.present");
+        return nested || present;
+      }
+
+      function revealScale() {
+        if (window.Reveal && typeof Reveal.getScale === "function") {
+          var s = Reveal.getScale();
+          return s > 0.05 ? s : 1;
+        }
+        return 1;
+      }
+
+      function ensureWrap(svg) {
+        var parent = svg.parentElement;
+        if (!parent) return null;
+        if (parent.classList.contains("mermaid-fit")) return parent;
+        var wrap = document.createElement("div");
+        wrap.className = "mermaid-fit";
+        parent.insertBefore(wrap, svg);
+        wrap.appendChild(svg);
+        return wrap;
+      }
+
+      function contentBottomAbove(slide, wrap) {
+        var top = slide.getBoundingClientRect().top;
+        var bottom = top + 8;
+        var children = slide.children;
+        for (var i = 0; i < children.length; i++) {
+          var el = children[i];
+          if (el === wrap || el.classList.contains("mermaid-fit")) break;
+          if (el.querySelector && el.querySelector("svg.mermaid-js")) break;
+          if (el.tagName === "ASIDE") continue;
+          var r = el.getBoundingClientRect();
+          if (r.height > 1) bottom = Math.max(bottom, r.bottom);
+        }
+        return bottom;
+      }
+
+      function naturalSize(svg) {
+        if (svg.dataset.natW && svg.dataset.natH) {
+          return { w: +svg.dataset.natW, h: +svg.dataset.natH };
+        }
+        var vb = svg.viewBox && svg.viewBox.baseVal;
+        if (vb && vb.width > 0 && vb.height > 0) {
+          svg.dataset.natW = String(vb.width);
+          svg.dataset.natH = String(vb.height);
+          return { w: vb.width, h: vb.height };
+        }
+        var wAttr = parseFloat(svg.getAttribute("width"));
+        var hAttr = parseFloat(svg.getAttribute("height"));
+        if (wAttr > 0 && hAttr > 0) {
+          svg.dataset.natW = String(wAttr);
+          svg.dataset.natH = String(hAttr);
+          return { w: wAttr, h: hAttr };
+        }
+        var r = svg.getBoundingClientRect();
+        var rs = revealScale();
+        var w = r.width / rs || 320;
+        var h = r.height / rs || 120;
+        svg.dataset.natW = String(w);
+        svg.dataset.natH = String(h);
+        return { w: w, h: h };
+      }
+
+      function fitMermaids() {
+        var slide = presentSlide();
+        if (!slide) return;
+
+        var rs = revealScale();
+        var slideRect = slide.getBoundingClientRect();
+        var svgs = slide.querySelectorAll("svg.mermaid-js");
+
+        for (var i = 0; i < svgs.length; i++) {
+          var svg = svgs[i];
+          var wrap = ensureWrap(svg);
+          if (!wrap) continue;
+
+          svg.style.removeProperty("transform");
+          svg.style.removeProperty("max-width");
+          svg.style.removeProperty("zoom");
+          wrap.style.zoom = "";
+
+          var nat = naturalSize(svg);
+          var above = contentBottomAbove(slide, wrap);
+          var availW = (slideRect.width * SIDE_PAD_RATIO) / rs;
+          var availH = Math.max(72, (slideRect.bottom - above - BOTTOM_PAD) / rs);
+
+          var scale = Math.min(availW / nat.w, availH / nat.h, MAX_SCALE);
+          if (!(scale > 0)) scale = 1;
+
+          var targetW = Math.max(1, Math.round(nat.w * scale));
+          var targetH = Math.max(1, Math.round(nat.h * scale));
+
+          svg.setAttribute("width", targetW);
+          svg.setAttribute("height", targetH);
+          svg.style.width = targetW + "px";
+          svg.style.height = targetH + "px";
+          svg.style.display = "block";
+          svg.style.margin = "0.35rem auto 0";
+        }
+      }
+
+      function scheduleFit() {
+        requestAnimationFrame(function () {
+          fitMermaids();
+          setTimeout(fitMermaids, 150);
+          setTimeout(fitMermaids, 500);
+          setTimeout(fitMermaids, 1100);
+        });
+      }
+
+      window.addEventListener("load", scheduleFit);
+
+      function bindReveal() {
+        if (!window.Reveal || !Reveal.on) return false;
+        Reveal.on("ready", scheduleFit);
+        Reveal.on("slidechanged", scheduleFit);
+        if (Reveal.isReady && Reveal.isReady()) scheduleFit();
+        return true;
+      }
+
+      if (!bindReveal()) {
+        window.addEventListener("load", function () {
+          var tries = 0;
+          var id = setInterval(function () {
+            if (bindReveal() || ++tries > 50) clearInterval(id);
+          }, 100);
+        });
+      }
+
+      window.dhbwMermaidFit = fitMermaids;
+    })();
+    </script>
+    <script id="quarto-html-after-body" type="application/javascript">
+      window.document.addEventListener("DOMContentLoaded", function (event) {
+        const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+        tabsets.forEach(function(tabset) {
+          const tabby = new Tabby('#' + tabset.id);
+        });
+        const isCodeAnnotation = (el) => {
+          for (const clz of el.classList) {
+            if (clz.startsWith('code-annotation-')) {                     
+              return true;
+            }
+          }
+          return false;
+        }
+        const onCopySuccess = function(e) {
+          // button target
+          const button = e.trigger;
+          // don't keep focus
+          button.blur();
+          // flash "checked"
+          button.classList.add('code-copy-button-checked');
+          var currentTitle = button.getAttribute("title");
+          button.setAttribute("title", "Copied!");
+          let tooltip;
+          if (window.bootstrap) {
+            button.setAttribute("data-bs-toggle", "tooltip");
+            button.setAttribute("data-bs-placement", "left");
+            button.setAttribute("data-bs-title", "Copied!");
+            tooltip = new bootstrap.Tooltip(button, 
+              { trigger: "manual", 
+                customClass: "code-copy-button-tooltip",
+                offset: [0, -8]});
+            tooltip.show();    
+          }
+          setTimeout(function() {
+            if (tooltip) {
+              tooltip.hide();
+              button.removeAttribute("data-bs-title");
+              button.removeAttribute("data-bs-toggle");
+              button.removeAttribute("data-bs-placement");
+            }
+            button.setAttribute("title", currentTitle);
+            button.classList.remove('code-copy-button-checked');
+          }, 1000);
+          // clear code selection
+          e.clearSelection();
+        }
+        const getTextToCopy = function(trigger) {
+          const outerScaffold = trigger.parentElement.cloneNode(true);
+          const codeEl = outerScaffold.querySelector('code');
+          for (const childEl of codeEl.children) {
+            if (isCodeAnnotation(childEl)) {
+              childEl.remove();
+            }
+          }
+          return codeEl.innerText;
+        }
+        const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+          text: getTextToCopy
+        });
+        clipboard.on('success', onCopySuccess);
+        if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+          const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+            text: getTextToCopy,
+            container: window.document.getElementById('quarto-embedded-source-code-modal')
+          });
+          clipboardModal.on('success', onCopySuccess);
+        }
+          var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+          var mailtoRegex = new RegExp(/^mailto:/);
+            var filterRegex = new RegExp("https:\/\/dantschi\.github\.io\/echtzeitsysteme\/");
+          var isInternal = (href) => {
+              return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+          }
+          // Inspect non-navigation links and adorn them if external
+         var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+          for (var i=0; i<links.length; i++) {
+            const link = links[i];
+            if (!isInternal(link.href)) {
+              // undo the damage that might have been done by quarto-nav.js in the case of
+              // links that we want to consider external
+              if (link.dataset.originalHref !== undefined) {
+                link.href = link.dataset.originalHref;
+              }
+            }
+          }
+        function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+          const config = {
+            allowHTML: true,
+            maxWidth: 500,
+            delay: 100,
+            arrow: false,
+            appendTo: function(el) {
+                return el.closest('section.slide') || el.parentElement;
+            },
+            interactive: true,
+            interactiveBorder: 10,
+            theme: 'light-border',
+            placement: 'bottom-start',
+          };
+          if (contentFn) {
+            config.content = contentFn;
+          }
+          if (onTriggerFn) {
+            config.onTrigger = onTriggerFn;
+          }
+          if (onUntriggerFn) {
+            config.onUntrigger = onUntriggerFn;
+          }
+            config['offset'] = [0,0];
+            config['maxWidth'] = 700;
+          window.tippy(el, config); 
+        }
+        const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+        for (var i=0; i<noterefs.length; i++) {
+          const ref = noterefs[i];
+          tippyHover(ref, function() {
+            // use id or data attribute instead here
+            let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+            try { href = new URL(href).hash; } catch {}
+            const id = href.replace(/^#\/?/, "");
+            const note = window.document.getElementById(id);
+            if (note) {
+              return note.innerHTML;
+            } else {
+              return "";
+            }
+          });
+        }
+        const findCites = (el) => {
+          const parentEl = el.parentElement;
+          if (parentEl) {
+            const cites = parentEl.dataset.cites;
+            if (cites) {
+              return {
+                el,
+                cites: cites.split(' ')
+              };
+            } else {
+              return findCites(el.parentElement)
+            }
+          } else {
+            return undefined;
+          }
+        };
+        var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+        for (var i=0; i<bibliorefs.length; i++) {
+          const ref = bibliorefs[i];
+          const citeInfo = findCites(ref);
+          if (citeInfo) {
+            tippyHover(citeInfo.el, function() {
+              var popup = window.document.createElement('div');
+              citeInfo.cites.forEach(function(cite) {
+                var citeDiv = window.document.createElement('div');
+                citeDiv.classList.add('hanging-indent');
+                citeDiv.classList.add('csl-entry');
+                var biblioDiv = window.document.getElementById('ref-' + cite);
+                if (biblioDiv) {
+                  citeDiv.innerHTML = biblioDiv.innerHTML;
+                }
+                popup.appendChild(citeDiv);
+              });
+              return popup.innerHTML;
+            });
+          }
+        }
+      });
+      </script>
+    
+
+</body></html>
