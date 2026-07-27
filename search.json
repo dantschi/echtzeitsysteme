@@ -1,5 +1,1177 @@
 [
   {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#willkommen-in-der-profiliga",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#willkommen-in-der-profiliga",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Willkommen in der Profiliga!",
+    "text": "Willkommen in der Profiliga!\n\nHerzlich willkommen zum 3. Termin unserer Vorlesung\nLetzte Woche: Die Mathematik (RMS, EDF) und unser eigener kleiner Scheduler\nHeute: Wir werfen unseren Eigenbau weg und wechseln in die Industrie-Praxis\nWir führen FreeRTOS ein — das am weitesten verbreitete RTOS für Mikrocontroller\nZiel: Verstehen, wie das OS unter der Haube Speicher und CPU verwaltet\n\n\nGuten Morgen und herzlich willkommen zurück! Letzte Woche: Scheduling-Schranken und kooperativer Round-Robin-Scheduler. Heute werfen wir den Eigenbau weg — didaktisch wertvoll, für die Industrie nicht ausreichend. FreeRTOS: wie Tasks verwaltet werden, was Hardware-Ressourcen kostet, und wie wir es auf dem STM32H755 einsetzen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#agenda-für-heute",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#agenda-für-heute",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Agenda für heute",
+    "text": "Agenda für heute\n\nRecap: Warum unser Eigenbau-Scheduler letzte Woche gescheitert ist\nVom Bare-Metal zum RTOS (Latenz vs. Determinismus)\nDie Architektur von FreeRTOS\nTask-Management: TCB und Speicherbedarf\nDie State-Machine (Ready, Running, Blocked, Suspended)\nTick-Rate, Delays und Context Switch\nCMSIS-RTOS v2 API und Labor am STM32H755\n\n\nKurz Labor-Rückblick, dann Trade-off Latenz vs. Determinismus. Danach FreeRTOS: Task-Modell, RAM-Bedarf, Zustandsmaschine, Timing und CMSIS — bevor wir im Labor flashen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#recap-unser-round-robin-eigenbau",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#recap-unser-round-robin-eigenbau",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Recap: Unser Round-Robin Eigenbau",
+    "text": "Recap: Unser Round-Robin Eigenbau\n\n\n\nLetzte Woche: Array aus Funktionszeigern (TCBs)\nScheduler lief ringförmig durch alle Tasks (Round-Robin)\nKontextwechsel als einfacher C-Aufruf: task_list[idx].task_func();\nVoraussetzung: System war kooperativ\n\n\n// Die Task MUSS das OS rufen!\nvoid Task_1() {\n    while(1) {\n        LED_On();\n        os_yield(); // Freiwillig!\n    }\n}\n\n\nKleines OS in C: Array speichert Task-Funktionen. os_yield() erhöht den Index und ruft die nächste Funktion. Elegant ohne Assembler — aber kooperativ: jede Task musste brav os_yield() aufrufen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#recap-der-crash-im-labor",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#recap-der-crash-im-labor",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Recap: Der Crash im Labor",
+    "text": "Recap: Der Crash im Labor\n\nIn der Labor-Aufgabe haben wir die Kooperation sabotiert\nTask 2: gigantische, blockierende Zählschleife ohne os_yield()\nErgebnis:\n\nTask 1 (LED) ist eingefroren\nDer Scheduler wurde nie wieder aufgerufen\nDas System war tot (Starvation)\n\nFazit: Für harte Echtzeit dürfen wir der Anwendungssoftware niemals vertrauen — wir brauchen Präemption\n\n\nMutwillige Sabotage: Zählschleife ohne os_yield(). LED stand still, MCU schien eingefroren — Main-Loop in Task 2 gefangen. Harte Echtzeit braucht Präemption durch Hardware-Interrupts.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-notwendigkeit-eines-echten-rtos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#die-notwendigkeit-eines-echten-rtos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Die Notwendigkeit eines echten RTOS",
+    "text": "Die Notwendigkeit eines echten RTOS\n\nEin modernes System (z. B. Dual-Core STM32H755) hat komplexe Anforderungen:\n\nHarte Timing-Garantien (Präemption)\nSichere Kommunikation zwischen Tasks (Queues)\nAbsicherung gemeinsamer Ressourcen (Mutexes)\nSpeichermanagement\n\nDas baut man nicht an einem Nachmittag\nWir greifen auf bewährte, zertifizierbare Software zurück\n\n\nBastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere IPC, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#was-leistet-ein-rtos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#was-leistet-ein-rtos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Was leistet ein RTOS?",
+    "text": "Was leistet ein RTOS?\n\nMultitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. RMS)\nInter-Process Communication (IPC): Queues und Mailboxes\nSynchronisation: Mutexes und Semaphore für Interrupt-Sicherheit\nMemory Management: RAM-Stacks für jede Task\nHardware Abstraction Layer (HAL): ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber\n\n\nFünf Kernaufgaben: Scheduling, IPC, Synchronisation, Speichermanagement, Abstraktion. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-markt-für-echtzeitbetriebssysteme",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-markt-für-echtzeitbetriebssysteme",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der Markt für Echtzeitbetriebssysteme",
+    "text": "Der Markt für Echtzeitbetriebssysteme\n\n\nKommerziell (oft Safety-zertifiziert):\n\nVxWorks: Luft- und Raumfahrt (Mars Rover)\nQNX: Auto-Infotainment\nAUTOSAR OS: Steuergeräte (meist OSEK-basiert)\n\n\nOpen Source / industrie-nah:\n\nZephyr: Linux Foundation (z. B. Nordic)\nFreeRTOS: Marktführer bei kleineren Mikrocontrollern\n\n\n\nKommerziell: VxWorks (NASA), QNX, AUTOSAR OS. Open Source: Zephyr stark im Kommen. Unangefochtener Platzhirsch für Mikrocontroller — und unser System: FreeRTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#lernziele-des-heutigen-tages",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#lernziele-des-heutigen-tages",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Lernziele des heutigen Tages",
+    "text": "Lernziele des heutigen Tages\n\nTrade-off Latenz vs. Determinismus verstehen\nTask-Modell von FreeRTOS implementieren können\nVerstehen, warum eine Task im Zustand Blocked exakt \\(0\\%\\) CPU benötigt\nRAM-Bedarf eines Task-Sets und Tick-Auflösung berechnen\nCMSIS-RTOS v2 statt nativer FreeRTOS-API nutzen\nFreeRTOS in der STM32CubeIDE konfigurieren und Präemption im Labor prüfen\n\n\nRTOS macht den MCU zunächst „langsam“, schenkt aber Vorhersagbarkeit. Architektur, Zustände, Timing/CMSIS und Prioritäten — dann Labor auf dem Cortex-M4.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#architektur-bare-metal-vs.-rtos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#architektur-bare-metal-vs.-rtos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Architektur: Bare-Metal vs. RTOS",
+    "text": "Architektur: Bare-Metal vs. RTOS\n\n\nBare-Metal (Super-Loop)\n\nHardware → Ihr C-Code\nSehr flache Architektur\nEin einziger Call-Stack im RAM\nCPU rechnet oft dauerhaft (Polling, \\(\\approx 100\\%\\) Auslastung)\n\n\nRTOS-Architektur\n\nHardware → RTOS → Ihre Tasks\nOS als Zwischenschicht\nJede Task hat einen eigenen Call-Stack\nCPU kann schlafen (Idle-Task), wenn nichts zu tun ist\n\n\n\nBare-Metal: C direkt auf Hardware, ein Stack, oft 100% Polling-Last. RTOS: Schicht dazwischen, eigener Stack pro Task, Schlafmodus wenn alle warten.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-kernparadigma-latenz-vs.-determinismus",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#das-kernparadigma-latenz-vs.-determinismus",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Das Kernparadigma: Latenz vs. Determinismus",
+    "text": "Das Kernparadigma: Latenz vs. Determinismus\n\nVorurteil: „Wir können kein RTOS nutzen, das ist zu langsam!“\nFakt: Ein RTOS kostet Rechenzeit (Overhead)\n\nSysTick-Interrupt typisch alle \\(1\\,\\mathrm{ms}\\)\nScheduler muss Listen sortieren (Taktzyklen)\nContext Switch (PendSV) kostet ca. \\(100\\)–\\(300\\) Takte\n\nAber: Wir tauschen maximale Geschwindigkeit gegen garantierte Pünktlichkeit (Determinismus)\n\n\nTechnisch richtig, konzeptionell gefährlich: RTOS kostet Takte (SysTick, Scheduler, PendSV). Absolute Latenz wird etwas länger — dafür Determinismus: ausrechenbare Pünktlichkeit statt wackeliger Höchstgeschwindigkeit.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-jitter-vergleich",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-jitter-vergleich",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Visualisierung: Jitter-Vergleich",
+    "text": "Visualisierung: Jitter-Vergleich\n\nHardware-Event triggert eine Reaktion\n\n\n\nBare-Metal: oft schneller, aber unregelmäßig (hoher Jitter)\nRTOS: etwas später (OS-Overhead), bei hoher Priorität nahezu konstant (Jitter \\(\\approx 0\\))\n\n\nOben: externes Ereignis zweimal. Bare-Metal ohne Interrupts: schnell wenn die Superloop gerade pollt, sonst ewig — gewaltiger Jitter. RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#einführung-in-freertos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#einführung-in-freertos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Einführung in FreeRTOS",
+    "text": "Einführung in FreeRTOS\n\nUrsprünglich von Richard Barry (2003) entwickelt\nOpen Source (MIT-Lizenz — auch in kommerziellen, geschlossenen Produkten nutzbar)\n2017 von Amazon (AWS) übernommen\nEigenschaften:\n\nWinziger Footprint (Scheduler ab \\(\\approx 4\\,\\mathrm{KB}\\) ROM, \\(&lt; 1\\,\\mathrm{KB}\\) RAM)\nSehr portabel (8-Bit AVR bis 32-Bit ARM Cortex-A)\nQuasi-Standard in Maker- und Industrie-Welt (ESP32, STM32)\n\n\n\nMIT-Lizenz: ändern und kommerziell nutzen ohne Veröffentlichungspflicht. Amazon übernahm 2017 für AWS-IoT. Kernstärke: Footprint und Portabilität — beherrschen Sie FreeRTOS, beherrschen Sie einen Großteil des Embedded-OS-Marktes.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-freertos-architektur",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#die-freertos-architektur",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Die FreeRTOS Architektur",
+    "text": "Die FreeRTOS Architektur\n\nDas gesamte Betriebssystem besteht aus nur wenigen C-Dateien\nKern-Dateien (OS-Logik, chip-unabhängig):\n\ntasks.c: Scheduler, TCB-Verwaltung, Ready-Listen\nlist.c: Optimierte doppelt verkettete Listen\nqueue.c: Inter-Task-Kommunikation\n\nPort-Layer (hardware-spezifisch):\n\nport.c / portmacro.h: Assembler für SysTick und PendSV (Cortex-M4)\n\n\n\nKein Blackbox-Kernel wie Linux: Kern in Standard-C (tasks.c, list.c, queue.c). Hardware-Brücke im Port-Layer (ARM_CM4F/port.c) mit PendSV-Assembler.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-warum-ein-rtos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-warum-ein-rtos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Zusammenfassung: Warum ein RTOS?",
+    "text": "Zusammenfassung: Warum ein RTOS?\n\n\nVorteile:\n\nVorhersagbares Verhalten (Determinismus) durch hardwarenahe Präemption\nSaubere Software-Struktur (unabhängige Tasks statt Spaghetticode)\nFertige, getestete Module für Kommunikation und Speicherschutz\n\n\nNachteile:\n\nVerlust absoluter CPU-Rohleistung (Scheduler-Overhead)\nHöherer RAM-Verbrauch (eigener Stack pro Task)\nKomplexere Fehlersuche (Race Conditions)\n\n\n\nDeterminismus und Struktur gegen Overhead, RAM und Race Conditions. Als Nächstes: wie FreeRTOS Tasks und RAM verwaltet. Fragen zum Architektur-Teil?",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-task-modell",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-task-modell",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Das FreeRTOS Task-Modell",
+    "text": "Das FreeRTOS Task-Modell\n\nEine Task in FreeRTOS ist eine C-Funktion\nWichtigste Regel: Die Funktion darf niemals ans Ende gelangen (return ist verboten)\nAls unendliche Schleife for(;;) oder while(1) schreiben\n\nvoid vMyFirstTask(void *pvParameters) {\n    // 1. Initialisierung (läuft nur einmal)\n    Init_Sensor();\n\n    // 2. Die Endlosschleife (der Task-Körper)\n    for(;;) {\n        Read_Sensor();\n        vTaskDelay(pdMS_TO_TICKS(100)); // OS: schlafe 100 ms\n    }\n    // HIER DARF DER CODE NIEMALS ANKOMMEN!\n}\n\nGewöhnliche C-Funktion mit void *-Parameter. Niemals return oder Ende der Funktion — sonst Hard Fault. Setup einmal, dann ewige for(;;) mit Arbeit und Schlafen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-task-control-block-tcb-in-freertos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-task-control-block-tcb-in-freertos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der Task Control Block (TCB) in FreeRTOS",
+    "text": "Der Task Control Block (TCB) in FreeRTOS\n\nFreeRTOS legt für jede Task ein Struct im RAM an\nWichtige Felder in tskTCB:\n\npxTopOfStack: Wo liegen die CPU-Register dieser Task?\nxStateListItem: Knoten für Ready/Blocked-Listen\nuxPriority: Aktuelle Priorität\npcTaskName: String für Debugging (z. B. \"MotorTask\")\n\nDer TCB wird vom OS verwaltet — wir fassen ihn niemals direkt an\n\n\nBei xTaskCreate alloziert FreeRTOS den TCB: Stack-Pointer für PendSV, Listen-Knoten, Name für Debugger. Nur über die FreeRTOS-API manipulieren.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#speichermanagement-der-stack",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#speichermanagement-der-stack",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Speichermanagement: Der Stack",
+    "text": "Speichermanagement: Der Stack\n\nIn Bare-Metal: ein globaler Stack für das ganze Programm\nIn FreeRTOS: jede Task hat einen eigenen, isolierten Stack im RAM\nLokale Variablen und Funktionsaufrufe nutzen nur diesen privaten Stack\nVorsicht: Stack zu klein → Stack Overflow in den RAM anderer Tasks\n\n\nZehn Tasks = zehn separate RAM-Blöcke. Lokale Variable landet nur im eigenen Block. Zu große lokale Arrays: Stack Overflow — Absturzursache Nummer 1 in der Praxis.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#berechnung-des-ram-bedarfs",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#berechnung-des-ram-bedarfs",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Berechnung des RAM-Bedarfs",
+    "text": "Berechnung des RAM-Bedarfs\n\nRAM ist auf Mikrocontrollern kostbar (STM32H755: \\(1\\,\\mathrm{MB}\\); kleinere Cortex-M oft nur \\(16\\,\\mathrm{KB}\\))\nRAM-Kosten einer neuen Task: \\[\\mathrm{RAM} = \\text{TCB}~(\\approx 80\\,\\mathrm{Byte}) + (\\text{Stack-Wörter} \\times 4\\,\\mathrm{Byte})\\]\nBeispiel: Stack von \\(128\\) Wörtern auf 32-Bit-ARM \\(= 512\\,\\mathrm{Byte}\\)\n\nGesamt: \\(\\approx 512 + 80 = 592\\,\\mathrm{Byte}\\) pro Task\n\nLektion: Keine großen Arrays als lokale Variablen — Heap oder globale Variablen nutzen\n\n\nFreeRTOS-API: Stackgröße 128 meint 128 Wörter à 4 Byte = 512 Byte. Zehn Tasks: fast 6 KB ohne sinnvolle Arbeit. Große Puffer nie lokal in der Task.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#speicherallokation-statisch-vs.-dynamisch",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#speicherallokation-statisch-vs.-dynamisch",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Speicherallokation: Statisch vs. Dynamisch",
+    "text": "Speicherallokation: Statisch vs. Dynamisch\n\n\nDynamisch (xTaskCreate):\n\nOS ruft intern pvPortMalloc() (RTOS-Heap)\nProblem: Kann fehlschlagen, wenn der Heap voll ist (Laufzeitfehler)\n\n\nStatisch (xTaskCreateStatic):\n\nGlobale C-Arrays für den Stack übergeben\nVorteil: RAM-Mangel fällt schon beim Kompilieren auf (Automotive-Standard)\n\n\n\nDynamisch bequem, aber gefährlich bei vollem Heap. Safety/Automotive oft nur statisch: Linker bricht ab, bevor das Auto startet. Im Labor zunächst der dynamische Weg.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-zustandsmodell",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-zustandsmodell",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Das FreeRTOS Zustandsmodell",
+    "text": "Das FreeRTOS Zustandsmodell\n\nDas Verständnis dieses Modells entscheidet, ob Ihr System echtzeitfähig ist\nEine Task befindet sich immer in exakt einem von vier Zuständen\n\n\n\n\n\n\nstateDiagram-v2\n    [*] --&gt; Ready : Create\n\n    Ready --&gt; Running : Dispatch (Scheduler)\n    Running --&gt; Ready : Preempt (Zeit / höhere Prio)\n\n    Running --&gt; Blocked : Delay / Queue / Mutex\n    Blocked --&gt; Ready : Zeit abgelaufen / Event\n\n    Ready --&gt; Suspended : vTaskSuspend()\n    Blocked --&gt; Suspended : vTaskSuspend()\n    Running --&gt; Suspended : vTaskSuspend()\n    Suspended --&gt; Ready : vTaskResume()\n\n\n\n\n\n\n\nHerzstück: State-Diagramm. Blocked ist kriegsentscheidend. Nie Blocked → Running direkt — immer erst Ready. Suspended: künstliches Koma bis vTaskResume().",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-running-zustand",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-running-zustand",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der „Running“-Zustand",
+    "text": "Der „Running“-Zustand\n\nDie Task besitzt die Kontrolle über die CPU-Hardware (Register, ALU)\nAuf einem Single-Core kann immer nur genau eine Task Running sein\nAuf dem STM32H755 (Dual-Core):\n\nEin Kernel auf Cortex-M7 (eine Task Running)\nEin Kernel auf Cortex-M4 (eine Task Running)\n\nDie Task bleibt Running, bis sie:\n\netwas Blockierendes aufruft (Delay, Mutex)\nvon einer wichtigeren Task unterbrochen wird (Präemption)\n\n\n\nRunning = König der CPU. Heute Nachmittag FreeRTOS nur auf dem M4. Illusion der Gleichzeitigkeit durch schnelles Umschalten. Thronverlust: freiwillig (Delay) oder gewaltsam (SysTick/höhere Prio).",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-ready-zustand",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-ready-zustand",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der „Ready“-Zustand",
+    "text": "Der „Ready“-Zustand\n\nWarteschlange der arbeitswilligen Tasks\nLogisch und rechnerisch bereit, alle nötigen Daten vorhanden\nWarum läuft sie nicht?\n\nEine Task mit gleicher oder höherer Priorität blockiert aktuell Running\n\nFreeRTOS verwaltet pro Prioritäts-Level eine eigene Ready-Liste\n\n\nReady = kein Problem, nur gerade nicht ausgewählt. Array von Listen pro Priorität: Scheduler schaut nur auf die oberste nicht-leere Liste — immer gleich viele Takte (Determinismus).",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-blocked-zustand-die-magie-des-rtos",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-blocked-zustand-die-magie-des-rtos",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der „Blocked“-Zustand (Die Magie des RTOS)",
+    "text": "Der „Blocked“-Zustand (Die Magie des RTOS)\n\nWichtigster Zustand für ein stabiles Echtzeitsystem\nTask wartet auf ein Ereignis:\n\nZeitlich: vTaskDelay(100) (schlafe exakt 100 Ticks)\nLogisch: Taste, UART-Daten, Queue\n\nClou: Blocked-Task wird vom Scheduler beim Suchen komplett ignoriert\nVerbrauch: \\(0{,}00\\%\\) CPU-Rechenzeit\nDeshalb niemals HAL_Delay() in einem RTOS (verbrennt CPU in Zählschleife)\n\n\nWarten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. HAL_Delay lässt die CPU kreisen und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-task-zustände-im-zeitverlauf",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-task-zustände-im-zeitverlauf",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Visualisierung: Task-Zustände im Zeitverlauf",
+    "text": "Visualisierung: Task-Zustände im Zeitverlauf\n\n\nTask A schickt sich selbst in den Blocked-Zustand\nTask B darf endlich rechnen\nNach \\(2\\,\\mathrm{ms}\\) weckt der OS-Timer Task A auf — sie verdrängt B sofort (Präemption)\n\n\nt=0: A rechnet, B wartet. t=1: A ruft vTaskDelay — B bekommt die CPU. t=3: Schlafzeit vorbei, A zurück in Ready mit höherer Prio — Präemption von B.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#freertos-scheduler-konfiguration",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#freertos-scheduler-konfiguration",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "FreeRTOS Scheduler-Konfiguration",
+    "text": "FreeRTOS Scheduler-Konfiguration\n\nScheduler-Verhalten tiefgreifend anpassbar\nSteuerung über FreeRTOSConfig.h\nPräemption aktivieren:\n\nconfigUSE_PREEMPTION = 1: Scheduler darf Tasks unterbrechen (RMS-Stil)\nconfigUSE_PREEMPTION = 0: kooperatives Scheduling (wie unser Eigenbau)\n\nFür unsere Vorlesung: diesen Wert immer auf \\(1\\) setzen\n\n\nFreeRTOSConfig.h ist die Schaltzentrale. configUSE_PREEMPTION = 0 macht FreeRTOS kooperativ wie unser Eigenbau. Für ernsthafte Projekte und den Rest der Vorlesung strikt auf 1.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#prioritäten-in-freertos-achtung-falle",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#prioritäten-in-freertos-achtung-falle",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Prioritäten in FreeRTOS (Achtung: Falle!)",
+    "text": "Prioritäten in FreeRTOS (Achtung: Falle!)\n\nJede Task bekommt beim Start eine Priorität als Integer (uint8_t)\nFreeRTOS-Regel:\n\nPrio \\(0\\) = niedrigste Priorität\nPrio configMAX_PRIORITIES - 1 = höchste Priorität\n\nFalle für Hardware-Entwickler:\n\nARM Cortex-M NVIC denkt genau andersherum (\\(0\\) = höchste Prio)\n\nMerken: OS-Level (hohe Zahl = wichtig), Hardware-Level (kleine Zahl = wichtig)\n\n\nFreeRTOS: 0 unwichtig, hohe Zahl wichtig. NVIC: 0 ist König. Strikt trennen: OS-C-Code vs. Hardware-Register — bringt Anfänger oft zur Verzweiflung.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-idle-task-prio-0",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#die-idle-task-prio-0",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Die Idle-Task (Prio 0)",
+    "text": "Die Idle-Task (Prio 0)\n\nWas passiert, wenn alle eigenen Tasks Blocked sind?\nDie CPU muss Assembler ausführen — sie kann nicht „nichts“ tun\nFreeRTOS erstellt beim Start automatisch die Idle-Task\nImmer Priorität \\(0\\) (lässt jeden anderen ran)\nNutzen der Idle-Task:\n\nSpeicher gelöschter Tasks aufräumen\nCPU in Hardware-Tiefschlaf (WFI — Wait For Interrupt), starker Stromspar-Effekt (configUSE_TICKLESS_IDLE)\n\n\n\nDrei Tasks Blocked: CPU braucht trotzdem Befehle. Idle-Task mit Prio 0 läuft nur, wenn niemand sonst will. Modern: WFI schaltet den Kern ab bis zum nächsten Timer — Batteriesensoren über Jahre.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#strom-sparen-tickless-idle",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#strom-sparen-tickless-idle",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Strom sparen: Tickless Idle",
+    "text": "Strom sparen: Tickless Idle\n\nWas passiert, wenn alle Tasks für z. B. \\(500\\,\\mathrm{ms}\\) blockiert sind?\nNormalerweise wacht der SysTick trotzdem jede \\(1\\,\\mathrm{ms}\\) auf, prüft Listen und schläft wieder\nProblem: Die CPU wird 500-mal sinnlos geweckt (Stromverschwendung)\nLösung: configUSE_TICKLESS_IDLE = 1\n\nFreeRTOS berechnet die Zeit bis zum nächsten Event (z. B. \\(500\\,\\mathrm{ms}\\))\nSysTick aus, Low-Power-Timer auf diese Dauer programmieren\nCPU geht in echten Deep-Sleep\n\n\n\nIm Normalfall feuert der SysTick jede Millisekunde, auch wenn alle Tasks eine halbe Sekunde blockiert sind — 500 sinnlose Aufwachzyklen. Mit configUSE_TICKLESS_IDLE berechnet der Scheduler die Zeit bis zur nächsten Deadline, schaltet den 1-ms-SysTick ab, programmiert einen stromsparenden Hardware-Timer und schickt die CPU schlafen. Für batteriebetriebene Sensoren entscheidend.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-rtos-herzschlag-die-tick-rate",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-rtos-herzschlag-die-tick-rate",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der RTOS-Herzschlag: Die Tick-Rate",
+    "text": "Der RTOS-Herzschlag: Die Tick-Rate\n\nDas Zeitgefühl von FreeRTOS basiert auf Ticks\nEin Tick entspricht einem Interrupt des SysTick-Timers\nGesteuert durch configTICK_RATE_HZ (meist \\(1000\\,\\mathrm{Hz}\\))\nBedeutung:\n\nBei \\(1000\\,\\mathrm{Hz}\\) dauert 1 Tick exakt \\(1\\,\\mathrm{ms}\\)\nDas OS löst Zeiten nur in ganzzahligen Vielfachen von Ticks auf\nEin Delay von \\(1{,}5\\,\\mathrm{ms}\\) ist nicht möglich (wird gerundet)\n\n\n\nconfigTICK_RATE_HZ steht fast immer auf 1000: SysTick jede Millisekunde. FreeRTOS hat keine Nanosekunden-Uhr — die kleinste Einheit ist der Tick. Für \\(1{,}5\\,\\mathrm{ms}\\) Delay geht das nicht; Mikrosekunden-präzises Timing braucht einen separaten Hardware-Timer, kein OS-Delay.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#zeit-umrechnung-die-goldene-regel",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#zeit-umrechnung-die-goldene-regel",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Zeit-Umrechnung (Die goldene Regel)",
+    "text": "Zeit-Umrechnung (Die goldene Regel)\n\n\n\nZeiten niemals als nackte Integer angeben\nvTaskDelay(100) bedeutet: schlafe 100 Ticks\nÄndert ein Kollege die Tick-Rate auf \\(100\\,\\mathrm{Hz}\\)?\n\nAus \\(100\\,\\mathrm{ms}\\) wird plötzlich \\(1\\,\\mathrm{s}\\)\n\n\n\nImmer das Makro nutzen:\n// FALSCH (Tick-abhängig):\nvTaskDelay(100);\n\n// RICHTIG (immer 100 ms):\nvTaskDelay(pdMS_TO_TICKS(100));\n\n\nDie FreeRTOS-API erwartet Ticks. Bei \\(1000\\,\\mathrm{Hz}\\) sind 100 Ticks zufällig \\(100\\,\\mathrm{ms}\\). Senkt jemand die Rate auf \\(100\\,\\mathrm{Hz}\\), blockiert dieselbe Zahl eine ganze Sekunde. Deshalb immer pdMS_TO_TICKS() — der Precompiler rechnet Millisekunden in Ticks um.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-context-switch-overhead-analyse",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#der-context-switch-overhead-analyse",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Der Context Switch (Overhead-Analyse)",
+    "text": "Der Context Switch (Overhead-Analyse)\n\nDer Wechsel erfolgt via PendSV-Assembler-Code\nWas kostet das die CPU?\n\nHardware rettet 8 Kern-Register (\\(\\approx 12\\) Takte)\nPendSV-Handler rettet restliche Register (Push)\nScheduler-Logik (Listen umhängen)\nNeue Register laden (Pop)\n\nSumme: ca. \\(150\\)–\\(300\\) Taktzyklen (je nach Optimierung)\nBei \\(100\\,\\mathrm{MHz}\\) CPU-Takt: nur \\(\\approx 2\\)–\\(3\\,\\mathrm{\\mu s}\\)\n\n\nPendSV sichert Register, FreeRTOS-Assembler pusht den Rest, Listen werden umgehängt, neue Register geladen. Auf Cortex-M4 grob 150–300 Takte; bei \\(\\geq 100\\,\\mathrm{MHz}\\) am STM32H755 also 2–3 Mikrosekunden. Der Latenz-Overhead ist real, für die meisten Anwendungen vernachlässigbar.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#wann-wechselt-der-scheduler",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#wann-wechselt-der-scheduler",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Wann wechselt der Scheduler?",
+    "text": "Wann wechselt der Scheduler?\n\nDer Context Switch passiert nicht nur beim 1-ms-SysTick\nDas OS wechselt sofort asynchron, wenn:\n\neine laufende Task vTaskDelay() aufruft (freiwillig abgeben)\nein Hardware-Interrupt (z. B. UART RX) Daten in eine Queue legt und dadurch eine blockierte Task mit höherer Prio aufweckt\n\nGenau das sorgt für minimale Latenzen in harten Echtzeitsystemen\n\n\nFehlannahme: Scheduler wechselt nur im 1-ms-Raster. Für harte Echtzeit zu langsam. vTaskDelay löst sofort PendSV aus. UART-ISR legt ein Byte in eine Queue: hochpriore wartende Task wird Ready; nach der ISR springt die CPU nicht zurück in die alte Task, sondern in die aufgeweckte.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#vtaskdelay-vs.-hal_delay",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#vtaskdelay-vs.-hal_delay",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "vTaskDelay vs. HAL_Delay",
+    "text": "vTaskDelay vs. HAL_Delay\n\nDas wichtigste Konzept für das Labor\n\n\n\n\n\n\n\n\n\nMetrik\nHAL_Delay(100)\nvTaskDelay(...)\n\n\n\n\nCPU-Zustand\nLeere while-Schleife\nWechsel zu anderer Task / Idle\n\n\nTask-Zustand\nBleibt Running\nWechselt nach Blocked\n\n\nAuslastung \\(U\\)\n\\(100\\%\\) CPU-Last\n\\(0\\%\\) CPU-Last\n\n\nFazit\nZerstört Echtzeit\nEchtes OS-Scheduling\n\n\n\n\nHAL_Delay ist Bare-Metal: wartet auf SysTick, hält die CPU aber in einer leeren Schleife. Das OS denkt, die Task rechnet. vTaskDelay sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals HAL_Delay in FreeRTOS-Tasks.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#drift-freies-timing-vtaskdelayuntil",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#drift-freies-timing-vtaskdelayuntil",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Drift-freies Timing: vTaskDelayUntil",
+    "text": "Drift-freies Timing: vTaskDelayUntil\n\n\n\nvTaskDelay blockiert relativ zur aktuellen Zeit\nProblem: Ausführungszeit verschiebt den nächsten Start (Drift)\nLösung: vTaskDelayUntil() merkt sich den absoluten Startzeitpunkt\nWichtig für präzise PID-Regler\n\n\nTickType_t lastWakeTime;\nlastWakeTime = xTaskGetTickCount();\n\nfor(;;) {\n    Rechne_PID(); // Dauer schwankt!\n\n    // Startet exakt alle 100 ms,\n    // ohne zeitlichen Drift:\n    vTaskDelayUntil(\n        &lastWakeTime,\n        pdMS_TO_TICKS(100)\n    );\n}\n\n\nvTaskDelay verzögert relativ zum Aufruf: 2 ms rechnen + 10 ms schlafen = Periode 12 ms; schwankt die Rechenzeit, driftet der Zyklus. PID braucht konstantes \\(\\Delta t\\). vTaskDelayUntil nimmt den letzten Aufwach-Zeitpunkt und schläft nur die Restzeit — kein Drift über Stunden.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-datei-freertosconfig.h",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#die-datei-freertosconfig.h",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Die Datei FreeRTOSConfig.h",
+    "text": "Die Datei FreeRTOSConfig.h\n\nJeder Port von FreeRTOS benötigt diese Konfigurationsdatei\nDefiniert das Verhalten des OS zur Kompilierzeit\nWichtige Makros:\n\nconfigUSE_PREEMPTION (\\(1\\) = an, \\(0\\) = aus)\nconfigMAX_PRIORITIES (Anzahl der Listen, oft 7)\nconfigMINIMAL_STACK_SIZE (Mindest-RAM für die Idle-Task)\nconfigTOTAL_HEAP_SIZE (RAM-Pool für dynamische Allokation)\n\n\n\nZuerst in FreeRTOSConfig.h schauen: präemptiv?, Prioritätsstufen?, Heap-Größe? configTOTAL_HEAP_SIZE entscheidet, ob Task-Erstellung zur Laufzeit fehlschlägt. In der STM32CubeIDE oft über das grafische Interface statt Handedit.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-scheduler-und-timing",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-scheduler-und-timing",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Zusammenfassung: Scheduler und Timing",
+    "text": "Zusammenfassung: Scheduler und Timing\n\nFreeRTOS ist primär präemptiv (SysTick, PendSV)\nDie Tick-Rate bestimmt die feinste zeitliche Auflösung (meist \\(1\\,\\mathrm{ms}\\))\nBlocked-Tasks entlasten die CPU massiv\nKonfiguration statisch über C-Makros\nPrioritäten: hohe Zahl = hohe Prio (Achtung Cortex-M NVIC)\n\n\nZusammenfassung Theorie: portables, präemptives OS; SysTick für Zeit, PendSV für Registertausch; blockierte Task kostet null Rechenzeit; Prioritäts-Fallstricke merken. Als Nächstes: Wie ruft man FreeRTOS im C-Code auf?",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#freertos-api-vs.-cmsis-rtos-v2",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#freertos-api-vs.-cmsis-rtos-v2",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "FreeRTOS API vs. CMSIS-RTOS v2",
+    "text": "FreeRTOS API vs. CMSIS-RTOS v2\n\nNative FreeRTOS-API ist historisch gewachsen (z. B. xTaskCreate)\nProblem: Vendor Lock-in — Wechsel zu Zephyr oder ThreadX wird teuer\nLösung: CMSIS-RTOS v2 (ARM)\n\nStandardisierte Abstraktionsschicht (Wrapper)\nEinheitliche C-Funktionen (z. B. osThreadNew)\nDarunter kann ein beliebiges RTOS liegen\n\n\n\nFreeRTOS-Namen mit x/v/pc (ungarische Notation). Reine FreeRTOS-API kettet an den Vendor. CMSIS-RTOS ist ein Wörterbuch: osThreadNew wird intern zu xTaskCreate. OS wechseln = Kern tauschen, Applikationscode bleibt.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#stmicroelectronics-und-cmsis",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#stmicroelectronics-und-cmsis",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "STMicroelectronics und CMSIS",
+    "text": "STMicroelectronics und CMSIS\n\nDie STM32CubeIDE generiert standardmäßig CMSIS-RTOS v2\nFreeRTOS dient uns als Backend\n\n\n\n\nAktion\nFreeRTOS nativ\nCMSIS-RTOS v2\n\n\n\n\nTask erstellen\nxTaskCreate()\nosThreadNew()\n\n\nTask blockieren\nvTaskDelay()\nosDelay()\n\n\nQueue anlegen\nxQueueCreate()\nosMessageQueueNew()\n\n\nZeit holen\nxTaskGetTickCount()\nosKernelGetTickCount()\n\n\n\n\nCubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Vorlesung und Labor: strikt CMSIS. Statt vTaskDelay schreiben wir osDelay — kürzer, portabler, gleiche Wirkung.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#ein-cmsis-thread-im-code",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#ein-cmsis-thread-im-code",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Ein CMSIS-Thread im Code",
+    "text": "Ein CMSIS-Thread im Code\n\n\n\nThread-Attribute: Name, Stack-Größe, Prio\nDanach Anmeldung beim OS\nFalle: CMSIS erwartet Stack-Größe in Bytes, nicht in Wörtern\n\n\nconst osThreadAttr_t myTaskAttr = {\n  .name = \"MyTask\",\n  .stack_size = 1024, // Bytes!\n  .priority = osPriorityNormal,\n};\n\nosThreadId_t myTaskHandle =\n    osThreadNew(\n        MyTask_Function,\n        NULL,\n        &myTaskAttr\n    );\n\n\nCMSIS nennt Tasks Threads. Struct mit Name, Stack und Prio. Falle: 1024 bedeutet 1 KB Bytes; nativ FreeRTOS hätte 256 Wörter verlangt. osThreadNew legt TCB an und setzt Ready.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#starten-des-betriebssystems",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#starten-des-betriebssystems",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Starten des Betriebssystems",
+    "text": "Starten des Betriebssystems\n\nNach Hardware-Init und Task-Anlage: Kontrolle abgeben\n\nosKernelStart();\n\nWas passiert?\n\nSysTick wird auf \\(1\\,\\mathrm{ms}\\) programmiert\nScheduler durchsucht die Ready-Liste\nStack-Pointer springt in die Task mit höchster Prio\n\nWichtigste Regel: Code nach osKernelStart() wird niemals ausgeführt\n\n\nPoint of no Return: osKernelStart() (nativ: vTaskStartScheduler()). SysTick, Sprung in den ersten TCB, kein Return. Ein printf darunter erscheint nie — der lineare Bare-Metal-Pfad ist beendet.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#fehlerbehandlung-wenn-ram-fehlt",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#fehlerbehandlung-wenn-ram-fehlt",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Fehlerbehandlung: Wenn RAM fehlt",
+    "text": "Fehlerbehandlung: Wenn RAM fehlt\n\nErschöpfter Heap: osThreadNew liefert NULL\nImmer prüfen, sonst Hard Fault zur Laufzeit\n\nif (myTaskHandle == NULL) {\n    // Kein RAM mehr für TCB oder Stack\n    Error_Handler();\n}\n\nLabor-Tipp: Task startet nicht? configTOTAL_HEAP_SIZE in CubeMX erhöhen\n\n\nZu viele Tasks: dynamische Allokation schlägt fehl, Handle ist NULL. Professionell abfangen (rote LED, Stop). Im Debugger springt eine Task nicht an? Meist voller Heap — Gesamtgröße erhöhen.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-1-stm32cubeide-setup",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-1-stm32cubeide-setup",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Schritt 1: STM32CubeIDE-Setup",
+    "text": "Schritt 1: STM32CubeIDE-Setup\n\nZiel: FreeRTOS auf dem Cortex-M4, präemptives RMS live beweisen\nNeues Projekt STM32H755 (Cortex-M4 aktivieren)\nMiddleware: FREERTOS, Interface CMSIS_V2\nTOTAL_HEAP_SIZE mindestens \\(16384\\) Bytes (\\(16\\,\\mathrm{KB}\\))\n\n\nNicht mehr selbst basteln: echtes RTOS per CubeIDE. Middleware FreeRTOS, CMSIS_V2, Heap sofort auf 16 KB — sonst knallt es beim Anlegen mehrerer Tasks.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-2-der-konflikt-der-timer",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-2-der-konflikt-der-timer",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Schritt 2: Der Konflikt der Timer",
+    "text": "Schritt 2: Der Konflikt der Timer\n\nProblem:\n\nHAL nutzt SysTick für HAL_Delay()\nFreeRTOS braucht SysTick zwingend für den Scheduler\nBeide auf demselben Timer: Absturz zur Laufzeit\n\nLösung (CubeMX-Warnung!):\n\nSystem Core \\(\\rightarrow\\) SYS \\(\\rightarrow\\) Timebase Source\nVon SysTick auf TIM6 umstellen\nHAL nutzt TIM6; SysTick gehört FreeRTOS exklusiv\n\n\n\nCubeIDE warnt sofort: HAL und FreeRTOS kämpfen um SysTick. Lösung: HAL-Timebase auf TIM6. SysTick frei für den Scheduler.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-3-task-design-für-das-labor",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-3-task-design-für-das-labor",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Schritt 3: Task-Design für das Labor",
+    "text": "Schritt 3: Task-Design für das Labor\n\nDrei Tasks, um RMS-Scheduling zu beweisen:\n\nHeartbeat (osPriorityNormal): LED alle \\(500\\,\\mathrm{ms}\\) via osDelay\nHeavyMath (osPriorityBelowNormal): Endlosschleife ohne Delay, \\(100\\%\\) CPU\nEmergency (osPriorityHigh): wartet auf Tastendruck (später per Queue)\n\n\n\nHeartbeat: normale Prio, blinkt alle 500 ms. HeavyMath: niedrigere Prio, reine while-Schleife ohne Delay. Emergency: höchste Prio, meist blockiert auf Taste. Drei Tasks im Configurator anlegen und Code generieren.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#code-struktur-nach-generierung",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#code-struktur-nach-generierung",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Code-Struktur nach Generierung",
+    "text": "Code-Struktur nach Generierung\n\nCubeIDE platziert CMSIS-Aufrufe (osThreadNew) in main.c\nUnten: leere Skelette für die Task-Funktionen\n\n/* USER CODE BEGIN Header_StartHeartbeat */\nvoid StartHeartbeat(void *argument)\n{\n  /* USER CODE BEGIN StartHeartbeat */\n  for(;;)\n  {\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    osDelay(500); // Ticks; bei 1000 Hz = 500 ms\n  }\n  /* USER CODE END StartHeartbeat */\n}\n\nIn main.c ganz unten: generierte Task-Skelette. Heartbeat: Toggle + osDelay(500). Bei configTICK_RATE_HZ = 1000 sind das \\(500\\,\\mathrm{ms}\\). CMSIS arbeitet in Ticks; die goldene Regel pdMS_TO_TICKS gilt für die native FreeRTOS-API. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#code-skelett-die-heavymath-task",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#code-skelett-die-heavymath-task",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Code-Skelett: Die HeavyMath-Task",
+    "text": "Code-Skelett: Die HeavyMath-Task\n\nDiese Task bricht die Blockade-Regel absichtlich\n\nvoid StartHeavyMath(void *argument)\n{\n  volatile uint32_t primes_found = 0;\n  for(;;)\n  {\n     // KEIN osDelay! 100% CPU.\n     // In Bare-Metal: System freezt.\n     Calculate_Primes(&primes_found);\n  }\n}\n\nPrimzahlen, Hashes oder Counter — Variable volatile, sonst optimiert der Compiler die Schleife weg. Kein osDelay: Running wird nie freiwillig verlassen. Beim kooperativen Scheduler von letzter Woche wäre hier alles eingefroren.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-1-der-präemptions-beweis",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-1-der-präemptions-beweis",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Beobachtung 1: Der Präemptions-Beweis",
+    "text": "Beobachtung 1: Der Präemptions-Beweis\n\nCode auf den STM32H755 flashen\nWas passiert?\n\nHeartbeat-LED blinkt stabil im \\(500\\,\\mathrm{ms}\\)-Takt\n\nWarum friert das System nicht ein?\n\nHeartbeat: Normal; HeavyMath: BelowNormal\nNach \\(500\\,\\mathrm{ms}\\) weckt SysTick Heartbeat\nHöhere Prio: OS reißt HeavyMath die CPU weg (Präemption)\n\n\n\nLED blinkt trotz 100%-Mathe-Schleife. Heartbeat schläft Blocked; HeavyMath nutzt Idle-Zeit. SysTick weckt Heartbeat; PendSV wirft Mathe von der CPU, Toggle, wieder Delay, zurück zur Mathematik.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#visuelle-erklärung-präemption-im-labor",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#visuelle-erklärung-präemption-im-labor",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Visuelle Erklärung: Präemption im Labor",
+    "text": "Visuelle Erklärung: Präemption im Labor\n\n\nCPU dauerhaft bei \\(100\\%\\), Auslastung aber nach Prioritäten (RMS) aufgeteilt\n\n\nt=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. RMS auf Hardware-Ebene.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-2-starvation-durch-falsche-prioritäten",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-2-starvation-durch-falsche-prioritäten",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Beobachtung 2: Starvation durch falsche Prioritäten",
+    "text": "Beobachtung 2: Starvation durch falsche Prioritäten\n\nAbsichtlicher Fehler zum Verständnis von RMS:\n\nHeavyMath-Prio \\(\\rightarrow\\) osPriorityHigh (höher als Heartbeat)\n\nFlashen und beobachten:\n\nLED bleibt dunkel / blinkt nie wieder\nHeartbeat verhungert in der Ready-Liste (Starvation)\nHochpriore Endlosschleife gibt die CPU nicht frei\n\n\n\nHeavyMath auf High: LED tot. Heartbeat wacht auf, Scheduler sagt: Prio Normal gegen High — warten. Mathe-Schleife endet nie → Starvation. Das ist kein Priority Inversion (dort hält niedrige Prio eine Sperre); hier reine Verhungerung durch falsche Prioritäten. Scharfes Schwert!",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#debugging-stack-overflow-erkennen",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#debugging-stack-overflow-erkennen",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Debugging: Stack Overflow erkennen",
+    "text": "Debugging: Stack Overflow erkennen\n\nBoard tut nichts (keine LED, kein sichtbarer Code)?\nOft: Stack der Task zu klein (Stack Overflow)\nHardware-Tipp:\n\nCortex-M4 löst HardFault aus\nDebugger pausieren: Ausführung steckt in HardFault_Handler()\n\nLösung: In CubeMX Stack Size der betroffenen Task verdoppeln\n\n\n90 % der „nichts tut“-Fälle: Stack Overflow durch lokale Variablen. Hardware wirft HardFault; Call-Stack zeigt HardFault_Handler. Cube-Configurator: Stack verdoppeln.",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-des-tages",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-des-tages",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Zusammenfassung des Tages",
+    "text": "Zusammenfassung des Tages\n\nRTOS: maximale Geschwindigkeit (Latenz) gegen Garantie (Determinismus)\nJede Task braucht RAM-Budget (TCB + eigener Stack)\nBlockierte Task: \\(0\\%\\) Rechenzeit — niemals reine C-Delays\nCMSIS-RTOS v2 schützt vor Vendor Lock-in\nTimer-Interrupts und Prioritäten verhindern das Einfrieren wichtiger Teile\n\n\nSie verstehen den Latenz-Determinismus-Trade-off, das RAM-Modell und CMSIS als API. Im Labor: präemptives Scheduling live und die Gefahr falsch gesetzter Prioritäten. Vielen Dank — bis gleich im Labor!",
+    "crumbs": [
+      "Vorlesungen",
+      "03 · Einführung in Echtzeitbetriebssysteme"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Willkommen zu den Echtzeitsystemen!",
+    "text": "Willkommen zu den Echtzeitsystemen!\n\nHerzlich willkommen im Kurs Echtzeitsysteme (EZS) an der DHBW Stuttgart\nNeun Termine: je 90 Minuten Theorie und 90 Minuten Praxis am Board\nFokus: moderne Multicore-Architekturen in der Industrie\nHardware: STM32H755 (Dual-Core Cortex-M7/M4)\n\n\nHerzlich willkommen zur Vorlesung Echtzeitsysteme. In den nächsten neun Terminen verbinden wir Theorie mit Praxis an Industrie-Hardware. Der STM32H755 dient als Dual-Core-Plattform für Echtzeit und Multicore-Synchronisation.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Agenda für heute",
+    "text": "Agenda für heute\n\nOrganisatorisches und Spielregeln\nMotivation und Definition von Echtzeit\nBare-Metal: Polling, Interrupts, Foreground/Background\nDeep Dive: Cortex-M, NVIC und Tail-Chaining\nHardware STM32H755 und Toolchain\nLaborübung am Board\n\n\nZuerst Organisation und Prüfung, dann Motivation und präzise Definition. Anschließend Bare-Metal ohne RTOS, Grenzen von Polling und die Rolle von Interrupts — mit Vorbereitung auf die erste Laborübung.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#organisatorisches",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#organisatorisches",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Organisatorisches",
+    "text": "Organisatorisches\n\nPrüfungsleistung: Details folgen (Klausur / Projekt — Angabe in Moodle)\nMaterialien: Folien und Code auf der Kurswebsite und in Moodle\nLabor-Hardware: Boards werden gestellt (STM32H755)\nTools: STM32CubeIDE (C/C++)\nErwartung: aktive Mitarbeit im Labor — Programmieren lernt man durch Tippen\n\n\nAlle Folien und Übungsgerüste stehen online. Die Boards bekommen Sie gestellt. Echtzeitverhalten versteht man oft erst, wenn ein Timer-Interrupt nicht rechtzeitig feuert — deshalb Praxispflicht.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#literatur-und-quellen",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#literatur-und-quellen",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Literatur und Quellen",
+    "text": "Literatur und Quellen\n\nHermann Kopetz: Real-Time Systems (Design Principles)\nGiorgio C. Buttazzo: Hard Real-Time Computing Systems (Scheduling)\nSTMicroelectronics: Reference Manual STM32H745/755 (RM0399)\nFreeRTOS Documentation (online)\nTipp: Datenblätter und Reference Manuals sind Ihre wichtigste Alltagsquelle\n\n\nKopetz und Buttazzo decken Theorie und Scheduling ab. Für die Praxis brauchen Sie ständig das RM0399 — nicht auswendig, aber navigierbar: Timer, Interrupt-Controller, Speicherarchitektur.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#motivation-warum-echtzeit",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#motivation-warum-echtzeit",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Motivation: Warum Echtzeit?",
+    "text": "Motivation: Warum Echtzeit?\n\nSteigende Komplexität in Embedded Systems\nAutonomes Fahren, Medizintechnik, Industrie 4.0\nEin normaler PC (Windows/Linux) gibt keine harten Garantien\nTiming-Fehler können katastrophale Folgen haben\nZiel: Systeme, die vorhersagbar reagieren\n\n\nWenn der Browser eine halbe Sekunde hängt, ist das ärgerlich. Wenn die Fräsmaschinensteuerung hängt, wird es gefährlich. Es geht nicht um „schnell“, sondern um garantierte, vorhersagbare Reaktionszeiten.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-große-mythos-der-echtzeit",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#der-große-mythos-der-echtzeit",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Der große Mythos der Echtzeit",
+    "text": "Der große Mythos der Echtzeit\n\n\nWas viele denken:\n\n„Echtzeit = extrem schnell“\n„4 GHz ist echtzeitfähiger als 400 MHz“\n„Echtzeit = flüssiges Video“\n\n\n\n\nWas es wirklich ist:\n\nEchtzeit = Rechtzeitigkeit\nEin 400-MHz-Controller mit Garantie kann echtzeitfähig sein\nEin 4-GHz-PC ohne Garantie ist es oft nicht\n\n\n\nEchtzeit hat nichts mit maximalem Durchsatz zu tun. Ein kleiner Mikrocontroller mit fester 10-ms-Reaktion schlägt einen Server, der im Mittel 1 ms braucht, aber gelegentlich 50 ms blockiert.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#konsequenzen-von-timing-fehlern",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#konsequenzen-von-timing-fehlern",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Konsequenzen von Timing-Fehlern",
+    "text": "Konsequenzen von Timing-Fehlern\n\nAusfälle entstehen logisch oder zeitlich\nBeispiel Airbag:\n\nCrash erkannt (logisch korrekt)\nZündung ausgelöst (logisch korrekt)\nZündung 50 ms zu spät (zeitlich falsch)\n\nFazit: logisch richtig zur falschen Zeit ist ein Fehler\n\n\nBeim Airbag reicht korrekte Logik nicht. Zu späte Zündung ist nutzlos oder lebensgefährlich. In Echtzeitsystemen ist ein Ergebnis nach der Deadline ein falsches Ergebnis.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#lernziele-des-heutigen-tages",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#lernziele-des-heutigen-tages",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Lernziele des heutigen Tages",
+    "text": "Lernziele des heutigen Tages\n\nKlassische Echtzeit-Definition (Werte- und Zeitbereich) erklären\nHarte, feste und weiche Echtzeit unterscheiden\nMetriken Latenz und Jitter verstehen\nGefahren von Polling-Loops (Super-Loops) kennen\nEinfache Hardware-Interrupts einordnen und konfigurieren\n\n\nAm Ende des Tages: Definition und Klassifikation, Latenz/Jitter, warum while(1)-Polling für komplexe Echtzeit ungeeignet ist, und wie Interrupts Determinismus zurückbringen.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#was-ist-echtzeit-definition",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#was-ist-echtzeit-definition",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Was ist Echtzeit? (Definition)",
+    "text": "Was ist Echtzeit? (Definition)\n\nKlassische Definition (häufig nach DIN 44300 zitiert): Echtzeitbetrieb, wenn\n\nErgebnisse logisch korrekt sind (Wertebereich)\nErgebnisse innerhalb eines vorgegebenen Zeitintervalls vorliegen (Zeitbereich)\n\nDeterminismus: zeitliches Verhalten in jedem Zustand vorhersagbar\n\n\nZwei Dimensionen: Wertebereich und Zeitbereich. Die Formulierung geht auf die klassische DIN-44300-Tradition zurück und wird in der Lehre weiterhin so zitiert. Beim Design streben wir Determinismus an — zeitliches Verhalten vorhersagen oder garantieren können.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#klassifizierung-von-echtzeitsystemen",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#klassifizierung-von-echtzeitsystemen",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Klassifizierung von Echtzeitsystemen",
+    "text": "Klassifizierung von Echtzeitsystemen\n\nNicht jede Fristverletzung ist gleich dramatisch\nUnterscheidung nach Konsequenzen eines Deadline Miss:\n\nHarte Echtzeit (Hard Real-Time)\nFeste Echtzeit (Firm Real-Time)\nWeiche Echtzeit (Soft Real-Time)\n\nGrenzen in der Praxis oft fließend und applikationsabhängig\n\n\nJe nach Kategorie wählen wir Architekturen und Betriebssysteme unterschiedlich. In einem Gerät können alle drei Kategorien auf verschiedene Tasks verteilt sein.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#harte-echtzeit-hard-real-time",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#harte-echtzeit-hard-real-time",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Harte Echtzeit (Hard Real-Time)",
+    "text": "Harte Echtzeit (Hard Real-Time)\n\nDeadline-Überschreitung hat katastrophale Folgen\nSchäden an Mensch, Umwelt oder extrem hoher Verlust\nNutzen nach der Deadline: abrupt null oder negativ\nBeispiele: Motorsteuerung, Fly-by-Wire, Herzschrittmacher\n\n\nKein Spielraum: Fristverletzung = Systemversagen. Hier müssen wir die Worst-Case Execution Time (WCET) absichern — mathematisch oder durch extreme Tests.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#feste-echtzeit-firm-real-time",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#feste-echtzeit-firm-real-time",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Feste Echtzeit (Firm Real-Time)",
+    "text": "Feste Echtzeit (Firm Real-Time)\n\nZwischenstufe zwischen hard und soft\nKeine Katastrophe bei Fristverletzung\nAber: Ergebnis nach der Deadline völlig wertlos (Nutzen = 0)\nBeispiele: High-Frequency Trading; Ausschuss-Erkennung am Band\n\n\nSpäte Börsenorder: wertlos, System fällt nicht aus. Späte Qualitätsprüfung: Teil ist schon vorbei — Ergebnis verwerfen.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#weiche-echtzeit-soft-real-time",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#weiche-echtzeit-soft-real-time",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Weiche Echtzeit (Soft Real-Time)",
+    "text": "Weiche Echtzeit (Soft Real-Time)\n\nDeadline-Überschreitung mindert Qualität, führt aber nicht zum Ausfall\nErgebnis behält nach der Deadline oft noch Restwert\nBeispiele: Video-Streaming, UI-Verzögerung, Raumtemperaturüberwachung\nDie meisten Standard-IT-Systeme fallen hier hinein\n\n\nDesign oft auf den Average Case und hohen Durchsatz; gelegentliche Ausreißer werden toleriert. Video ruckelt — unschön, aber kein Crash.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#determinismus-und-wcet",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#determinismus-und-wcet",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Determinismus und WCET",
+    "text": "Determinismus und WCET\n\nWCET: maximale, garantierte Ausführungszeit unter Worst-Case-Bedingungen\nBCET: minimale Ausführungszeit\nHarte Echtzeit immer auf Basis der WCET designen\nCaches, Pipeline-Stalls und Interrupts erschweren WCET bei modernen CPUs\n\n\nDurchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, Branch Prediction) machen dieselbe Codezeile mal schnell, mal langsam — WCET wird zur Herausforderung.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#latenz-response-time",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#latenz-response-time",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Latenz (Response Time)",
+    "text": "Latenz (Response Time)\n\nLatenz: Verzögerung zwischen Ereignis und Reaktion\nInterrupt-Latenz: Flanke am Pin bis erste Instruktion der ISR\n\n\n\nZwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Context Switch), Sprung in die ISR. Beim Cortex-M oft in der Größenordnung von ca. 12 Taktzyklen Hardware-Latenz — plus Software.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#jitter",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#jitter",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Jitter",
+    "text": "Jitter\n\nJitter: Varianz der Latenz oder der Periodizität\nSoll alle 10 ms laufen, Ist 9,8 ms / 10,2 ms → Jitter 0,4 ms\nRegelungstechnik: hoher Jitter verschlechtert PID-Qualität stark\n\n\n\nSchwankendes dt zerstört Annahmen im Regler. Oft wichtiger als pure Geschwindigkeit: Jitter nahe null, Periodizität stabil.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-metriken",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-metriken",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Zusammenfassung: Metriken",
+    "text": "Zusammenfassung: Metriken\n\nDeadline: Zeitpunkt, bis zu dem das Ergebnis vorliegen muss\nWCET: längste Abarbeitungsdauer des Codes\nLatenz: Startverzögerung bis zur Reaktion\nJitter: Schwankungsbreite der zeitlichen Ausführung\nGoldene Regel: Vorhersagbarkeit (Determinismus), nicht Durchsatz\n\n\nFragen zu diesem Theorieblock? Danach: wie man das klassisch programmiert.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architekturen-wie-programmieren-wir-das",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#architekturen-wie-programmieren-wir-das",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Architekturen: Wie programmieren wir das?",
+    "text": "Architekturen: Wie programmieren wir das?\n\nWechsel von der Theorie zur Software-Architektur\nOhne Betriebssystem: Bare-Metal\nDrei klassische Ansätze:\n\nPolling-Loops (Super-Loop)\nInterrupt-getriebene Systeme\nForeground/Background-Systeme\n\n\n\nCode läuft direkt auf der Hardware. Die drei Muster sind historisch und didaktisch der Weg zum RTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-1-die-polling-loop-super-loop",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-1-die-polling-loop-super-loop",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Architektur 1: Die Polling-Loop (Super-Loop)",
+    "text": "Architektur 1: Die Polling-Loop (Super-Loop)\n\nSimpelstes Muster: Endlosschleife while(1)\nTasks strikt sequenziell\nStatus wird aktiv abgefragt („Polling“)\nVorteil: simpel, wenig Overhead, leicht zu debuggen\n\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\ngraph TD\n  A[Init System] --&gt; B{while 1}\n  B --&gt; C[Lese Sensor]\n  C --&gt; D[Verarbeite Daten]\n  D --&gt; E[Update Display]\n  E --&gt; B\n  style B fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nKlassisches Arduino-Muster: linearer Kontrollfluss. Polling heißt: aktiv nachfragen, ob etwas passiert ist.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-polling",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-polling",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Code-Beispiel: Polling",
+    "text": "Code-Beispiel: Polling\nvoid main(void) {\n    System_Init();\n    while (1) {\n        if (UART_Has_Data()) {   /* Polling */\n            Process_Command();\n        }\n        if (Button_Pressed()) {  /* Polling */\n            Toggle_LED();\n        }\n        Update_Display();\n    }\n}\n\nDer Code fragt den Status zyklisch ab\nFrage: Was passiert, wenn Update_Display() sehr lange dauert?\n\n\nWährend einer langen Display-Funktion ist das System für Taster und UART blind. Latenz summiert sich über alle Tasks in der Schleife.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#die-gefahr-das-heavy-load-problem",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#die-gefahr-das-heavy-load-problem",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Die Gefahr: Das Heavy-Load-Problem",
+    "text": "Die Gefahr: Das Heavy-Load-Problem\n\n\n\nEine lang laufende Funktion blockiert die gesamte Schleife\nAuf Eingänge kann nicht reagiert werden\nLatenzgarantien sind zerstört\nTypische Sünden: delay(100), blockierende Warteschleifen\n\n\nvoid Update_Display(void) {\n    /* ~50 ms Ausführungszeit */\n    Draw_Pixels();\n}\nWorst-Case-Latenz für den Taster: \\(&gt;50\\,\\mathrm{ms}\\)\n\n\nEine 50-ms-Funktion lässt die Super-Loop stehen. Kurze Tasterimpulse gehen verloren. So darf man in der Industrie nicht programmieren.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#fazit-polling",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#fazit-polling",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Fazit: Polling",
+    "text": "Fazit: Polling\n\nVorteile: simpel, keine Race Conditions, feste Reihenfolge\nNachteile: hoher Stromverbrauch, keine Priorisierung, hohe Latenzen\nEinsatz: nur extrem simple Single-Purpose-Geräte\n\n\nFür einen dummen Temperatursensor oft ok. Sobald mehrere asynchrone Ereignisse mit unterschiedlicher Dringlichkeit kommen, scheitert das Modell.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-2-interrupts-zur-rettung",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-2-interrupts-zur-rettung",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Architektur 2: Interrupts zur Rettung",
+    "text": "Architektur 2: Interrupts zur Rettung\n\nInterrupt: Hardware-Signal, das die CPU unterbricht\nKontext sichern, Sprung in die ISR\nNicht mehr fragen — die Hardware meldet sich\nEreignisse priorisierbar (z. B. Not-Halt vor Display)\n\n\nAsynchrone Reaktion mit geringer Latenz, unabhängig von der Main-Loop. Das ist der Schlüssel gegen das Heavy-Load-Problem.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-ablauf-eines-interrupts",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#der-ablauf-eines-interrupts",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Der Ablauf eines Interrupts",
+    "text": "Der Ablauf eines Interrupts\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nsequenceDiagram\n  participant HW as Hardware\n  participant CPU as CPU Main Loop\n  participant ISR as ISR\n  CPU-&gt;&gt;CPU: Code ausführen (z. B. Display)\n  HW--&gt;&gt;CPU: Interrupt Request IRQ\n  Note over CPU: Context Switch\n  CPU-&gt;&gt;ISR: Sprung zur ISR\n  Note over ISR: zeitkritische Arbeit\n  ISR--&gt;&gt;CPU: Return from Interrupt\n  Note over CPU: Register wiederherstellen\n  CPU-&gt;&gt;CPU: alten Code fortsetzen\n\n\n\n\n\n\n\nContext Switch sichert Register und Program Counter. Danach ISR, dann Rückkehr genau an die Unterbrechungsstelle.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-timer-interrupt-stm32-hal",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-timer-interrupt-stm32-hal",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Code-Beispiel: Timer-Interrupt (STM32 HAL)",
+    "text": "Code-Beispiel: Timer-Interrupt (STM32 HAL)\n\n\nSetup in main():\nHAL_TIM_Base_Start_IT(&htim2);\n\nwhile (1) {\n    Update_Display(); /* Hintergrund */\n}\n\nCallback (ISR):\nvoid HAL_TIM_PeriodElapsedCallback(\n    TIM_HandleTypeDef *htim)\n{\n    if (htim-&gt;Instance == TIM2) {\n        Toggle_LED(); /* zeitkritisch */\n    }\n}\n\n\n_IT startet den Timer im Interrupt-Modus. Die LED blinkt deterministisch, auch wenn Update_Display() lange braucht.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#gefahren-von-interrupts",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#gefahren-von-interrupts",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Gefahren von Interrupts",
+    "text": "Gefahren von Interrupts\n\nRace Conditions bei gemeinsamen globalen Variablen\nLange ISRs blockieren niederpriore IRQs und die Main-Loop\nGoldene Regel: ISRs extrem kurz halten — kein printf, keine Delays\nJitter: laufende höhere IRQs verzögern niederpriore ISRs\n\n\nAsynchronität bringt Korrektheitsfallen. In der ISR: Flag setzen, Wert kopieren, sofort zurück. Lange Arbeit gehört in den Hintergrund oder später in Tasks.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-3-foreground-background",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-3-foreground-background",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Architektur 3: Foreground / Background",
+    "text": "Architektur 3: Foreground / Background\n\nKombination: Main-Loop + Interrupts\nBackground: unkritische Polling-Loop (main)\nForeground: zeitkritische ISRs\nStandard für kleine bis mittlere Bare-Metal-Projekte\n\n\n\nISR präemptiert die Main-Loop. Fertig → Main läuft weiter. Das ist das klassische Bare-Metal-Muster vor dem RTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#grenzen-der-klassischen-architekturen",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#grenzen-der-klassischen-architekturen",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Grenzen der klassischen Architekturen",
+    "text": "Grenzen der klassischen Architekturen\n\nWarum reicht Foreground/Background oft nicht mehr?\nSpaghetti-Falle: ISRs setzen Flags, Main pollt endlos\nBei vielen Tasks verliert man den Überblick über den Kontrollfluss\nWir brauchen Priorisierung und Schlafen von Tasks\n\n\nISR darf nicht lange rechnen → Flag. Main wird Flag-Suppe. Deadlines in der Main-Loop sind dann kaum noch garantierbar.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-paradigmenwechsel",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#der-paradigmenwechsel",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Der Paradigmenwechsel",
+    "text": "Der Paradigmenwechsel\n\nWenn Bare-Metal nicht skaliert: RTOS (Real-Time Operating System)\nBare-Metal: Code pollt oder wartet aktiv\nRTOS: Kontrolle über die Zeit an den Scheduler\nMonolith → unabhängige Tasks\n\n\nAb hier ändert sich die Denkweise: nicht mehr eine riesige while(1) orchestrieren, sondern Tasks und Scheduler. FreeRTOS folgt in späteren Terminen.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#vorschau-das-task-modell",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#vorschau-das-task-modell",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Vorschau: Das Task-Modell",
+    "text": "Vorschau: Das Task-Modell\n\n\nTask B rechnet; Event weckt Task A\nRTOS entzieht Task B die CPU (Präemption) und gibt sie Task A\n\n\nEchtes präemptives Multitasking auf einem Core. Details zu Scheduler-Latenzen und Synchronisation: spätere Vorlesungen mit FreeRTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#deep-dive-die-arm-cortex-m-architektur",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#deep-dive-die-arm-cortex-m-architektur",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Deep Dive: Die ARM Cortex-M Architektur",
+    "text": "Deep Dive: Die ARM Cortex-M Architektur\n\nUm Interrupts zu beherrschen, müssen wir die CPU verstehen\nDer STM32H755 basiert auf ARM Cortex-M (M7 und M4)\nCortex-M ist für eingebettete Echtzeitsysteme optimiert\nMerkmale:\n\n32-Bit-Architektur (Register, Busse, ALU)\nDeterministisches Interrupt-Verhalten\nKeine MMU (virtuelle Adressen), sondern MPU (Memory Protection Unit)\n\n\n\nCortex-M („Microcontroller“) ist auf Determinismus ausgelegt — anders als Cortex-A mit MMU. Physische Adressierung und enge Anbindung des Interrupt-Controllers halten Latenzen vorhersagbar.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#das-register-set-der-cpu",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#das-register-set-der-cpu",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Das Register-Set der CPU",
+    "text": "Das Register-Set der CPU\n\n\n\nRegister\nRolle\n\n\n\n\nR0–R12\nAllgemeine Datenregister\n\n\nR13 (SP)\nStack Pointer\n\n\nR14 (LR)\nLink Register (Rücksprungadresse)\n\n\nR15 (PC)\nProgram Counter\n\n\nxPSR\nStatusregister (Flags)\n\n\n\n\n16 Basis-Register à 32 Bit\nBei Interrupt: Kontext dieser Register sichern (Hardware-Push)\n\n\nBei einem Interrupt sind diese Register voll mit dem Zustand der Main-Loop. Die ISR nutzt dieselben Register — deshalb muss der Kontext gesichert werden. R13 (SP) ist für den Context Switch besonders zentral.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#was-passiert-beim-context-switch",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#was-passiert-beim-context-switch",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Was passiert beim Context Switch?",
+    "text": "Was passiert beim Context Switch?\n\nInterrupt unterbricht die Main-Loop\nCPU muss den Zustand retten, um später fortzusetzen\nAblauf (hardwaregesteuert):\n\nPipeline Flush, Abarbeitung stoppt\nAutomatischer Push: R0–R3, R12, LR, PC, xPSR auf den Stack\nPC auf Startadresse der ISR setzen\nISR ausführen\nPop: Register vom Stack wiederherstellen\n\n\n\nDer Cortex-M pusht die wichtigsten Register automatisch. Danach erst der Sprung in die C-ISR. Nach dem Rücksprung merkt die Main-Loop die Unterbrechung nicht — sofern die ISR den Stack korrekt hinterlässt.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-nvic-herr-der-interrupts",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#der-nvic-herr-der-interrupts",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Der NVIC: Herr der Interrupts",
+    "text": "Der NVIC: Herr der Interrupts\n\nNVIC = Nested Vectored Interrupt Controller\nSitzt im Cortex-M-Kern, eng mit der CPU verzahnt\nVerwaltet viele Interrupt-Quellen (beim STM32 bis zu 240)\nVectored: jeder Interrupt hat einen Eintrag in der Vector Table\nHardware springt direkt zur ISR — kein Software-Switch-Case\n\n\n„Vectored“ spart Latenz: kein allgemeiner Handler mit IF-Kaskade, sondern direkter Sprung über die Vektortabelle.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#prioritäten-im-nvic",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#prioritäten-im-nvic",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Prioritäten im NVIC",
+    "text": "Prioritäten im NVIC\n\nNested: ein wichtiger Interrupt darf einen unwichtigeren unterbrechen\nPrioritäten als Nummern (z. B. 4 Bit → 0 bis 15)\nFalle: je kleiner die Zahl, desto höher die Priorität\nPriorität 0: höchste Priorität\nPriorität 15: niedrigste Priorität\n\n\nLowest number = highest priority. Not-Halt mit Prio 0 muss eine laufende UART-ISR unterbrechen können.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#preemption-priority-vs.-subpriority",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#preemption-priority-vs.-subpriority",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Preemption Priority vs. Subpriority",
+    "text": "Preemption Priority vs. Subpriority\n\nPrioritäts-Bits lassen sich aufteilen (Grouping)\nPreemption Priority: darf ein IRQ einen laufenden IRQ unterbrechen?\nSubpriority: bei gleichzeitigem Auftreten — wer zuerst?\nHöhere Subpriority unterbricht niemals einen bereits laufenden Interrupt\n\n\nSubpriority entscheidet nur die Warteschlange, nicht die Präemption. In FreeRTOS konfigurieren wir das Grouping typischerweise so, dass wir reine Preemption Priorities nutzen.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#prioritätsinversion-teaser",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#prioritätsinversion-teaser",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Prioritätsinversion (Teaser)",
+    "text": "Prioritätsinversion (Teaser)\n\nLow-Prio-Task hält eine Ressource (z. B. Mutex/UART)\nHigh-Prio-Task braucht dieselbe Ressource und muss warten\nMedium-Prio-Task unterbricht die Low-Prio-Task\nErgebnis: Medium blockiert indirekt High (Priority Inversion)\n\n\n\nAusblick: Lösung in einer späteren Vorlesung (Mars Pathfinder)\n\n\nLow hält die Ressource, High wartet, Medium präemptiert Low — High bleibt blockiert. Genau dieses Muster brachte 1997 die Mars-Pathfinder-Mission in Schwierigkeiten. Wie wir das verhindern (z. B. Priority Inheritance), folgt später.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#tail-chaining-arms-geheimwaffe",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#tail-chaining-arms-geheimwaffe",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Tail-Chaining: ARMs Geheimwaffe",
+    "text": "Tail-Chaining: ARMs Geheimwaffe\n\nZwei Interrupts A und B treten kurz nacheinander auf\nKlassisch: Push → ISR A → Pop → Push → ISR B → Pop\nTail-Chaining: Cortex-M überspringt sinnloses Pop/Push zwischen ISRs\nDauer: typisch 6 Taktzyklen statt ca. 24 Zyklen Latenz\n\n\n\n\nARM Cortex-M Tail-Chaining: Vergleich mit und ohne Overhead\n\n\n\nWenn nach ISR 1 noch IRQ 2 ansteht, entfällt das teure Pop+Push. Der NVIC kettet die Handler an — Determinismus und Latenzgewinn in Hardware.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#exkurs-hardware-der-stm32h755",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#exkurs-hardware-der-stm32h755",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Exkurs Hardware: Der STM32H755",
+    "text": "Exkurs Hardware: Der STM32H755\n\nDual-Core-Mikrocontroller, Asymmetric Multiprocessing (AMP)\nCortex-M7 (bis 480 MHz): hohe Leistung, Caches, FPU\nCortex-M4 (bis 240 MHz): harte Echtzeit, hochdeterministisch\nBeide Cores teilen Chip, Busse und teilweise Speicher\n\n\nAnders als SMP beim PC: zwei ungleiche Kerne im selben Gehäuse. M7 für Durchsatz, M4 für deterministische Steuerung.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#warum-dual-core-amp-in-der-echtzeit",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#warum-dual-core-amp-in-der-echtzeit",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Warum Dual-Core (AMP) in der Echtzeit?",
+    "text": "Warum Dual-Core (AMP) in der Echtzeit?\n\n\nCortex-M7 (eher soft):\n\nEthernet-Stack (TCP/IP)\nGUI\naufwändige Filter (DSP)\nLatenz schwankend (Caches)\n\n\n\n\nCortex-M4 (eher hard):\n\nMotorsteuerung (PWM)\nharte Timing-Loops\nsicherheitskritische Logik\nLatenz hochdeterministisch\n\n\n\nInter-Core-Kommunikation: Shared Memory im SRAM\n\n\nDisplay/Netzwerk und Motorregelung auf einem Kern stören sich gegenseitig. Cache-Misses erzeugen Jitter. AMP trennt die Welten physisch.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#boot-sequenz-des-stm32h755",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#boot-sequenz-des-stm32h755",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Boot-Sequenz des STM32H755",
+    "text": "Boot-Sequenz des STM32H755\n\nBeim Reset starten nicht beide Cores gleichzeitig\nCortex-M7 bootet als Master\nCortex-M4 bleibt zunächst im Reset/Sleep\nM7 konfiguriert Systemtakt (PLL), dann weckt M4 (HSEM/RCC)\n\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nsequenceDiagram\n  participant Reset as Reset Hardware\n  participant M7 as Cortex-M7\n  participant M4 as Cortex-M4\n  Reset-&gt;&gt;M7: Boot Power-On\n  Reset-&gt;&gt;M4: Held in Reset\n  Note over M7: System Clock PLL\n  M7-&gt;&gt;M7: Init HAL und Peripherie\n  M7-&gt;&gt;M4: Wakeup RCC/HSEM\n  Note over M4: unabhängiger Boot\n  M4-&gt;&gt;M4: Init lokale Peripherie\n\n\n\n\n\n\n\nBeide würden sonst gleichzeitig den Takt konfigurieren. Für Hello World wecken wir den M4 und nutzen ihn als Arbeitskern.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#einführung-in-die-tools-stm32cubeide",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#einführung-in-die-tools-stm32cubeide",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Einführung in die Tools: STM32CubeIDE",
+    "text": "Einführung in die Tools: STM32CubeIDE\n\nSTM32CubeIDE: Eclipse-basierte C/C++-IDE für STM32\nDevice Configuration Tool (ehemals CubeMX)\nGrafische Pin-Zuweisung und Clock-Tree\nCodegenerator für die HAL\n\n\nStatt hundert Seiten Register-Doku: Pin wählen, Funktion zuweisen, Takt konfigurieren — der Generator liefert die Basis-Initialisierung.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#das-hal-konzept",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#das-hal-konzept",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Das HAL-Konzept",
+    "text": "Das HAL-Konzept\n\n\n\nNicht direkt in Register tippen (Standardfall)\nHAL: lesbar und oft portabel innerhalb der STM32-Familie\nNachteil: leichter Aufruf-Overhead\nExtreme Echtzeit: LL oder direkte Register\n\n\n/* HAL (Standard) */\nHAL_TIM_Base_Start_IT(&htim2);\n\n/* LL (schneller) */\nLL_TIM_EnableIT_UPDATE(TIM2);\nLL_TIM_EnableCounter(TIM2);\n\n/* Register */\nTIM2-&gt;DIER |= (1u &lt;&lt; 0);\nTIM2-&gt;CR1  |= (1u &lt;&lt; 0);\n\n\nFür den Großteil der Vorlesung reicht HAL. Wenn jede Nanosekunde zählt, wechseln wir gezielt auf LL oder Registerzugriff.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#projektstruktur-und-code-generierung",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#projektstruktur-und-code-generierung",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Projektstruktur und Code-Generierung",
+    "text": "Projektstruktur und Code-Generierung\n\nPro Core eigener Ordner (CM4 / CM7)\nJe eigene main.c und stm32h7xx_it.c\nEigener Code nur zwischen USER CODE BEGIN und USER CODE END\nCode außerhalb dieser Blöcke wird beim erneuten Generieren gelöscht\n\n\nDie wichtigste Anfängerregel: nur in USER-CODE-Blöcken schreiben — sonst ist die Arbeit mit einem Speichern in der GUI weg.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-1-hello-world-led-blink",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-1-hello-world-led-blink",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Laboraufgabe 1: Hello World (LED Blink)",
+    "text": "Laboraufgabe 1: Hello World (LED Blink)\n\nZiel: Toolchain prüfen, Cortex-M4 nutzen\nSchritte:\n\nProjekt anlegen (Board STM32H755ZI-Q)\nLED (z. B. PE1) als GPIO_Output für CM4\nCode generieren\nIn main.c (CM4) toggeln\n\n\n/* USER CODE BEGIN 3 */\nwhile (1) {\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    HAL_Delay(500); /* blockiert 500 ms */\n}\n/* USER CODE END 3 */\n\nWenn die LED blinkt, laufen IDE, Flash und Debugger. Das Delay ist bewusst blockierend — als Kontrast zu Aufgabe 3.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-2-das-polling-desaster",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-2-das-polling-desaster",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Laboraufgabe 2: Das Polling-Desaster",
+    "text": "Laboraufgabe 2: Das Polling-Desaster\n\nZiel: Grenzen der Super-Loop spüren\nHeavy_Load() vor dem Toggle aufrufen (simuliert Filter/Display)\n\nwhile (1) {\n    Heavy_Load(800000); /* CPU-Last */\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    HAL_Delay(500);\n}\n\nBeobachtung: Warum ist der 500-ms-Takt zerstört?\n\n\nDie unbekannte Laufzeit von Heavy_Load() addiert sich zum Delay. Latenz und Periodizität werden unvorhersagbar — genau das Heavy-Load-Problem aus der Theorie.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-rettung-durch-den-timer",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-rettung-durch-den-timer",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Laboraufgabe 3: Rettung durch den Timer",
+    "text": "Laboraufgabe 3: Rettung durch den Timer\n\nZiel: Determinismus per Interrupt wiederherstellen\nIn der .ioc: TIM2 aktivieren, Clock Source Internal\nNVIC: „TIM2 global interrupt“ aktivieren\nTimer im Interrupt-Modus starten\nPeriodizität berechnen, z. B. 500 ms (2 Hz):\n\n\\[f_{\\mathrm{UPD}} = \\frac{f_{\\mathrm{CLK}}}{(PSC+1)\\,(ARR+1)}\\]\n\nOhne NVIC-Haken feuert die Hardware den IRQ nicht zur CPU. PSC und ARR aus dem tatsächlichen Timer-Takt ableiten.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-der-callback-code",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-der-callback-code",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Laboraufgabe 3: Der Callback-Code",
+    "text": "Laboraufgabe 3: Der Callback-Code\n\nToggle und Delay aus der while(1) entfernen — dort nur noch Heavy_Load()\nCallback ans Ende von main.c:\n\n/* USER CODE BEGIN 4 */\nvoid HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {\n    if (htim-&gt;Instance == TIM2) {\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    }\n}\n/* USER CODE END 4 */\n\nErgebnis: LED blinkt präzise, unabhängig von der CPU-Last\n\n\nForeground/Background: ISR toggelt die LED, Main rechnet Heavy Load. Präzises Blinken trotz Last.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-4-bonus-messung-am-oszi",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-4-bonus-messung-am-oszi",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Laboraufgabe 4 (Bonus): Messung am Oszi",
+    "text": "Laboraufgabe 4 (Bonus): Messung am Oszi\n\nZiel: Jitter Main-Loop vs. Timer-ISR messen\nFreien GPIO (z. B. PA0) als Output nutzen\nAblauf: Pin High → Heavy_Load() → Pin Low; Pulsweite am Oszi\nVergleich: Pin-Toggle in der ISR (Jitter \\(\\approx 0\\))\n\n\nIn der Industrie glauben wir Timing nicht, wir messen es. WCET der Berechnung vs. fast jitterfreie ISR-Flanke.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-des-tages",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-des-tages",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Zusammenfassung des Tages",
+    "text": "Zusammenfassung des Tages\n\nEchtzeit = Rechtzeitigkeit, nicht pure Rechenleistung\nSuper-Loops skalieren schlecht (Latenz-Akkumulation)\nInterrupts ermöglichen Hardware-Präemption (Foreground/Background)\nNVIC: Prioritäten hardwarenah, inkl. Tail-Chaining\nWorkflow: Bare-Metal-Code auf Cortex-M4 generieren und erweitern\n\n\nDeterminismus und Deadlines stehen im Zentrum. Interrupts retten Latenz — mit neuen Gefahren (Race Conditions, lange ISRs). Hardware-Features wie Tail-Chaining senken Overhead.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#ausblick-auf-termin-2",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#ausblick-auf-termin-2",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Ausblick auf Termin 2",
+    "text": "Ausblick auf Termin 2\n\nBare-Metal mit vielen IRQs skaliert nicht ewig (Spaghetti-Flags)\nNächste Woche: Scheduling-Theorie\nPraxis: eigener einfacher Round-Robin-Scheduler auf dem STM32\nVorbereitung: heutiges Projekt mitbringen\n\n\nDanach der Weg zu FreeRTOS. Bitte Projekte speichern — wir bauen darauf auf. Fragen? Dann weiter im Labor.",
+    "crumbs": [
+      "Vorlesungen",
+      "01 · Was ist Echtzeit"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Herzlich willkommen zur Vorlesung Echtzeitsysteme (EZS) an der Dualen Hochschule Baden-Württemberg Stuttgart.\nDozent: Prof. Dr.-Ing. Daniel Klünder\nKurswebsite: dantschi.github.io/echtzeitsysteme\nRepository: github.com/dantschi/echtzeitsysteme\nDas Modul vermittelt die Grundlagen zeitkritischer Rechensysteme: von harten und weichen Echtzeitanforderungen über Aufgabenmodelle und Scheduling bis zu Antwortzeitanalyse, Ressourcenprotokollen und Echtzeitbetriebssystemen. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis mit einem RTOS umzusetzen — mit klarem Blick auf die Trennung von Korrektheit der Funktion und Korrektheit im Zeitbereich.\n\n\nDer rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.\n\n\n\nZentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer\n\n\n\n\n\n\n\nTool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer\n\n\n\n\n\n\nDieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#kursübersicht",
+    "href": "index.html#kursübersicht",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Der rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#literatur",
+    "href": "index.html#literatur",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Zentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#tools-und-ressourcen",
+    "href": "index.html#tools-und-ressourcen",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Tool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#oer-und-lizenz",
+    "href": "index.html#oer-und-lizenz",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Dieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
     "objectID": "vorlesungen/02_scheduling-theorie.html#willkommen-zurück-zu-echtzeitsystemen",
     "href": "vorlesungen/02_scheduling-theorie.html#willkommen-zurück-zu-echtzeitsystemen",
     "title": "02 · Scheduling-Theorie",
@@ -690,617 +1862,6 @@
     "crumbs": [
       "Vorlesungen",
       "02 · Scheduling-Theorie"
-    ]
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Herzlich willkommen zur Vorlesung Echtzeitsysteme (EZS) an der Dualen Hochschule Baden-Württemberg Stuttgart.\nDozent: Prof. Dr.-Ing. Daniel Klünder\nKurswebsite: dantschi.github.io/echtzeitsysteme\nRepository: github.com/dantschi/echtzeitsysteme\nDas Modul vermittelt die Grundlagen zeitkritischer Rechensysteme: von harten und weichen Echtzeitanforderungen über Aufgabenmodelle und Scheduling bis zu Antwortzeitanalyse, Ressourcenprotokollen und Echtzeitbetriebssystemen. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis mit einem RTOS umzusetzen — mit klarem Blick auf die Trennung von Korrektheit der Funktion und Korrektheit im Zeitbereich.\n\n\nDer rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.\n\n\n\nZentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer\n\n\n\n\n\n\n\nTool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer\n\n\n\n\n\n\nDieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#kursübersicht",
-    "href": "index.html#kursübersicht",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Der rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#literatur",
-    "href": "index.html#literatur",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Zentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#tools-und-ressourcen",
-    "href": "index.html#tools-und-ressourcen",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Tool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#oer-und-lizenz",
-    "href": "index.html#oer-und-lizenz",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Dieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Willkommen zu den Echtzeitsystemen!",
-    "text": "Willkommen zu den Echtzeitsystemen!\n\nHerzlich willkommen im Kurs Echtzeitsysteme (EZS) an der DHBW Stuttgart\nNeun Termine: je 90 Minuten Theorie und 90 Minuten Praxis am Board\nFokus: moderne Multicore-Architekturen in der Industrie\nHardware: STM32H755 (Dual-Core Cortex-M7/M4)\n\n\nHerzlich willkommen zur Vorlesung Echtzeitsysteme. In den nächsten neun Terminen verbinden wir Theorie mit Praxis an Industrie-Hardware. Der STM32H755 dient als Dual-Core-Plattform für Echtzeit und Multicore-Synchronisation.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Agenda für heute",
-    "text": "Agenda für heute\n\nOrganisatorisches und Spielregeln\nMotivation und Definition von Echtzeit\nBare-Metal: Polling, Interrupts, Foreground/Background\nDeep Dive: Cortex-M, NVIC und Tail-Chaining\nHardware STM32H755 und Toolchain\nLaborübung am Board\n\n\nZuerst Organisation und Prüfung, dann Motivation und präzise Definition. Anschließend Bare-Metal ohne RTOS, Grenzen von Polling und die Rolle von Interrupts — mit Vorbereitung auf die erste Laborübung.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#organisatorisches",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#organisatorisches",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Organisatorisches",
-    "text": "Organisatorisches\n\nPrüfungsleistung: Details folgen (Klausur / Projekt — Angabe in Moodle)\nMaterialien: Folien und Code auf der Kurswebsite und in Moodle\nLabor-Hardware: Boards werden gestellt (STM32H755)\nTools: STM32CubeIDE (C/C++)\nErwartung: aktive Mitarbeit im Labor — Programmieren lernt man durch Tippen\n\n\nAlle Folien und Übungsgerüste stehen online. Die Boards bekommen Sie gestellt. Echtzeitverhalten versteht man oft erst, wenn ein Timer-Interrupt nicht rechtzeitig feuert — deshalb Praxispflicht.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#literatur-und-quellen",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#literatur-und-quellen",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Literatur und Quellen",
-    "text": "Literatur und Quellen\n\nHermann Kopetz: Real-Time Systems (Design Principles)\nGiorgio C. Buttazzo: Hard Real-Time Computing Systems (Scheduling)\nSTMicroelectronics: Reference Manual STM32H745/755 (RM0399)\nFreeRTOS Documentation (online)\nTipp: Datenblätter und Reference Manuals sind Ihre wichtigste Alltagsquelle\n\n\nKopetz und Buttazzo decken Theorie und Scheduling ab. Für die Praxis brauchen Sie ständig das RM0399 — nicht auswendig, aber navigierbar: Timer, Interrupt-Controller, Speicherarchitektur.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#motivation-warum-echtzeit",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#motivation-warum-echtzeit",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Motivation: Warum Echtzeit?",
-    "text": "Motivation: Warum Echtzeit?\n\nSteigende Komplexität in Embedded Systems\nAutonomes Fahren, Medizintechnik, Industrie 4.0\nEin normaler PC (Windows/Linux) gibt keine harten Garantien\nTiming-Fehler können katastrophale Folgen haben\nZiel: Systeme, die vorhersagbar reagieren\n\n\nWenn der Browser eine halbe Sekunde hängt, ist das ärgerlich. Wenn die Fräsmaschinensteuerung hängt, wird es gefährlich. Es geht nicht um „schnell“, sondern um garantierte, vorhersagbare Reaktionszeiten.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-große-mythos-der-echtzeit",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#der-große-mythos-der-echtzeit",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Der große Mythos der Echtzeit",
-    "text": "Der große Mythos der Echtzeit\n\n\nWas viele denken:\n\n„Echtzeit = extrem schnell“\n„4 GHz ist echtzeitfähiger als 400 MHz“\n„Echtzeit = flüssiges Video“\n\n\n\n\nWas es wirklich ist:\n\nEchtzeit = Rechtzeitigkeit\nEin 400-MHz-Controller mit Garantie kann echtzeitfähig sein\nEin 4-GHz-PC ohne Garantie ist es oft nicht\n\n\n\nEchtzeit hat nichts mit maximalem Durchsatz zu tun. Ein kleiner Mikrocontroller mit fester 10-ms-Reaktion schlägt einen Server, der im Mittel 1 ms braucht, aber gelegentlich 50 ms blockiert.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#konsequenzen-von-timing-fehlern",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#konsequenzen-von-timing-fehlern",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Konsequenzen von Timing-Fehlern",
-    "text": "Konsequenzen von Timing-Fehlern\n\nAusfälle entstehen logisch oder zeitlich\nBeispiel Airbag:\n\nCrash erkannt (logisch korrekt)\nZündung ausgelöst (logisch korrekt)\nZündung 50 ms zu spät (zeitlich falsch)\n\nFazit: logisch richtig zur falschen Zeit ist ein Fehler\n\n\nBeim Airbag reicht korrekte Logik nicht. Zu späte Zündung ist nutzlos oder lebensgefährlich. In Echtzeitsystemen ist ein Ergebnis nach der Deadline ein falsches Ergebnis.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#lernziele-des-heutigen-tages",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#lernziele-des-heutigen-tages",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Lernziele des heutigen Tages",
-    "text": "Lernziele des heutigen Tages\n\nKlassische Echtzeit-Definition (Werte- und Zeitbereich) erklären\nHarte, feste und weiche Echtzeit unterscheiden\nMetriken Latenz und Jitter verstehen\nGefahren von Polling-Loops (Super-Loops) kennen\nEinfache Hardware-Interrupts einordnen und konfigurieren\n\n\nAm Ende des Tages: Definition und Klassifikation, Latenz/Jitter, warum while(1)-Polling für komplexe Echtzeit ungeeignet ist, und wie Interrupts Determinismus zurückbringen.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#was-ist-echtzeit-definition",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#was-ist-echtzeit-definition",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Was ist Echtzeit? (Definition)",
-    "text": "Was ist Echtzeit? (Definition)\n\nKlassische Definition (häufig nach DIN 44300 zitiert): Echtzeitbetrieb, wenn\n\nErgebnisse logisch korrekt sind (Wertebereich)\nErgebnisse innerhalb eines vorgegebenen Zeitintervalls vorliegen (Zeitbereich)\n\nDeterminismus: zeitliches Verhalten in jedem Zustand vorhersagbar\n\n\nZwei Dimensionen: Wertebereich und Zeitbereich. Die Formulierung geht auf die klassische DIN-44300-Tradition zurück und wird in der Lehre weiterhin so zitiert. Beim Design streben wir Determinismus an — zeitliches Verhalten vorhersagen oder garantieren können.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#klassifizierung-von-echtzeitsystemen",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#klassifizierung-von-echtzeitsystemen",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Klassifizierung von Echtzeitsystemen",
-    "text": "Klassifizierung von Echtzeitsystemen\n\nNicht jede Fristverletzung ist gleich dramatisch\nUnterscheidung nach Konsequenzen eines Deadline Miss:\n\nHarte Echtzeit (Hard Real-Time)\nFeste Echtzeit (Firm Real-Time)\nWeiche Echtzeit (Soft Real-Time)\n\nGrenzen in der Praxis oft fließend und applikationsabhängig\n\n\nJe nach Kategorie wählen wir Architekturen und Betriebssysteme unterschiedlich. In einem Gerät können alle drei Kategorien auf verschiedene Tasks verteilt sein.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#harte-echtzeit-hard-real-time",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#harte-echtzeit-hard-real-time",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Harte Echtzeit (Hard Real-Time)",
-    "text": "Harte Echtzeit (Hard Real-Time)\n\nDeadline-Überschreitung hat katastrophale Folgen\nSchäden an Mensch, Umwelt oder extrem hoher Verlust\nNutzen nach der Deadline: abrupt null oder negativ\nBeispiele: Motorsteuerung, Fly-by-Wire, Herzschrittmacher\n\n\nKein Spielraum: Fristverletzung = Systemversagen. Hier müssen wir die Worst-Case Execution Time (WCET) absichern — mathematisch oder durch extreme Tests.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#feste-echtzeit-firm-real-time",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#feste-echtzeit-firm-real-time",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Feste Echtzeit (Firm Real-Time)",
-    "text": "Feste Echtzeit (Firm Real-Time)\n\nZwischenstufe zwischen hard und soft\nKeine Katastrophe bei Fristverletzung\nAber: Ergebnis nach der Deadline völlig wertlos (Nutzen = 0)\nBeispiele: High-Frequency Trading; Ausschuss-Erkennung am Band\n\n\nSpäte Börsenorder: wertlos, System fällt nicht aus. Späte Qualitätsprüfung: Teil ist schon vorbei — Ergebnis verwerfen.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#weiche-echtzeit-soft-real-time",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#weiche-echtzeit-soft-real-time",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Weiche Echtzeit (Soft Real-Time)",
-    "text": "Weiche Echtzeit (Soft Real-Time)\n\nDeadline-Überschreitung mindert Qualität, führt aber nicht zum Ausfall\nErgebnis behält nach der Deadline oft noch Restwert\nBeispiele: Video-Streaming, UI-Verzögerung, Raumtemperaturüberwachung\nDie meisten Standard-IT-Systeme fallen hier hinein\n\n\nDesign oft auf den Average Case und hohen Durchsatz; gelegentliche Ausreißer werden toleriert. Video ruckelt — unschön, aber kein Crash.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#determinismus-und-wcet",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#determinismus-und-wcet",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Determinismus und WCET",
-    "text": "Determinismus und WCET\n\nWCET: maximale, garantierte Ausführungszeit unter Worst-Case-Bedingungen\nBCET: minimale Ausführungszeit\nHarte Echtzeit immer auf Basis der WCET designen\nCaches, Pipeline-Stalls und Interrupts erschweren WCET bei modernen CPUs\n\n\nDurchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, Branch Prediction) machen dieselbe Codezeile mal schnell, mal langsam — WCET wird zur Herausforderung.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#latenz-response-time",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#latenz-response-time",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Latenz (Response Time)",
-    "text": "Latenz (Response Time)\n\nLatenz: Verzögerung zwischen Ereignis und Reaktion\nInterrupt-Latenz: Flanke am Pin bis erste Instruktion der ISR\n\n\n\nZwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Context Switch), Sprung in die ISR. Beim Cortex-M oft in der Größenordnung von ca. 12 Taktzyklen Hardware-Latenz — plus Software.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#jitter",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#jitter",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Jitter",
-    "text": "Jitter\n\nJitter: Varianz der Latenz oder der Periodizität\nSoll alle 10 ms laufen, Ist 9,8 ms / 10,2 ms → Jitter 0,4 ms\nRegelungstechnik: hoher Jitter verschlechtert PID-Qualität stark\n\n\n\nSchwankendes dt zerstört Annahmen im Regler. Oft wichtiger als pure Geschwindigkeit: Jitter nahe null, Periodizität stabil.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-metriken",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-metriken",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Zusammenfassung: Metriken",
-    "text": "Zusammenfassung: Metriken\n\nDeadline: Zeitpunkt, bis zu dem das Ergebnis vorliegen muss\nWCET: längste Abarbeitungsdauer des Codes\nLatenz: Startverzögerung bis zur Reaktion\nJitter: Schwankungsbreite der zeitlichen Ausführung\nGoldene Regel: Vorhersagbarkeit (Determinismus), nicht Durchsatz\n\n\nFragen zu diesem Theorieblock? Danach: wie man das klassisch programmiert.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architekturen-wie-programmieren-wir-das",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#architekturen-wie-programmieren-wir-das",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Architekturen: Wie programmieren wir das?",
-    "text": "Architekturen: Wie programmieren wir das?\n\nWechsel von der Theorie zur Software-Architektur\nOhne Betriebssystem: Bare-Metal\nDrei klassische Ansätze:\n\nPolling-Loops (Super-Loop)\nInterrupt-getriebene Systeme\nForeground/Background-Systeme\n\n\n\nCode läuft direkt auf der Hardware. Die drei Muster sind historisch und didaktisch der Weg zum RTOS.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-1-die-polling-loop-super-loop",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-1-die-polling-loop-super-loop",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Architektur 1: Die Polling-Loop (Super-Loop)",
-    "text": "Architektur 1: Die Polling-Loop (Super-Loop)\n\nSimpelstes Muster: Endlosschleife while(1)\nTasks strikt sequenziell\nStatus wird aktiv abgefragt („Polling“)\nVorteil: simpel, wenig Overhead, leicht zu debuggen\n\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\ngraph TD\n  A[Init System] --&gt; B{while 1}\n  B --&gt; C[Lese Sensor]\n  C --&gt; D[Verarbeite Daten]\n  D --&gt; E[Update Display]\n  E --&gt; B\n  style B fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nKlassisches Arduino-Muster: linearer Kontrollfluss. Polling heißt: aktiv nachfragen, ob etwas passiert ist.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-polling",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-polling",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Code-Beispiel: Polling",
-    "text": "Code-Beispiel: Polling\nvoid main(void) {\n    System_Init();\n    while (1) {\n        if (UART_Has_Data()) {   /* Polling */\n            Process_Command();\n        }\n        if (Button_Pressed()) {  /* Polling */\n            Toggle_LED();\n        }\n        Update_Display();\n    }\n}\n\nDer Code fragt den Status zyklisch ab\nFrage: Was passiert, wenn Update_Display() sehr lange dauert?\n\n\nWährend einer langen Display-Funktion ist das System für Taster und UART blind. Latenz summiert sich über alle Tasks in der Schleife.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#die-gefahr-das-heavy-load-problem",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#die-gefahr-das-heavy-load-problem",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Die Gefahr: Das Heavy-Load-Problem",
-    "text": "Die Gefahr: Das Heavy-Load-Problem\n\n\n\nEine lang laufende Funktion blockiert die gesamte Schleife\nAuf Eingänge kann nicht reagiert werden\nLatenzgarantien sind zerstört\nTypische Sünden: delay(100), blockierende Warteschleifen\n\n\nvoid Update_Display(void) {\n    /* ~50 ms Ausführungszeit */\n    Draw_Pixels();\n}\nWorst-Case-Latenz für den Taster: \\(&gt;50\\,\\mathrm{ms}\\)\n\n\nEine 50-ms-Funktion lässt die Super-Loop stehen. Kurze Tasterimpulse gehen verloren. So darf man in der Industrie nicht programmieren.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#fazit-polling",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#fazit-polling",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Fazit: Polling",
-    "text": "Fazit: Polling\n\nVorteile: simpel, keine Race Conditions, feste Reihenfolge\nNachteile: hoher Stromverbrauch, keine Priorisierung, hohe Latenzen\nEinsatz: nur extrem simple Single-Purpose-Geräte\n\n\nFür einen dummen Temperatursensor oft ok. Sobald mehrere asynchrone Ereignisse mit unterschiedlicher Dringlichkeit kommen, scheitert das Modell.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-2-interrupts-zur-rettung",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-2-interrupts-zur-rettung",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Architektur 2: Interrupts zur Rettung",
-    "text": "Architektur 2: Interrupts zur Rettung\n\nInterrupt: Hardware-Signal, das die CPU unterbricht\nKontext sichern, Sprung in die ISR\nNicht mehr fragen — die Hardware meldet sich\nEreignisse priorisierbar (z. B. Not-Halt vor Display)\n\n\nAsynchrone Reaktion mit geringer Latenz, unabhängig von der Main-Loop. Das ist der Schlüssel gegen das Heavy-Load-Problem.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-ablauf-eines-interrupts",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#der-ablauf-eines-interrupts",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Der Ablauf eines Interrupts",
-    "text": "Der Ablauf eines Interrupts\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nsequenceDiagram\n  participant HW as Hardware\n  participant CPU as CPU Main Loop\n  participant ISR as ISR\n  CPU-&gt;&gt;CPU: Code ausführen (z. B. Display)\n  HW--&gt;&gt;CPU: Interrupt Request IRQ\n  Note over CPU: Context Switch\n  CPU-&gt;&gt;ISR: Sprung zur ISR\n  Note over ISR: zeitkritische Arbeit\n  ISR--&gt;&gt;CPU: Return from Interrupt\n  Note over CPU: Register wiederherstellen\n  CPU-&gt;&gt;CPU: alten Code fortsetzen\n\n\n\n\n\n\n\nContext Switch sichert Register und Program Counter. Danach ISR, dann Rückkehr genau an die Unterbrechungsstelle.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-timer-interrupt-stm32-hal",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#code-beispiel-timer-interrupt-stm32-hal",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Code-Beispiel: Timer-Interrupt (STM32 HAL)",
-    "text": "Code-Beispiel: Timer-Interrupt (STM32 HAL)\n\n\nSetup in main():\nHAL_TIM_Base_Start_IT(&htim2);\n\nwhile (1) {\n    Update_Display(); /* Hintergrund */\n}\n\nCallback (ISR):\nvoid HAL_TIM_PeriodElapsedCallback(\n    TIM_HandleTypeDef *htim)\n{\n    if (htim-&gt;Instance == TIM2) {\n        Toggle_LED(); /* zeitkritisch */\n    }\n}\n\n\n_IT startet den Timer im Interrupt-Modus. Die LED blinkt deterministisch, auch wenn Update_Display() lange braucht.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#gefahren-von-interrupts",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#gefahren-von-interrupts",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Gefahren von Interrupts",
-    "text": "Gefahren von Interrupts\n\nRace Conditions bei gemeinsamen globalen Variablen\nLange ISRs blockieren niederpriore IRQs und die Main-Loop\nGoldene Regel: ISRs extrem kurz halten — kein printf, keine Delays\nJitter: laufende höhere IRQs verzögern niederpriore ISRs\n\n\nAsynchronität bringt Korrektheitsfallen. In der ISR: Flag setzen, Wert kopieren, sofort zurück. Lange Arbeit gehört in den Hintergrund oder später in Tasks.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#architektur-3-foreground-background",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#architektur-3-foreground-background",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Architektur 3: Foreground / Background",
-    "text": "Architektur 3: Foreground / Background\n\nKombination: Main-Loop + Interrupts\nBackground: unkritische Polling-Loop (main)\nForeground: zeitkritische ISRs\nStandard für kleine bis mittlere Bare-Metal-Projekte\n\n\n\nISR präemptiert die Main-Loop. Fertig → Main läuft weiter. Das ist das klassische Bare-Metal-Muster vor dem RTOS.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#grenzen-der-klassischen-architekturen",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#grenzen-der-klassischen-architekturen",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Grenzen der klassischen Architekturen",
-    "text": "Grenzen der klassischen Architekturen\n\nWarum reicht Foreground/Background oft nicht mehr?\nSpaghetti-Falle: ISRs setzen Flags, Main pollt endlos\nBei vielen Tasks verliert man den Überblick über den Kontrollfluss\nWir brauchen Priorisierung und Schlafen von Tasks\n\n\nISR darf nicht lange rechnen → Flag. Main wird Flag-Suppe. Deadlines in der Main-Loop sind dann kaum noch garantierbar.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-paradigmenwechsel",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#der-paradigmenwechsel",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Der Paradigmenwechsel",
-    "text": "Der Paradigmenwechsel\n\nWenn Bare-Metal nicht skaliert: RTOS (Real-Time Operating System)\nBare-Metal: Code pollt oder wartet aktiv\nRTOS: Kontrolle über die Zeit an den Scheduler\nMonolith → unabhängige Tasks\n\n\nAb hier ändert sich die Denkweise: nicht mehr eine riesige while(1) orchestrieren, sondern Tasks und Scheduler. FreeRTOS folgt in späteren Terminen.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#vorschau-das-task-modell",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#vorschau-das-task-modell",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Vorschau: Das Task-Modell",
-    "text": "Vorschau: Das Task-Modell\n\n\nTask B rechnet; Event weckt Task A\nRTOS entzieht Task B die CPU (Präemption) und gibt sie Task A\n\n\nEchtes präemptives Multitasking auf einem Core. Details zu Scheduler-Latenzen und Synchronisation: spätere Vorlesungen mit FreeRTOS.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#deep-dive-die-arm-cortex-m-architektur",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#deep-dive-die-arm-cortex-m-architektur",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Deep Dive: Die ARM Cortex-M Architektur",
-    "text": "Deep Dive: Die ARM Cortex-M Architektur\n\nUm Interrupts zu beherrschen, müssen wir die CPU verstehen\nDer STM32H755 basiert auf ARM Cortex-M (M7 und M4)\nCortex-M ist für eingebettete Echtzeitsysteme optimiert\nMerkmale:\n\n32-Bit-Architektur (Register, Busse, ALU)\nDeterministisches Interrupt-Verhalten\nKeine MMU (virtuelle Adressen), sondern MPU (Memory Protection Unit)\n\n\n\nCortex-M („Microcontroller“) ist auf Determinismus ausgelegt — anders als Cortex-A mit MMU. Physische Adressierung und enge Anbindung des Interrupt-Controllers halten Latenzen vorhersagbar.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#das-register-set-der-cpu",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#das-register-set-der-cpu",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Das Register-Set der CPU",
-    "text": "Das Register-Set der CPU\n\n\n\nRegister\nRolle\n\n\n\n\nR0–R12\nAllgemeine Datenregister\n\n\nR13 (SP)\nStack Pointer\n\n\nR14 (LR)\nLink Register (Rücksprungadresse)\n\n\nR15 (PC)\nProgram Counter\n\n\nxPSR\nStatusregister (Flags)\n\n\n\n\n16 Basis-Register à 32 Bit\nBei Interrupt: Kontext dieser Register sichern (Hardware-Push)\n\n\nBei einem Interrupt sind diese Register voll mit dem Zustand der Main-Loop. Die ISR nutzt dieselben Register — deshalb muss der Kontext gesichert werden. R13 (SP) ist für den Context Switch besonders zentral.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#was-passiert-beim-context-switch",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#was-passiert-beim-context-switch",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Was passiert beim Context Switch?",
-    "text": "Was passiert beim Context Switch?\n\nInterrupt unterbricht die Main-Loop\nCPU muss den Zustand retten, um später fortzusetzen\nAblauf (hardwaregesteuert):\n\nPipeline Flush, Abarbeitung stoppt\nAutomatischer Push: R0–R3, R12, LR, PC, xPSR auf den Stack\nPC auf Startadresse der ISR setzen\nISR ausführen\nPop: Register vom Stack wiederherstellen\n\n\n\nDer Cortex-M pusht die wichtigsten Register automatisch. Danach erst der Sprung in die C-ISR. Nach dem Rücksprung merkt die Main-Loop die Unterbrechung nicht — sofern die ISR den Stack korrekt hinterlässt.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#der-nvic-herr-der-interrupts",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#der-nvic-herr-der-interrupts",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Der NVIC: Herr der Interrupts",
-    "text": "Der NVIC: Herr der Interrupts\n\nNVIC = Nested Vectored Interrupt Controller\nSitzt im Cortex-M-Kern, eng mit der CPU verzahnt\nVerwaltet viele Interrupt-Quellen (beim STM32 bis zu 240)\nVectored: jeder Interrupt hat einen Eintrag in der Vector Table\nHardware springt direkt zur ISR — kein Software-Switch-Case\n\n\n„Vectored“ spart Latenz: kein allgemeiner Handler mit IF-Kaskade, sondern direkter Sprung über die Vektortabelle.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#prioritäten-im-nvic",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#prioritäten-im-nvic",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Prioritäten im NVIC",
-    "text": "Prioritäten im NVIC\n\nNested: ein wichtiger Interrupt darf einen unwichtigeren unterbrechen\nPrioritäten als Nummern (z. B. 4 Bit → 0 bis 15)\nFalle: je kleiner die Zahl, desto höher die Priorität\nPriorität 0: höchste Priorität\nPriorität 15: niedrigste Priorität\n\n\nLowest number = highest priority. Not-Halt mit Prio 0 muss eine laufende UART-ISR unterbrechen können.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#preemption-priority-vs.-subpriority",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#preemption-priority-vs.-subpriority",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Preemption Priority vs. Subpriority",
-    "text": "Preemption Priority vs. Subpriority\n\nPrioritäts-Bits lassen sich aufteilen (Grouping)\nPreemption Priority: darf ein IRQ einen laufenden IRQ unterbrechen?\nSubpriority: bei gleichzeitigem Auftreten — wer zuerst?\nHöhere Subpriority unterbricht niemals einen bereits laufenden Interrupt\n\n\nSubpriority entscheidet nur die Warteschlange, nicht die Präemption. In FreeRTOS konfigurieren wir das Grouping typischerweise so, dass wir reine Preemption Priorities nutzen.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#prioritätsinversion-teaser",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#prioritätsinversion-teaser",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Prioritätsinversion (Teaser)",
-    "text": "Prioritätsinversion (Teaser)\n\nLow-Prio-Task hält eine Ressource (z. B. Mutex/UART)\nHigh-Prio-Task braucht dieselbe Ressource und muss warten\nMedium-Prio-Task unterbricht die Low-Prio-Task\nErgebnis: Medium blockiert indirekt High (Priority Inversion)\n\n\n\nAusblick: Lösung in einer späteren Vorlesung (Mars Pathfinder)\n\n\nLow hält die Ressource, High wartet, Medium präemptiert Low — High bleibt blockiert. Genau dieses Muster brachte 1997 die Mars-Pathfinder-Mission in Schwierigkeiten. Wie wir das verhindern (z. B. Priority Inheritance), folgt später.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#tail-chaining-arms-geheimwaffe",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#tail-chaining-arms-geheimwaffe",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Tail-Chaining: ARMs Geheimwaffe",
-    "text": "Tail-Chaining: ARMs Geheimwaffe\n\nZwei Interrupts A und B treten kurz nacheinander auf\nKlassisch: Push → ISR A → Pop → Push → ISR B → Pop\nTail-Chaining: Cortex-M überspringt sinnloses Pop/Push zwischen ISRs\nDauer: typisch 6 Taktzyklen statt ca. 24 Zyklen Latenz\n\n\n\n\nARM Cortex-M Tail-Chaining: Vergleich mit und ohne Overhead\n\n\n\nWenn nach ISR 1 noch IRQ 2 ansteht, entfällt das teure Pop+Push. Der NVIC kettet die Handler an — Determinismus und Latenzgewinn in Hardware.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#exkurs-hardware-der-stm32h755",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#exkurs-hardware-der-stm32h755",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Exkurs Hardware: Der STM32H755",
-    "text": "Exkurs Hardware: Der STM32H755\n\nDual-Core-Mikrocontroller, Asymmetric Multiprocessing (AMP)\nCortex-M7 (bis 480 MHz): hohe Leistung, Caches, FPU\nCortex-M4 (bis 240 MHz): harte Echtzeit, hochdeterministisch\nBeide Cores teilen Chip, Busse und teilweise Speicher\n\n\nAnders als SMP beim PC: zwei ungleiche Kerne im selben Gehäuse. M7 für Durchsatz, M4 für deterministische Steuerung.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#warum-dual-core-amp-in-der-echtzeit",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#warum-dual-core-amp-in-der-echtzeit",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Warum Dual-Core (AMP) in der Echtzeit?",
-    "text": "Warum Dual-Core (AMP) in der Echtzeit?\n\n\nCortex-M7 (eher soft):\n\nEthernet-Stack (TCP/IP)\nGUI\naufwändige Filter (DSP)\nLatenz schwankend (Caches)\n\n\n\n\nCortex-M4 (eher hard):\n\nMotorsteuerung (PWM)\nharte Timing-Loops\nsicherheitskritische Logik\nLatenz hochdeterministisch\n\n\n\nInter-Core-Kommunikation: Shared Memory im SRAM\n\n\nDisplay/Netzwerk und Motorregelung auf einem Kern stören sich gegenseitig. Cache-Misses erzeugen Jitter. AMP trennt die Welten physisch.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#boot-sequenz-des-stm32h755",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#boot-sequenz-des-stm32h755",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Boot-Sequenz des STM32H755",
-    "text": "Boot-Sequenz des STM32H755\n\nBeim Reset starten nicht beide Cores gleichzeitig\nCortex-M7 bootet als Master\nCortex-M4 bleibt zunächst im Reset/Sleep\nM7 konfiguriert Systemtakt (PLL), dann weckt M4 (HSEM/RCC)\n\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nsequenceDiagram\n  participant Reset as Reset Hardware\n  participant M7 as Cortex-M7\n  participant M4 as Cortex-M4\n  Reset-&gt;&gt;M7: Boot Power-On\n  Reset-&gt;&gt;M4: Held in Reset\n  Note over M7: System Clock PLL\n  M7-&gt;&gt;M7: Init HAL und Peripherie\n  M7-&gt;&gt;M4: Wakeup RCC/HSEM\n  Note over M4: unabhängiger Boot\n  M4-&gt;&gt;M4: Init lokale Peripherie\n\n\n\n\n\n\n\nBeide würden sonst gleichzeitig den Takt konfigurieren. Für Hello World wecken wir den M4 und nutzen ihn als Arbeitskern.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#einführung-in-die-tools-stm32cubeide",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#einführung-in-die-tools-stm32cubeide",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Einführung in die Tools: STM32CubeIDE",
-    "text": "Einführung in die Tools: STM32CubeIDE\n\nSTM32CubeIDE: Eclipse-basierte C/C++-IDE für STM32\nDevice Configuration Tool (ehemals CubeMX)\nGrafische Pin-Zuweisung und Clock-Tree\nCodegenerator für die HAL\n\n\nStatt hundert Seiten Register-Doku: Pin wählen, Funktion zuweisen, Takt konfigurieren — der Generator liefert die Basis-Initialisierung.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#das-hal-konzept",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#das-hal-konzept",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Das HAL-Konzept",
-    "text": "Das HAL-Konzept\n\n\n\nNicht direkt in Register tippen (Standardfall)\nHAL: lesbar und oft portabel innerhalb der STM32-Familie\nNachteil: leichter Aufruf-Overhead\nExtreme Echtzeit: LL oder direkte Register\n\n\n/* HAL (Standard) */\nHAL_TIM_Base_Start_IT(&htim2);\n\n/* LL (schneller) */\nLL_TIM_EnableIT_UPDATE(TIM2);\nLL_TIM_EnableCounter(TIM2);\n\n/* Register */\nTIM2-&gt;DIER |= (1u &lt;&lt; 0);\nTIM2-&gt;CR1  |= (1u &lt;&lt; 0);\n\n\nFür den Großteil der Vorlesung reicht HAL. Wenn jede Nanosekunde zählt, wechseln wir gezielt auf LL oder Registerzugriff.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#projektstruktur-und-code-generierung",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#projektstruktur-und-code-generierung",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Projektstruktur und Code-Generierung",
-    "text": "Projektstruktur und Code-Generierung\n\nPro Core eigener Ordner (CM4 / CM7)\nJe eigene main.c und stm32h7xx_it.c\nEigener Code nur zwischen USER CODE BEGIN und USER CODE END\nCode außerhalb dieser Blöcke wird beim erneuten Generieren gelöscht\n\n\nDie wichtigste Anfängerregel: nur in USER-CODE-Blöcken schreiben — sonst ist die Arbeit mit einem Speichern in der GUI weg.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-1-hello-world-led-blink",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-1-hello-world-led-blink",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Laboraufgabe 1: Hello World (LED Blink)",
-    "text": "Laboraufgabe 1: Hello World (LED Blink)\n\nZiel: Toolchain prüfen, Cortex-M4 nutzen\nSchritte:\n\nProjekt anlegen (Board STM32H755ZI-Q)\nLED (z. B. PE1) als GPIO_Output für CM4\nCode generieren\nIn main.c (CM4) toggeln\n\n\n/* USER CODE BEGIN 3 */\nwhile (1) {\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    HAL_Delay(500); /* blockiert 500 ms */\n}\n/* USER CODE END 3 */\n\nWenn die LED blinkt, laufen IDE, Flash und Debugger. Das Delay ist bewusst blockierend — als Kontrast zu Aufgabe 3.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-2-das-polling-desaster",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-2-das-polling-desaster",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Laboraufgabe 2: Das Polling-Desaster",
-    "text": "Laboraufgabe 2: Das Polling-Desaster\n\nZiel: Grenzen der Super-Loop spüren\nHeavy_Load() vor dem Toggle aufrufen (simuliert Filter/Display)\n\nwhile (1) {\n    Heavy_Load(800000); /* CPU-Last */\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    HAL_Delay(500);\n}\n\nBeobachtung: Warum ist der 500-ms-Takt zerstört?\n\n\nDie unbekannte Laufzeit von Heavy_Load() addiert sich zum Delay. Latenz und Periodizität werden unvorhersagbar — genau das Heavy-Load-Problem aus der Theorie.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-rettung-durch-den-timer",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-rettung-durch-den-timer",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Laboraufgabe 3: Rettung durch den Timer",
-    "text": "Laboraufgabe 3: Rettung durch den Timer\n\nZiel: Determinismus per Interrupt wiederherstellen\nIn der .ioc: TIM2 aktivieren, Clock Source Internal\nNVIC: „TIM2 global interrupt“ aktivieren\nTimer im Interrupt-Modus starten\nPeriodizität berechnen, z. B. 500 ms (2 Hz):\n\n\\[f_{\\mathrm{UPD}} = \\frac{f_{\\mathrm{CLK}}}{(PSC+1)\\,(ARR+1)}\\]\n\nOhne NVIC-Haken feuert die Hardware den IRQ nicht zur CPU. PSC und ARR aus dem tatsächlichen Timer-Takt ableiten.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-der-callback-code",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-3-der-callback-code",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Laboraufgabe 3: Der Callback-Code",
-    "text": "Laboraufgabe 3: Der Callback-Code\n\nToggle und Delay aus der while(1) entfernen — dort nur noch Heavy_Load()\nCallback ans Ende von main.c:\n\n/* USER CODE BEGIN 4 */\nvoid HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {\n    if (htim-&gt;Instance == TIM2) {\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    }\n}\n/* USER CODE END 4 */\n\nErgebnis: LED blinkt präzise, unabhängig von der CPU-Last\n\n\nForeground/Background: ISR toggelt die LED, Main rechnet Heavy Load. Präzises Blinken trotz Last.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-4-bonus-messung-am-oszi",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#laboraufgabe-4-bonus-messung-am-oszi",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Laboraufgabe 4 (Bonus): Messung am Oszi",
-    "text": "Laboraufgabe 4 (Bonus): Messung am Oszi\n\nZiel: Jitter Main-Loop vs. Timer-ISR messen\nFreien GPIO (z. B. PA0) als Output nutzen\nAblauf: Pin High → Heavy_Load() → Pin Low; Pulsweite am Oszi\nVergleich: Pin-Toggle in der ISR (Jitter \\(\\approx 0\\))\n\n\nIn der Industrie glauben wir Timing nicht, wir messen es. WCET der Berechnung vs. fast jitterfreie ISR-Flanke.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-des-tages",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#zusammenfassung-des-tages",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Zusammenfassung des Tages",
-    "text": "Zusammenfassung des Tages\n\nEchtzeit = Rechtzeitigkeit, nicht pure Rechenleistung\nSuper-Loops skalieren schlecht (Latenz-Akkumulation)\nInterrupts ermöglichen Hardware-Präemption (Foreground/Background)\nNVIC: Prioritäten hardwarenah, inkl. Tail-Chaining\nWorkflow: Bare-Metal-Code auf Cortex-M4 generieren und erweitern\n\n\nDeterminismus und Deadlines stehen im Zentrum. Interrupts retten Latenz — mit neuen Gefahren (Race Conditions, lange ISRs). Hardware-Features wie Tail-Chaining senken Overhead.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "vorlesungen/01_was-ist-echtzeit.html#ausblick-auf-termin-2",
-    "href": "vorlesungen/01_was-ist-echtzeit.html#ausblick-auf-termin-2",
-    "title": "01 · Was ist Echtzeit",
-    "section": "Ausblick auf Termin 2",
-    "text": "Ausblick auf Termin 2\n\nBare-Metal mit vielen IRQs skaliert nicht ewig (Spaghetti-Flags)\nNächste Woche: Scheduling-Theorie\nPraxis: eigener einfacher Round-Robin-Scheduler auf dem STM32\nVorbereitung: heutiges Projekt mitbringen\n\n\nDanach der Weg zu FreeRTOS. Bitte Projekte speichern — wir bauen darauf auf. Fragen? Dann weiter im Labor.",
-    "crumbs": [
-      "Vorlesungen",
-      "01 · Was ist Echtzeit"
     ]
   }
 ]
