@@ -71,9 +71,9 @@ Um zu verstehen, warum das Messen von Software so schwer ist, müssen wir einen 
   `printf("Task A ist hier! Zeit = %d\n", ticks);`
 - **Was passiert physikalisch?**
     - Das Wort „Hallo“ hat 5 Bytes; bei 8N1 sind das $5 \times 10 = 50$ Bits (Start- und Stop-Bit).
-    - Bei Standard $115200$ Baud dauert ein Bit $\approx 8{,}68\,\mathrm{\mu s}$.
-    - „Hallo“ senden blockiert das System für $\approx 430\,\mathrm{\mu s}$!
-- *Während Sie versuchen zu messen, ob Ihre $50\,\mathrm{\mu s}$ Frist gehalten wird, halten Sie das System für $430\,\mathrm{\mu s}$ an!*
+    - Bei Standard $115200$ Baud dauert ein Bit $\approx 8{,}68\,\text{µs}$.
+    - „Hallo“ senden blockiert das System für $\approx 430\,\text{µs}$!
+- *Während Sie versuchen zu messen, ob Ihre $50\,\text{µs}$ Frist gehalten wird, halten Sie das System für $430\,\text{µs}$ an!*
 
 ::: notes
 Nehmen wir den Klassiker: `printf`. Sie wollen wissen, ob Task A rechtzeitig startet. Also schreiben Sie `printf("Task A ist hier")` in den Code. Sie denken, das sei eine harmlose Textausgabe. Schauen wir uns die Physik dahinter an. Das Wort "Hallo" besteht aus 5 Buchstaben. Über den UART-Port werden inklusive Start- und Stop-Bits (8N1) exakt 50 Bits übertragen. Bei 115200 Baud dauert ein Bit rund 8,7 Mikrosekunden. Das Senden von „Hallo“ blockiert Ihren Code für etwa 430 Mikrosekunden. Wenn Ihre eigentliche Deadline bei 50 Mikrosekunden lag, haben Sie Ihr System durch den bloßen Versuch der Beobachtung restlos zerstört.
@@ -84,7 +84,8 @@ Nehmen wir den Klassiker: `printf`. Sie wollen wissen, ob Task A rechtzeitig sta
 ![Timing-Verzerrung durch UART](../assets/images/uart_delay.png){.nostretch}
 
 - **Ideal:** Die Berechnung ist extrem kurz, die Deadline wird souverän eingehalten.
-- **Beobachtet:** Der "harmlose" `printf`-Aufruf bläht die Laufzeit so massiv auf, dass das System die rote Deadline verpasst (System-Crash!).
+- **Beobachtet:** Der „harmlose“ `printf`-Aufruf bläht die Laufzeit so massiv auf, dass das System die rote Deadline verpasst (System-Crash!).
+- *Hinweis:* Die Abbildung zeigt illustrativ `printf("Hallo Welt")`; die Rechnung oben nutzt bewusst das kürzere „Hallo“ (5 Bytes $\rightarrow$ $\approx 430\,\text{µs}$).
 
 ::: notes
 Das Diagramm zeigt das visuell. Im idealen Fall dauert unsere Berechnung einen Wimpernschlag. Die rote Deadline-Linie ist weit entfernt. Nun bauen wir das `printf` ein, um das Timing zu überprüfen. Der riesige UART-Block schiebt sich in unseren Execution-Flow. Die Berechnung wird zwar fertig, aber das UART-Modul lässt uns warten. Wir verpassen die Deadline krachend. In dem Moment, in dem wir das `printf` wieder löschen, läuft das System wieder fehlerfrei.
@@ -174,7 +175,7 @@ Wir stecken in einer Sackgasse. Um Echtzeit zu beweisen, brauchen wir eine Metho
 ## Zusammenfassung Block 1
 
 1. **Beobachter-Effekt:** Jeder Versuch, Timing per Software zu messen, verändert das Timing.
-2. **`printf`** ist in der Echtzeit wegen massiver Latenzen ($>100\,\mathrm{\mu s}$) streng verboten.
+2. **`printf`** ist in der Echtzeit wegen massiver Latenzen ($>100\,\text{µs}$) streng verboten.
 3. **Breakpoints** frieren die CPU ein, aber Peripherie/Interrupts laufen weiter $\rightarrow$ Systemcrash bei Wiederaufnahme.
 4. **Heisenbugs** verbergen sich, wenn das Timing durch Debugging verschoben wird.
 5. Die Lösung muss zu $100\%$ in Hardware integriert sein.
@@ -244,20 +245,21 @@ Aber zunächst eine physikalische Klarstellung. Bisher haben Sie Ihren kleinen w
 - Das „bessere `printf`“
 - Die CPU schreibt einen Wert in ein spezielles ITM-Hardware-Register
 - Der Unterschied zu UART:
-  - Der Schreibzugriff auf das ITM-Register dauert **1** einzigen Taktzyklus!
-  - Die CPU rechnet sofort weiter!
+  - Der Schreibzugriff auf das ITM-Register dauert typischerweise **einen Taktzyklus** (wenige Nanosekunden)!
+  - Die CPU rechnet sofort weiter (asynchroner Trace).
+  - Caveat: Bei vollem ITM-FIFO kann der Schreibzugriff kurz stallen.
   - Die CoreSight-Hardware verpackt das Byte im Hintergrund und schickt es asynchron nach draußen
-- Latenz-Problem von $430\,\mathrm{\mu s}$ gelöst! (Nur noch winzige Intrusion im Code)
+- Latenz-Problem von $430\,\text{µs}$ gelöst! (Nur noch winzige Intrusion im Code)
 
 ::: notes
-Das einfachste CoreSight-Modul ist das ITM, die Instrumentation Trace Macrocell. Das ist unser direkter Ersatz für „printf“. Anstatt einen Buchstaben mühsam in das UART-Register zu schieben und zu warten, bis er gesendet ist, schiebt unser C-Code den Buchstaben in ein spezielles ITM-Register. Das dauert exakt einen Hardware-Taktzyklus. Der Kern ist sofort fertig und rechnet nahtlos im Programm weiter. Das ITM-Hardware-Modul übernimmt den Buchstaben, verpackt ihn in ein Trace-Paket und schiebt ihn asynchron nach draußen. Wir haben unser 430-Mikrosekunden-Latenz-Problem auf einen Bruchteil einer Nanosekunde reduziert.
+Das einfachste CoreSight-Modul ist das ITM, die Instrumentation Trace Macrocell. Das ist unser direkter Ersatz für „printf“. Anstatt einen Buchstaben mühsam in das UART-Register zu schieben und zu warten, bis er gesendet ist, schiebt unser C-Code den Buchstaben in ein spezielles ITM-Register. Das dauert typischerweise einen Taktzyklus (wenige Nanosekunden). Der Kern ist sofort fertig und rechnet nahtlos im Programm weiter. Das ITM-Hardware-Modul übernimmt den Buchstaben, verpackt ihn in ein Trace-Paket und schiebt ihn asynchron nach draußen. Caveat: Ist der interne ITM-FIFO voll, kann der Schreibzugriff kurz stallen — bei massivem Logging also nicht völlig „kostenlos“. Trotzdem haben wir unser 430-Mikrosekunden-Latenz-Problem auf wenige Nanosekunden plus seltene FIFO-Stalls reduziert.
 :::
 
 ## Modul 2: Das DWT (Data Watchpoint & Trace)
 
 - Jetzt wird es komplett rückwirkungsfrei (0 Code-Änderungen)!
 - Das DWT beobachtet den RAM-Speicherbus der CPU wie ein Scharfschütze
-- Sie konfigurieren im externen Tool: „Beobachte die Adresse von `shared_data.m7_ready`.“
+- Sie konfigurieren im externen Tool: „Beobachte die Adresse von `sd.m7_ready`.“
 - Jedes Mal, wenn die CPU diesen Speicherbereich beschreibt oder liest, erzeugt das DWT ein Hardware-Paket (inklusive des neuen Wertes!)
 - Die CPU bekommt davon nichts mit (0 Taktzyklen Overhead!)
 - Perfekt, um globale Variablen im OS (z. B. Task-Zustände) zu überwachen
@@ -335,7 +337,7 @@ Fassen wir das CoreSight-Konzept noch einmal zusammen, bevor wir uns ansehen, wa
 Warum geben Firmen Millionen für Trace-Hardware aus? Wegen der Zertifizierung. Wenn Sie eine Software für das ABS-System in einem Auto oder die Flugsteuerung eines Airbus schreiben, unterliegen Sie strengen Normen wie der ISO 26262 oder der DO-178C. Wenn die Zulassungsbehörde fragt: „Hält Ihre Motor-Task immer ihre 1-Millisekunden-Deadline ein?“, dann dürfen Sie nicht antworten: „Ja, wir haben das auf dem Schreibtisch ausprobiert und es sah flüssig aus.“ Sie müssen einen physikalischen Beweis vorlegen. Sie müssen die Worst-Case-Szenarien ausgemessen haben. Und genau dafür brauchen wir die Timing-Metriken aus dem Hardware-Trace.
 :::
 
-## Metrik 1: Die echte WCET
+## Metrik 1: Empirische WCET (Mess-WCET)
 
 :::: {.columns}
 ::: {.column width="50%"}
@@ -345,12 +347,12 @@ Warum geben Firmen Millionen für Trace-Hardware aus? Wegen der Zertifizierung. 
 - Aus $1\,000\,000$ Durchläufen extrahiert das Tool den beobachteten Maximalwert (inkl. Pipeline-Stalls und Cache-Misses) — die empirische WCET-Schätzung.
 :::
 ::: {.column width="50%"}
-- *Diesen Wert setzen wir als echtes $C_i$ in unsere Rate-Monotonic-Formel ($U \le 69{,}3\,\%$) ein.*
+- *Diesen Wert nutzen wir als **obere beobachtete Schranke** (Mess-WCET) für $C_i$ in der Rate-Monotonic-Formel ($U \le 69{,}3\,\%$) — nicht als formal bewiesenen Worst Case.*
 :::
 ::::
 
 ::: notes
-Die wichtigste Metrik, die wir aus dem ETM-Trace extrahieren, ist unsere alte Bekannte: Die Worst-Case Execution Time, die WCET. In der zweiten Vorlesung haben wir dafür Platzhalter-Zahlen in unsere Formel eingesetzt. Jetzt messen wir sie in der physikalischen Realität. Die externe Trace-Box filmt über Nacht Millionen von Ausführungen Ihrer Task. Am nächsten Morgen schauen Sie in die Software und filtern nach der absoluten Maximalzeit. Da der Trace live auf der echten Hardware lief, sind in diesem Wert alle Pipeline-Verzögerungen, Cache-Fehlschläge und Bus-Staus bereits physikalisch korrekt enthalten. Diesen echten Wert nehmen wir und füttern damit unsere RMS-Formel.
+Die wichtigste Metrik, die wir aus dem ETM-Trace extrahieren, ist unsere alte Bekannte: Die Worst-Case Execution Time, die WCET. In der zweiten Vorlesung haben wir dafür Platzhalter-Zahlen in unsere Formel eingesetzt. Jetzt messen wir eine empirische obere Schranke — die Mess-WCET. Die externe Trace-Box filmt über Nacht Millionen von Ausführungen Ihrer Task. Am nächsten Morgen schauen Sie in die Software und filtern nach der absoluten Maximalzeit unter den beobachteten Läufen. Da der Trace live auf der echten Hardware lief, sind Pipeline-Verzögerungen, Cache-Fehlschläge und Bus-Staus bereits physikalisch enthalten. Wichtig: Das ist nicht der formal bewiesene Worst Case aller denkbaren Pfade, sondern die beste beobachtete obere Schranke aus dem Test. Diese Mess-WCET setzen wir vorsichtig als $C_i$ in unsere RMS-Formel ein.
 :::
 
 ## Metrik 2: Deadline-Verifizierung
@@ -425,7 +427,7 @@ Ein häufiger Fehler bei der Timing-Analyse ist die Verwechslung von Netto und B
 - In unseren Schedulability-Modellen nehmen wir oft an: OS-Overhead $= 0$.
 - Die Realität sieht anders aus.
 - Der Tracer zeigt exakt, wie viele Taktzyklen die CPU in der `PendSV_Handler`-Assembler-Routine verbringt.
-- Ergebnis: Wir sehen die echten Kosten von FreeRTOS (z. B. $2{,}5\,\mathrm{\mu s}$ pro Wechsel).
+- Ergebnis: Wir sehen die echten Kosten von FreeRTOS (z. B. $2{,}5\,\text{µs}$ pro Wechsel).
 - Fließt in komplexe Response-Time-Analyse-Formeln als Korrekturfaktor ein.
 
 ::: notes
@@ -439,7 +441,7 @@ Ein weiterer Aspekt ist der OS-Overhead. Wenn wir ein System mathematisch modell
 - Die Metriken:
     - **C0** (Statement Coverage): Wurde jede Code-Zeile $\ge 1\times$ berührt?
     - **C1** (Branch Coverage): Wurde bei jedem `if(a && b)` sowohl der TRUE- als auch der FALSE-Pfad betreten?
-    - **MC/DC** (Modified Condition/Decision Coverage): Hatte jede einzelne Sub-Bedingung einen nachweisbaren Effekt? (Pflicht für ASIL D!).
+    - **MC/DC** (Modified Condition/Decision Coverage): Hatte jede einzelne Sub-Bedingung einen nachweisbaren Effekt? (In ISO 26262 für ASIL D *highly recommended* — absolute Pflicht analog DO-178C Level A nur in der Avionik).
 - Hardware-Trace liefert diese Daten zu $100\,\%$ rückwirkungsfrei, ohne den C-Code mit Test-Makros zu instrumentieren!
 
 ::: notes
@@ -560,16 +562,16 @@ Diese Funktion nennt man OS-Awareness, Betriebssystem-Bewusstsein. Top-Tracer ke
 Und so baut winIDEA das Balkendiagramm auf: Es schaut in die `.elf`-Datei und sucht die Hex-Adresse von `pxCurrentTCB`. Dann programmiert es das DWT-Modul im Chip heimlich so, dass es als Wächter vor genau dieser Adresse steht. Jedes Mal, wenn das Betriebssystem eine andere Task auswählt, ändert sich der Pointer. Das DWT erkennt den Schreibzugriff und feuert eine Trace-Nachricht über den Port zum PC. Die Software am PC liest den Pointer, schaut in der FreeRTOS-Datenstruktur nach, welcher Name („Heartbeat“) dahintersteckt, und zeichnet ab sofort den Zeitstrahl für diese Task weiter. Das ist High-End-Analyse in Vollendung.
 :::
 
-## Der OSEK/ORTI-Standard
+## Der OSEK/ORTI-Standard (Automotive)
 
-- Wie weiß winIDEA, wie das TCB-Struct von FreeRTOS aufgebaut ist?
-- Das passiert meist über den **ORTI**-Standard (OSEK Run Time Interface).
-- Ein Textformat, das beschreibt, wo das OS seine Warteschlangen und Prioritäten im RAM ablegt.
-- FreeRTOS-Plugins für winIDEA scannen diese Strukturen dynamisch.
-- Damit können Sie im Debugger live sehen, welche Task gerade in welcher Queue hängt!
+- **ORTI** (OSEK Run Time Interface) ist die klassische Automotive-/OSEK-Schnittstelle:
+  - Textdatei, die dem Debugger die Memory-Map des OSEK/AUTOSAR-OS offenlegt (Tasks, Queues, Prioritäten).
+- FreeRTOS in winIDEA ist etwas anderes:
+  - Die FreeRTOS-Awareness kommt über ein **Plugin** bzw. Strukturwissen (`pxCurrentTCB`, TCB-Layout) — nicht über ORTI.
+- Ergebnis: Live-Sicht auf Ready-/Blocked-Listen und Queues, unabhängig vom Automotive-ORTI-Pfad.
 
 ::: notes
-Damit der Tracer auch weiß, was ein TCB ist und wo der Name der Task steht, gibt es in der Automobilindustrie den OSEK/ORTI-Standard. Das ist eine standardisierte Textdatei, die dem Tracer die Memory-Map des Betriebssystems offenlegt. Moderne Tools können diese Datenstrukturen sogar bei FreeRTOS dynamisch parsen. Das heißt, Sie sehen in winIDEA nicht nur, welche Task rechnet. Sie können das System anhalten und sich live ansehen, welche Tasks in der „Ready“-Liste warten und wer gerade im Zustand „Blocked“ auf einen UART-Mutex wartet.
+Wichtig trennen: ORTI ist der Automotive-/OSEK-Standard, mit dem Debugger die OS-Memory-Map eines OSEK- oder AUTOSAR-Classic-Systems lesen. FreeRTOS spricht kein ORTI. In winIDEA kommt die FreeRTOS-Awareness über ein Plugin und das Wissen um Strukturen wie `pxCurrentTCB`. Sie sehen dann trotzdem live, welche Task rechnet, wer in der Ready-Liste wartet und wer auf einen UART-Mutex blockiert — nur eben nicht über die ORTI-Datei.
 :::
 
 ## Laborvorbereitung: Tracing im Einsatz {background-color="#F5F5F7"}
@@ -597,7 +599,7 @@ Kommen wir zur Laboraufgabe für heute. Sie werden den kaputten Multicore-Ping-P
 - **Schritt 4: Profiler einrichten**
     - Öffnen Sie den Analyzer / Profiler.
     - Wir richten das DWT-Tracing ein:
-    - Fügen Sie die Variable `ping_pong_data.m7_ready` als DWT-Data-Trace hinzu!
+    - Fügen Sie die Variable `sd.m7_ready` als DWT-Data-Trace hinzu!
 
 ::: notes
 In Schritt 3 schalten Sie die FreeRTOS-Awareness über das Plugin-Menü ein. Dann richten Sie den Profiler ein. Wir wollen heute nicht den vollen Instruction Trace (ETM) aufzeichnen, das sprengt anfangs den Rahmen. Wir nutzen gezielt das DWT. Konfigurieren Sie den Profiler so, dass er ausschließlich die RAM-Adresse unseres Ping-Pong-Flags beobachtet. Wir wollen sehen, wann genau sich dieser Wert ändert.

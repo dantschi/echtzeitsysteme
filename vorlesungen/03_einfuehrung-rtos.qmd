@@ -87,19 +87,19 @@ Mutwillige Sabotage: Zählschleife ohne `os_yield()`. LED stand still, MCU schie
 - Wir greifen auf bewährte, zertifizierbare Software zurück
 
 ::: notes
-Bastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere IPC, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.
+Bastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere Inter-Task Communication, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.
 :::
 
 ## Was leistet ein RTOS?
 
-- Multitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. RMS)
-- Inter-Process Communication (IPC): Queues und Mailboxes
+- Multitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. Fixed Priority / RMS)
+- Inter-Task Communication: Queues und Mailboxes
 - Synchronisation: Mutexes und Semaphore für Interrupt-Sicherheit
 - Memory Management: RAM-Stacks für jede Task
-- Hardware Abstraction Layer (HAL): ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber
+- Port-Layer: ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber (nicht mit dem STM32-HAL verwechseln)
 
 ::: notes
-Fünf Kernaufgaben: Scheduling, IPC, Synchronisation, Speichermanagement, Abstraktion. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.
+Fünf Kernaufgaben: Scheduling, Inter-Task Communication, Synchronisation, Speichermanagement, Port-Layer. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.
 :::
 
 ## Der Markt für Echtzeitbetriebssysteme
@@ -182,16 +182,16 @@ Technisch richtig, konzeptionell gefährlich: RTOS kostet Takte (SysTick, Schedu
 ```{.wavedrom}
 { "signal": [
   { "name": "Event", "wave": "010.......0.......10......" },
-  { "name": "Bare-Metal (Superloop)", "wave": "0.....10..0.........10...." },
+  { "name": "Bare-Metal (Super-Loop ohne IRQ)", "wave": "0.....10..0.........10...." },
   { "name": "RTOS (Präemptiv)", "wave": "0..10.....0.......0..10..." }
 ]}
 ```
 
-- Bare-Metal: oft schneller, aber unregelmäßig (hoher Jitter)
+- Bare-Metal (Super-Loop ohne IRQ): oft schneller, aber unregelmäßig (hoher Jitter)
 - RTOS: etwas später (OS-Overhead), bei hoher Priorität nahezu konstant (Jitter $\approx 0$)
 
 ::: notes
-Oben: externes Ereignis zweimal. Bare-Metal ohne Interrupts: schnell wenn die Superloop gerade pollt, sonst ewig — gewaltiger Jitter. RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.
+Oben: externes Ereignis zweimal. Bare-Metal als Super-Loop ohne IRQ: schnell wenn die Schleife gerade pollt, sonst ewig — gewaltiger Jitter. (Mit ISR wäre das Bild anders.) RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.
 :::
 
 ## Einführung in FreeRTOS
@@ -333,20 +333,34 @@ Dynamisch bequem, aber gefährlich bei vollem Heap. Safety/Automotive oft nur st
 - Das Verständnis dieses Modells entscheidet, ob Ihr System echtzeitfähig ist
 - Eine Task befindet sich immer in exakt einem von vier Zuständen
 
-```{mermaid}
-stateDiagram-v2
-    [*] --> Ready : Create
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam state {
+  BackgroundColor #FFFFFF
+  BorderColor #E2001A
+  FontColor #1D1D1F
+}
 
-    Ready --> Running : Dispatch (Scheduler)
-    Running --> Ready : Preempt (Zeit / höhere Prio)
+[*] --> Ready : Create
 
-    Running --> Blocked : Delay / Queue / Mutex
-    Blocked --> Ready : Zeit abgelaufen / Event
+Ready --> Running : Dispatch
+Running --> Ready : Preempt
+Running --> Blocked : Delay / Queue / Mutex
+Blocked --> Ready : Zeit / Event
+Ready --> Suspended : Suspend
+Blocked --> Suspended : Suspend
+Running --> Suspended : Suspend
+Suspended --> Ready : Resume
 
-    Ready --> Suspended : vTaskSuspend()
-    Blocked --> Suspended : vTaskSuspend()
-    Running --> Suspended : vTaskSuspend()
-    Suspended --> Ready : vTaskResume()
+note right of Blocked
+  Nie Blocked → Running direkt
+  immer erst Ready
+end note
+@enduml
 ```
 
 ::: notes
@@ -388,10 +402,10 @@ Ready = kein Problem, nur gerade nicht ausgewählt. Array von Listen pro Priorit
   - Logisch: Taste, UART-Daten, Queue
 - Clou: Blocked-Task wird vom Scheduler beim Suchen komplett ignoriert
 - Verbrauch: $0{,}00\%$ CPU-Rechenzeit
-- Deshalb niemals `HAL_Delay()` in einem RTOS (verbrennt CPU in Zählschleife)
+- Deshalb niemals `HAL_Delay()` in einem RTOS (Busy-Wait auf `uwTick`: Task bleibt *Running*)
 
 ::: notes
-Warten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. `HAL_Delay` lässt die CPU kreisen und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.
+Warten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. `HAL_Delay` busy-waitet auf `uwTick` und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.
 :::
 
 ## Visualisierung: Task-Zustände im Zeitverlauf
@@ -419,14 +433,18 @@ TA is Running
 TB is Ready
 
 @1
-TA is Blocked : vTaskDelay()
+TA is Blocked : osDelay()
 TB is Running
 
 @3
+TA is Ready : Timeout
 TB is Ready
-TA is Running : Timer feuert!
 
 @4
+TA is Running : Dispatch
+TB is Ready
+
+@5
 TA is Blocked
 TB is Running
 @enduml
@@ -434,10 +452,10 @@ TB is Running
 
 - Task A schickt sich selbst in den Blocked-Zustand
 - Task B darf endlich rechnen
-- Nach $2\,\mathrm{ms}$ weckt der OS-Timer Task A auf — sie verdrängt B sofort (Präemption)
+- Timeout: A wird Ready (nie direkt Running), dann Dispatch — A verdrängt B
 
 ::: notes
-t=0: A rechnet, B wartet. t=1: A ruft `vTaskDelay` — B bekommt die CPU. t=3: Schlafzeit vorbei, A zurück in Ready mit höherer Prio — Präemption von B.
+t=0: A rechnet, B wartet. t=1: A ruft `osDelay` — B bekommt die CPU. t=3: Schlafzeit vorbei, A wird Ready (nie direkt Running). t=4: Dispatch — A Running, B Ready (Präemption).
 :::
 
 ## FreeRTOS Scheduler-Konfiguration
@@ -445,7 +463,7 @@ t=0: A rechnet, B wartet. t=1: A ruft `vTaskDelay` — B bekommt die CPU. t=3: S
 - Scheduler-Verhalten tiefgreifend anpassbar
 - Steuerung über `FreeRTOSConfig.h`
 - Präemption aktivieren:
-  - `configUSE_PREEMPTION = 1`: Scheduler darf Tasks unterbrechen (RMS-Stil)
+  - `configUSE_PREEMPTION = 1`: Scheduler darf Tasks unterbrechen (präemptiv / Fixed Priority)
   - `configUSE_PREEMPTION = 0`: kooperatives Scheduling (wie unser Eigenbau)
 - Für unsere Vorlesung: diesen Wert immer auf $1$ setzen
 
@@ -545,7 +563,7 @@ Die FreeRTOS-API erwartet Ticks. Bei $1000\,\mathrm{Hz}$ sind 100 Ticks zufälli
   - Scheduler-Logik (Listen umhängen)
   - Neue Register laden (Pop)
 - Summe: ca. $150$–$300$ Taktzyklen (je nach Optimierung)
-- Bei $100\,\mathrm{MHz}$ CPU-Takt: nur $\approx 2$–$3\,\mathrm{\mu s}$
+- Bei $100\,\mathrm{MHz}$ CPU-Takt: nur $\approx 2$–$3\,\text{µs}$
 
 ::: notes
 PendSV sichert Register, FreeRTOS-Assembler pusht den Rest, Listen werden umgehängt, neue Register geladen. Auf Cortex-M4 grob 150–300 Takte; bei $\geq 100\,\mathrm{MHz}$ am STM32H755 also 2–3 Mikrosekunden. Der Latenz-Overhead ist real, für die meisten Anwendungen vernachlässigbar.
@@ -569,13 +587,13 @@ Fehlannahme: Scheduler wechselt nur im 1-ms-Raster. Für harte Echtzeit zu langs
 
 | Metrik | `HAL_Delay(100)` | `vTaskDelay(...)` |
 |--------|------------------|-------------------|
-| CPU-Zustand | Leere `while`-Schleife | Wechsel zu anderer Task / Idle |
+| CPU-Zustand | Busy-Wait auf `uwTick` | Wechsel zu anderer Task / Idle |
 | Task-Zustand | Bleibt Running | Wechselt nach Blocked |
 | Auslastung $U$ | $100\%$ CPU-Last | $0\%$ CPU-Last |
 | Fazit | Zerstört Echtzeit | Echtes OS-Scheduling |
 
 ::: notes
-`HAL_Delay` ist Bare-Metal: wartet auf SysTick, hält die CPU aber in einer leeren Schleife. Das OS denkt, die Task rechnet. `vTaskDelay` sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals `HAL_Delay` in FreeRTOS-Tasks.
+`HAL_Delay` ist Bare-Metal: Busy-Wait auf `uwTick` — die Task bleibt Running, die CPU kreist. Das OS denkt, die Task rechnet. `vTaskDelay` / `osDelay` sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals `HAL_Delay` in FreeRTOS-Tasks.
 :::
 
 ## Drift-freies Timing: vTaskDelayUntil
@@ -662,7 +680,7 @@ FreeRTOS-Namen mit `x`/`v`/`pc` (ungarische Notation). Reine FreeRTOS-API kettet
 | Zeit holen | `xTaskGetTickCount()` | `osKernelGetTickCount()` |
 
 ::: notes
-CubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Vorlesung und Labor: strikt CMSIS. Statt `vTaskDelay` schreiben wir `osDelay` — kürzer, portabler, gleiche Wirkung.
+CubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Ab hier und im Labor: CMSIS (`osDelay`, `osThreadNew`). Native FreeRTOS-API (`vTaskDelay` + `pdMS_TO_TICKS`) nur als kurzer Vergleich — nicht mit Roh-Tick-`osDelay` vermischen ohne klare Tick-Rate.
 :::
 
 ## Ein CMSIS-Thread im Code
@@ -733,7 +751,8 @@ Zu viele Tasks: dynamische Allokation schlägt fehl, Handle ist `NULL`. Professi
 
 ## Schritt 1: STM32CubeIDE-Setup
 
-- Ziel: FreeRTOS auf dem Cortex-M4, präemptives RMS live beweisen
+- Ziel: FreeRTOS auf dem Cortex-M4, präemptives Prioritäts-Scheduling live beweisen
+  (Prioritäten nach Kritikalität — das ist *nicht* Rate Monotonic, dafür bräuchten wir Perioden $\rightarrow$ Prioritäten)
 - Neues Projekt STM32H755 (Cortex-M4 aktivieren)
 - Middleware: FREERTOS, Interface CMSIS_V2
 - `TOTAL_HEAP_SIZE` mindestens $16384$ Bytes ($16\,\mathrm{KB}$)
@@ -759,7 +778,7 @@ CubeIDE warnt sofort: HAL und FreeRTOS kämpfen um SysTick. Lösung: HAL-Timebas
 
 ## Schritt 3: Task-Design für das Labor
 
-- Drei Tasks, um RMS-Scheduling zu beweisen:
+- Drei Tasks, um Fixed-Priority-Präemption zu beweisen:
   - Heartbeat (`osPriorityNormal`): LED alle $500\,\mathrm{ms}$ via `osDelay`
   - HeavyMath (`osPriorityBelowNormal`): Endlosschleife ohne Delay, $100\%$ CPU
   - Emergency (`osPriorityHigh`): wartet auf Tastendruck (später per Queue)
@@ -788,7 +807,7 @@ void StartHeartbeat(void *argument)
 ```
 
 ::: notes
-In `main.c` ganz unten: generierte Task-Skelette. Heartbeat: Toggle + `osDelay(500)`. Bei `configTICK_RATE_HZ = 1000` sind das $500\,\mathrm{ms}$. CMSIS arbeitet in Ticks; die goldene Regel `pdMS_TO_TICKS` gilt für die native FreeRTOS-API. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.
+In `main.c` ganz unten: generierte Task-Skelette. Heartbeat: Toggle + `osDelay(500)`. Bei `configTICK_RATE_HZ = 1000` sind das $500\,\mathrm{ms}$ — CMSIS-`osDelay` nimmt Ticks, nicht Millisekunden (anders als `pdMS_TO_TICKS(...)` in der nativen FreeRTOS-API). Im Labor: CMSIS (`osDelay`); native API nur zum Vergleich. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.
 :::
 
 ## Code-Skelett: Die HeavyMath-Task
@@ -866,15 +885,15 @@ TM is Ready
 @enduml
 ```
 
-- CPU dauerhaft bei $100\%$, Auslastung aber nach Prioritäten (RMS) aufgeteilt
+- CPU dauerhaft bei $100\%$, Auslastung aber nach Prioritäten (Fixed Priority) aufgeteilt
 
 ::: notes
-t=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. RMS auf Hardware-Ebene.
+t=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. Fixed-Priority-Präemption auf Hardware-Ebene — nicht Rate Monotonic (Prioritäten hier nach Kritikalität, nicht nach Periode).
 :::
 
 ## Beobachtung 2: Starvation durch falsche Prioritäten
 
-- Absichtlicher Fehler zum Verständnis von RMS:
+- Absichtlicher Fehler zum Verständnis von Prioritäts-Scheduling:
   - HeavyMath-Prio $\rightarrow$ `osPriorityHigh` (höher als Heartbeat)
 - Flashen und beobachten:
   - LED bleibt dunkel / blinkt nie wieder

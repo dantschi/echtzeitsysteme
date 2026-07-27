@@ -25,14 +25,14 @@ Guten Morgen und herzlich willkommen zur fünften Vorlesung! Wir haben Bergfest,
 
 1. Recap: Mutexe und Priority Inversion
 2. Das Problem: Transport kontinuierlicher Datenströme
-3. Inter-Process Communication (IPC): Queues
+3. Inter-Task Communication (ITC): Queues
 4. CMSIS-API für Queues und Value vs. Reference
 5. Der Spezialfall: Mailboxes (Status vs. Events)
 6. *[Nach der Pause]* Interrupts im RTOS: Top-Half und Bottom-Half
 7. Ausblick Labor: Deferred Interrupt Processing am STM32H755
 
 ::: notes
-Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann IPC und Warteschlangen (Queues), C-API, Pointer vs. Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.
+Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann Inter-Task Communication (ITC) und Warteschlangen (Queues) — FreeRTOS kennt Tasks, keine Prozesse. C-API, Pointer vs. Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.
 :::
 
 ## Recap: Die Lehren aus Termin 4
@@ -104,9 +104,10 @@ void Task_Filter() {
 Producer feuert jede ms, Consumer alle 5 ms (niedrige Prio oder FFT). Consumer sieht nur den letzten Wert; vier Werte davor sind verloren — massiver Datenverlust bei korrektem OS.
 :::
 
-## Die Lösung: IPC via Betriebssystem
+## Die Lösung: Inter-Task Communication (ITC)
 
-- Wir brauchen Inter-Process Communication (IPC)
+- Wir brauchen Inter-Task Communication (ITC) — in FreeRTOS: Task-zu-Task, keine Prozesse
+- (In der Literatur oft „IPC“ genannt; hier meinen wir dasselbe Muster auf Task-Ebene.)
 - Das Betriebssystem muss die Datenverwaltung übernehmen
 - Lösung: ein Puffer (Buffer)
   - Speicherbereich für mehrere Werte
@@ -115,7 +116,7 @@ Producer feuert jede ms, Consumer alle 5 ms (niedrige Prio oder FFT). Consumer s
 - In RTOS-Systemen: Queue (Warteschlange)
 
 ::: notes
-Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der IPC.
+Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der Inter-Task-Kommunikation.
 :::
 
 ## Lernziele des heutigen Tages
@@ -202,7 +203,7 @@ Beste Task-Zustand aus VL3: Blocked. Timeout `osWaitForever` → leere Queue sch
 Volle Queue: Timeout 0 = sofort Fehler/Datenverlust. Timeout $> 0$ = Producer schläft, bis Consumer liest. OS drosselt Überlast von allein.
 :::
 
-## Zusammenfassung: IPC-Vorteile
+## Zusammenfassung: ITC-Vorteile
 
 - Datentransfer: Werte sicher von Task A nach Task B
 - Synchronisation: automatisches Blockieren und Wecken (keine leeren `while`-Schleifen)
@@ -316,7 +317,7 @@ Zwei physikalische Kopien. Nach Put darf die Producer-Variable überschrieben, g
 ## Der Feind der Queue: Große Daten!
 
 - Copy by Value ist ideal für kleine Daten (z. B. `uint32_t`, 4 Bytes)
-- Große Daten? Kamerabild $320 \times 240$ Pixel $= 76\,800$ Bytes
+- Große Daten? Kamerabild $320 \times 240$ Pixel, Graustufen (`uint8_t`) $= 76\,800$ Bytes
 - Probleme:
   - Queue wäre gigantisch (RAM-Verschwendung)
   - Zweimaliges Kopieren von $\approx 76\,\mathrm{KB}$ blockiert die CPU
@@ -396,9 +397,10 @@ Mailbox (Zustand / Status)
 ::::
 
 - FreeRTOS-Sonderfunktion: `xQueueOverwrite()`
+- **Achtung:** CMSIS-RTOS v2 hat kein Overwrite/Peek — dafür native FreeRTOS-API nötig
 
 ::: notes
-Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: `xQueueOverwrite`.
+Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: `xQueueOverwrite`. CMSIS bietet das nicht — im Labor bei CMSIS-only also Queue Länge 1 + Put mit Timeout 0 als Näherung.
 :::
 
 ## Das Broadcast-Konzept (Mailbox)
@@ -456,6 +458,7 @@ VL1-Regel: ISR kurz → kein `printf`, keine Zählschleife, kein Warten. Im RTOS
 
 ## Das Architektur-Muster: Deferred Interrupt Processing
 
+- **Vertiefung VL4:** Semaphor-Signalisierung ISR $\rightarrow$ Task kennen Sie schon — hier der Architektur-Rahmen
 - Wie lesen wir komplexe Sensordaten (z. B. 10 KB Bilddaten per SPI) ein, wenn die ISR kurz sein muss?
 - Lösung der Industrie: Deferred Interrupt Processing (verzögerte Interrupt-Verarbeitung)
 - Arbeit in zwei Hälften:
@@ -740,9 +743,9 @@ void StartButtonTask(void *argument)
         HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
         printf("BUTTON PRESSED!\n");
 
-        // Demo-Last (nur Demo!): busy-wait, Task bleibt Running
-        // In Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms
-        HAL_Delay(100);  // Demo only — nicht in Produktion
+        // NUR DEMO: busy-wait, Task bleibt Running!
+        HAL_Delay(100);
+        // Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms
     }
 }
 ```

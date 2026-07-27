@@ -376,7 +376,7 @@ Offline: Flugzeugsteuerungen, Time-Triggered. Wir fokussieren Online: flexibel, 
 
 - Wie bekommt das OS die CPU zurück?
 - Kooperativ (non-preemptive):
-  - Task gibt CPU freiwillig ab (`task_yield()` / `os_yield()`)
+  - Task gibt CPU freiwillig ab (`os_yield()`)
 - Präemptiv:
   - Hardware-Timer entreißt der Task die CPU
   - Task merkt den Wechsel nicht
@@ -424,7 +424,7 @@ Präemption verhindert Freezes, erzwingt aber Synchronisation. Details zu Mutex 
 - Dynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)
 
 ::: notes
-Statisch: `prio = 5` bleibt. Dynamisch: z. B. kurz vor der Deadline steigt die Priorität (EDF).
+Statisch: `prio = 5` bleibt. Dynamisch (EDF): Ranking nach absoluter Deadline — die Task mit der frühesten Deadline hat die höchste Priorität (kein „Ansteigen kurz vorher“).
 :::
 
 ## Der Spezialfall: Round-Robin (RR)
@@ -561,13 +561,13 @@ Bevor wir die berühmte Schranke ansehen: Liu und Layland gingen 1973 von einem 
 - Gegebenes Task-Set:
   - $\tau_1$: $C_1 = 1$, $T_1 = 4$
   - $\tau_2$: $C_2 = 2$, $T_2 = 6$
-  - $\tau_3$: $C_3 = 1$, $T_3 = 12$
-- Auslastung: $U = \frac{1}{4} + \frac{2}{6} + \frac{1}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}08\overline{3} = 66{,}7\,\%$
+  - $\tau_3$: $C_3 = 2$, $T_3 = 12$
+- Auslastung: $U = \frac{1}{4} + \frac{2}{6} + \frac{2}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}16\overline{6} = 75\,\%$
 - Regel: kürzere Periode $\rightarrow$ höhere Priorität
 - Ergebnis: $\tau_1$ (höchste Prio), $\tau_2$ (mittel), $\tau_3$ (niedrigste)
 
 ::: notes
-Drei Tasks, Summe rund 66 Prozent — die CPU ist zu einem Drittel im Leerlauf. Nach Rate Monotonic bekommt $\tau_1$ ($T=4$) die höchste Priorität, $\tau_3$ ($T=12$) die niedrigste und wird bei Bedarf präemptiert.
+Drei Tasks, Summe $75\,\%$. Nach Rate Monotonic bekommt $\tau_1$ ($T=4$) die höchste Priorität, $\tau_3$ ($T=12$) die niedrigste. Mit $C_3=2$ wird $\tau_3$ bei $t=4$ mitten in ihrer Ausführung von $\tau_1$ präemptiert — genau das wollen wir zeigen.
 :::
 
 ## Visualisierung: Präemptives RMS {.scrollable}
@@ -589,7 +589,7 @@ skinparam timing {
 
 robust "Tau 1 (T=4, C=1)" as T1
 robust "Tau 2 (T=6, C=2)" as T2
-robust "Tau 3 (T=12, C=1)" as T3
+robust "Tau 3 (T=12, C=2)" as T3
 
 @0
 T1 is Running
@@ -618,10 +618,10 @@ T3 is Idle
 @enduml
 ```
 
-- Bei $t=4$ unterbricht $\tau_1$ die laufende $\tau_3$ präemptiv
+- Bei $t=4$ unterbricht $\tau_1$ die laufende $\tau_3$ präemptiv ($C_3=2$: erste Zeiteinheit $t=3$–$4$, Rest nach Präemption)
 
 ::: notes
-Bei $t=0$ erwachen alle drei gleichzeitig; $\tau_1$ nimmt die CPU. Nach 1 ms folgt $\tau_2$, ab $t=3$ darf $\tau_3$ starten. Bei $t=4$ feuert die Periode von $\tau_1$ erneut — das OS entzieht $\tau_3$ die CPU. Das ist Präemption in Reinkultur.
+Bei $t=0$ erwachen alle drei gleichzeitig; $\tau_1$ nimmt die CPU. Nach 1 ms folgt $\tau_2$, ab $t=3$ darf $\tau_3$ starten. Bei $t=4$ feuert die Periode von $\tau_1$ erneut — das OS entzieht $\tau_3$ die CPU mitten in $C_3=2$. Das ist Präemption in Reinkultur; $\tau_3$ setzt ab $t=5$ fort und ist bei $t=6$ fertig.
 :::
 
 ## Der kritische Moment (Critical Instant)
@@ -789,7 +789,7 @@ Bei leichter Überlast können unter EDF plötzlich alle Tasks scheitern — auc
 | Eigenschaft | RMS | EDF |
 |:------------|:----|:----|
 | Priorität | Statisch (nach $T_i$) | Dynamisch (nach absoluter $D_i$) |
-| Max. $U$ | Oft $\le 69{,}3\,\%$ garantiert | $100\,\%$ garantiert |
+| Max. $U$ | Hinreichende Faustregel $\ln 2\approx 69{,}3\,\%$ ($n$-abhängig; bei $n=3\approx 78\,\%$); exakt bis $100\,\%$ möglich (RTA) | $100\,\%$ garantiert |
 | Überlast | Deterministisch (Low-Prio stirbt) | Chaotisch (Domino-Effekt) |
 | OS-Overhead | Sehr niedrig | Hoch (Listen-Sortierung) |
 | Einsatz | AUTOSAR, FreeRTOS, Industrie | Forschung, Multimedia, Soft-RT |
@@ -879,13 +879,13 @@ Wichtigster Eintrag: Stack Pointer — Lesezeichen im RAM für R0–R15 dieser T
 
 ## Der Software-Context-Switch (PendSV) {.scrollable}
 
-- Was passiert in `PendSV_Handler` (Assembler)?
-  1. `stack_pointer` der alten Task aus dem TCB lesen
-  2. Register R4–R11 auf den Stack pushen
-  3. Neuen Stack-Pointer im alten TCB speichern
-  4. `stack_pointer` der neuen Task laden
+- Was passiert in `PendSV_Handler` (Assembler, FreeRTOS-typisch)?
+  1. Aktuellen PSP lesen (Stack der alten Task)
+  2. Register R4–R11 auf diesen Stack pushen
+  3. Aktualisierten SP im TCB der alten Task speichern
+  4. SP der neuen Task aus deren TCB laden
   5. R4–R11 der neuen Task poppen
-  6. Rücksprung (`BX LR`) — neue Task läuft
+  6. Kontext wiederherstellen / Rücksprung (`BX LR`) — neue Task läuft
 
 ::: notes
 Hardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Software. Lesezeichen tauschen, `BX LR` — und die CPU rechnet im Code einer anderen Task weiter.
@@ -896,7 +896,7 @@ Hardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Softwar
 ```{mermaid}
 %%| fig-width: 7
 %%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
-flowchart TD
+flowchart LR
     A[SysTick Timer] -->|1 ms Interrupt| B[SysTick_Handler]
     B -->|Tick erhöhen| C{Scheduler: Next Task?}
     C -->|Ja, Wechsel| D[Trigger PendSV]
@@ -955,6 +955,7 @@ Ohne Registertausch kein Stack-Pointer — wir speichern den Funktionszeiger. Ma
   - Aktuelle Task pausieren
   - Index: $(idx + 1) \bmod 3$
   - READY? Dann Funktionszeiger aufrufen
+- Warnung: `task_func()` aus `os_yield` ist didaktisch — Stack wächst; Produktion: Dispatcher
 :::
 ::: {.column width="45%"}
 ```c
@@ -964,6 +965,8 @@ void os_yield(void) {
           (current_task_idx + 1) % 3;
     } while (task_list[current_task_idx]
                .state != READY);
+    /* Didaktische Vereinfachung: ruft Task rekursiv auf
+       (Stack wächst). Produktion: Rückkehr zum Dispatcher. */
     task_list[current_task_idx]
         .task_func();
 }
@@ -972,7 +975,7 @@ void os_yield(void) {
 ::::
 
 ::: notes
-`os_yield()` heißt: CPU freiwillig abgeben. Modulo hält den Ring. Kontextwechsel = simpler C-Funktionsaufruf.
+`os_yield()` heißt: CPU freiwillig abgeben. Modulo hält den Ring. Achtung: Der direkte Aufruf von `task_func()` ist eine didaktische Vereinfachung — bei `while(1)` + Yield wächst der Stack. Ein echtes kooperatives OS kehrt zum Dispatcher zurück und startet die nächste Task ohne geschachtelte Aufrufe.
 :::
 
 ## Labor-Schritt 3: Hardware-Messung (Oszilloskop)
@@ -1009,13 +1012,13 @@ Mutwillig crashen: Theorie wird greifbar. Harte Echtzeit darf dem Anwendungscode
 ## Zusammenfassung des Tages
 
 - Task-Modell: WCET $C$, Periode $T$, Frist $D$; Auslastung $U$ als Analyse-Fundament
-- RMS: Priorität statisch nach Rate; Liu-und-Layland-Schranke (Grenzwert $\approx 69{,}3\,\%$); deterministisch bei Überlast
+- RMS: Priorität statisch nach Rate; Liu-Layland hinreichend ($n$-abhängig, Grenzwert $\approx 69{,}3\,\%$), exakt via RTA; deterministisch bei Überlast
 - EDF: nächste Frist, $U \le 1$; bei Fehler Domino-Effekt
 - Cortex-M: SysTick + PendSV ermöglichen präemptives Multitasking
 - Labor: kooperativer Round-Robin — und warum er scheitern kann
 
 ::: notes
-Sie können Software in $C$, $T$, $D$ abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Unter $\approx 69\,\%$ Auslastung liefert RMS eine mathematische Garantie.
+Sie können Software in $C$, $T$, $D$ abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Liu-Layland ist hinreichend ($n$-abhängig); exakte Schedulability liefert die Response-Time Analysis.
 :::
 
 ## Ausblick auf Termin 3
@@ -1023,7 +1026,7 @@ Sie können Software in $C$, $T$, $D$ abstrahieren, RMS und EDF einordnen und da
 - Nach dem Spiel-Scheduler: Wechsel in die Profiliga
 - Nächste Woche: FreeRTOS auf dem Cortex-M4
 - Kooperative Architektur weg, harte Präemption aktiv
-- FreeRTOS-API: `xTaskCreate()`, `vTaskDelay()`
+- FreeRTOS-API (CMSIS_V2 im Labor): `osThreadNew()`, `osDelay()`
 - Vorbereitung: Zeiger (Pointer) in C auffrischen
 
 ::: notes

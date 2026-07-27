@@ -110,9 +110,9 @@ Ergebnis hängt davon ab, wer den Wettlauf gewinnt. In 99 % der Fälle zufällig
 
 :::: {.columns}
 ::: {.column width="50%"}
-- Globale Variable: `int fehler = 0;`
+- Globale Variable: `volatile uint32_t error_counter = 5;`
 - Task A (Low) und Task B (High) melden beide einen Fehler
-- Beide rufen `fehler++;` auf
+- Beide rufen `error_counter++;` auf
 - War der Wert `5`, erwarten wir danach `7`
 :::
 ::: {.column width="50%"}
@@ -253,7 +253,8 @@ Daten vs. Code trennen: Shared Resource = Variable/Register; Critical Section = 
 ::: {.column width="50%"}
 - Idee aus der Bare-Metal-Welt: Flag `lock`
 - Vor Zugriff: prüfen, ob `lock == 0`, dann auf `1` setzen
-- Frage: Warum ist das im RTOS eine Katastrophe?
+- Achtung: Check-then-Set auf `lock` selbst ist eine Race Condition (benötigt atomares Test-and-Set / `LDREX`/`STREX`)
+- Frage: Warum ist das im RTOS trotzdem eine Katastrophe?
 :::
 ::: {.column width="50%"}
 ```c
@@ -548,7 +549,7 @@ Klassiker: Acquire, dann früher Return ohne Release — Schlüssel verloren, al
 - So kurz wie möglich in der Critical Section bleiben
 - Niemals in einer Critical Section `osDelay()` aufrufen
 - Niemals Mutex-Acquire in einer Hardware-ISR
-  - ISR kann nicht Blocked werden → Crash
+  - verboten / undefiniert bzw. Assert (ISR kann nicht Blocked werden)
 - In ISRs: Semaphoren oder Queues, keine Mutexe
 
 ::: notes
@@ -575,7 +576,7 @@ Spezialfall rekursiver Mutex: Bibliotheksfunktion A sperrt, ruft Hilfsfunktion B
 | :--- | :--- | :--- |
 | Hauptzweck | Signalisierung (ISR $\rightarrow$ Task) | Absicherung (Ressourcenschutz) |
 | Ownership | Nein | Ja (nur Besitzer entsperrt) |
-| Verwendung in ISR? | Ja (`Release` weckt Task) | Nein (Systemabsturz) |
+| Verwendung in ISR? | Ja (`Release` weckt Task) | Nein (verboten / Assert) |
 | Priority Inheritance? | Nein | Ja (dazu gleich mehr) |
 | Gefahr | Fremdtask öffnet Schloss versehentlich | Priority Inversion (ohne OS-Schutz) |
 
@@ -612,10 +613,10 @@ graph TD
     M1[Mutex A]
     M2[Mutex B]
 
-    T1 -->|Hat gesperrt| M1
-    T2 -->|Hat gesperrt| M2
-    T1 -->|Wartet auf| M2
-    T2 -->|Wartet auf| M1
+    T1 -->|hält| M1
+    T2 -->|hält| M2
+    T1 -->|wartet| M2
+    T2 -->|wartet| M1
 
     style T1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
     style T2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
@@ -627,11 +628,26 @@ graph TD
 Zwei Ressourcen (SPI = Mutex A, Display = Mutex B). Task 1 hält A, Task 2 hält B; beide wollen den anderen Mutex → Zirkelschluss, kein Aufwachen mehr.
 :::
 
+## Die vier Coffman-Bedingungen
+
+- Ein Deadlock entsteht nur, wenn **alle vier** gleichzeitig gelten:
+  1. **Mutual Exclusion** — Ressource nicht teilbar
+  2. **Hold-and-Wait** — Task hält A und wartet auf B
+  3. **No Preemption** — gehaltene Locks werden nicht entzogen
+  4. **Circular Wait** — zyklische Warteschlange
+- Unsere Regeln brechen genau diese Kette:
+  - Regel 1 (keine Schachtelung) $\rightarrow$ kein Hold-and-Wait
+  - Regel 2 (globale Reihenfolge) $\rightarrow$ kein Circular Wait
+
+::: notes
+Coffman et al. (1971): Deadlock nur bei allen vier Bedingungen. In der Praxis genügt es, eine zu brechen — deshalb die beiden Vermeidungsregeln der nächsten Folie.
+:::
+
 ## Vermeidung von Deadlocks
 
-- Regel 1: Keine geschachtelten Mutexe
+- Regel 1: Keine geschachtelten Mutexe (bricht Hold-and-Wait)
   - Niemals einen zweiten Mutex anfordern, solange einer gehalten wird
-- Regel 2: Strikte Anforderungsreihenfolge
+- Regel 2: Strikte Anforderungsreihenfolge (bricht Circular Wait)
   - Wenn Schachtelung unvermeidbar: alle Tasks fordern Mutexe in derselben globalen Reihenfolge an (erst A, dann B)
 - So kann Task 2 niemals B sperren, solange A schon belegt ist
 
@@ -643,13 +659,16 @@ Beste Praxis: ein Schloss, Critical Section, freigeben, dann nächstes. Bei zwei
 
 - Deadlock: System steht — offensichtlich
 - Priority Inversion: System läuft weiter, aber Echtzeitgarantien der wichtigsten Task sind zerstört
+- **Abgrenzung Starvation vs. Priority Inversion:**
+  - *Starvation:* Scheduler gewährt der Task nie CPU (reine Prioritäts-/Ready-Problematik)
+  - *Priority Inversion:* High blockiert indirekt über Mutex + mittelpriore Task
 - Setup:
   - Task L (Low), Task M (Medium), Task H (High)
   - Ein Mutex, den nur L und H teilen
   - M braucht den Mutex nicht
 
 ::: notes
-Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Nicht verwechseln mit Starvation: Inversion entsteht durch Mutex-Halten + präemptierende Mittelprio.
+Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Starvation braucht keinen Mutex — nur den Scheduler. Inversion braucht Mutex + Mittelprio.
 :::
 
 ## Die Anatomie der Inversion (Schritt 1 und 2)
@@ -701,8 +720,8 @@ robust "Task L (Low)" as TL
 concise "Mutex Status" as MX
 
 @0
-TH is Blocked
-TM is Blocked
+TH is Ready
+TM is Ready
 TL is Running
 MX is "Frei"
 
@@ -847,31 +866,35 @@ robust "Task L (Low)" as TL
 concise "Task L Prio" as PL
 
 @0
-TH is Blocked
-TM is Blocked
+TH is Ready
+TM is Ready
 TL is Running
 PL is "Prio: Low"
 
 @1
+TL is Running : Acquire
+PL is "Prio: Low"
+
+@2
 TH is Running : Präemptiert L
 TL is Ready
 
-@2
+@3
 TH is Blocked : Acquire scheitert
 TL is Running : Erbt Prio High
-PL is "Prio: HIGH geerbt"
+PL is "Prio: HIGH"
 
-@3
+@4
 TM is Ready : Will rechnen
 TL is Running : blockiert TM
 
-@4
+@5
 TL is Ready : Release
 PL is "Prio: Low"
 TH is Running : Bekommt Mutex
 
-@6
-TH is Blocked
+@7
+TH is Ready
 TM is Running
 @enduml
 ```

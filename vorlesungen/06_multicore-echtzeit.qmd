@@ -42,7 +42,7 @@ Motivation für mehrere Kerne, dann SMP vs. AMP. Anschließend den STM32H755 zer
 - Bei $100\%$ CPU-Nutzung ist physikalisch Schluss
 - Das Problem der Industrie:
   - Steuergeräte sollen immer mehr können (KI, Ethernet, GUI)
-  - Gleichzeitig harte Timing-Regelkreise ($100\,\mathrm{\mu s}$ Raster)
+  - Gleichzeitig harte Timing-Regelkreise ($100\,\text{µs}$ Raster)
 - Wie bekommen wir mehr Rechenleistung in das System?
 
 ::: notes
@@ -77,43 +77,21 @@ Die Lösung von Intel/AMD für den PC ist in der MCU-Welt angekommen: Multicore.
 
 ## Multiprocessing-Architekturen
 
-:::: {.columns}
-::: {.column width="50%"}
 Zwei grundlegende Konzepte:
 
 1. SMP (Symmetric Multiprocessing)
 2. AMP (Asymmetric Multiprocessing)
 
 Beide haben unterschiedliche Einsatzgebiete.
-:::
-::: {.column width="50%"}
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-skinparam rectangle {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-}
 
-rectangle "Multicore" {
-  rectangle "SMP (Symmetrisch)" as SMP
-  rectangle "AMP (Asymmetrisch)" as AMP
-}
-@enduml
+```{mermaid}
+graph TD
+    MC[Multicore] --> SMP[SMP Symmetrisch]
+    MC --> AMP[AMP Asymmetrisch]
+    style MC fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style SMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style AMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
-:::
-::::
 
 ::: notes
 Es gibt nicht „die eine“ Multicore-Architektur. Zwei Familien: SMP und AMP. Beide lösen Rechenlast, aber auf unterschiedlichen Wegen. Für Ihre Karriere: Unterschied kennen und wissen, warum AMP in der Echtzeit oft bevorzugt wird.
@@ -138,39 +116,18 @@ SMP kennen Sie aus Alltag: Handy und Laptop. „Symmetrisch“: identische Kerne
 - Load-Balancing: Tasks dynamisch auf den Kern mit wenig Last
 - Task-Migration: Millisekunde 1 auf Core 0, Millisekunde 2 auf Core 1
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-skinparam rectangle {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-}
-skinparam ArrowColor #E2001A
-
-rectangle "Single OS (Linux / Windows)" as OS {
-  rectangle "Task-Queue" as TQ
-}
-
-rectangle "Core 0" as C0
-rectangle "Core 1" as C1
-rectangle "Core 2" as C2
-
-TQ --> C0 : Task A
-TQ --> C1 : Task B
-TQ --> C2 : Task C
-TQ .> C0 : Migration (Task C)
-@enduml
+```{mermaid}
+graph TD
+    OS[Single OS Linux / Windows] --> TQ[Task-Queue]
+    TQ --> C0[Core 0 Task A]
+    TQ --> C1[Core 1 Task B]
+    TQ --> C2[Core 2 Task C]
+    C2 -.->|Migration| C0
+    style OS fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style TQ fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style C0 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style C1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style C2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
 
 ::: notes
@@ -179,15 +136,15 @@ Der SMP-Scheduler betreibt Load-Balancing. Word, Excel, Browser: OS weist Thread
 
 ## Warum SMP für harte Echtzeit oft scheitert
 
-- SMP ist genial für Durchsatz, aber ein Albtraum für Determinismus
+- SMP ist genial für Durchsatz, aber für **harte** Echtzeit oft problematisch
 - Latenz-Probleme:
   - Task-Migration kostet Zeit (Register von Kern zu Kern)
   - Cache-Thrashing: L1-Cache des Zielkerns ist leer → Cache-Misses
   - Contention: mehrere Kerne auf demselben RAM-Bus → Mikro-Staus
-- Ergebnis: WCET explodiert und wird unberechenbar
+- Ergebnis: WCET wird schwerer vorherzusagen (oft unpraktisch für harte Deadlines)
 
 ::: notes
-Warum keine Airbag-Steuerung mit SMP? Tod für Determinismus. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird unberechenbar.
+Warum selten Airbag-Steuerung mit SMP? Determinismus leidet. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird schwer beherrschbar.
 :::
 
 ## Asymmetrisches Multiprocessing (AMP)
@@ -248,7 +205,7 @@ Wie reden die Kerne? `osMessageQueuePut` geht nicht — FreeRTOS auf Core 2 kenn
 | Kerne | Identisch | Oft heterogen |
 | Betriebssystem | Ein gemeinsames OS | Getrennte Programme / OS |
 | Lastverteilung | Dynamisch durch Scheduler | Statisch durch Programmierer |
-| Determinismus | Schlecht (Migration, Cache-Misses) | Hervorragend (strikte Trennung) |
+| Determinismus | Oft schwierig (Migration, Cache-Misses) | Typischerweise besser isolierbar |
 | Beispiel | Laptop, Raspberry Pi | STM32H755, NXP i.MX RT |
 
 ::: notes
@@ -259,37 +216,14 @@ SMP: identische Kerne, ein OS, Meister des Durchsatzes. AMP: oft ungleiche Kerne
 
 - Ein Silizium-Plättchen (Die), zwei getrennte Prozessorkerne
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-skinparam rectangle {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-}
-skinparam ArrowColor #E2001A
-skinparam rectangle {
-  BackgroundColor #F5F5F7
-  BorderColor #1D1D1F
-}
-
-rectangle "STM32H755 Chip" {
-  [Cortex-M7 (bis 480 MHz)] as M7
-  [Cortex-M4 (bis 240 MHz)] as M4
-
-  M7 -[hidden]- M4
-}
-@enduml
+```{mermaid}
+graph TD
+    CHIP[STM32H755 Chip]
+    CHIP --> M7[Cortex-M7 Spec max 480 MHz]
+    CHIP --> M4[Cortex-M4 Spec max 240 MHz]
+    style CHIP fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style M7 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style M4 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
 ```
 
 - Trotzdem teilen sie sich Pins, Taktquellen und Speicher
@@ -355,14 +289,20 @@ Drei Kontinente: D1 (Partyzone mit M7 und Gigabit), D2 (Echtzeit-Zone mit M4 und
 
 ## Taktversorgung (RCC)
 
+- Specs vs. Board-Setup (kanonisch für diese Vorlesung):
+
+| Kern | Spec-Maximum | Typisches Nucleo-Setup |
+|------|--------------|------------------------|
+| Cortex-M7 | bis $480\,\mathrm{MHz}$ | $400\,\mathrm{MHz}$ |
+| Cortex-M4 | bis $240\,\mathrm{MHz}$ | $200\,\mathrm{MHz}$ |
+
 - Beide Kerne haben eigene Phasenregelkreise (PLLs)
-- M7 kann mit $400\,\mathrm{MHz}$ laufen, M4 mit $200\,\mathrm{MHz}$
 - Achtung im CubeMX Configurator:
   - Änderungen am System Clock beeinflussen meist beide Kerne
   - Stoppt Core 1 die PLL, crasht Core 2
 
 ::: notes
-Ähnliche Teilung bei RCC: eigene Teiler und PLLs. M7 auf 480 MHz, M4 auf 100 MHz ist möglich. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.
+Ähnliche Teilung bei RCC: eigene Teiler und PLLs. Specs nennen Maxima (480/240); im Labor und in Timing-Beispielen (Cache, Trace) rechnen wir mit dem typischen Nucleo-Setup 400/200 MHz. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.
 :::
 
 ## Der Boot-Prozess: Wer weckt wen?
@@ -476,13 +416,13 @@ MEMORY
 {
   FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
   RAM_D1 (xrw)    : ORIGIN = 0x24000000, LENGTH = 512K
-  /* NEU: Shared Memory */
-  SHARED_RAM (xrw): ORIGIN = 0x38000000, LENGTH = 64K
+  /* NEU: Shared Memory (CubeMX: oft RAM_D3) */
+  RAM_D3 (xrw)    : ORIGIN = 0x38000000, LENGTH = 64K
 }
 ```
 
 ::: notes
-Das Linker-Script ist das Fundament. In beiden `.ld`-Dateien einen MEMORY-Bereich `SHARED_RAM` mit Adresse `0x38000000` und 64 KB deklarieren — beide Kerne kennen den Bereich.
+Das Linker-Script ist das Fundament. In beiden `.ld`-Dateien einen MEMORY-Bereich `RAM_D3` (SRAM4) mit Adresse `0x38000000` und 64 KB deklarieren — beide Kerne kennen den Bereich.
 :::
 
 ## Eine eigene Sektion anlegen
@@ -497,7 +437,7 @@ SECTIONS
   {
     . = ALIGN(4);
     *(.shared_memory) /* Variablen mit diesem Tag */
-  } > SHARED_RAM
+  } > RAM_D3
 }
 ```
 
@@ -524,26 +464,26 @@ Sektion `.shared_memory` anlegen. Entscheidend: `NOLOAD`. Ohne NOLOAD initialisi
 // die .shared_memory Sektion gelegt!
 
 __attribute__((section(".shared_memory")))
-SharedData_t shared_data;
+volatile SharedData_t sd;
 ```
 :::
 ::::
 
 ::: notes
-Wir haben den Grundstein im Linker-Script gelegt. Aber wenn wir in C einfach eine globale Variable deklarieren, packt der Compiler sie standardmäßig in die `.bss` oder `.data`-Sektion — irgendwo im schnellen AXI-SRAM. Um das zu verhindern, nutzen wir eine GCC-spezifische Anweisung: `__attribute__((section("name")))`. Wir hängen dieses Attribut direkt vor unsere Variablendeklaration. Wenn der Compiler diesen Code sieht, gibt er dem Linker die Anweisung: Diese Variable muss exakt in den Topf namens `.shared_memory` geworfen werden. Und da dieser Topf fest auf die Adresse `0x38000000` gelinkt ist, wissen wir zu 100 %, dass beide Kerne auf dieselben Bytes zugreifen.
+Ohne Attribut landet die Variable in `.bss`/`.data` (oft AXI-SRAM). Mit `__attribute__((section(".shared_memory")))` zwingt GCC den Linker auf `0x38000000` — beide Kerne sehen dieselben Bytes.
 :::
 
 ## Das Schlüsselwort volatile
 
 - Ein weiteres Problem beim Speichern: der C-Compiler-Optimizer (`-O2` / `-O3`)
 - Der Compiler analysiert den Code einer Task (z. B. auf dem M4)
-- Er sieht eine `while(shared_data.m7_ready == 0);`-Schleife
+- Er sieht eine `while(sd.m7_ready == 0);`-Schleife
 - Er denkt: „In meiner Task ändert niemand diese Variable. Also lese ich sie nur 1× aus dem RAM und nutze danach für immer ein CPU-Register!“ $\rightarrow$ Endlosschleife!
 - Lösung: `volatile`
 - Sagt dem Compiler: Diese Variable kann sich jederzeit durch externe Hardware (oder einen anderen Kern) ändern! Lese sie bei JEDEM Zugriff zwingend frisch aus dem RAM!
 
 ::: notes
-Das nächste Problem ist hausgemacht durch clevere Software. Moderne C-Compiler sind darauf trainiert, Ihren Code rasend schnell zu machen. Wenn Sie auf dem M4 eine While-Schleife schreiben, die darauf wartet, dass der M7 ein Flag setzt, liest der Optimizer den Code. Er stellt fest: In dieser Task wird die Variable nie beschrieben — es sei sinnlos, sie in jedem Schleifendurchlauf aus dem RAM zu holen. Er liest sie einmal in ein CPU-Register und prüft ab sofort nur noch dieses Register. Da der M7 aber den RAM ändert und nicht das Register des M4, friert der M4 für immer ein. Um das zu verhindern, müssen wir die Variable als `volatile` deklarieren. Das zwingt den Compiler, den Wert jedes Mal frisch über die Bus-Matrix aus dem RAM abzuholen.
+Ohne `volatile` darf der Optimizer das Flag einmal lesen und danach nur noch das Register prüfen — der M4 friert ein, obwohl der M7 den RAM ändert. `volatile` erzwingt frische RAM-Reads.
 :::
 
 ## Reicht volatile für Multicore?
@@ -556,7 +496,7 @@ Das nächste Problem ist hausgemacht durch clevere Software. Moderne C-Compiler 
 - Hier betreten wir das gefährlichste Feld der Embedded-Entwicklung
 
 ::: notes
-Viele C-Programmierer denken: Prima, ich habe meine globale Variable als `volatile` deklariert, jetzt bin ich sicher vor Multicore-Problemen. Falsch! Absolut falsch. `volatile` ist ein reines Software-Konstrukt. Es sagt dem GCC-Compiler, dass er RAM-Zugriffe nicht wegoptimieren darf. Aber es sagt der physikalischen CPU-Hardware, genauer gesagt dem L1-Cache des Cortex-M7, absolut gar nichts. Die CPU darf und wird die Zugriffe hardwareseitig puffern. Und genau dieses Hardware-Puffern zerschießt uns die Multicore-Kommunikation.
+`volatile` stoppt nur Compiler-Optimierungen — nicht den L1-Cache des M7. Hardware-Puffern bleibt das Multicore-Problem.
 :::
 
 ## Struktur der Ping-Pong Daten
@@ -573,7 +513,7 @@ typedef struct {
 
 // Im Code (in CM7 und CM4):
 __attribute__((section(".shared_memory")))
-volatile SharedData_t shared_data;
+volatile SharedData_t sd;
 ```
 
 ::: notes
@@ -594,7 +534,7 @@ Fassen wir den ersten Teil zusammen. Wir haben die logische Struktur für unsere
 
 ## Was ist ein CPU-Cache?
 
-- Die CPU (z. B. $400\,\mathrm{MHz}$) ist extrem schnell
+- Die CPU (Board-Setup z. B. $400\,\mathrm{MHz}$) ist extrem schnell
 - Der Hauptspeicher (SRAM) ist langsam (z. B. braucht ein Zugriff $5$ Taktzyklen)
 - Der L1-Cache:
   - Ein winziger, aber unfassbar schneller SRAM direkt im Prozessorkern ($1$ Taktzyklus)
@@ -602,16 +542,16 @@ Fassen wir den ersten Teil zusammen. Wir haben die logische Struktur für unsere
   - Beim nächsten Lesen wird die Variable aus dem Cache geholt (blitzschnell!)
 
 ::: notes
-Was genau ist ein Cache? Der Cortex-M7 rechnet mit $400$ Megahertz. Der Arbeitsspeicher antwortet aber vielleicht erst nach $5$ Taktzyklen. Die CPU würde ständig warten. Deshalb hat der M7 direkt auf dem Silizium des Kerns einen kleinen Speicher, den Level-1-Cache. Wenn Ihr C-Code eine Variable liest, holt die Hardware nicht nur diese eine Variable aus dem lahmen RAM, sondern kopiert die umgebenden $32$ Bytes in den pfeilschnellen Cache. Wenn Sie in der nächsten Code-Zeile nochmal auf die Variable zugreifen, fragt die CPU gar nicht mehr den RAM. Sie liest die Daten in einem einzigen Taktzyklus direkt aus dem Cache.
+Bei Board-Setup $\approx 400\,\mathrm{MHz}$ ist SRAM oft mehrere Takte entfernt. L1-Cache ($32$-Byte-Lines) liefert Folgezugriffe in einem Takt.
 :::
 
 ## Write-Through vs. Write-Back
 
-- Was passiert, wenn der C-Code eine Variable schreibt (`shared_data.m7_ready = 1;`)?
+- Was passiert, wenn der C-Code eine Variable schreibt (`sd.m7_ready = 1;`)?
 - **Write-Through:**
   - Die CPU schreibt den Wert in den Cache UND sofort parallel durch in den Haupt-RAM
   - (Sicher, aber langsamer)
-- **Write-Back** (Standard beim Cortex-M7):
+- **Write-Back** (häufig, solange die Region cacheable ist):
   - Die CPU schreibt den Wert NUR in den internen Cache!
   - Der echte SRAM bleibt veraltet (Stale Data)
   - Der Cache schreibt die Daten erst in den RAM zurück (Eviction), wenn er Platz für neue Variablen braucht
@@ -631,7 +571,7 @@ Das Lesen ist unproblematisch. Aber was passiert beim Schreiben? Hier gibt es in
 - Dieses Problem nennt man einen *Cache Coherency Failure*
 
 ::: notes
-Lassen Sie uns das Drama Schritt für Schritt durchspielen. Der Cortex-M7 rechnet brav den Sensorwert aus und setzt das Bereit-Flag auf 1. Das Programm läuft fehlerfrei. Aber die Hardware puffert diesen Schreibvorgang im Write-Back-Cache. Im physikalischen SRAM4 steht immer noch eine Null. Eine Millisekunde später prüft der Cortex-M4 das Flag. Da der M4 keinen Cache hat, geht sein Lesebefehl über die Bus-Matrix direkt an den physikalischen SRAM4. Und was liefert der SRAM4 zurück? Die alte, veraltete Null! Der M4 denkt, der M7 hat noch gar nichts gerechnet und blockiert. Die Daten im System sind asynchron. Der Cache des M7 ist nicht kohärent mit dem Hauptspeicher.
+M7 setzt `m7_ready = 1` nur im Write-Back-Cache; SRAM4 bleibt 0. M4 liest physisch 0 und wartet ewig — Cache Coherency Failure.
 :::
 
 ## Visualisierung: Cache Coherency Failure
@@ -658,29 +598,29 @@ concise "M4 (ohne Cache)" as M4
 @0
 C7 is "0"
 RAM is "0"
-M4 is "Wartet auf 1"
+M4 is "wartet"
 
 @1
-C7 is "1 (Dirty)" : M7 schreibt!
-RAM is "0 (Veraltet)"
-M4 is "Liest RAM → 0"
+C7 is "1 Dirty" : M7 write
+RAM is "0 alt"
+M4 is "liest 0"
 
 @2
 C7 is "1"
 RAM is "0"
-M4 is "Liest RAM → 0"
+M4 is "liest 0"
 
 @3
 C7 is "1"
 RAM is "0"
-M4 is "System Freeze…"
+M4 is "Freeze"
 @enduml
 ```
 
 - Der M4 sieht die neuen Daten des M7 nicht, da sie im L1-Cache „feststecken“
 
 ::: notes
-In diesem Timing-Diagramm sehen Sie exakt das, was Sie in einem Labor ohne Gegenmaßnahmen erleben würden. Bei $t=1$ schreibt der Cortex-M7-Code eine „1“. Der Wert ändert sich aber nur im obersten Graphen, im M7-Cache. Der Graph in der Mitte, der physikalische RAM, bleibt auf „0“. Der untere Graph, unser Cortex-M4, liest stoisch den RAM und liest immer wieder „0“. Das System friert effektiv ein, ohne dass der C-Compiler oder das RTOS irgendeinen Fehler gemacht hätten. Es ist ein reines Hardware-Problem.
+Diagramm: Cache dirty, RAM stale, M4 liest 0 — reines Hardware-/Kohärenz-Problem, kein Compiler-/RTOS-Bug.
 :::
 
 ## HW-Lösung in PCs: Cache-Snooping
@@ -693,7 +633,7 @@ In diesem Timing-Diagramm sehen Sie exakt das, was Sie in einem Labor ohne Gegen
 - Snooping kostet extrem viel Siliziumfläche, viel Strom und (das Schlimmste) verursacht unvorhersehbare Bus-Latenzen $\rightarrow$ Gift für harte Echtzeit!
 
 ::: notes
-Jetzt werden sich viele von Ihnen fragen: Aber mein Laptop hat 8 Kerne und da friert doch auch nicht ständig der RAM ein? Stimmt. In Desktop-PCs, also bei SMP-Architekturen, löst die Hardware das Problem mit gigantischem Aufwand selbst. Das nennt sich Cache-Snooping. Die Kerne überwachen sich gegenseitig. Wenn Core 2 auf den Bus zugreift, ruft Core 1: Stopp, ich habe dazu noch neuere Daten in meinem Cache!, schreibt diese schnell in den RAM und lässt Core 2 dann weiterlesen. Aber diese Schnüffelei auf dem Bus kostet Strom, belegt massiv Platz auf dem Silizium und verursacht schwankende Verzögerungen auf dem Bus. Für einen Echtzeit-Controller wie den STM32, bei dem es um Nanosekunden geht, ist Hardware-Snooping absolut inakzeptabel. Wir als Entwickler müssen das Problem selbst lösen.
+PCs lösen Kohärenz per Hardware-Snooping (z. B. MESI) — teuer, stromhungrig, jitterbehaftet. Auf dem STM32H755 lösen wir es software-/MPU-seitig.
 :::
 
 ## Software-Lösung 1: Manuelles Management
@@ -713,9 +653,9 @@ Die erste Möglichkeit, dieses Problem zu lösen, ist manuelles Cache-Management
 
 ```c
 // Beispielcode M7:
-shared_data.m7_ready = 1;
+sd.m7_ready = 1;
 // Manuelles Durchschreiben!
-SCB_CleanDCache_by_Addr((uint32_t*)&shared_data,
+SCB_CleanDCache_by_Addr((uint32_t*)&sd,
                         sizeof(SharedData_t));
 ```
 
@@ -743,7 +683,7 @@ Es gibt einen besseren Weg: Wir lösen das Problem wieder hardwareseitig, aber o
 
 ## Was bewirkt die MPU?
 
-- Wenn der M7 nun `shared_data.m7_ready = 1;` ausführt:
+- Wenn der M7 nun `sd.m7_ready = 1;` ausführt:
   - Die MPU sieht die Adresse `0x38000000`
   - Sie weiß: Cache ist hier verboten!
   - Sie leitet den Schreibbefehl direkt über die Bus-Matrix an den SRAM4 durch
@@ -833,7 +773,7 @@ In Schritt 3 definieren wir unsere Sprache. Da beide Kerne völlig getrennte C-P
 
 - Öffnen Sie in beiden Projekten (CM7 und CM4) die Datei `STM32H755..._FLASH.ld`
 - Fügen Sie im `MEMORY`-Block den SRAM4 hinzu
-  (CubeMX nennt ihn oft `RAM_D3`; früher auf den Folien: `SHARED_RAM` — entscheidend ist die Adresse):
+  (CubeMX-Name: `RAM_D3`; entscheidend ist die Adresse `0x38000000`):
 
 ```ld
 RAM_D3 (xrw) : ORIGIN = 0x38000000, LENGTH = 64K

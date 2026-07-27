@@ -117,8 +117,8 @@ void StartEmergencyTask(void *argument)
 /* USER CODE END Header_StartEmergencyTask */
 ```
 
-**Warum `osDelay` statt `HAL_Delay`?**  
-`HAL_Delay()` ist eine Busy-Wait-Schleife: die Task bleibt im Zustand *Running* und blockiert die CPU. `osDelay()` hingegen setzt die Task in den Zustand *Blocked*; die CPU-Auslastung dieser Task ist dabei praktisch $0\,\%$, und andere Ready-Tasks (hier HeavyMath) dürfen rechnen.
+**Warum `osDelay` statt HAL-Busy-Wait?**  
+`HAL_Delay()` ist eine Busy-Wait-Schleife: die Task bleibt im Zustand *Running* und blockiert die CPU. Dagegen setzt `osDelay()` die Task in den Zustand *Blocked*; die CPU-Auslastung dieser Task ist dabei praktisch $0\,\%$, und andere Ready-Tasks (hier HeavyMath) dürfen rechnen.
 
 **Erklärung des Präemptions-Beweises:**  
 Das System friert nicht ein, weil FreeRTOS ein **präemptives** Betriebssystem ist. Die `HeartbeatTask` hat eine höhere Priorität (`osPriorityNormal`) als die `HeavyMathTask` (`osPriorityBelowNormal`). Nach $500\,\mathrm{ms}$ weckt der SysTick-Timer die Heartbeat-Task. Der Scheduler erkennt die höhere Priorität und verdrängt (präemptiert) die rechnende HeavyMath-Task über den **PendSV**-Handler von der CPU. Nach dem Toggle und dem anschließenden `osDelay()` geht Heartbeat wieder nach *Blocked*, und HeavyMath darf im Hintergrund weiterrechnen.

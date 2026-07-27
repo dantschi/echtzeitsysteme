@@ -121,13 +121,13 @@ Am Ende des Tages: Definition und Klassifikation, Latenz/Jitter, warum `while(1)
 
 ## Was ist Echtzeit? (Definition)
 
-- Klassische Definition (häufig nach DIN 44300 zitiert): Echtzeitbetrieb, wenn
+- Klassische Definition (häufig nach DIN 44300 zitiert, klassisch / historisch): Echtzeitbetrieb, wenn
   1. Ergebnisse logisch korrekt sind (Wertebereich)
   2. Ergebnisse innerhalb eines vorgegebenen Zeitintervalls vorliegen (Zeitbereich)
 - Determinismus: zeitliches Verhalten in jedem Zustand vorhersagbar
 
 ::: notes
-Zwei Dimensionen: Wertebereich und Zeitbereich. Die Formulierung geht auf die klassische DIN-44300-Tradition zurück und wird in der Lehre weiterhin so zitiert. Beim Design streben wir Determinismus an — zeitliches Verhalten vorhersagen oder garantieren können.
+Zwei Dimensionen: Wertebereich und Zeitbereich. Die Formulierung geht auf die klassische / historische DIN-44300-Tradition zurück und wird in der Lehre weiterhin so zitiert. Beim Design streben wir Determinismus an — zeitliches Verhalten vorhersagen oder garantieren können.
 :::
 
 ## Klassifizierung von Echtzeitsystemen
@@ -187,10 +187,11 @@ Design oft auf den Average Case und hohen Durchsatz; gelegentliche Ausreißer we
 Durchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, Branch Prediction) machen dieselbe Codezeile mal schnell, mal langsam — WCET wird zur Herausforderung.
 :::
 
-## Latenz (Response Time)
+## Latenz (Reaktionsverzögerung)
 
 - Latenz: Verzögerung zwischen Ereignis und Reaktion
 - Interrupt-Latenz: Flanke am Pin bis erste Instruktion der ISR
+- Response Time $R_i$ (Release → Completion): formal erst in VL2; nicht gleich Interrupt-Latenz
 
 ```{.wavedrom}
 {
@@ -204,13 +205,14 @@ Durchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, 
 ```
 
 ::: notes
-Zwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Context Switch), Sprung in die ISR. Beim Cortex-M oft in der Größenordnung von ca. 12 Taktzyklen Hardware-Latenz — plus Software.
+Zwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Exception Entry / Stacking), Sprung in die ISR. Beim Cortex-M oft in der Größenordnung von ca. 12 Taktzyklen Hardware-Latenz — plus Software.
+Die Response Time $R_i$ (Release → Completion) kommt formal erst in VL2 und ist etwas anderes als die Interrupt-Latenz hier.
 :::
 
 ## Jitter
 
 - Jitter: Varianz der Latenz oder der Periodizität
-- Soll alle 10 ms laufen, Ist 9,8 ms / 10,2 ms → Jitter 0,4 ms
+- Soll alle 10 ms laufen, Ist 9,8 ms / 10,2 ms → Peak-to-Peak-Jitter $=0{,}4\,\mathrm{ms}$
 - Regelungstechnik: hoher Jitter verschlechtert PID-Qualität stark
 
 ```{.wavedrom}
@@ -443,7 +445,7 @@ ISR is Idle
 
 @2
 ISR is Running
-Main is Blocked
+Main is Preempted
 
 @4
 ISR is Idle
@@ -602,10 +604,9 @@ Subpriority entscheidet nur die Warteschlange, nicht die Präemption. In FreeRTO
 
 ## Prioritätsinversion (Teaser)
 
-- Low-Prio-Task hält eine Ressource (z. B. Mutex/UART)
-- High-Prio-Task braucht dieselbe Ressource und muss warten
-- Medium-Prio-Task unterbricht die Low-Prio-Task
+- Low hält Ressource, High muss warten, Medium präemptiert Low
 - Ergebnis: Medium blockiert indirekt High (Priority Inversion)
+- Vollständige Behandlung (inkl. Priority Inheritance): VL4
 
 ```{.plantuml}
 @startuml
@@ -648,10 +649,10 @@ M is Idle
 @enduml
 ```
 
-- Ausblick: Lösung in einer späteren Vorlesung (Mars Pathfinder)
+- Teaser: Mars Pathfinder (1997) — Details und Abhilfe in VL4
 
 ::: notes
-Low hält die Ressource, High wartet, Medium präemptiert Low — High bleibt blockiert. Genau dieses Muster brachte 1997 die Mars-Pathfinder-Mission in Schwierigkeiten. Wie wir das verhindern (z. B. Priority Inheritance), folgt später.
+Low hält die Ressource, High wartet, Medium präemptiert Low — High bleibt blockiert. Das Muster brachte 1997 den Mars Pathfinder in Schwierigkeiten. Vollständige Behandlung (Priority Inheritance Protocol u. a.) folgt in VL4.
 :::
 
 ## Tail-Chaining: ARMs Geheimwaffe

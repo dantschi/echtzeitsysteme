@@ -1,5 +1,5 @@
 ---
-title: "Übungsblatt 5: Inter-Task-Kommunikation & Interrupts"
+title: "Übungsblatt 5: Inter-Task-Kommunikation und Interrupts"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 # Studierende:  quarto render lab_05_deferred-interrupt-processing.qmd --to pdf
 # Musterlösung: quarto render lab_05_deferred-interrupt-processing.qmd --to pdf --profile solution
@@ -11,7 +11,7 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Zielsetzung
 
-In dieser Übung verbinden wir die Hardware-Welt mit der Software-Welt des RTOS. Sie implementieren das in der Automobil- und Industriebranche weit verbreitete Architekturmuster des **Deferred Interrupt Processing** (Top-Half / Bottom-Half). Ein physischer Tasterdruck löst einen Hardware-Interrupt aus, welcher extrem kurz gehalten wird und lediglich über einen CMSIS-Semaphor eine FreeRTOS-Task aufweckt. Diese Task übernimmt dann die zeitaufwändige Bearbeitung des Ereignisses.
+In dieser Übung verbinden wir die Hardware-Welt mit der Software-Welt des RTOS. Sie implementieren das in der Automobil- und Industriebranche weit verbreitete Architekturmuster des **Deferred Interrupt Processing** (Top-Half / Bottom-Half). Ein physischer Tasterdruck löst einen Hardware-Interrupt aus, welcher extrem kurz gehalten wird und über Semaphor bzw. Queue eine FreeRTOS-Task aufweckt. Diese Task übernimmt dann die zeitaufwändige Bearbeitung — inklusive einer kurzen Queue-Übung zur Inter-Task-Kommunikation.
 
 ---
 
@@ -117,4 +117,41 @@ void StartButtonTask(void *argument)
 Stünde `HAL_Delay(100)` direkt in der ISR (Top-Half), wäre die CPU für $100\,\mathrm{ms}$ auf Hardware-Ebene gebunden. Wichtige RTOS-Interrupts wie der **SysTick** (Herzschlag des Kernels) könnten — je nach NVIC-Priorisierung — verzögert oder faktisch blockiert werden. Das Betriebssystem „friert“ ein: Deadlines verschieben sich, der Scheduler verliert seinen Takt.
 
 Durch das **Deferred Interrupt Processing** lagern wir die Last in die RTOS-Task (Bottom-Half) aus. Dort läuft der SysTick normal weiter. `HAL_Delay()` ist zwar eine Busy-Wait-Schleife und hält die Task im Zustand *Running* (CPU-Last $\approx 100\,\%$ — in Produktion ungeeignet; dort `osDelay()`, damit die Task in *Blocked* geht). Dennoch könnte eine Realtime-Task mit noch höherer RTOS-Priorität die `ButtonTask` jederzeit präemptieren. Das System bleibt unter Scheduler-Kontrolle und damit stabil.
+:::
+
+---
+
+## Aufgabe 4: Mini-Queue (ITC aus der Vorlesung)
+
+Ergänzen Sie das Semaphor-Muster um eine kurze Queue — so üben Sie die Inter-Task-/ISR-Kommunikation mit Payload.
+
+1. Legen Sie in CubeMX eine Queue `ButtonQueue` an (Message Size: `uint32_t`, Länge $\ge 4$).
+2. In der ISR: schreiben Sie einen Zeitstempel (`HAL_GetTick()`) per `osMessageQueuePut(..., 0)` (Timeout 0!) in die Queue **und** geben Sie weiterhin den Semaphor frei.
+3. In der Task: lesen Sie den Wert per `osMessageQueueGet` und geben Sie ihn mit `printf` aus.
+
+### Ihre Lösung {.unnumbered}
+
+*(Notieren Sie Ihre Lösung hier.)*
+
+::: {.content-visible when-profile="solution"}
+**Musterlösung Aufgabe 4**
+
+```c
+/* ISR (Top-Half) — zusätzlich zur Semaphor-Signalisierung */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_13) {
+    uint32_t ts = HAL_GetTick();
+    osMessageQueuePut(ButtonQueueHandle, &ts, 0, 0); /* Timeout 0 in ISR! */
+    osSemaphoreRelease(ButtonSemHandle);
+  }
+}
+
+/* Task — nach Acquire den Payload holen */
+uint32_t ts = 0;
+osMessageQueueGet(ButtonQueueHandle, &ts, NULL, 0);
+printf("Button @ tick %lu\n", (unsigned long)ts);
+```
+
+Die Queue transportiert Daten (Copy-by-Value), der Semaphor bleibt das reine Wake-up-Signal. In Produktion reicht oft die Queue allein (`Get` mit `osWaitForever`); hier bleiben beide Muster sichtbar.
 :::

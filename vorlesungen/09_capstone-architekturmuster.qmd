@@ -136,7 +136,7 @@ skinparam cloud {
 
 rectangle "Domain Controller (AMP)" {
   rectangle "Cortex-M4 (FreeRTOS)\nHard Real-Time" as M4
-  rectangle "Cortex-A / M7 (Linux)\nSoft Real-Time" as A7
+  rectangle "Cortex-A / M7 (Linux)\nSoft Real-Time\n(Domain-Controller-Beispiel)" as A7
 }
 
 cloud "AWS / Azure Cloud" as Cloud
@@ -171,16 +171,16 @@ Gehen wir noch einen Schritt weiter auf der Architekturebene. Wenn ein Fehler au
 
 - Um Fail-Operational zu erreichen, vervielfachen wir die Hardware!
 - **1oo2 (One-out-of-two):**
-    - Zwei völlig getrennte Controller berechnen dasselbe.
-    - Controller A ist aktiv. Controller B rechnet still mit (Hot Standby).
-    - Wenn A crasht, übernimmt B nahtlos.
+    - Zwei getrennte Kanäle berechnen dasselbe (Diagnose-/Vergleichsarchitektur).
+    - Typisch: Beide Kanäle können bei Diskrepanz den **Safe State** erzwingen (Fail-Safe).
+    - *Hot-Standby* (nahtlose Übernahme) ist eine mögliche Ausprägung — nicht die einzige Bedeutung von 1oo2.
 - **2oo3 (Two-out-of-three):**
     - Drei unabhängige Controller (oft von verschiedenen Herstellern!).
     - Ein „Voter-Chip“ vergleicht die Ergebnisse.
     - Wenn CPU 1 sagt „Lenken“, aber CPU 2 und 3 sagen „Nicht lenken“, wird CPU 1 als defekt überstimmt! (Standard in der Luftfahrt).
 
 ::: notes
-Um Fail-Operational zu erreichen, brauchen wir Redundanz. Wir bauen Systeme mehrfach. Ein typisches Modell ist 1oo2, „One out of two“. Wir haben zwei Chips. Einer fährt das Auto, der andere rechnet als Schattenkopie im Hintergrund mit (Hot Standby). Fällt A aus, schaltet Hardware sofort auf B um. In extrem kritischen Bereichen, wie der Flugsteuerung eines Airbus, reicht das nicht. Dort nutzt man 2oo3 (Two out of three). Drei Computer rechnen. Ein Voter vergleicht am Ende die Ergebnisse. Tritt in einem Chip ein Bit-Flip auf, überstimmen die zwei gesunden Chips den defekten einfach demokratisch. Oft nutzt man hierfür Chips von völlig unterschiedlichen Herstellern (z. B. ARM und PowerPC), damit ein systematischer Compiler-Bug nicht alle drei gleichzeitig lahmlegt.
+Um Fail-Operational oder zumindest robustes Fail-Safe zu erreichen, brauchen wir Redundanz. 1oo2 bedeutet „One out of two“: zwei Kanäle. In vielen Safety-Architekturen können beide Kanäle bei einem Fehler den Safe State erzwingen — das ist Diagnose und Absicherung, nicht zwingend Hot-Standby. Hot-Standby (A aktiv, B als Schatten, nahtlose Übernahme) ist nur eine mögliche Ausprägung. In extrem kritischen Bereichen, wie der Flugsteuerung eines Airbus, nutzt man oft 2oo3: drei Computer, ein Voter. Bei einem Bit-Flip überstimmen die zwei gesunden Chips den defekten. Oft kommen Chips unterschiedlicher Hersteller zum Einsatz (Diversität), damit ein systematischer Compiler-Bug nicht alle drei gleichzeitig trifft.
 :::
 
 ## Lockstep-Prozessoren (Hardware-Safety)
@@ -454,4 +454,53 @@ rectangle "STM32H755 (Capstone Architektur)" {
 
 ::: notes
 Die Gesamtarchitektur Ihres Capstone-Systems sieht so aus: Auf dem Cortex-M4 läuft FreeRTOS. Der Hardware-Interrupt (EXTI) schreibt nur knapp in eine Queue – Deferred Interrupt Processing aus Woche 5. Die Sensor-Task holt die Events, sperrt das HSEM und schreibt den Payload in den SRAM4. Auf dem Cortex-M7 läuft Bare-Metal: Er wartet auf bzw. nutzt denselben Hardware-Lock, liest die Daten, rechnet den Float-Filter und schickt Logs über UART. Der Window Watchdog auf dem M4 überwacht, dass die harte Echtzeit-Task im erlaubten Zeitfenster bleibt. Alle Bausteine der Vorlesung greifen hier ineinander.
+:::
+
+## Capstone-Pflichtenheft (Muss-Kriterien)
+
+- Verdichtet aus Lab 9 — das System **muss**:
+  1. **EXTI $\rightarrow$ Queue (M4):** Button `PC13` als EXTI; ISR nur Deferred Put (`timeout = 0`).
+  2. **HSEM-Sync:** SRAM4-Payload (`sd`) nur unter `HSEM_0` lesen/schreiben (beide Kerne).
+  3. **WWDG:** Window + EWI auf dem M4; Refresh nur im Allowed Window (auch ohne Button-Event).
+  4. **M7:** Float-Filter + UART-`printf` ausschließlich auf dem Soft-Echtzeit-Kern.
+  5. **BlueBox:** E2E-Latenz (EXTI $\rightarrow$ HSEM-Release) und Jitter der `M4_SensorTask` messen.
+- **MPU:** Shared Region Non-Cacheable (wie Termin 6).
+
+::: notes
+Das Pflichtenheft verdichtet Übungsblatt 9: harte Interrupt-Pipeline auf dem M4, asynchrone Multicore-Übergabe per HSEM, Soft-Pfad mit Filter und UART auf dem M7, Speicherschutz wie in Woche 6 — und der BlueBox-Beweis am Ende.
+:::
+
+## Abnahmekriterien (Definition of Done)
+
+- **Funktion:** Tastendruck erscheint als gefilterter M7-UART-Log; kein Deadlock/Datenverlust unter HSEM.
+- **Safety:** WWDG hält im Normalbetrieb; Early-/Late-Test zeigt Reset bzw. EWI-Verhalten.
+- **Timing (BlueBox):** E2E-Latenz im niedrigen µs-Bereich und stabil; M4-Jitter $\approx 0$ trotz M7-Last/UART.
+- **Architektur:** `printf`/UART nur auf M7; M4-ISR bleibt kurz.
+
+::: notes
+Abnahme heißt: Das System tut, was der Kunde will, und Sie können es messen. Funktion ohne Crash, Watchdog greift im Fehlerfall, BlueBox zeigt kurze stabile Latenz und praktisch keinen M4-Jitter.
+:::
+
+## Labor-Checkliste Capstone {background-color="#F5F5F7"}
+
+1. CubeMX: Dual-Core, FreeRTOS nur CM4, EXTI, WWDG+EWI, HSEM, Queue + High-Prio-Task
+2. Shared Memory `sd` + Linker `RAM_D3` / `NOLOAD` + MPU Non-Cacheable
+3. Deferred Interrupt Processing (ISR kurz, Arbeit in der Task)
+4. Crash-Tests Early/Late (WWDG) und kurzer EWI-Blink (LD3 / PB14)
+5. BlueBox: End-to-End-Latenz und Jitter der M4-Pipeline verifizieren
+- Teilabnahme möglich: zuerst nur M4-Pfad, dann Multicore, dann Trace
+
+::: notes
+Arbeiten Sie die Checkliste der Reihe nach ab. Wenn die Zeit knapp wird: Minimum Viable ist M4 mit Queue+WWDG und nachweisbarem Refresh im Fenster; HSEM/M7 und BlueBox als Erweiterung.
+:::
+
+## Die Essenz des Capstone {background-color="#FFFFFF"}
+
+- Sie bauen heute kein Übungsfragment — Sie bauen eine **Serien-Architektur**.
+- Alle Semesterbausteine greifen ineinander: ITC, Deferred IRQ, AMP, HSEM, WWDG, MPU, Trace.
+- Erfolg heißt: funktionale Korrektheit *und* nachweisbares Timing.
+- Viel Erfolg im Labor — und in der Klausur!
+
+::: notes
+Das Capstone ist der Schlussstein. Wenn Ihr System die Impulse jitterfrei erfasst, den Soft-Pfad entkoppelt und den Watchdog im Fenster hält, haben Sie die Lernziele der Veranstaltung erreicht. Viel Erfolg!
 :::
