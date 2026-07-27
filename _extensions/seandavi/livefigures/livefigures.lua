@@ -86,13 +86,31 @@ local function check_node()
   node_checked = true
 end
 
+local function norm_path(p)
+  return (tostring(p):gsub("\\", "/"))
+end
+
 local function cache_dir()
-  local base = quarto.project.directory
-  if not base then
-    base = path.directory(quarto.doc.input_file)
+  -- MUST stay relative: pandoc io.open on Windows cannot encode absolute
+  -- paths that contain non-ASCII characters (e.g. ü in the user profile).
+  local dir = "_livefigures"
+  local marker = path.join({ dir, ".keep" })
+  local probe = io.open(marker, "a")
+  if probe then
+    probe:close()
+  else
+    if pandoc.system.os == "mingw32" or pandoc.system.os == "windows" then
+      os.execute('mkdir "' .. dir .. '" 2>nul')
+    else
+      os.execute('mkdir -p "' .. dir .. '"')
+    end
+    local again = io.open(marker, "a")
+    if again then
+      again:close()
+    else
+      fail("cannot create livefigures cache directory '" .. dir .. "'")
+    end
   end
-  local dir = path.join({ base, "_livefigures" })
-  pandoc.system.make_directory(dir, true)
   return dir
 end
 
@@ -189,11 +207,19 @@ local function input_directory()
   return dir
 end
 
--- pandoc.path.make_relative never synthesizes ".." segments, so cache
--- paths above the document's directory (project subdir docs) come out
--- wrong. Compute the relative path ourselves. POSIX separators only —
--- Windows support is a documented fast-follow.
+-- Relative path from the Quarto document to a project-root cache file.
+-- Avoid absolute Unicode paths (broken on Windows pandoc io.open).
 local function relative_to(target, from)
+  target = norm_path(target)
+  from = norm_path(from)
+  -- Project-root relative cache: "_livefigures/..."
+  if target:match("^_livefigures/") or target:match("^%./_livefigures/") then
+    local input = norm_path(quarto.doc.input_file)
+    if input:match("/vorlesungen/") or input:match("^vorlesungen/") then
+      return "../" .. target:gsub("^%./", "")
+    end
+    return target:gsub("^%./", "")
+  end
   local t, f = {}, {}
   for seg in target:gmatch("[^/]+") do t[#t + 1] = seg end
   for seg in from:gmatch("[^/]+") do f[#f + 1] = seg end

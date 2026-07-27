@@ -18,8 +18,8 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 
 | Einheit | Thema | Schwerpunkt | Folien | Handout | Übungsblatt | Musterlösung |
 |--------:|-------|-------------|:------:|:-------:|:-----------:|:------------:|
-| 1 | Kickoff und Grundlagen | Harte/weiche Echtzeit, Deadlines, Determinismus | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_kickoff.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_kickoff-handout.pdf) | — | — |
-| 2 | Zeit und Aufgabenmodelle | Periodizität, WCET/BCET, Release/Deadline, Jitter | folgt | folgt | folgt | folgt |
+| 1 | Was ist Echtzeit | Definition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit-handout.pdf) | — | — |
+| 2 | Scheduling-Theorie | Task-Modell, WCET, Utilization, kooperativ/präemptiv, RMS-Einstieg | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie-handout.pdf) | folgt | folgt |
 | 3 | Scheduling-Grundlagen | Präemption, Prioritäten, Online/Offline, Metriken | folgt | folgt | folgt | folgt |
 | 4 | Statisches Priority Scheduling | Rate Monotonic (RM), Deadline Monotonic (DM) | folgt | folgt | folgt | folgt |
 | 5 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
