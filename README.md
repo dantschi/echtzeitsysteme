@@ -12,7 +12,7 @@ Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten
 
 Der rote Faden der Veranstaltung:
 
-**Anforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS**
+**Anforderungen → Scheduling → RTOS → Ressourcen → Analyse → Praxis**
 
 Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.
 
@@ -21,11 +21,11 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 | 1 | Was ist Echtzeit | Definition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/01_was-ist-echtzeit-handout.pdf) | — | — |
 | 2 | Scheduling-Theorie | Task-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/02_scheduling-theorie-handout.pdf) | folgt | folgt |
 | 3 | Einführung Echtzeitbetriebssysteme | FreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32 | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos-handout.pdf) | folgt | folgt |
-| 4 | Statisches Priority Scheduling | Rate Monotonic (RM), Deadline Monotonic (DM) | folgt | folgt | folgt | folgt |
-| 5 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
-| 6 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt | folgt | folgt |
-| 7 | Ressourcen und Synchronisation | Priority Inversion, PCP, Stack Resource Policy | folgt | folgt | folgt | folgt |
-| 8 | FreeRTOS-Praxis (fortgeschritten) | Queues, ISRs, Synchronisation in FreeRTOS | folgt | folgt | folgt | folgt |
+| 4 | Synchronisation und Ressourcenverwaltung | Race Conditions, Semaphoren, Mutexe, Deadlocks, Priority Inversion (Pathfinder) | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen-handout.pdf) | folgt | folgt |
+| 5 | Inter-Task-Kommunikation und Interrupts | Queues, Mailboxes, Copy by Value/Reference, ISR-Anbindung | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation-handout.pdf) | folgt | folgt |
+| 6 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
+| 7 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt | folgt | folgt |
+| 8 | FreeRTOS-Praxis (fortgeschritten) | Queues, ISRs, Priority Inversion / PCP | folgt | folgt | folgt | folgt |
 | 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt | folgt | folgt |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
