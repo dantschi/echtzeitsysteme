@@ -12,7 +12,7 @@ Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten
 
 Der rote Faden der Veranstaltung:
 
-**Anforderungen → Scheduling → RTOS → Sync/IPC → Multicore → Schedulability**
+**Anforderungen → Scheduling → RTOS → Sync/IPC → Multicore → Tracing → Schedulability**
 
 Pro Einheit: Folien (Reveal.js) und Handout-PDF. Links verweisen auf die Kurswebsite. Weitere Einheiten und Übungsblätter werden semesterbegleitend ergänzt.
 
@@ -24,8 +24,8 @@ Pro Einheit: Folien (Reveal.js) und Handout-PDF. Links verweisen auf die Kursweb
 | 4 | Synchronisation und Ressourcenverwaltung | Race Conditions, Semaphoren, Mutexe, Deadlocks, Priority Inversion | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen-handout.pdf) |
 | 5 | Inter-Task-Kommunikation und Interrupts | Queues, Mailboxes, Copy by Value/Reference, ISR-Anbindung | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation-handout.pdf) |
 | 6 | Multicore-Echtzeit | AMP vs. SMP, STM32H755 Dual-Core, Shared Memory, Cache/MPU | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit-handout.pdf) |
-| 7 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt |
-| 8 | Inter-Core und fortgeschrittene Praxis | HSEM, Multicore-Sync, fortgeschrittene FreeRTOS-Muster | folgt | folgt |
+| 7 | Tracing & Timing-Analyse | Non-Intrusive Observation, CoreSight, BlueBox | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_tracing-timing-analyse.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_tracing-timing-analyse-handout.pdf) |
+| 8 | Multicore-Synchronisation & Safety | HSEM, Multicore-Sync, IWDG/WWDG Watchdogs | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_multicore-synchronisation-safety.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_multicore-synchronisation-safety-handout.pdf) |
 | 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/).
