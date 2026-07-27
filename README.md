@@ -30,6 +30,15 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
 
+## Probeklausur
+
+Semesterabschlussprüfung (90 Minuten, Closed Book, 100 Punkte). Aufgabenblatt und Musterlösung:
+
+*   **Studierende:** [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf)
+*   **Musterlösung:** [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf)
+
+Quelltext: [`labs/probeklausur.qmd`](labs/probeklausur.qmd).
+
 ## Literatur
 
 Zentrale Referenz dieses Moduls:
