@@ -263,10 +263,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li><strong>Was passiert physikalisch?</strong>
 <ul>
 <li>Das Wort „Hallo“ hat 5 Bytes; bei 8N1 sind das <span class="math inline">\(5 \times 10 = 50\)</span> Bits (Start- und Stop-Bit).</li>
-<li>Bei Standard <span class="math inline">\(115200\)</span> Baud dauert ein Bit <span class="math inline">\(\approx 8{,}68\,\mathrm{\mu s}\)</span>.</li>
-<li>„Hallo“ senden blockiert das System für <span class="math inline">\(\approx 430\,\mathrm{\mu s}\)</span>!</li>
+<li>Bei Standard <span class="math inline">\(115200\)</span> Baud dauert ein Bit <span class="math inline">\(\approx 8{,}68\,\text{µs}\)</span>.</li>
+<li>„Hallo“ senden blockiert das System für <span class="math inline">\(\approx 430\,\text{µs}\)</span>!</li>
 </ul></li>
-<li><em>Während Sie versuchen zu messen, ob Ihre <span class="math inline">\(50\,\mathrm{\mu s}\)</span> Frist gehalten wird, halten Sie das System für <span class="math inline">\(430\,\mathrm{\mu s}\)</span> an!</em></li>
+<li><em>Während Sie versuchen zu messen, ob Ihre <span class="math inline">\(50\,\text{µs}\)</span> Frist gehalten wird, halten Sie das System für <span class="math inline">\(430\,\text{µs}\)</span> an!</em></li>
 </ul>
 <aside class="notes">
 <p>Nehmen wir den Klassiker: <code>printf</code>. Sie wollen wissen, ob Task A rechtzeitig startet. Also schreiben Sie <code>printf("Task A ist hier")</code> in den Code. Sie denken, das sei eine harmlose Textausgabe. Schauen wir uns die Physik dahinter an. Das Wort “Hallo” besteht aus 5 Buchstaben. Über den UART-Port werden inklusive Start- und Stop-Bits (8N1) exakt 50 Bits übertragen. Bei 115200 Baud dauert ein Bit rund 8,7 Mikrosekunden. Das Senden von „Hallo“ blockiert Ihren Code für etwa 430 Mikrosekunden. Wenn Ihre eigentliche Deadline bei 50 Mikrosekunden lag, haben Sie Ihr System durch den bloßen Versuch der Beobachtung restlos zerstört.</p>
@@ -292,7 +292,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </div>
 <ul>
 <li><strong>Ideal:</strong> Die Berechnung ist extrem kurz, die Deadline wird souverän eingehalten.</li>
-<li><strong>Beobachtet:</strong> Der “harmlose” <code>printf</code>-Aufruf bläht die Laufzeit so massiv auf, dass das System die rote Deadline verpasst (System-Crash!).</li>
+<li><strong>Beobachtet:</strong> Der „harmlose“ <code>printf</code>-Aufruf bläht die Laufzeit so massiv auf, dass das System die rote Deadline verpasst (System-Crash!).</li>
+<li><em>Hinweis:</em> Die Abbildung zeigt illustrativ <code>printf("Hallo Welt")</code>; die Rechnung oben nutzt bewusst das kürzere „Hallo“ (5 Bytes <span class="math inline">\(\rightarrow\)</span> <span class="math inline">\(\approx 430\,\text{µs}\)</span>).</li>
 </ul>
 <aside class="notes">
 <p>Das Diagramm zeigt das visuell. Im idealen Fall dauert unsere Berechnung einen Wimpernschlag. Die rote Deadline-Linie ist weit entfernt. Nun bauen wir das <code>printf</code> ein, um das Timing zu überprüfen. Der riesige UART-Block schiebt sich in unseren Execution-Flow. Die Berechnung wird zwar fertig, aber das UART-Modul lässt uns warten. Wir verpassen die Deadline krachend. In dem Moment, in dem wir das <code>printf</code> wieder löschen, läuft das System wieder fehlerfrei.</p>
@@ -465,7 +466,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Zusammenfassung Block 1</h2>
 <ol type="1">
 <li><strong>Beobachter-Effekt:</strong> Jeder Versuch, Timing per Software zu messen, verändert das Timing.</li>
-<li><strong><code>printf</code></strong> ist in der Echtzeit wegen massiver Latenzen (<span class="math inline">\(&gt;100\,\mathrm{\mu s}\)</span>) streng verboten.</li>
+<li><strong><code>printf</code></strong> ist in der Echtzeit wegen massiver Latenzen (<span class="math inline">\(&gt;100\,\text{µs}\)</span>) streng verboten.</li>
 <li><strong>Breakpoints</strong> frieren die CPU ein, aber Peripherie/Interrupts laufen weiter <span class="math inline">\(\rightarrow\)</span> Systemcrash bei Wiederaufnahme.</li>
 <li><strong>Heisenbugs</strong> verbergen sich, wenn das Timing durch Debugging verschoben wird.</li>
 <li>Die Lösung muss zu <span class="math inline">\(100\%\)</span> in Hardware integriert sein.</li>
@@ -536,14 +537,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Die CPU schreibt einen Wert in ein spezielles ITM-Hardware-Register</li>
 <li>Der Unterschied zu UART:
 <ul>
-<li>Der Schreibzugriff auf das ITM-Register dauert <strong>1</strong> einzigen Taktzyklus!</li>
-<li>Die CPU rechnet sofort weiter!</li>
+<li>Der Schreibzugriff auf das ITM-Register dauert typischerweise <strong>einen Taktzyklus</strong> (wenige Nanosekunden)!</li>
+<li>Die CPU rechnet sofort weiter (asynchroner Trace).</li>
+<li>Caveat: Bei vollem ITM-FIFO kann der Schreibzugriff kurz stallen.</li>
 <li>Die CoreSight-Hardware verpackt das Byte im Hintergrund und schickt es asynchron nach draußen</li>
 </ul></li>
-<li>Latenz-Problem von <span class="math inline">\(430\,\mathrm{\mu s}\)</span> gelöst! (Nur noch winzige Intrusion im Code)</li>
+<li>Latenz-Problem von <span class="math inline">\(430\,\text{µs}\)</span> gelöst! (Nur noch winzige Intrusion im Code)</li>
 </ul>
 <aside class="notes">
-<p>Das einfachste CoreSight-Modul ist das ITM, die Instrumentation Trace Macrocell. Das ist unser direkter Ersatz für „printf“. Anstatt einen Buchstaben mühsam in das UART-Register zu schieben und zu warten, bis er gesendet ist, schiebt unser C-Code den Buchstaben in ein spezielles ITM-Register. Das dauert exakt einen Hardware-Taktzyklus. Der Kern ist sofort fertig und rechnet nahtlos im Programm weiter. Das ITM-Hardware-Modul übernimmt den Buchstaben, verpackt ihn in ein Trace-Paket und schiebt ihn asynchron nach draußen. Wir haben unser 430-Mikrosekunden-Latenz-Problem auf einen Bruchteil einer Nanosekunde reduziert.</p>
+<p>Das einfachste CoreSight-Modul ist das ITM, die Instrumentation Trace Macrocell. Das ist unser direkter Ersatz für „printf“. Anstatt einen Buchstaben mühsam in das UART-Register zu schieben und zu warten, bis er gesendet ist, schiebt unser C-Code den Buchstaben in ein spezielles ITM-Register. Das dauert typischerweise einen Taktzyklus (wenige Nanosekunden). Der Kern ist sofort fertig und rechnet nahtlos im Programm weiter. Das ITM-Hardware-Modul übernimmt den Buchstaben, verpackt ihn in ein Trace-Paket und schiebt ihn asynchron nach draußen. Caveat: Ist der interne ITM-FIFO voll, kann der Schreibzugriff kurz stallen — bei massivem Logging also nicht völlig „kostenlos“. Trotzdem haben wir unser 430-Mikrosekunden-Latenz-Problem auf wenige Nanosekunden plus seltene FIFO-Stalls reduziert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -561,7 +563,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Jetzt wird es komplett rückwirkungsfrei (0 Code-Änderungen)!</li>
 <li>Das DWT beobachtet den RAM-Speicherbus der CPU wie ein Scharfschütze</li>
-<li>Sie konfigurieren im externen Tool: „Beobachte die Adresse von <code>shared_data.m7_ready</code>.“</li>
+<li>Sie konfigurieren im externen Tool: „Beobachte die Adresse von <code>sd.m7_ready</code>.“</li>
 <li>Jedes Mal, wenn die CPU diesen Speicherbereich beschreibt oder liest, erzeugt das DWT ein Hardware-Paket (inklusive des neuen Wertes!)</li>
 <li>Die CPU bekommt davon nichts mit (0 Taktzyklen Overhead!)</li>
 <li>Perfekt, um globale Variablen im OS (z. B. Task-Zustände) zu überwachen</li>
@@ -714,8 +716,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
-<section id="metrik-1-die-echte-wcet" class="slide level2">
-<h2>Metrik 1: Die echte WCET</h2>
+<section id="metrik-1-empirische-wcet-mess-wcet" class="slide level2">
+<h2>Metrik 1: Empirische WCET (Mess-WCET)</h2>
 <div class="columns">
 <div class="column" style="width:50%;">
 <ul>
@@ -726,11 +728,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 </div><div class="column" style="width:50%;">
 <ul>
-<li><em>Diesen Wert setzen wir als echtes <span class="math inline">\(C_i\)</span> in unsere Rate-Monotonic-Formel (<span class="math inline">\(U \le 69{,}3\,\%\)</span>) ein.</em></li>
+<li><em>Diesen Wert nutzen wir als <strong>obere beobachtete Schranke</strong> (Mess-WCET) für <span class="math inline">\(C_i\)</span> in der Rate-Monotonic-Formel (<span class="math inline">\(U \le 69{,}3\,\%\)</span>) — nicht als formal bewiesenen Worst Case.</em></li>
 </ul>
 </div></div>
 <aside class="notes">
-<p>Die wichtigste Metrik, die wir aus dem ETM-Trace extrahieren, ist unsere alte Bekannte: Die Worst-Case Execution Time, die WCET. In der zweiten Vorlesung haben wir dafür Platzhalter-Zahlen in unsere Formel eingesetzt. Jetzt messen wir sie in der physikalischen Realität. Die externe Trace-Box filmt über Nacht Millionen von Ausführungen Ihrer Task. Am nächsten Morgen schauen Sie in die Software und filtern nach der absoluten Maximalzeit. Da der Trace live auf der echten Hardware lief, sind in diesem Wert alle Pipeline-Verzögerungen, Cache-Fehlschläge und Bus-Staus bereits physikalisch korrekt enthalten. Diesen echten Wert nehmen wir und füttern damit unsere RMS-Formel.</p>
+<p>Die wichtigste Metrik, die wir aus dem ETM-Trace extrahieren, ist unsere alte Bekannte: Die Worst-Case Execution Time, die WCET. In der zweiten Vorlesung haben wir dafür Platzhalter-Zahlen in unsere Formel eingesetzt. Jetzt messen wir eine empirische obere Schranke — die Mess-WCET. Die externe Trace-Box filmt über Nacht Millionen von Ausführungen Ihrer Task. Am nächsten Morgen schauen Sie in die Software und filtern nach der absoluten Maximalzeit unter den beobachteten Läufen. Da der Trace live auf der echten Hardware lief, sind Pipeline-Verzögerungen, Cache-Fehlschläge und Bus-Staus bereits physikalisch enthalten. Wichtig: Das ist nicht der formal bewiesene Worst Case aller denkbaren Pfade, sondern die beste beobachtete obere Schranke aus dem Test. Diese Mess-WCET setzen wir vorsichtig als <span class="math inline">\(C_i\)</span> in unsere RMS-Formel ein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -820,7 +822,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>In unseren Schedulability-Modellen nehmen wir oft an: OS-Overhead <span class="math inline">\(= 0\)</span>.</li>
 <li>Die Realität sieht anders aus.</li>
 <li>Der Tracer zeigt exakt, wie viele Taktzyklen die CPU in der <code>PendSV_Handler</code>-Assembler-Routine verbringt.</li>
-<li>Ergebnis: Wir sehen die echten Kosten von FreeRTOS (z. B. <span class="math inline">\(2{,}5\,\mathrm{\mu s}\)</span> pro Wechsel).</li>
+<li>Ergebnis: Wir sehen die echten Kosten von FreeRTOS (z. B. <span class="math inline">\(2{,}5\,\text{µs}\)</span> pro Wechsel).</li>
 <li>Fließt in komplexe Response-Time-Analyse-Formeln als Korrekturfaktor ein.</li>
 </ul>
 <aside class="notes">
@@ -846,7 +848,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li><strong>C0</strong> (Statement Coverage): Wurde jede Code-Zeile <span class="math inline">\(\ge 1\times\)</span> berührt?</li>
 <li><strong>C1</strong> (Branch Coverage): Wurde bei jedem <code>if(a &amp;&amp; b)</code> sowohl der TRUE- als auch der FALSE-Pfad betreten?</li>
-<li><strong>MC/DC</strong> (Modified Condition/Decision Coverage): Hatte jede einzelne Sub-Bedingung einen nachweisbaren Effekt? (Pflicht für ASIL D!).</li>
+<li><strong>MC/DC</strong> (Modified Condition/Decision Coverage): Hatte jede einzelne Sub-Bedingung einen nachweisbaren Effekt? (In ISO 26262 für ASIL D <em>highly recommended</em> — absolute Pflicht analog DO-178C Level A nur in der Avionik).</li>
 </ul></li>
 <li>Hardware-Trace liefert diese Daten zu <span class="math inline">\(100\,\%\)</span> rückwirkungsfrei, ohne den C-Code mit Test-Makros zu instrumentieren!</li>
 </ul>
@@ -1077,17 +1079,21 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
-<section id="der-osekorti-standard" class="slide level2">
-<h2>Der OSEK/ORTI-Standard</h2>
+<section id="der-osekorti-standard-automotive" class="slide level2">
+<h2>Der OSEK/ORTI-Standard (Automotive)</h2>
 <ul>
-<li>Wie weiß winIDEA, wie das TCB-Struct von FreeRTOS aufgebaut ist?</li>
-<li>Das passiert meist über den <strong>ORTI</strong>-Standard (OSEK Run Time Interface).</li>
-<li>Ein Textformat, das beschreibt, wo das OS seine Warteschlangen und Prioritäten im RAM ablegt.</li>
-<li>FreeRTOS-Plugins für winIDEA scannen diese Strukturen dynamisch.</li>
-<li>Damit können Sie im Debugger live sehen, welche Task gerade in welcher Queue hängt!</li>
+<li><strong>ORTI</strong> (OSEK Run Time Interface) ist die klassische Automotive-/OSEK-Schnittstelle:
+<ul>
+<li>Textdatei, die dem Debugger die Memory-Map des OSEK/AUTOSAR-OS offenlegt (Tasks, Queues, Prioritäten).</li>
+</ul></li>
+<li>FreeRTOS in winIDEA ist etwas anderes:
+<ul>
+<li>Die FreeRTOS-Awareness kommt über ein <strong>Plugin</strong> bzw. Strukturwissen (<code>pxCurrentTCB</code>, TCB-Layout) — nicht über ORTI.</li>
+</ul></li>
+<li>Ergebnis: Live-Sicht auf Ready-/Blocked-Listen und Queues, unabhängig vom Automotive-ORTI-Pfad.</li>
 </ul>
 <aside class="notes">
-<p>Damit der Tracer auch weiß, was ein TCB ist und wo der Name der Task steht, gibt es in der Automobilindustrie den OSEK/ORTI-Standard. Das ist eine standardisierte Textdatei, die dem Tracer die Memory-Map des Betriebssystems offenlegt. Moderne Tools können diese Datenstrukturen sogar bei FreeRTOS dynamisch parsen. Das heißt, Sie sehen in winIDEA nicht nur, welche Task rechnet. Sie können das System anhalten und sich live ansehen, welche Tasks in der „Ready“-Liste warten und wer gerade im Zustand „Blocked“ auf einen UART-Mutex wartet.</p>
+<p>Wichtig trennen: ORTI ist der Automotive-/OSEK-Standard, mit dem Debugger die OS-Memory-Map eines OSEK- oder AUTOSAR-Classic-Systems lesen. FreeRTOS spricht kein ORTI. In winIDEA kommt die FreeRTOS-Awareness über ein Plugin und das Wissen um Strukturen wie <code>pxCurrentTCB</code>. Sie sehen dann trotzdem live, welche Task rechnet, wer in der Ready-Liste wartet und wer auf einen UART-Mutex blockiert — nur eben nicht über die ORTI-Datei.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1143,7 +1149,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Öffnen Sie den Analyzer / Profiler.</li>
 <li>Wir richten das DWT-Tracing ein:</li>
-<li>Fügen Sie die Variable <code>ping_pong_data.m7_ready</code> als DWT-Data-Trace hinzu!</li>
+<li>Fügen Sie die Variable <code>sd.m7_ready</code> als DWT-Data-Trace hinzu!</li>
 </ul></li>
 </ul>
 <aside class="notes">

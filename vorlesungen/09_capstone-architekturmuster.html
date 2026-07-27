@@ -359,7 +359,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Edge-Computing spiegelt exakt unsere AMP-Architektur aus Termin 6 wider!</li>
 <li>Ein realer Industrie-Roboter:</li>
 </ul>
-<p><img data-src="../_livefigures/inline-plantuml-19ca5ed8.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-4471683b.svg" class="livefigure"></p>
 <aside class="notes">
 <p>Und genau hier schließt sich der Kreis zu unserer Multicore-Architektur. Das Edge-Computing Pattern ist der perfekte Anwendungsfall für Asymmetric Multiprocessing (AMP). Der Cortex-M4 hängt direkt an den Motoren. Er garantiert eine 10-Mikrosekunden-Latenz, liest Encoder aus und regelt hart in Echtzeit. Die Ergebnisse, die aufbereiteten Metadaten, schiebt er über das HSEM und den Shared Memory zum starken M7-Kern. Auf dem M7 läuft ein fettes Linux oder komplexe Bare-Metal-Kryptographie. Der M7 verpackt die Daten sicher per TLS-Zertifikat und funkt sie gemütlich über Ethernet in die Cloud. Die beiden Zeitdomänen sind physikalisch perfekt entkoppelt.</p>
 <style type="text/css">
@@ -410,9 +410,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Um Fail-Operational zu erreichen, vervielfachen wir die Hardware!</li>
 <li><strong>1oo2 (One-out-of-two):</strong>
 <ul>
-<li>Zwei völlig getrennte Controller berechnen dasselbe.</li>
-<li>Controller A ist aktiv. Controller B rechnet still mit (Hot Standby).</li>
-<li>Wenn A crasht, übernimmt B nahtlos.</li>
+<li>Zwei getrennte Kanäle berechnen dasselbe (Diagnose-/Vergleichsarchitektur).</li>
+<li>Typisch: Beide Kanäle können bei Diskrepanz den <strong>Safe State</strong> erzwingen (Fail-Safe).</li>
+<li><em>Hot-Standby</em> (nahtlose Übernahme) ist eine mögliche Ausprägung — nicht die einzige Bedeutung von 1oo2.</li>
 </ul></li>
 <li><strong>2oo3 (Two-out-of-three):</strong>
 <ul>
@@ -422,7 +422,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul></li>
 </ul>
 <aside class="notes">
-<p>Um Fail-Operational zu erreichen, brauchen wir Redundanz. Wir bauen Systeme mehrfach. Ein typisches Modell ist 1oo2, „One out of two“. Wir haben zwei Chips. Einer fährt das Auto, der andere rechnet als Schattenkopie im Hintergrund mit (Hot Standby). Fällt A aus, schaltet Hardware sofort auf B um. In extrem kritischen Bereichen, wie der Flugsteuerung eines Airbus, reicht das nicht. Dort nutzt man 2oo3 (Two out of three). Drei Computer rechnen. Ein Voter vergleicht am Ende die Ergebnisse. Tritt in einem Chip ein Bit-Flip auf, überstimmen die zwei gesunden Chips den defekten einfach demokratisch. Oft nutzt man hierfür Chips von völlig unterschiedlichen Herstellern (z. B. ARM und PowerPC), damit ein systematischer Compiler-Bug nicht alle drei gleichzeitig lahmlegt.</p>
+<p>Um Fail-Operational oder zumindest robustes Fail-Safe zu erreichen, brauchen wir Redundanz. 1oo2 bedeutet „One out of two“: zwei Kanäle. In vielen Safety-Architekturen können beide Kanäle bei einem Fehler den Safe State erzwingen — das ist Diagnose und Absicherung, nicht zwingend Hot-Standby. Hot-Standby (A aktiv, B als Schatten, nahtlose Übernahme) ist nur eine mögliche Ausprägung. In extrem kritischen Bereichen, wie der Flugsteuerung eines Airbus, nutzt man oft 2oo3: drei Computer, ein Voter. Bei einem Bit-Flip überstimmen die zwei gesunden Chips den defekten. Oft kommen Chips unterschiedlicher Hersteller zum Einsatz (Diversität), damit ein systematischer Compiler-Bug nicht alle drei gleichzeitig trifft.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -835,6 +835,103 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <aside class="notes">
 <p>Die Gesamtarchitektur Ihres Capstone-Systems sieht so aus: Auf dem Cortex-M4 läuft FreeRTOS. Der Hardware-Interrupt (EXTI) schreibt nur knapp in eine Queue – Deferred Interrupt Processing aus Woche 5. Die Sensor-Task holt die Events, sperrt das HSEM und schreibt den Payload in den SRAM4. Auf dem Cortex-M7 läuft Bare-Metal: Er wartet auf bzw. nutzt denselben Hardware-Lock, liest die Daten, rechnet den Float-Filter und schickt Logs über UART. Der Window Watchdog auf dem M4 überwacht, dass die harte Echtzeit-Task im erlaubten Zeitfenster bleibt. Alle Bausteine der Vorlesung greifen hier ineinander.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="capstone-pflichtenheft-muss-kriterien" class="slide level2">
+<h2>Capstone-Pflichtenheft (Muss-Kriterien)</h2>
+<ul>
+<li>Verdichtet aus Lab 9 — das System <strong>muss</strong>:
+<ol type="1">
+<li><strong>EXTI <span class="math inline">\(\rightarrow\)</span> Queue (M4):</strong> Button <code>PC13</code> als EXTI; ISR nur Deferred Put (<code>timeout = 0</code>).</li>
+<li><strong>HSEM-Sync:</strong> SRAM4-Payload (<code>sd</code>) nur unter <code>HSEM_0</code> lesen/schreiben (beide Kerne).</li>
+<li><strong>WWDG:</strong> Window + EWI auf dem M4; Refresh nur im Allowed Window (auch ohne Button-Event).</li>
+<li><strong>M7:</strong> Float-Filter + UART-<code>printf</code> ausschließlich auf dem Soft-Echtzeit-Kern.</li>
+<li><strong>BlueBox:</strong> E2E-Latenz (EXTI <span class="math inline">\(\rightarrow\)</span> HSEM-Release) und Jitter der <code>M4_SensorTask</code> messen.</li>
+</ol></li>
+<li><strong>MPU:</strong> Shared Region Non-Cacheable (wie Termin 6).</li>
+</ul>
+<aside class="notes">
+<p>Das Pflichtenheft verdichtet Übungsblatt 9: harte Interrupt-Pipeline auf dem M4, asynchrone Multicore-Übergabe per HSEM, Soft-Pfad mit Filter und UART auf dem M7, Speicherschutz wie in Woche 6 — und der BlueBox-Beweis am Ende.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="abnahmekriterien-definition-of-done" class="slide level2">
+<h2>Abnahmekriterien (Definition of Done)</h2>
+<ul>
+<li><strong>Funktion:</strong> Tastendruck erscheint als gefilterter M7-UART-Log; kein Deadlock/Datenverlust unter HSEM.</li>
+<li><strong>Safety:</strong> WWDG hält im Normalbetrieb; Early-/Late-Test zeigt Reset bzw. EWI-Verhalten.</li>
+<li><strong>Timing (BlueBox):</strong> E2E-Latenz im niedrigen µs-Bereich und stabil; M4-Jitter <span class="math inline">\(\approx 0\)</span> trotz M7-Last/UART.</li>
+<li><strong>Architektur:</strong> <code>printf</code>/UART nur auf M7; M4-ISR bleibt kurz.</li>
+</ul>
+<aside class="notes">
+<p>Abnahme heißt: Das System tut, was der Kunde will, und Sie können es messen. Funktion ohne Crash, Watchdog greift im Fehlerfall, BlueBox zeigt kurze stabile Latenz und praktisch keinen M4-Jitter.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="labor-checkliste-capstone" class="slide level2" data-background-color="#F5F5F7">
+<h2>Labor-Checkliste Capstone</h2>
+<ol type="1">
+<li>CubeMX: Dual-Core, FreeRTOS nur CM4, EXTI, WWDG+EWI, HSEM, Queue + High-Prio-Task</li>
+<li>Shared Memory <code>sd</code> + Linker <code>RAM_D3</code> / <code>NOLOAD</code> + MPU Non-Cacheable</li>
+<li>Deferred Interrupt Processing (ISR kurz, Arbeit in der Task)</li>
+<li>Crash-Tests Early/Late (WWDG) und kurzer EWI-Blink (LD3 / PB14)</li>
+<li>BlueBox: End-to-End-Latenz und Jitter der M4-Pipeline verifizieren</li>
+</ol>
+<ul>
+<li>Teilabnahme möglich: zuerst nur M4-Pfad, dann Multicore, dann Trace</li>
+</ul>
+<aside class="notes">
+<p>Arbeiten Sie die Checkliste der Reihe nach ab. Wenn die Zeit knapp wird: Minimum Viable ist M4 mit Queue+WWDG und nachweisbarem Refresh im Fenster; HSEM/M7 und BlueBox als Erweiterung.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="die-essenz-des-capstone" class="slide level2" data-background-color="#FFFFFF">
+<h2>Die Essenz des Capstone</h2>
+<ul>
+<li>Sie bauen heute kein Übungsfragment — Sie bauen eine <strong>Serien-Architektur</strong>.</li>
+<li>Alle Semesterbausteine greifen ineinander: ITC, Deferred IRQ, AMP, HSEM, WWDG, MPU, Trace.</li>
+<li>Erfolg heißt: funktionale Korrektheit <em>und</em> nachweisbares Timing.</li>
+<li>Viel Erfolg im Labor — und in der Klausur!</li>
+</ul>
+<aside class="notes">
+<p>Das Capstone ist der Schlussstein. Wenn Ihr System die Impulse jitterfrei erfasst, den Soft-Pfad entkoppelt und den Watchdog im Fenster hält, haben Sie die Lernziele der Veranstaltung erreicht. Viel Erfolg!</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;

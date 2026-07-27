@@ -415,9 +415,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <div class="columns">
 <div class="column" style="width:50%;">
 <ul>
-<li>Globale Variable: <code>int fehler = 0;</code></li>
+<li>Globale Variable: <code>volatile uint32_t error_counter = 5;</code></li>
 <li>Task A (Low) und Task B (High) melden beide einen Fehler</li>
-<li>Beide rufen <code>fehler++;</code> auf</li>
+<li>Beide rufen <code>error_counter++;</code> auf</li>
 <li>War der Wert <code>5</code>, erwarten wir danach <code>7</code></li>
 </ul>
 </div><div class="column" style="width:50%;">
@@ -560,7 +560,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Idee aus der Bare-Metal-Welt: Flag <code>lock</code></li>
 <li>Vor Zugriff: prüfen, ob <code>lock == 0</code>, dann auf <code>1</code> setzen</li>
-<li>Frage: Warum ist das im RTOS eine Katastrophe?</li>
+<li>Achtung: Check-then-Set auf <code>lock</code> selbst ist eine Race Condition (benötigt atomares Test-and-Set / <code>LDREX</code>/<code>STREX</code>)</li>
+<li>Frage: Warum ist das im RTOS trotzdem eine Katastrophe?</li>
 </ul>
 </div><div class="column" style="width:50%;">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">volatile</span> <span class="dt">int</span> lock <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
@@ -1038,7 +1039,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Niemals in einer Critical Section <code>osDelay()</code> aufrufen</li>
 <li>Niemals Mutex-Acquire in einer Hardware-ISR
 <ul>
-<li>ISR kann nicht Blocked werden → Crash</li>
+<li>verboten / undefiniert bzw. Assert (ISR kann nicht Blocked werden)</li>
 </ul></li>
 <li>In ISRs: Semaphoren oder Queues, keine Mutexe</li>
 </ul>
@@ -1112,7 +1113,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <tr class="odd">
 <td style="text-align: left;">Verwendung in ISR?</td>
 <td style="text-align: left;">Ja (<code>Release</code> weckt Task)</td>
-<td style="text-align: left;">Nein (Systemabsturz)</td>
+<td style="text-align: left;">Nein (verboten / Assert)</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Priority Inheritance?</td>
@@ -1189,10 +1190,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
     M1[Mutex A]
     M2[Mutex B]
 
-    T1 --&gt;|Hat gesperrt| M1
-    T2 --&gt;|Hat gesperrt| M2
-    T1 --&gt;|Wartet auf| M2
-    T2 --&gt;|Wartet auf| M1
+    T1 --&gt;|hält| M1
+    T2 --&gt;|hält| M2
+    T1 --&gt;|wartet| M2
+    T2 --&gt;|wartet| M1
 
     style T1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
     style T2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
@@ -1218,14 +1219,44 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
+<section id="die-vier-coffman-bedingungen" class="slide level2">
+<h2>Die vier Coffman-Bedingungen</h2>
+<ul>
+<li>Ein Deadlock entsteht nur, wenn <strong>alle vier</strong> gleichzeitig gelten:
+<ol type="1">
+<li><strong>Mutual Exclusion</strong> — Ressource nicht teilbar</li>
+<li><strong>Hold-and-Wait</strong> — Task hält A und wartet auf B</li>
+<li><strong>No Preemption</strong> — gehaltene Locks werden nicht entzogen</li>
+<li><strong>Circular Wait</strong> — zyklische Warteschlange</li>
+</ol></li>
+<li>Unsere Regeln brechen genau diese Kette:
+<ul>
+<li>Regel 1 (keine Schachtelung) <span class="math inline">\(\rightarrow\)</span> kein Hold-and-Wait</li>
+<li>Regel 2 (globale Reihenfolge) <span class="math inline">\(\rightarrow\)</span> kein Circular Wait</li>
+</ul></li>
+</ul>
+<aside class="notes">
+<p>Coffman et al.&nbsp;(1971): Deadlock nur bei allen vier Bedingungen. In der Praxis genügt es, eine zu brechen — deshalb die beiden Vermeidungsregeln der nächsten Folie.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
 <section id="vermeidung-von-deadlocks" class="slide level2">
 <h2>Vermeidung von Deadlocks</h2>
 <ul>
-<li>Regel 1: Keine geschachtelten Mutexe
+<li>Regel 1: Keine geschachtelten Mutexe (bricht Hold-and-Wait)
 <ul>
 <li>Niemals einen zweiten Mutex anfordern, solange einer gehalten wird</li>
 </ul></li>
-<li>Regel 2: Strikte Anforderungsreihenfolge
+<li>Regel 2: Strikte Anforderungsreihenfolge (bricht Circular Wait)
 <ul>
 <li>Wenn Schachtelung unvermeidbar: alle Tasks fordern Mutexe in derselben globalen Reihenfolge an (erst A, dann B)</li>
 </ul></li>
@@ -1250,6 +1281,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Deadlock: System steht — offensichtlich</li>
 <li>Priority Inversion: System läuft weiter, aber Echtzeitgarantien der wichtigsten Task sind zerstört</li>
+<li><strong>Abgrenzung Starvation vs.&nbsp;Priority Inversion:</strong>
+<ul>
+<li><em>Starvation:</em> Scheduler gewährt der Task nie CPU (reine Prioritäts-/Ready-Problematik)</li>
+<li><em>Priority Inversion:</em> High blockiert indirekt über Mutex + mittelpriore Task</li>
+</ul></li>
 <li>Setup:
 <ul>
 <li>Task L (Low), Task M (Medium), Task H (High)</li>
@@ -1258,7 +1294,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul></li>
 </ul>
 <aside class="notes">
-<p>Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Nicht verwechseln mit Starvation: Inversion entsteht durch Mutex-Halten + präemptierende Mittelprio.</p>
+<p>Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Starvation braucht keinen Mutex — nur den Scheduler. Inversion braucht Mutex + Mittelprio.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1323,7 +1359,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-der-priority-inversion" class="slide level2">
 <h2>Visualisierung der Priority Inversion</h2>
-<p><img data-src="../_livefigures/inline-plantuml-0f569c4d.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-4ec4d356.svg" class="livefigure"></p>
 <aside class="notes">
 <p>Von T=4 bis T=7 rechnet Medium; High bleibt Blocked. Prioritäten logisch umgekehrt: Medium agiert de facto als Höchstprio. Latenz von High hängt von unbeteiligter Task ab — Albtraum für harte Echtzeit.</p>
 <style type="text/css">
@@ -1508,7 +1544,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-priority-inheritance-die-prio-beule" class="slide level2">
 <h2>Visualisierung: Priority Inheritance („Die Prio-Beule“)</h2>
-<p><img data-src="../_livefigures/inline-plantuml-9c7aabf8.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-3f98e254.svg" class="livefigure"></p>
 <aside class="notes">
 <p>Vierte Zeile: Prio-Beule bei T=2. Medium bei T=3 Ready, prallt an geerbter High-Prio ab. Nach Release fällt Prio zurück — Inversion gebannt.</p>
 <style type="text/css">

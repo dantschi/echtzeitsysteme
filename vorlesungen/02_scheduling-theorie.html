@@ -839,7 +839,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Wie bekommt das OS die CPU zurück?</li>
 <li>Kooperativ (non-preemptive):
 <ul>
-<li>Task gibt CPU freiwillig ab (<code>task_yield()</code> / <code>os_yield()</code>)</li>
+<li>Task gibt CPU freiwillig ab (<code>os_yield()</code>)</li>
 </ul></li>
 <li>Präemptiv:
 <ul>
@@ -920,7 +920,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Dynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)</li>
 </ul>
 <aside class="notes">
-<p>Statisch: <code>prio = 5</code> bleibt. Dynamisch: z. B. kurz vor der Deadline steigt die Priorität (EDF).</p>
+<p>Statisch: <code>prio = 5</code> bleibt. Dynamisch (EDF): Ranking nach absoluter Deadline — die Task mit der frühesten Deadline hat die höchste Priorität (kein „Ansteigen kurz vorher“).</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1096,14 +1096,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(C_1 = 1\)</span>, <span class="math inline">\(T_1 = 4\)</span></li>
 <li><span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(C_2 = 2\)</span>, <span class="math inline">\(T_2 = 6\)</span></li>
-<li><span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(C_3 = 1\)</span>, <span class="math inline">\(T_3 = 12\)</span></li>
+<li><span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(C_3 = 2\)</span>, <span class="math inline">\(T_3 = 12\)</span></li>
 </ul></li>
-<li>Auslastung: <span class="math inline">\(U = \frac{1}{4} + \frac{2}{6} + \frac{1}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}08\overline{3} = 66{,}7\,\%\)</span></li>
+<li>Auslastung: <span class="math inline">\(U = \frac{1}{4} + \frac{2}{6} + \frac{2}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}16\overline{6} = 75\,\%\)</span></li>
 <li>Regel: kürzere Periode <span class="math inline">\(\rightarrow\)</span> höhere Priorität</li>
 <li>Ergebnis: <span class="math inline">\(\tau_1\)</span> (höchste Prio), <span class="math inline">\(\tau_2\)</span> (mittel), <span class="math inline">\(\tau_3\)</span> (niedrigste)</li>
 </ul>
 <aside class="notes">
-<p>Drei Tasks, Summe rund 66 Prozent — die CPU ist zu einem Drittel im Leerlauf. Nach Rate Monotonic bekommt <span class="math inline">\(\tau_1\)</span> (<span class="math inline">\(T=4\)</span>) die höchste Priorität, <span class="math inline">\(\tau_3\)</span> (<span class="math inline">\(T=12\)</span>) die niedrigste und wird bei Bedarf präemptiert.</p>
+<p>Drei Tasks, Summe <span class="math inline">\(75\,\%\)</span>. Nach Rate Monotonic bekommt <span class="math inline">\(\tau_1\)</span> (<span class="math inline">\(T=4\)</span>) die höchste Priorität, <span class="math inline">\(\tau_3\)</span> (<span class="math inline">\(T=12\)</span>) die niedrigste. Mit <span class="math inline">\(C_3=2\)</span> wird <span class="math inline">\(\tau_3\)</span> bei <span class="math inline">\(t=4\)</span> mitten in ihrer Ausführung von <span class="math inline">\(\tau_1\)</span> präemptiert — genau das wollen wir zeigen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1118,12 +1118,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-präemptives-rms" class="slide level2 scrollable">
 <h2>Visualisierung: Präemptives RMS</h2>
-<p><img data-src="../_livefigures/inline-plantuml-6672bd07.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-55af0f6b.svg" class="livefigure"></p>
 <ul>
-<li>Bei <span class="math inline">\(t=4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> die laufende <span class="math inline">\(\tau_3\)</span> präemptiv</li>
+<li>Bei <span class="math inline">\(t=4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> die laufende <span class="math inline">\(\tau_3\)</span> präemptiv (<span class="math inline">\(C_3=2\)</span>: erste Zeiteinheit <span class="math inline">\(t=3\)</span>–<span class="math inline">\(4\)</span>, Rest nach Präemption)</li>
 </ul>
 <aside class="notes">
-<p>Bei <span class="math inline">\(t=0\)</span> erwachen alle drei gleichzeitig; <span class="math inline">\(\tau_1\)</span> nimmt die CPU. Nach 1 ms folgt <span class="math inline">\(\tau_2\)</span>, ab <span class="math inline">\(t=3\)</span> darf <span class="math inline">\(\tau_3\)</span> starten. Bei <span class="math inline">\(t=4\)</span> feuert die Periode von <span class="math inline">\(\tau_1\)</span> erneut — das OS entzieht <span class="math inline">\(\tau_3\)</span> die CPU. Das ist Präemption in Reinkultur.</p>
+<p>Bei <span class="math inline">\(t=0\)</span> erwachen alle drei gleichzeitig; <span class="math inline">\(\tau_1\)</span> nimmt die CPU. Nach 1 ms folgt <span class="math inline">\(\tau_2\)</span>, ab <span class="math inline">\(t=3\)</span> darf <span class="math inline">\(\tau_3\)</span> starten. Bei <span class="math inline">\(t=4\)</span> feuert die Periode von <span class="math inline">\(\tau_1\)</span> erneut — das OS entzieht <span class="math inline">\(\tau_3\)</span> die CPU mitten in <span class="math inline">\(C_3=2\)</span>. Das ist Präemption in Reinkultur; <span class="math inline">\(\tau_3\)</span> setzt ab <span class="math inline">\(t=5\)</span> fort und ist bei <span class="math inline">\(t=6\)</span> fertig.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1424,7 +1424,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tr>
 <tr class="even">
 <td style="text-align: left;">Max. <span class="math inline">\(U\)</span></td>
-<td style="text-align: left;">Oft <span class="math inline">\(\le 69{,}3\,\%\)</span> garantiert</td>
+<td style="text-align: left;">Hinreichende Faustregel <span class="math inline">\(\ln 2\approx 69{,}3\,\%\)</span> (<span class="math inline">\(n\)</span>-abhängig; bei <span class="math inline">\(n=3\approx 78\,\%\)</span>); exakt bis <span class="math inline">\(100\,\%\)</span> möglich (RTA)</td>
 <td style="text-align: left;"><span class="math inline">\(100\,\%\)</span> garantiert</td>
 </tr>
 <tr class="odd">
@@ -1594,14 +1594,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-software-context-switch-pendsv" class="slide level2 scrollable">
 <h2>Der Software-Context-Switch (PendSV)</h2>
 <ul>
-<li>Was passiert in <code>PendSV_Handler</code> (Assembler)?
+<li>Was passiert in <code>PendSV_Handler</code> (Assembler, FreeRTOS-typisch)?
 <ol type="1">
-<li><code>stack_pointer</code> der alten Task aus dem TCB lesen</li>
-<li>Register R4–R11 auf den Stack pushen</li>
-<li>Neuen Stack-Pointer im alten TCB speichern</li>
-<li><code>stack_pointer</code> der neuen Task laden</li>
+<li>Aktuellen PSP lesen (Stack der alten Task)</li>
+<li>Register R4–R11 auf diesen Stack pushen</li>
+<li>Aktualisierten SP im TCB der alten Task speichern</li>
+<li>SP der neuen Task aus deren TCB laden</li>
 <li>R4–R11 der neuen Task poppen</li>
-<li>Rücksprung (<code>BX LR</code>) — neue Task läuft</li>
+<li>Kontext wiederherstellen / Rücksprung (<code>BX LR</code>) — neue Task läuft</li>
 </ol></li>
 </ul>
 <aside class="notes">
@@ -1626,7 +1626,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p></p><figure class=""><p></p>
 <div>
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
-flowchart TD
+flowchart LR
     A[SysTick Timer] --&gt;|1 ms Interrupt| B[SysTick_Handler]
     B --&gt;|Tick erhöhen| C{Scheduler: Next Task?}
     C --&gt;|Ja, Wechsel| D[Trigger PendSV]
@@ -1723,6 +1723,7 @@ flowchart TD
 <li>Index: <span class="math inline">\((idx + 1) \bmod 3\)</span></li>
 <li>READY? Dann Funktionszeiger aufrufen</li>
 </ul></li>
+<li>Warnung: <code>task_func()</code> aus <code>os_yield</code> ist didaktisch — Stack wächst; Produktion: Dispatcher</li>
 </ul>
 </div><div class="column" style="width:45%;">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">void</span> os_yield<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
@@ -1731,12 +1732,14 @@ flowchart TD
 <span id="cb7-4"><a aria-label="4"></a>          <span class="op">(</span>current_task_idx <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="dv">3</span><span class="op">;</span></span>
 <span id="cb7-5"><a aria-label="5"></a>    <span class="op">}</span> <span class="cf">while</span> <span class="op">(</span>task_list<span class="op">[</span>current_task_idx<span class="op">]</span></span>
 <span id="cb7-6"><a aria-label="6"></a>               <span class="op">.</span>state <span class="op">!=</span> READY<span class="op">);</span></span>
-<span id="cb7-7"><a aria-label="7"></a>    task_list<span class="op">[</span>current_task_idx<span class="op">]</span></span>
-<span id="cb7-8"><a aria-label="8"></a>        <span class="op">.</span>task_func<span class="op">();</span></span>
-<span id="cb7-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb7-7"><a aria-label="7"></a>    <span class="co">/* Didaktische Vereinfachung: ruft Task rekursiv auf</span></span>
+<span id="cb7-8"><a aria-label="8"></a><span class="co">       (Stack wächst). Produktion: Rückkehr zum Dispatcher. */</span></span>
+<span id="cb7-9"><a aria-label="9"></a>    task_list<span class="op">[</span>current_task_idx<span class="op">]</span></span>
+<span id="cb7-10"><a aria-label="10"></a>        <span class="op">.</span>task_func<span class="op">();</span></span>
+<span id="cb7-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div></div>
 <aside class="notes">
-<p><code>os_yield()</code> heißt: CPU freiwillig abgeben. Modulo hält den Ring. Kontextwechsel = simpler C-Funktionsaufruf.</p>
+<p><code>os_yield()</code> heißt: CPU freiwillig abgeben. Modulo hält den Ring. Achtung: Der direkte Aufruf von <code>task_func()</code> ist eine didaktische Vereinfachung — bei <code>while(1)</code> + Yield wächst der Stack. Ein echtes kooperatives OS kehrt zum Dispatcher zurück und startet die nächste Task ohne geschachtelte Aufrufe.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1803,13 +1806,13 @@ flowchart TD
 <h2>Zusammenfassung des Tages</h2>
 <ul>
 <li>Task-Modell: WCET <span class="math inline">\(C\)</span>, Periode <span class="math inline">\(T\)</span>, Frist <span class="math inline">\(D\)</span>; Auslastung <span class="math inline">\(U\)</span> als Analyse-Fundament</li>
-<li>RMS: Priorität statisch nach Rate; Liu-und-Layland-Schranke (Grenzwert <span class="math inline">\(\approx 69{,}3\,\%\)</span>); deterministisch bei Überlast</li>
+<li>RMS: Priorität statisch nach Rate; Liu-Layland hinreichend (<span class="math inline">\(n\)</span>-abhängig, Grenzwert <span class="math inline">\(\approx 69{,}3\,\%\)</span>), exakt via RTA; deterministisch bei Überlast</li>
 <li>EDF: nächste Frist, <span class="math inline">\(U \le 1\)</span>; bei Fehler Domino-Effekt</li>
 <li>Cortex-M: SysTick + PendSV ermöglichen präemptives Multitasking</li>
 <li>Labor: kooperativer Round-Robin — und warum er scheitern kann</li>
 </ul>
 <aside class="notes">
-<p>Sie können Software in <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span> abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Unter <span class="math inline">\(\approx 69\,\%\)</span> Auslastung liefert RMS eine mathematische Garantie.</p>
+<p>Sie können Software in <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span> abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Liu-Layland ist hinreichend (<span class="math inline">\(n\)</span>-abhängig); exakte Schedulability liefert die Response-Time Analysis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1828,7 +1831,7 @@ flowchart TD
 <li>Nach dem Spiel-Scheduler: Wechsel in die Profiliga</li>
 <li>Nächste Woche: FreeRTOS auf dem Cortex-M4</li>
 <li>Kooperative Architektur weg, harte Präemption aktiv</li>
-<li>FreeRTOS-API: <code>xTaskCreate()</code>, <code>vTaskDelay()</code></li>
+<li>FreeRTOS-API (CMSIS_V2 im Labor): <code>osThreadNew()</code>, <code>osDelay()</code></li>
 <li>Vorbereitung: Zeiger (Pointer) in C auffrischen</li>
 </ul>
 <aside class="notes">

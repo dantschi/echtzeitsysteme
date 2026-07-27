@@ -247,14 +247,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ol type="1">
 <li>Recap: Mutexe und Priority Inversion</li>
 <li>Das Problem: Transport kontinuierlicher Datenströme</li>
-<li>Inter-Process Communication (IPC): Queues</li>
+<li>Inter-Task Communication (ITC): Queues</li>
 <li>CMSIS-API für Queues und Value vs.&nbsp;Reference</li>
 <li>Der Spezialfall: Mailboxes (Status vs.&nbsp;Events)</li>
 <li><em>[Nach der Pause]</em> Interrupts im RTOS: Top-Half und Bottom-Half</li>
 <li>Ausblick Labor: Deferred Interrupt Processing am STM32H755</li>
 </ol>
 <aside class="notes">
-<p>Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann IPC und Warteschlangen (Queues), C-API, Pointer vs.&nbsp;Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.</p>
+<p>Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann Inter-Task Communication (ITC) und Warteschlangen (Queues) — FreeRTOS kennt Tasks, keine Prozesse. C-API, Pointer vs.&nbsp;Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -390,10 +390,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
-<section id="die-lösung-ipc-via-betriebssystem" class="slide level2">
-<h2>Die Lösung: IPC via Betriebssystem</h2>
+<section id="die-lösung-inter-task-communication-itc" class="slide level2">
+<h2>Die Lösung: Inter-Task Communication (ITC)</h2>
 <ul>
-<li>Wir brauchen Inter-Process Communication (IPC)</li>
+<li>Wir brauchen Inter-Task Communication (ITC) — in FreeRTOS: Task-zu-Task, keine Prozesse</li>
+<li>(In der Literatur oft „IPC“ genannt; hier meinen wir dasselbe Muster auf Task-Ebene.)</li>
 <li>Das Betriebssystem muss die Datenverwaltung übernehmen</li>
 <li>Lösung: ein Puffer (Buffer)
 <ul>
@@ -404,7 +405,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>In RTOS-Systemen: Queue (Warteschlange)</li>
 </ul>
 <aside class="notes">
-<p>Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der IPC.</p>
+<p>Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der Inter-Task-Kommunikation.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -583,8 +584,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
-<section id="zusammenfassung-ipc-vorteile" class="slide level2">
-<h2>Zusammenfassung: IPC-Vorteile</h2>
+<section id="zusammenfassung-itc-vorteile" class="slide level2">
+<h2>Zusammenfassung: ITC-Vorteile</h2>
 <ul>
 <li>Datentransfer: Werte sicher von Task A nach Task B</li>
 <li>Synchronisation: automatisches Blockieren und Wecken (keine leeren <code>while</code>-Schleifen)</li>
@@ -752,7 +753,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Der Feind der Queue: Große Daten!</h2>
 <ul>
 <li>Copy by Value ist ideal für kleine Daten (z. B. <code>uint32_t</code>, 4 Bytes)</li>
-<li>Große Daten? Kamerabild <span class="math inline">\(320 \times 240\)</span> Pixel <span class="math inline">\(= 76\,800\)</span> Bytes</li>
+<li>Große Daten? Kamerabild <span class="math inline">\(320 \times 240\)</span> Pixel, Graustufen (<code>uint8_t</code>) <span class="math inline">\(= 76\,800\)</span> Bytes</li>
 <li>Probleme:
 <ul>
 <li>Queue wäre gigantisch (RAM-Verschwendung)</li>
@@ -877,9 +878,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </div></div>
 <ul>
 <li>FreeRTOS-Sonderfunktion: <code>xQueueOverwrite()</code></li>
+<li><strong>Achtung:</strong> CMSIS-RTOS v2 hat kein Overwrite/Peek — dafür native FreeRTOS-API nötig</li>
 </ul>
 <aside class="notes">
-<p>Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: <code>xQueueOverwrite</code>.</p>
+<p>Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: <code>xQueueOverwrite</code>. CMSIS bietet das nicht — im Labor bei CMSIS-only also Queue Länge 1 + Put mit Timeout 0 als Näherung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1000,6 +1002,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-architektur-muster-deferred-interrupt-processing" class="slide level2">
 <h2>Das Architektur-Muster: Deferred Interrupt Processing</h2>
 <ul>
+<li><strong>Vertiefung VL4:</strong> Semaphor-Signalisierung ISR <span class="math inline">\(\rightarrow\)</span> Task kennen Sie schon — hier der Architektur-Rahmen</li>
 <li>Wie lesen wir komplexe Sensordaten (z. B. 10 KB Bilddaten per SPI) ein, wenn die ISR kurz sein muss?</li>
 <li>Lösung der Industrie: Deferred Interrupt Processing (verzögerte Interrupt-Verarbeitung)</li>
 <li>Arbeit in zwei Hälften:
@@ -1428,9 +1431,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb8-8"><a aria-label="8"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
 <span id="cb8-9"><a aria-label="9"></a>        printf<span class="op">(</span><span class="st">"BUTTON PRESSED!</span><span class="sc">\n</span><span class="st">"</span><span class="op">);</span></span>
 <span id="cb8-10"><a aria-label="10"></a></span>
-<span id="cb8-11"><a aria-label="11"></a>        <span class="co">// Demo-Last (nur Demo!): busy-wait, Task bleibt Running</span></span>
-<span id="cb8-12"><a aria-label="12"></a>        <span class="co">// In Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms</span></span>
-<span id="cb8-13"><a aria-label="13"></a>        HAL_Delay<span class="op">(</span><span class="dv">100</span><span class="op">);</span>  <span class="co">// Demo only — nicht in Produktion</span></span>
+<span id="cb8-11"><a aria-label="11"></a>        <span class="co">// NUR DEMO: busy-wait, Task bleibt Running!</span></span>
+<span id="cb8-12"><a aria-label="12"></a>        HAL_Delay<span class="op">(</span><span class="dv">100</span><span class="op">);</span></span>
+<span id="cb8-13"><a aria-label="13"></a>        <span class="co">// Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms</span></span>
 <span id="cb8-14"><a aria-label="14"></a>    <span class="op">}</span></span>
 <span id="cb8-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">

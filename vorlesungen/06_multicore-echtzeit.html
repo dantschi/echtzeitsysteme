@@ -195,6 +195,9 @@
       margin-right: 0; 
     }
   </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
@@ -273,7 +276,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Das Problem der Industrie:
 <ul>
 <li>Steuergeräte sollen immer mehr können (KI, Ethernet, GUI)</li>
-<li>Gleichzeitig harte Timing-Regelkreise (<span class="math inline">\(100\,\mathrm{\mu s}\)</span> Raster)</li>
+<li>Gleichzeitig harte Timing-Regelkreise (<span class="math inline">\(100\,\text{µs}\)</span> Raster)</li>
 </ul></li>
 <li>Wie bekommen wir mehr Rechenleistung in das System?</li>
 </ul>
@@ -347,17 +350,29 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="multiprocessing-architekturen" class="slide level2">
 <h2>Multiprocessing-Architekturen</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
 <p>Zwei grundlegende Konzepte:</p>
 <ol type="1">
 <li>SMP (Symmetric Multiprocessing)</li>
 <li>AMP (Asymmetric Multiprocessing)</li>
 </ol>
 <p>Beide haben unterschiedliche Einsatzgebiete.</p>
-</div><div class="column" style="width:50%;">
-<p><img data-src="../_livefigures/inline-plantuml-84509a71.svg" class="livefigure"></p>
-</div></div>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph TD
+    MC[Multicore] --&gt; SMP[SMP Symmetrisch]
+    MC --&gt; AMP[AMP Asymmetrisch]
+    style MC fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style SMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style AMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <aside class="notes">
 <p>Es gibt nicht „die eine“ Multicore-Architektur. Zwei Familien: SMP und AMP. Beide lösen Rechenlast, aber auf unterschiedlichen Wegen. Für Ihre Karriere: Unterschied kennen und wissen, warum AMP in der Echtzeit oft bevorzugt wird.</p>
 <style type="text/css">
@@ -405,7 +420,28 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Load-Balancing: Tasks dynamisch auf den Kern mit wenig Last</li>
 <li>Task-Migration: Millisekunde 1 auf Core 0, Millisekunde 2 auf Core 1</li>
 </ul>
-<p><img data-src="../_livefigures/inline-plantuml-a48da874.svg" class="livefigure"></p>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph TD
+    OS[Single OS Linux / Windows] --&gt; TQ[Task-Queue]
+    TQ --&gt; C0[Core 0 Task A]
+    TQ --&gt; C1[Core 1 Task B]
+    TQ --&gt; C2[Core 2 Task C]
+    C2 -.-&gt;|Migration| C0
+    style OS fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style TQ fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style C0 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style C1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+    style C2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <aside class="notes">
 <p>Der SMP-Scheduler betreibt Load-Balancing. Word, Excel, Browser: OS weist Threads freien Kernen zu. Task-Migration: Thread startet auf Core 0, wird pausiert, läuft später auf Core 1 weiter — Register wandern mit. Fantastische Gesamtauslastung.</p>
 <style type="text/css">
@@ -423,17 +459,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="warum-smp-für-harte-echtzeit-oft-scheitert" class="slide level2">
 <h2>Warum SMP für harte Echtzeit oft scheitert</h2>
 <ul>
-<li>SMP ist genial für Durchsatz, aber ein Albtraum für Determinismus</li>
+<li>SMP ist genial für Durchsatz, aber für <strong>harte</strong> Echtzeit oft problematisch</li>
 <li>Latenz-Probleme:
 <ul>
 <li>Task-Migration kostet Zeit (Register von Kern zu Kern)</li>
 <li>Cache-Thrashing: L1-Cache des Zielkerns ist leer → Cache-Misses</li>
 <li>Contention: mehrere Kerne auf demselben RAM-Bus → Mikro-Staus</li>
 </ul></li>
-<li>Ergebnis: WCET explodiert und wird unberechenbar</li>
+<li>Ergebnis: WCET wird schwerer vorherzusagen (oft unpraktisch für harte Deadlines)</li>
 </ul>
 <aside class="notes">
-<p>Warum keine Airbag-Steuerung mit SMP? Tod für Determinismus. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird unberechenbar.</p>
+<p>Warum selten Airbag-Steuerung mit SMP? Determinismus leidet. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird schwer beherrschbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -566,8 +602,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tr>
 <tr class="even">
 <td>Determinismus</td>
-<td>Schlecht (Migration, Cache-Misses)</td>
-<td>Hervorragend (strikte Trennung)</td>
+<td>Oft schwierig (Migration, Cache-Misses)</td>
+<td>Typischerweise besser isolierbar</td>
 </tr>
 <tr class="odd">
 <td>Beispiel</td>
@@ -595,7 +631,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Ein Silizium-Plättchen (Die), zwei getrennte Prozessorkerne</li>
 </ul>
-<p><img data-src="../_livefigures/inline-plantuml-13e6e873.svg" class="livefigure"></p>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">graph TD
+    CHIP[STM32H755 Chip]
+    CHIP --&gt; M7[Cortex-M7 Spec max 480 MHz]
+    CHIP --&gt; M4[Cortex-M4 Spec max 240 MHz]
+    style CHIP fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
+    style M7 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+    style M4 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <ul>
 <li>Trotzdem teilen sie sich Pins, Taktquellen und Speicher</li>
 <li>Wie organisiert STMicroelectronics dieses Chaos?</li>
@@ -723,8 +776,31 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="taktversorgung-rcc" class="slide level2">
 <h2>Taktversorgung (RCC)</h2>
 <ul>
+<li>Specs vs.&nbsp;Board-Setup (kanonisch für diese Vorlesung):</li>
+</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Kern</th>
+<th>Spec-Maximum</th>
+<th>Typisches Nucleo-Setup</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Cortex-M7</td>
+<td>bis <span class="math inline">\(480\,\mathrm{MHz}\)</span></td>
+<td><span class="math inline">\(400\,\mathrm{MHz}\)</span></td>
+</tr>
+<tr class="even">
+<td>Cortex-M4</td>
+<td>bis <span class="math inline">\(240\,\mathrm{MHz}\)</span></td>
+<td><span class="math inline">\(200\,\mathrm{MHz}\)</span></td>
+</tr>
+</tbody>
+</table>
+<ul>
 <li>Beide Kerne haben eigene Phasenregelkreise (PLLs)</li>
-<li>M7 kann mit <span class="math inline">\(400\,\mathrm{MHz}\)</span> laufen, M4 mit <span class="math inline">\(200\,\mathrm{MHz}\)</span></li>
 <li>Achtung im CubeMX Configurator:
 <ul>
 <li>Änderungen am System Clock beeinflussen meist beide Kerne</li>
@@ -732,7 +808,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul></li>
 </ul>
 <aside class="notes">
-<p>Ähnliche Teilung bei RCC: eigene Teiler und PLLs. M7 auf 480 MHz, M4 auf 100 MHz ist möglich. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.</p>
+<p>Ähnliche Teilung bei RCC: eigene Teiler und PLLs. Specs nennen Maxima (480/240); im Labor und in Timing-Beispielen (Cache, Trace) rechnen wir mit dem typischen Nucleo-Setup 400/200 MHz. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -950,11 +1026,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb2-3"><a aria-label="3"></a>{</span>
 <span id="cb2-4"><a aria-label="4"></a>  FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K</span>
 <span id="cb2-5"><a aria-label="5"></a>  RAM_D1 (xrw)    : ORIGIN = 0x24000000, LENGTH = 512K</span>
-<span id="cb2-6"><a aria-label="6"></a>  /* NEU: Shared Memory */</span>
-<span id="cb2-7"><a aria-label="7"></a>  SHARED_RAM (xrw): ORIGIN = 0x38000000, LENGTH = 64K</span>
+<span id="cb2-6"><a aria-label="6"></a>  /* NEU: Shared Memory (CubeMX: oft RAM_D3) */</span>
+<span id="cb2-7"><a aria-label="7"></a>  RAM_D3 (xrw)    : ORIGIN = 0x38000000, LENGTH = 64K</span>
 <span id="cb2-8"><a aria-label="8"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Das Linker-Script ist das Fundament. In beiden <code>.ld</code>-Dateien einen MEMORY-Bereich <code>SHARED_RAM</code> mit Adresse <code>0x38000000</code> und 64 KB deklarieren — beide Kerne kennen den Bereich.</p>
+<p>Das Linker-Script ist das Fundament. In beiden <code>.ld</code>-Dateien einen MEMORY-Bereich <code>RAM_D3</code> (SRAM4) mit Adresse <code>0x38000000</code> und 64 KB deklarieren — beide Kerne kennen den Bereich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -979,7 +1055,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb3-5"><a aria-label="5"></a>  {</span>
 <span id="cb3-6"><a aria-label="6"></a>    . = ALIGN(4);</span>
 <span id="cb3-7"><a aria-label="7"></a>    *(.shared_memory) /* Variablen mit diesem Tag */</span>
-<span id="cb3-8"><a aria-label="8"></a>  } &gt; SHARED_RAM</span>
+<span id="cb3-8"><a aria-label="8"></a>  } &gt; RAM_D3</span>
 <span id="cb3-9"><a aria-label="9"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Extrem wichtig: <code>(NOLOAD)</code>
@@ -1017,10 +1093,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb4-2"><a aria-label="2"></a><span class="co">// die .shared_memory Sektion gelegt!</span></span>
 <span id="cb4-3"><a aria-label="3"></a></span>
 <span id="cb4-4"><a aria-label="4"></a>__attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared_memory"</span><span class="op">)))</span></span>
-<span id="cb4-5"><a aria-label="5"></a>SharedData_t shared_data<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb4-5"><a aria-label="5"></a><span class="dt">volatile</span> SharedData_t sd<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div></div>
 <aside class="notes">
-<p>Wir haben den Grundstein im Linker-Script gelegt. Aber wenn wir in C einfach eine globale Variable deklarieren, packt der Compiler sie standardmäßig in die <code>.bss</code> oder <code>.data</code>-Sektion — irgendwo im schnellen AXI-SRAM. Um das zu verhindern, nutzen wir eine GCC-spezifische Anweisung: <code>__attribute__((section("name")))</code>. Wir hängen dieses Attribut direkt vor unsere Variablendeklaration. Wenn der Compiler diesen Code sieht, gibt er dem Linker die Anweisung: Diese Variable muss exakt in den Topf namens <code>.shared_memory</code> geworfen werden. Und da dieser Topf fest auf die Adresse <code>0x38000000</code> gelinkt ist, wissen wir zu 100&nbsp;%, dass beide Kerne auf dieselben Bytes zugreifen.</p>
+<p>Ohne Attribut landet die Variable in <code>.bss</code>/<code>.data</code> (oft AXI-SRAM). Mit <code>__attribute__((section(".shared_memory")))</code> zwingt GCC den Linker auf <code>0x38000000</code> — beide Kerne sehen dieselben Bytes.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1038,13 +1114,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Ein weiteres Problem beim Speichern: der C-Compiler-Optimizer (<code>-O2</code> / <code>-O3</code>)</li>
 <li>Der Compiler analysiert den Code einer Task (z.&nbsp;B. auf dem M4)</li>
-<li>Er sieht eine <code>while(shared_data.m7_ready == 0);</code>-Schleife</li>
+<li>Er sieht eine <code>while(sd.m7_ready == 0);</code>-Schleife</li>
 <li>Er denkt: „In meiner Task ändert niemand diese Variable. Also lese ich sie nur 1× aus dem RAM und nutze danach für immer ein CPU-Register!“ <span class="math inline">\(\rightarrow\)</span> Endlosschleife!</li>
 <li>Lösung: <code>volatile</code></li>
 <li>Sagt dem Compiler: Diese Variable kann sich jederzeit durch externe Hardware (oder einen anderen Kern) ändern! Lese sie bei JEDEM Zugriff zwingend frisch aus dem RAM!</li>
 </ul>
 <aside class="notes">
-<p>Das nächste Problem ist hausgemacht durch clevere Software. Moderne C-Compiler sind darauf trainiert, Ihren Code rasend schnell zu machen. Wenn Sie auf dem M4 eine While-Schleife schreiben, die darauf wartet, dass der M7 ein Flag setzt, liest der Optimizer den Code. Er stellt fest: In dieser Task wird die Variable nie beschrieben — es sei sinnlos, sie in jedem Schleifendurchlauf aus dem RAM zu holen. Er liest sie einmal in ein CPU-Register und prüft ab sofort nur noch dieses Register. Da der M7 aber den RAM ändert und nicht das Register des M4, friert der M4 für immer ein. Um das zu verhindern, müssen wir die Variable als <code>volatile</code> deklarieren. Das zwingt den Compiler, den Wert jedes Mal frisch über die Bus-Matrix aus dem RAM abzuholen.</p>
+<p>Ohne <code>volatile</code> darf der Optimizer das Flag einmal lesen und danach nur noch das Register prüfen — der M4 friert ein, obwohl der M7 den RAM ändert. <code>volatile</code> erzwingt frische RAM-Reads.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1068,7 +1144,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Hier betreten wir das gefährlichste Feld der Embedded-Entwicklung</li>
 </ul>
 <aside class="notes">
-<p>Viele C-Programmierer denken: Prima, ich habe meine globale Variable als <code>volatile</code> deklariert, jetzt bin ich sicher vor Multicore-Problemen. Falsch! Absolut falsch. <code>volatile</code> ist ein reines Software-Konstrukt. Es sagt dem GCC-Compiler, dass er RAM-Zugriffe nicht wegoptimieren darf. Aber es sagt der physikalischen CPU-Hardware, genauer gesagt dem L1-Cache des Cortex-M7, absolut gar nichts. Die CPU darf und wird die Zugriffe hardwareseitig puffern. Und genau dieses Hardware-Puffern zerschießt uns die Multicore-Kommunikation.</p>
+<p><code>volatile</code> stoppt nur Compiler-Optimierungen — nicht den L1-Cache des M7. Hardware-Puffern bleibt das Multicore-Problem.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1095,7 +1171,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb5-6"><a aria-label="6"></a></span>
 <span id="cb5-7"><a aria-label="7"></a><span class="co">// Im Code (in CM7 und CM4):</span></span>
 <span id="cb5-8"><a aria-label="8"></a>__attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared_memory"</span><span class="op">)))</span></span>
-<span id="cb5-9"><a aria-label="9"></a><span class="dt">volatile</span> SharedData_t shared_data<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-9"><a aria-label="9"></a><span class="dt">volatile</span> SharedData_t sd<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
 <p>Bevor wir uns dem Cache-Problem widmen, hier noch kurz die Datenstruktur für unser heutiges Labor. Wir bauen ein Struct namens <code>SharedData_t</code>. Es enthält ein Flag, mit dem der M7 signalisiert „Ich habe fertig geschrieben“, und ein Flag für den M4. Darunter liegt der eigentliche Payload-Wert. Dieses Struct deklarieren wir als <code>volatile</code> und legen es in die Shared-Memory-Sektion. Achten Sie darauf, dass diese Definition in einer Header-Datei liegt, die in beide Unterprojekte (CM4 und CM7) eingebunden wird. Sonst wissen die Kerne nicht, wie die Bytes im RAM angeordnet sind.</p>
 <style type="text/css">
@@ -1136,7 +1212,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-ist-ein-cpu-cache" class="slide level2">
 <h2>Was ist ein CPU-Cache?</h2>
 <ul>
-<li>Die CPU (z.&nbsp;B. <span class="math inline">\(400\,\mathrm{MHz}\)</span>) ist extrem schnell</li>
+<li>Die CPU (Board-Setup z.&nbsp;B. <span class="math inline">\(400\,\mathrm{MHz}\)</span>) ist extrem schnell</li>
 <li>Der Hauptspeicher (SRAM) ist langsam (z.&nbsp;B. braucht ein Zugriff <span class="math inline">\(5\)</span> Taktzyklen)</li>
 <li>Der L1-Cache:
 <ul>
@@ -1146,7 +1222,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul></li>
 </ul>
 <aside class="notes">
-<p>Was genau ist ein Cache? Der Cortex-M7 rechnet mit <span class="math inline">\(400\)</span> Megahertz. Der Arbeitsspeicher antwortet aber vielleicht erst nach <span class="math inline">\(5\)</span> Taktzyklen. Die CPU würde ständig warten. Deshalb hat der M7 direkt auf dem Silizium des Kerns einen kleinen Speicher, den Level-1-Cache. Wenn Ihr C-Code eine Variable liest, holt die Hardware nicht nur diese eine Variable aus dem lahmen RAM, sondern kopiert die umgebenden <span class="math inline">\(32\)</span> Bytes in den pfeilschnellen Cache. Wenn Sie in der nächsten Code-Zeile nochmal auf die Variable zugreifen, fragt die CPU gar nicht mehr den RAM. Sie liest die Daten in einem einzigen Taktzyklus direkt aus dem Cache.</p>
+<p>Bei Board-Setup <span class="math inline">\(\approx 400\,\mathrm{MHz}\)</span> ist SRAM oft mehrere Takte entfernt. L1-Cache (<span class="math inline">\(32\)</span>-Byte-Lines) liefert Folgezugriffe in einem Takt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1162,13 +1238,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="write-through-vs.-write-back" class="slide level2">
 <h2>Write-Through vs.&nbsp;Write-Back</h2>
 <ul>
-<li>Was passiert, wenn der C-Code eine Variable schreibt (<code>shared_data.m7_ready = 1;</code>)?</li>
+<li>Was passiert, wenn der C-Code eine Variable schreibt (<code>sd.m7_ready = 1;</code>)?</li>
 <li><strong>Write-Through:</strong>
 <ul>
 <li>Die CPU schreibt den Wert in den Cache UND sofort parallel durch in den Haupt-RAM</li>
 <li>(Sicher, aber langsamer)</li>
 </ul></li>
-<li><strong>Write-Back</strong> (Standard beim Cortex-M7):
+<li><strong>Write-Back</strong> (häufig, solange die Region cacheable ist):
 <ul>
 <li>Die CPU schreibt den Wert NUR in den internen Cache!</li>
 <li>Der echte SRAM bleibt veraltet (Stale Data)</li>
@@ -1203,7 +1279,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Dieses Problem nennt man einen <em>Cache Coherency Failure</em></li>
 </ul>
 <aside class="notes">
-<p>Lassen Sie uns das Drama Schritt für Schritt durchspielen. Der Cortex-M7 rechnet brav den Sensorwert aus und setzt das Bereit-Flag auf 1. Das Programm läuft fehlerfrei. Aber die Hardware puffert diesen Schreibvorgang im Write-Back-Cache. Im physikalischen SRAM4 steht immer noch eine Null. Eine Millisekunde später prüft der Cortex-M4 das Flag. Da der M4 keinen Cache hat, geht sein Lesebefehl über die Bus-Matrix direkt an den physikalischen SRAM4. Und was liefert der SRAM4 zurück? Die alte, veraltete Null! Der M4 denkt, der M7 hat noch gar nichts gerechnet und blockiert. Die Daten im System sind asynchron. Der Cache des M7 ist nicht kohärent mit dem Hauptspeicher.</p>
+<p>M7 setzt <code>m7_ready = 1</code> nur im Write-Back-Cache; SRAM4 bleibt 0. M4 liest physisch 0 und wartet ewig — Cache Coherency Failure.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1218,12 +1294,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-cache-coherency-failure" class="slide level2">
 <h2>Visualisierung: Cache Coherency Failure</h2>
-<p><img data-src="../_livefigures/inline-plantuml-d54bb4ff.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-74c0316b.svg" class="livefigure"></p>
 <ul>
 <li>Der M4 sieht die neuen Daten des M7 nicht, da sie im L1-Cache „feststecken“</li>
 </ul>
 <aside class="notes">
-<p>In diesem Timing-Diagramm sehen Sie exakt das, was Sie in einem Labor ohne Gegenmaßnahmen erleben würden. Bei <span class="math inline">\(t=1\)</span> schreibt der Cortex-M7-Code eine „1“. Der Wert ändert sich aber nur im obersten Graphen, im M7-Cache. Der Graph in der Mitte, der physikalische RAM, bleibt auf „0“. Der untere Graph, unser Cortex-M4, liest stoisch den RAM und liest immer wieder „0“. Das System friert effektiv ein, ohne dass der C-Compiler oder das RTOS irgendeinen Fehler gemacht hätten. Es ist ein reines Hardware-Problem.</p>
+<p>Diagramm: Cache dirty, RAM stale, M4 liest 0 — reines Hardware-/Kohärenz-Problem, kein Compiler-/RTOS-Bug.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1247,7 +1323,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Snooping kostet extrem viel Siliziumfläche, viel Strom und (das Schlimmste) verursacht unvorhersehbare Bus-Latenzen <span class="math inline">\(\rightarrow\)</span> Gift für harte Echtzeit!</li>
 </ul>
 <aside class="notes">
-<p>Jetzt werden sich viele von Ihnen fragen: Aber mein Laptop hat 8 Kerne und da friert doch auch nicht ständig der RAM ein? Stimmt. In Desktop-PCs, also bei SMP-Architekturen, löst die Hardware das Problem mit gigantischem Aufwand selbst. Das nennt sich Cache-Snooping. Die Kerne überwachen sich gegenseitig. Wenn Core 2 auf den Bus zugreift, ruft Core 1: Stopp, ich habe dazu noch neuere Daten in meinem Cache!, schreibt diese schnell in den RAM und lässt Core 2 dann weiterlesen. Aber diese Schnüffelei auf dem Bus kostet Strom, belegt massiv Platz auf dem Silizium und verursacht schwankende Verzögerungen auf dem Bus. Für einen Echtzeit-Controller wie den STM32, bei dem es um Nanosekunden geht, ist Hardware-Snooping absolut inakzeptabel. Wir als Entwickler müssen das Problem selbst lösen.</p>
+<p>PCs lösen Kohärenz per Hardware-Snooping (z.&nbsp;B. MESI) — teuer, stromhungrig, jitterbehaftet. Auf dem STM32H755 lösen wir es software-/MPU-seitig.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1287,9 +1363,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="nachteile-der-software-lösung" class="slide level2">
 <h2>Nachteile der Software-Lösung</h2>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">// Beispielcode M7:</span></span>
-<span id="cb6-2"><a aria-label="2"></a>shared_data<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb6-2"><a aria-label="2"></a>sd<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
 <span id="cb6-3"><a aria-label="3"></a><span class="co">// Manuelles Durchschreiben!</span></span>
-<span id="cb6-4"><a aria-label="4"></a>SCB_CleanDCache_by_Addr<span class="op">((</span><span class="dt">uint32_t</span><span class="op">*)&amp;</span>shared_data<span class="op">,</span></span>
+<span id="cb6-4"><a aria-label="4"></a>SCB_CleanDCache_by_Addr<span class="op">((</span><span class="dt">uint32_t</span><span class="op">*)&amp;</span>sd<span class="op">,</span></span>
 <span id="cb6-5"><a aria-label="5"></a>                        <span class="kw">sizeof</span><span class="op">(</span>SharedData_t<span class="op">));</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Warum wir das im Labor NICHT machen:
@@ -1342,7 +1418,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-bewirkt-die-mpu" class="slide level2">
 <h2>Was bewirkt die MPU?</h2>
 <ul>
-<li>Wenn der M7 nun <code>shared_data.m7_ready = 1;</code> ausführt:
+<li>Wenn der M7 nun <code>sd.m7_ready = 1;</code> ausführt:
 <ul>
 <li>Die MPU sieht die Adresse <code>0x38000000</code></li>
 <li>Sie weiß: Cache ist hier verboten!</li>
@@ -1488,7 +1564,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Schritt 4: Das Linker-Script anpassen</h2>
 <ul>
 <li>Öffnen Sie in beiden Projekten (CM7 und CM4) die Datei <code>STM32H755..._FLASH.ld</code></li>
-<li>Fügen Sie im <code>MEMORY</code>-Block den SRAM4 hinzu (CubeMX nennt ihn oft <code>RAM_D3</code>; früher auf den Folien: <code>SHARED_RAM</code> — entscheidend ist die Adresse):</li>
+<li>Fügen Sie im <code>MEMORY</code>-Block den SRAM4 hinzu (CubeMX-Name: <code>RAM_D3</code>; entscheidend ist die Adresse <code>0x38000000</code>):</li>
 </ul>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb9-1"><a aria-label="1"></a>RAM_D3 (xrw) : ORIGIN = 0x38000000, LENGTH = 64K</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>

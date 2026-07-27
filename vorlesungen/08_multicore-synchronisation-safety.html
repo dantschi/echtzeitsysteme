@@ -471,7 +471,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Atomarität auf Silizium-Ebene</h2>
 <ul>
 <li>Was passiert, wenn M7 und M4 exakt in derselben Nanosekunde den HSEM-Sperrbefehl senden?</li>
-<li>Die AXI-Arbiter-Magie:
+<li>Die Bus-Matrix-Arbiter-Magie:
 <ul>
 <li>Die Bus-Matrix hat einen Hardware-Arbiter (Schiedsrichter).</li>
 <li>Dieser Arbiter erzwingt physikalisch, dass ein Zugriffs-Request immer um mindestens einen Taktzyklus verzögert wird.</li>
@@ -481,7 +481,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Auf Hardware-Ebene gibt es keine Gleichzeitigkeit!</li>
 </ul>
 <aside class="notes">
-<p>Was aber, wenn wirklich beide Kerne auf die Nanosekunde genau den Sperr-Befehl für Schloss Null abschicken? Hier greift die Magie des AXI-Bus-Arbiters. Ein Schiedsrichter in Silizium. Auf digitaler Gatter-Ebene ist physikalische Gleichzeitigkeit ausgeschlossen. Der Arbiter wird eines der beiden Signale hardwareseitig verwerfen oder um einen winzigen Taktzyklus verzögern. Das Signal, das gewinnt, führt eine atomare Read-Lock-Operation im HSEM-Modul aus. Wenn das Signal des zweiten Kerns den Bruchteil einer Nanosekunde später ankommt, ist der Schalter im Flip-Flop des Registers bereits umgelegt, und der zweite Kern bekommt eine Abweisung zurück. Wir haben absolute Sicherheit.</p>
+<p>Was aber, wenn wirklich beide Kerne auf die Nanosekunde genau den Sperr-Befehl für Schloss Null abschicken? Hier greift die Magie des Bus-Matrix-Arbiters (HSEM hängt an AHB4). Ein Schiedsrichter in Silizium. Auf digitaler Gatter-Ebene ist physikalische Gleichzeitigkeit ausgeschlossen. Der Arbiter wird eines der beiden Signale hardwareseitig verwerfen oder um einen winzigen Taktzyklus verzögern. Das Signal, das gewinnt, führt eine atomare Read-Lock-Operation im HSEM-Modul aus. Wenn das Signal des zweiten Kerns den Bruchteil einer Nanosekunde später ankommt, ist der Schalter im Flip-Flop des Registers bereits umgelegt, und der zweite Kern bekommt eine Abweisung zurück. Wir haben absolute Sicherheit.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -588,7 +588,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Wie lösen wir das? Mit HSEM-Interrupts!</li>
 </ul>
 <aside class="notes">
-<p>Das Warten ist das Kernproblem. Wenn wir im Cortex-M7 Bare-Metal Code sind, können wir einfach eine schnelle While-Schleife um das FastTake bauen. Da der M7 kein OS hat, verliert er keine Task-Prioritäten, er verbrennt nur ein paar Taktzyklen Strom. Auf dem Cortex-M4 haben wir aber FreeRTOS laufen! Eine While-Schleife blockiert hier den Kernel und führt zur Prioritätsinversion, die wir letzte Woche stundenlang diskutiert haben. Wir müssen unsere RTOS-Task zwingend in den “Blocked”-Zustand schlafen schicken, während wir auf den M7 warten. Aber FastTake hat keinen Timeout-Parameter, es schläft nicht!</p>
+<p>Das Warten ist das Kernproblem. Wenn wir im Cortex-M7 Bare-Metal Code sind, können wir einfach eine schnelle While-Schleife um das FastTake bauen. Da der M7 kein OS hat, verliert er keine Task-Prioritäten, er verbrennt nur ein paar Taktzyklen Strom. Auf dem Cortex-M4 haben wir aber FreeRTOS laufen! Eine While-Schleife blockiert hier den Kernel: die Task bleibt <em>Running</em> und verbraucht CPU — Busy-Wait / potenzielle Starvation niederpriorer Tasks, nicht die klassische Priority Inversion (die braucht einen Mutex). Wir müssen unsere RTOS-Task zwingend in den “Blocked”-Zustand schlafen schicken, während wir auf den M7 warten. Aber FastTake hat keinen Timeout-Parameter, es schläft nicht!</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -659,12 +659,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Die ST-Ingenieure haben diesen Fall bedacht.</li>
 <li>Wenn der M4 feststellt (z. B. durch einen Heartbeat-Timeout), dass der M7 abgestürzt ist, kann er die Regeln brechen!</li>
-<li>Die Funktion: <code>HAL_HSEM_ClearAll(CORE_ID_M7)</code></li>
+<li>Die Funktion: <code>HAL_HSEM_ReleaseAll(Key, CORE_ID_M7)</code></li>
 <li>Der M4 sendet ein Notsignal an das HSEM-Modul: „Brich alle Schlösser auf, die dem M7 gehörten!“</li>
 <li>Der M4 kann das System danach selbstständig neustarten oder in einen sicheren Zustand überführen.</li>
 </ul>
 <aside class="notes">
-<p>Zum Glück haben die Hardware-Designer von STMicroelectronics mitgedacht. Die HSEM-Hardware verfügt über einen Brecheisen-Befehl. Wenn der Cortex-M4 feststellt, dass der M7 nicht mehr reagiert – weil beispielsweise ein Heartbeat-Timer abgelaufen ist – kann der M4 das Besitzrecht überstimmen. Er ruft HAL_HSEM_ClearAll auf und übergibt die Core-ID des Cortex-M7. Das weist die HSEM-Hardware an: “Schließe sofort alle 32 Schlösser auf, auf denen der Name des M7 steht!”. Damit bekommt der M4 wieder Zugriff auf alle Daten, kann die Motorsteuerung sicher herunterfahren und das Gesamtsystem geordnet neu starten.</p>
+<p>Zum Glück haben die Hardware-Designer von STMicroelectronics mitgedacht. Die HSEM-Hardware verfügt über einen Brecheisen-Befehl. Wenn der Cortex-M4 feststellt, dass der M7 nicht mehr reagiert – weil beispielsweise ein Heartbeat-Timer abgelaufen ist – kann der M4 das Besitzrecht überstimmen. Er ruft HAL_HSEM_ReleaseAll auf und übergibt einen Clear-Key sowie die Core-ID des Cortex-M7. Das weist die HSEM-Hardware an: „Schließe sofort alle 32 Schlösser auf, auf denen der Name des M7 steht!“. Damit bekommt der M4 wieder Zugriff auf alle Daten, kann die Motorsteuerung sicher herunterfahren und das Gesamtsystem geordnet neu starten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -681,7 +681,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Zusammenfassung Hardware-Semaphoren</h2>
 <ul>
 <li>Normale Mutexe (Software) funktionieren nicht über OS/Core-Grenzen hinweg.</li>
-<li>Das HSEM-Modul löst Race Conditions auf der Ebene der AXI-Bus-Matrix.</li>
+<li>Das HSEM-Modul löst Race Conditions auf der Ebene der Bus-Matrix (HSEM an AHB4).</li>
 <li>Locks vergeben die Core ID für exklusives Besitzrecht.</li>
 <li>Wir nutzen Interrupts statt Polling, um FreeRTOS-Tasks bei belegten Schlössern schlafen zu legen.</li>
 <li>Im Notfall können Schlösser eines abgestürzten Kerns aufgebrochen werden.</li>
@@ -1052,8 +1052,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ol type="1">
 <li><strong>Early Phase (Zu früh):</strong> Der Zähler ist frisch gestartet. Wenn Sie <em>jetzt</em> füttern, geht die Hardware von einer außer Kontrolle geratenen Software aus <span class="math inline">\(\rightarrow\)</span> <strong>RESET!</strong></li>
 <li><strong>Allowed Window (Erlaubt):</strong> Der Zähler hat einen definierten Schwellenwert unterschritten. Nur hier ist das Füttern (<code>Refresh</code>) legal!</li>
-<li><strong>Late Phase (Zu spät):</strong> Der Zähler fällt auf <span class="math inline">\(0\)</span>. Die Deadline wurde verpasst <span class="math inline">\(\rightarrow\)</span> <strong>RESET!</strong></li>
+<li><strong>Late Phase (Zu spät):</strong> Der Zähler unterschreitet <code>0x40</code> (Übergang nach <code>0x3F</code>). Die Deadline wurde verpasst <span class="math inline">\(\rightarrow\)</span> <strong>RESET!</strong></li>
 </ol></li>
+<li>Hinweis: Der EWI feuert bei <code>0x40</code>; der Reset folgt typisch beim nächsten Tick darunter.</li>
 </ul>
 <aside class="notes">
 <p>Wie funktioniert dieses Fenster-Konzept? Beim IWDG waren wir froh, wenn die Software überhaupt noch am Leben war und irgendwann vor Ablauf der Null gefüttert hat. Der Window Watchdog verlangt Präzision. Er unterteilt seinen Countdown in drei Phasen. Wenn der Countdown startet, befinden wir uns in der „Early Phase“. Die Logik dahinter: Wenn Ihr Code für die Ausführung der Berechnungen normalerweise 15 Millisekunden braucht, Sie den Watchdog aber schon nach 2 Millisekunden füttern, muss ein Programmfehler vorliegen – vielleicht hat ein kaputter Pointer die Berechnungen übersprungen! Die Hardware bestraft dieses zu frühe Füttern mit einem sofortigen Reset. Sie dürfen den Befehl nur in einem exakt definierten „Allowed Window“ aufrufen.</p>
@@ -1074,9 +1075,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Zeitlicher Verlauf des WWDG-Countdowns (abwärts zählend):</li>
 </ul>
-<p><img data-src="../_livefigures/inline-wavedrom-8cad8cae.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-wavedrom-06cf27e2.svg" class="livefigure"></p>
 <ul>
-<li>Hinweis: Ein Refresh im „Erlaubten Fenster“ setzt den Zähler wieder auf „Start“ und das Spiel beginnt von vorn.</li>
+<li><strong>Early:</strong> Refresh zu früh <span class="math inline">\(\rightarrow\)</span> sofortiger Reset.</li>
+<li><strong>Window:</strong> Nur hier ist Refresh erlaubt (Allowed Window).</li>
+<li><strong>Late:</strong> Zähler unter <code>0x40</code> <span class="math inline">\(\rightarrow\)</span> Reset.</li>
 </ul>
 <aside class="notes">
 <p>Hier sehen Sie das Prinzip im WaveDrom-Diagramm. Der Zähler startet ganz links. Wenn Ihr C-Code in dieser Early Phase den Refresh-Trigger auslöst (das Signal in der Mitte geht auf 1), zieht die WWDG-Hardware sofort gnadenlos die Reset-Leitung (unterstes Signal). Das System stirbt. Wenn Sie sich brav an die Spielregeln halten und warten, bis die Hardware das „Window“ öffnet, und dann den Refresh senden, springt der Zähler einfach wieder an den Start zurück. Verpassen Sie das Fenster und der Zähler erreicht die Null, wird ebenfalls der Reset ausgelöst.</p>
@@ -1147,13 +1150,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-sicherheitsnetz-ewi" class="slide level2" data-background-color="#FFFFFF">
 <h2>Das Sicherheitsnetz: EWI</h2>
 <ul>
-<li>Wenn der Watchdog auf <span class="math inline">\(0\)</span> fällt, zieht er hart die Reset-Leitung. Alles ist sofort tot.</li>
+<li>Wenn der Watchdog unter <code>0x40</code> fällt, zieht er hart die Reset-Leitung. Alles ist sofort tot.</li>
 <li>Was ist, wenn wir vorher noch Motoren sicher abschalten oder ein Crash-Log in den Flash schreiben müssen?</li>
 <li>Die Lösung: Der Early Wakeup Interrupt (EWI).</li>
-<li>Der WWDG kann so konfiguriert werden, dass er kurz vor der Null (z. B. bei Zählerstand <code>0x40</code>) einen Hardware-Interrupt mit höchster Priorität (NMI) auslöst!</li>
+<li>Der WWDG kann so konfiguriert werden, dass er kurz vor dem Reset (bei Zählerstand <code>0x40</code>) den Early Wakeup Interrupt auslöst (<code>WWDG_IRQn</code>, maskierbar im NVIC).</li>
+<li>Typisch konfigurieren wir ihn mit höchster NVIC-Priorität (Prio&nbsp;0) — das ist <strong>kein</strong> ARM-NMI.</li>
 </ul>
 <aside class="notes">
-<p>Ein harter Hardware-Reset ist brutal. Wenn die Pins des Controllers stromlos geschaltet werden, während ein großer Roboterarm gerade mit Vollgas dreht, haben Sie ein mechanisches Problem. Wir brauchen eine Vorwarnung. Der STM32 bietet beim Window Watchdog genau das an: den EWI, den Early Wakeup Interrupt. Sie können die Hardware so konfigurieren, dass sie kurz vor dem Erreichen der tödlichen Null – beim STM32 ist das exakt der Zählerstand 0x40 – einen Interrupt abfeuert. Und zwar keinen normalen Interrupt, sondern einen Non-Maskable Interrupt (NMI). Er ist die höchste Instanz im System und kann von Software nicht deaktiviert werden.</p>
+<p>Ein harter Hardware-Reset ist brutal. Wenn die Pins des Controllers stromlos geschaltet werden, während ein großer Roboterarm gerade mit Vollgas dreht, haben Sie ein mechanisches Problem. Wir brauchen eine Vorwarnung. Der STM32 bietet beim Window Watchdog genau das an: den EWI, den Early Wakeup Interrupt. Bei Zählerstand 0x40 feuert die Hardware den Interrupt <code>WWDG_IRQn</code> — einen normalen, maskierbaren Core-IRQ im NVIC. In der Praxis geben wir ihm oft Priorität&nbsp;0 (höchste konfigurierbare Priorität), damit Applikations-ISRs ihn nicht verdrängen. Das ist fachlich etwas anderes als der ARM Non-Maskable Interrupt (NMI).</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1174,7 +1178,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>PWM-Signale für Motoren sofort auf <span class="math inline">\(0\)</span> (Safe State) ziehen.</li>
 <li>Wichtige Variablen (Fehlercodes) in den Backup-SRAM retten.</li>
-<li>Die rote Fehler-LED einschalten.</li>
+<li>Die rote Fehler-LED einschalten (Nucleo-H755ZI-Q: LD3 an <strong>PB14</strong>).</li>
 </ul></li>
 <li><strong>Wichtig:</strong> Wir dürfen den Watchdog im EWI nicht mehr füttern! (Der Reset ist unausweichlich).</li>
 </ul>
@@ -1486,19 +1490,20 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ersetzen Sie die Logik durch eine schnelle Endlosschleife, die auf den Payload zugreift:</li>
 </ul>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">// Sowohl M7 als auch M4 führen dies asynchron aus!</span></span>
-<span id="cb6-2"><a aria-label="2"></a><span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb6-3"><a aria-label="3"></a>    <span class="co">// 1. Hardware Schloss (ID 0) anfordern (Blockierend im RTOS!)</span></span>
-<span id="cb6-4"><a aria-label="4"></a>    <span class="cf">while</span> <span class="op">(</span>HAL_HSEM_FastTake<span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="op">!=</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb6-5"><a aria-label="5"></a>        osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">// Wichtig auf dem M4! (Auf dem M7 reicht Polling)</span></span>
-<span id="cb6-6"><a aria-label="6"></a>    <span class="op">}</span></span>
-<span id="cb6-7"><a aria-label="7"></a></span>
-<span id="cb6-8"><a aria-label="8"></a>    <span class="co">// 2. --- CRITICAL SECTION ---</span></span>
-<span id="cb6-9"><a aria-label="9"></a>    shared_data<span class="op">.</span>payload<span class="op">++;</span></span>
-<span id="cb6-10"><a aria-label="10"></a>    <span class="co">// ---------------------------</span></span>
-<span id="cb6-11"><a aria-label="11"></a></span>
-<span id="cb6-12"><a aria-label="12"></a>    <span class="co">// 3. Hardware Schloss freigeben (Process ID 0)</span></span>
-<span id="cb6-13"><a aria-label="13"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
-<span id="cb6-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-2"><a aria-label="2"></a><span class="co">// Labor-Kompromiss: Polling + osDelay(1) statt HSEM-IRQ-Pfad (Theorie)</span></span>
+<span id="cb6-3"><a aria-label="3"></a><span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-4"><a aria-label="4"></a>    <span class="co">// 1. Hardware-Schloss (ID 0) anfordern</span></span>
+<span id="cb6-5"><a aria-label="5"></a>    <span class="cf">while</span> <span class="op">(</span>HAL_HSEM_FastTake<span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="op">!=</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-6"><a aria-label="6"></a>        osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">// Nur auf dem M4 (M7: leeres Polling)</span></span>
+<span id="cb6-7"><a aria-label="7"></a>    <span class="op">}</span></span>
+<span id="cb6-8"><a aria-label="8"></a></span>
+<span id="cb6-9"><a aria-label="9"></a>    <span class="co">// 2. --- CRITICAL SECTION ---</span></span>
+<span id="cb6-10"><a aria-label="10"></a>    sd<span class="op">.</span>payload_value<span class="op">++;</span></span>
+<span id="cb6-11"><a aria-label="11"></a>    <span class="co">// ---------------------------</span></span>
+<span id="cb6-12"><a aria-label="12"></a></span>
+<span id="cb6-13"><a aria-label="13"></a>    <span class="co">// 3. Hardware-Schloss freigeben (Process ID 0)</span></span>
+<span id="cb6-14"><a aria-label="14"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb6-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
 <p>Im C-Code sieht das dann so aus. Beide Kerne rufen diese Schleife auf. Zuerst fordern wir das Schloss Nummer 0 per FastTake an. Da FastTake sofort zurückkehrt, packen wir es auf dem Cortex-M4 in eine While-Schleife mit einem osDelay(1). So gibt die FreeRTOS-Task die CPU brav ab, solange der M7 das Schloss hat. Sobald wir das „HAL_OK“ bekommen, sind wir sicher. Wir addieren unseren Zähler im SRAM4 und geben das Schloss mit HAL_HSEM_Release wieder frei.</p>
 <style type="text/css">
@@ -1559,7 +1564,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li><strong>Crash-Test 1:</strong> Ändern Sie das Delay auf <code>osDelay(50)</code>.
 <ul>
-<li><span class="math inline">\(\rightarrow\)</span> Zähler fällt auf <span class="math inline">\(0\)</span> (Late). Das Board stirbt und blinkt kurz neu.</li>
+<li><span class="math inline">\(\rightarrow\)</span> Zähler unter <code>0x40</code> (Late). Das Board stirbt und blinkt kurz neu.</li>
 </ul></li>
 <li><strong>Crash-Test 2:</strong> Ändern Sie das Delay auf <code>osDelay(5)</code>.
 <ul>
@@ -1588,17 +1593,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="dt">void</span> HAL_WWDG_EarlyWakeupCallback<span class="op">(</span>WWDG_HandleTypeDef <span class="op">*</span>hwwdg<span class="op">)</span></span>
 <span id="cb8-2"><a aria-label="2"></a><span class="op">{</span></span>
 <span id="cb8-3"><a aria-label="3"></a>    <span class="co">// Die letzten Mikrosekunden vor dem Reset!</span></span>
-<span id="cb8-4"><a aria-label="4"></a>    HAL_GPIO_WritePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">,</span> GPIO_PIN_SET<span class="op">);</span> <span class="co">// Rote LED AN</span></span>
+<span id="cb8-4"><a aria-label="4"></a>    HAL_GPIO_WritePin<span class="op">(</span>GPIOB<span class="op">,</span> GPIO_PIN_14<span class="op">,</span> GPIO_PIN_SET<span class="op">);</span> <span class="co">// LD3 rot (Nucleo)</span></span>
 <span id="cb8-5"><a aria-label="5"></a></span>
 <span id="cb8-6"><a aria-label="6"></a>    <span class="co">// HIER NIEMALS REFRESH AUFRUFEN!</span></span>
 <span id="cb8-7"><a aria-label="7"></a>    <span class="co">// System bootet gleich hart neu.</span></span>
 <span id="cb8-8"><a aria-label="8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Wenn Sie den Crash-Test (z. B. Late-Refresh) nun ausführen, blitzt die rote LED auf dem Board extrem kurz auf, bevor der Reset zuschlägt.</li>
+<li>Wenn Sie den Crash-Test (z. B. Late-Refresh) nun ausführen, blitzt die rote LD3 (PB14) auf dem Board extrem kurz auf, bevor der Reset zuschlägt.</li>
 <li>Sie haben den EWI live gesehen!</li>
 </ul>
 <aside class="notes">
-<p>Als Krönung implementieren wir die letzte Notfallmaßnahme. Überschreiben Sie in der main.c den Callback für das Early Wakeup. Schalten Sie dort zur Verifikation eine rote LED ein oder ziehen Sie einen Pin auf HIGH, den Sie mit dem Oszilloskop messen können. Wenn Sie nun den Fehlerfall im Code provozieren, werden Sie sehen, wie die Hardware unbarmherzig eingreift, Ihre Callback-Routine für wenige Taktzyklen aufruft und das gesamte Chip-Design neu bootet.</p>
+<p>Als Krönung implementieren wir die letzte Notfallmaßnahme. Überschreiben Sie in der main.c den Callback für das Early Wakeup. Schalten Sie dort zur Verifikation die rote LD3 (PB14) ein — PE1 ist auf dem Nucleo-H755ZI-Q die gelbe LD2 — oder ziehen Sie einen Pin auf HIGH, den Sie mit dem Oszilloskop messen können. Wenn Sie nun den Fehlerfall im Code provozieren, werden Sie sehen, wie die Hardware unbarmherzig eingreift, Ihre Callback-Routine für wenige Taktzyklen aufruft und das gesamte Chip-Design neu bootet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;

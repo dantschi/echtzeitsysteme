@@ -195,9 +195,6 @@
       margin-right: 0; 
     }
   </style>
-  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
-  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
-  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
@@ -341,7 +338,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Wir greifen auf bewährte, zertifizierbare Software zurück</li>
 </ul>
 <aside class="notes">
-<p>Bastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere IPC, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.</p>
+<p>Bastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere Inter-Task Communication, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -357,14 +354,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-leistet-ein-rtos" class="slide level2">
 <h2>Was leistet ein RTOS?</h2>
 <ul>
-<li>Multitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. RMS)</li>
-<li>Inter-Process Communication (IPC): Queues und Mailboxes</li>
+<li>Multitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. Fixed Priority / RMS)</li>
+<li>Inter-Task Communication: Queues und Mailboxes</li>
 <li>Synchronisation: Mutexes und Semaphore für Interrupt-Sicherheit</li>
 <li>Memory Management: RAM-Stacks für jede Task</li>
-<li>Hardware Abstraction Layer (HAL): ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber</li>
+<li>Port-Layer: ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber (nicht mit dem STM32-HAL verwechseln)</li>
 </ul>
 <aside class="notes">
-<p>Fünf Kernaufgaben: Scheduling, IPC, Synchronisation, Speichermanagement, Abstraktion. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.</p>
+<p>Fünf Kernaufgaben: Scheduling, Inter-Task Communication, Synchronisation, Speichermanagement, Port-Layer. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -497,13 +494,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li>Hardware-Event triggert eine Reaktion</li>
 </ul>
-<p><img data-src="../_livefigures/inline-wavedrom-ef0b8e65.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-wavedrom-d81c0dc5.svg" class="livefigure"></p>
 <ul>
-<li>Bare-Metal: oft schneller, aber unregelmäßig (hoher Jitter)</li>
+<li>Bare-Metal (Super-Loop ohne IRQ): oft schneller, aber unregelmäßig (hoher Jitter)</li>
 <li>RTOS: etwas später (OS-Overhead), bei hoher Priorität nahezu konstant (Jitter <span class="math inline">\(\approx 0\)</span>)</li>
 </ul>
 <aside class="notes">
-<p>Oben: externes Ereignis zweimal. Bare-Metal ohne Interrupts: schnell wenn die Superloop gerade pollt, sonst ewig — gewaltiger Jitter. RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.</p>
+<p>Oben: externes Ereignis zweimal. Bare-Metal als Super-Loop ohne IRQ: schnell wenn die Schleife gerade pollt, sonst ewig — gewaltiger Jitter. (Mit ISR wäre das Bild anders.) RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -746,30 +743,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Das Verständnis dieses Modells entscheidet, ob Ihr System echtzeitfähig ist</li>
 <li>Eine Task befindet sich immer in exakt einem von vier Zuständen</li>
 </ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">stateDiagram-v2
-    [*] --&gt; Ready : Create
-
-    Ready --&gt; Running : Dispatch (Scheduler)
-    Running --&gt; Ready : Preempt (Zeit / höhere Prio)
-
-    Running --&gt; Blocked : Delay / Queue / Mutex
-    Blocked --&gt; Ready : Zeit abgelaufen / Event
-
-    Ready --&gt; Suspended : vTaskSuspend()
-    Blocked --&gt; Suspended : vTaskSuspend()
-    Running --&gt; Suspended : vTaskSuspend()
-    Suspended --&gt; Ready : vTaskResume()
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
+<p><img data-src="../_livefigures/inline-plantuml-ee8c3992.svg" class="livefigure"></p>
 <aside class="notes">
 <p>Herzstück: State-Diagramm. Blocked ist kriegsentscheidend. Nie Blocked → Running direkt — immer erst Ready. Suspended: künstliches Koma bis <code>vTaskResume()</code>.</p>
 <style type="text/css">
@@ -850,10 +824,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul></li>
 <li>Clou: Blocked-Task wird vom Scheduler beim Suchen komplett ignoriert</li>
 <li>Verbrauch: <span class="math inline">\(0{,}00\%\)</span> CPU-Rechenzeit</li>
-<li>Deshalb niemals <code>HAL_Delay()</code> in einem RTOS (verbrennt CPU in Zählschleife)</li>
+<li>Deshalb niemals <code>HAL_Delay()</code> in einem RTOS (Busy-Wait auf <code>uwTick</code>: Task bleibt <em>Running</em>)</li>
 </ul>
 <aside class="notes">
-<p>Warten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. <code>HAL_Delay</code> lässt die CPU kreisen und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.</p>
+<p>Warten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. <code>HAL_Delay</code> busy-waitet auf <code>uwTick</code> und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -868,14 +842,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-task-zustände-im-zeitverlauf" class="slide level2">
 <h2>Visualisierung: Task-Zustände im Zeitverlauf</h2>
-<p><img data-src="../_livefigures/inline-plantuml-5e5d9dae.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-067150c4.svg" class="livefigure"></p>
 <ul>
 <li>Task A schickt sich selbst in den Blocked-Zustand</li>
 <li>Task B darf endlich rechnen</li>
-<li>Nach <span class="math inline">\(2\,\mathrm{ms}\)</span> weckt der OS-Timer Task A auf — sie verdrängt B sofort (Präemption)</li>
+<li>Timeout: A wird Ready (nie direkt Running), dann Dispatch — A verdrängt B</li>
 </ul>
 <aside class="notes">
-<p>t=0: A rechnet, B wartet. t=1: A ruft <code>vTaskDelay</code> — B bekommt die CPU. t=3: Schlafzeit vorbei, A zurück in Ready mit höherer Prio — Präemption von B.</p>
+<p>t=0: A rechnet, B wartet. t=1: A ruft <code>osDelay</code> — B bekommt die CPU. t=3: Schlafzeit vorbei, A wird Ready (nie direkt Running). t=4: Dispatch — A Running, B Ready (Präemption).</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -895,7 +869,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Steuerung über <code>FreeRTOSConfig.h</code></li>
 <li>Präemption aktivieren:
 <ul>
-<li><code>configUSE_PREEMPTION = 1</code>: Scheduler darf Tasks unterbrechen (RMS-Stil)</li>
+<li><code>configUSE_PREEMPTION = 1</code>: Scheduler darf Tasks unterbrechen (präemptiv / Fixed Priority)</li>
 <li><code>configUSE_PREEMPTION = 0</code>: kooperatives Scheduling (wie unser Eigenbau)</li>
 </ul></li>
 <li>Für unsere Vorlesung: diesen Wert immer auf <span class="math inline">\(1\)</span> setzen</li>
@@ -1070,7 +1044,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Neue Register laden (Pop)</li>
 </ul></li>
 <li>Summe: ca. <span class="math inline">\(150\)</span>–<span class="math inline">\(300\)</span> Taktzyklen (je nach Optimierung)</li>
-<li>Bei <span class="math inline">\(100\,\mathrm{MHz}\)</span> CPU-Takt: nur <span class="math inline">\(\approx 2\)</span>–<span class="math inline">\(3\,\mathrm{\mu s}\)</span></li>
+<li>Bei <span class="math inline">\(100\,\mathrm{MHz}\)</span> CPU-Takt: nur <span class="math inline">\(\approx 2\)</span>–<span class="math inline">\(3\,\text{µs}\)</span></li>
 </ul>
 <aside class="notes">
 <p>PendSV sichert Register, FreeRTOS-Assembler pusht den Rest, Listen werden umgehängt, neue Register geladen. Auf Cortex-M4 grob 150–300 Takte; bei <span class="math inline">\(\geq 100\,\mathrm{MHz}\)</span> am STM32H755 also 2–3 Mikrosekunden. Der Latenz-Overhead ist real, für die meisten Anwendungen vernachlässigbar.</p>
@@ -1132,7 +1106,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <tbody>
 <tr class="odd">
 <td>CPU-Zustand</td>
-<td>Leere <code>while</code>-Schleife</td>
+<td>Busy-Wait auf <code>uwTick</code></td>
 <td>Wechsel zu anderer Task / Idle</td>
 </tr>
 <tr class="even">
@@ -1153,7 +1127,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tbody>
 </table>
 <aside class="notes">
-<p><code>HAL_Delay</code> ist Bare-Metal: wartet auf SysTick, hält die CPU aber in einer leeren Schleife. Das OS denkt, die Task rechnet. <code>vTaskDelay</code> sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals <code>HAL_Delay</code> in FreeRTOS-Tasks.</p>
+<p><code>HAL_Delay</code> ist Bare-Metal: Busy-Wait auf <code>uwTick</code> — die Task bleibt Running, die CPU kreist. Das OS denkt, die Task rechnet. <code>vTaskDelay</code> / <code>osDelay</code> sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals <code>HAL_Delay</code> in FreeRTOS-Tasks.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1319,7 +1293,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tbody>
 </table>
 <aside class="notes">
-<p>CubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Vorlesung und Labor: strikt CMSIS. Statt <code>vTaskDelay</code> schreiben wir <code>osDelay</code> — kürzer, portabler, gleiche Wirkung.</p>
+<p>CubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Ab hier und im Labor: CMSIS (<code>osDelay</code>, <code>osThreadNew</code>). Native FreeRTOS-API (<code>vTaskDelay</code> + <code>pdMS_TO_TICKS</code>) nur als kurzer Vergleich — nicht mit Roh-Tick-<code>osDelay</code> vermischen ohne klare Tick-Rate.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1428,7 +1402,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="schritt-1-stm32cubeide-setup" class="slide level2">
 <h2>Schritt 1: STM32CubeIDE-Setup</h2>
 <ul>
-<li>Ziel: FreeRTOS auf dem Cortex-M4, präemptives RMS live beweisen</li>
+<li>Ziel: FreeRTOS auf dem Cortex-M4, präemptives Prioritäts-Scheduling live beweisen (Prioritäten nach Kritikalität — das ist <em>nicht</em> Rate Monotonic, dafür bräuchten wir Perioden <span class="math inline">\(\rightarrow\)</span> Prioritäten)</li>
 <li>Neues Projekt STM32H755 (Cortex-M4 aktivieren)</li>
 <li>Middleware: FREERTOS, Interface CMSIS_V2</li>
 <li><code>TOTAL_HEAP_SIZE</code> mindestens <span class="math inline">\(16384\)</span> Bytes (<span class="math inline">\(16\,\mathrm{KB}\)</span>)</li>
@@ -1480,7 +1454,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="schritt-3-task-design-für-das-labor" class="slide level2">
 <h2>Schritt 3: Task-Design für das Labor</h2>
 <ul>
-<li>Drei Tasks, um RMS-Scheduling zu beweisen:
+<li>Drei Tasks, um Fixed-Priority-Präemption zu beweisen:
 <ul>
 <li>Heartbeat (<code>osPriorityNormal</code>): LED alle <span class="math inline">\(500\,\mathrm{ms}\)</span> via <code>osDelay</code></li>
 <li>HeavyMath (<code>osPriorityBelowNormal</code>): Endlosschleife ohne Delay, <span class="math inline">\(100\%\)</span> CPU</li>
@@ -1519,7 +1493,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb8-10"><a aria-label="10"></a>  <span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> StartHeartbeat */</span></span>
 <span id="cb8-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>In <code>main.c</code> ganz unten: generierte Task-Skelette. Heartbeat: Toggle + <code>osDelay(500)</code>. Bei <code>configTICK_RATE_HZ = 1000</code> sind das <span class="math inline">\(500\,\mathrm{ms}\)</span>. CMSIS arbeitet in Ticks; die goldene Regel <code>pdMS_TO_TICKS</code> gilt für die native FreeRTOS-API. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.</p>
+<p>In <code>main.c</code> ganz unten: generierte Task-Skelette. Heartbeat: Toggle + <code>osDelay(500)</code>. Bei <code>configTICK_RATE_HZ = 1000</code> sind das <span class="math inline">\(500\,\mathrm{ms}\)</span> — CMSIS-<code>osDelay</code> nimmt Ticks, nicht Millisekunden (anders als <code>pdMS_TO_TICKS(...)</code> in der nativen FreeRTOS-API). Im Labor: CMSIS (<code>osDelay</code>); native API nur zum Vergleich. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1594,10 +1568,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Visuelle Erklärung: Präemption im Labor</h2>
 <p><img data-src="../_livefigures/inline-plantuml-d4ba4abd.svg" class="livefigure"></p>
 <ul>
-<li>CPU dauerhaft bei <span class="math inline">\(100\%\)</span>, Auslastung aber nach Prioritäten (RMS) aufgeteilt</li>
+<li>CPU dauerhaft bei <span class="math inline">\(100\%\)</span>, Auslastung aber nach Prioritäten (Fixed Priority) aufgeteilt</li>
 </ul>
 <aside class="notes">
-<p>t=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. RMS auf Hardware-Ebene.</p>
+<p>t=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. Fixed-Priority-Präemption auf Hardware-Ebene — nicht Rate Monotonic (Prioritäten hier nach Kritikalität, nicht nach Periode).</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1613,7 +1587,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="beobachtung-2-starvation-durch-falsche-prioritäten" class="slide level2">
 <h2>Beobachtung 2: Starvation durch falsche Prioritäten</h2>
 <ul>
-<li>Absichtlicher Fehler zum Verständnis von RMS:
+<li>Absichtlicher Fehler zum Verständnis von Prioritäts-Scheduling:
 <ul>
 <li>HeavyMath-Prio <span class="math inline">\(\rightarrow\)</span> <code>osPriorityHigh</code> (höher als Heartbeat)</li>
 </ul></li>
