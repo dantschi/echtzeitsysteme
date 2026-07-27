@@ -23,9 +23,9 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 | 3 | Einführung Echtzeitbetriebssysteme | FreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32 | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/03_einfuehrung-rtos-handout.pdf) | folgt | folgt |
 | 4 | Synchronisation und Ressourcenverwaltung | Race Conditions, Semaphoren, Mutexe, Deadlocks, Priority Inversion (Pathfinder) | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen-handout.pdf) | folgt | folgt |
 | 5 | Inter-Task-Kommunikation und Interrupts | Queues, Mailboxes, Copy by Value/Reference, ISR-Anbindung | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation-handout.pdf) | folgt | folgt |
-| 6 | Dynamisches Scheduling | Earliest Deadline First (EDF), Optimalität | folgt | folgt | folgt | folgt |
+| 6 | Multicore-Echtzeit | AMP vs. SMP, STM32H755 Dual-Core, Shared Memory, Cache/MPU | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit-handout.pdf) | folgt | folgt |
 | 7 | Schedulability und Response Time | Utilization Bound, Response-Time Analysis | folgt | folgt | folgt | folgt |
-| 8 | FreeRTOS-Praxis (fortgeschritten) | Queues, ISRs, Priority Inversion / PCP | folgt | folgt | folgt | folgt |
+| 8 | Inter-Core und fortgeschrittene Praxis | HSEM, Multicore-Sync, fortgeschrittene FreeRTOS-Muster | folgt | folgt | folgt | folgt |
 | 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt | folgt | folgt |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
