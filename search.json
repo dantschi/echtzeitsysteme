@@ -1,5 +1,748 @@
 [
   {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#willkommen-zurück-zu-echtzeitsystemen",
+    "href": "vorlesungen/02_scheduling-theorie.html#willkommen-zurück-zu-echtzeitsystemen",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Willkommen zurück zu Echtzeitsystemen!",
+    "text": "Willkommen zurück zu Echtzeitsystemen!\n\nHerzlich willkommen zum 2. Termin unserer Vorlesung\nLetzte Woche: Hardware, Cortex-M4, Interrupts und Bare-Metal\nHeute: von der Hardware-Ebene zu Informatik und Mathematik\nFokus: Wie verteile ich CPU-Zeit gerecht und vorhersagbar?\nPraxis am Nachmittag: eigener kleiner Scheduler\n\n\nWillkommen zurück. Letzte Woche: STM32, Polling-Gefahren und Interrupts. Heute: Schedulability-Theorie — wir wollen nicht hoffen, dass Tasks rechtzeitig fertig werden, sondern das mathematisch absichern. Am Nachmittag bauen Sie Ihren ersten Scheduler für den Cortex-M4.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#agenda-für-heute",
+    "href": "vorlesungen/02_scheduling-theorie.html#agenda-für-heute",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Agenda für heute",
+    "text": "Agenda für heute\n\nRecap: Warum Bare-Metal nicht skaliert\nTask-Modelle: Software mathematisch beschreiben\nMetriken: WCET und CPU-Auslastung (\\(U\\))\nScheduling-Verfahren: kooperativ bis präemptiv\nRMS, Utilization Bound, RTA und EDF\nSysTick/PendSV und Labor: Round-Robin\n\n\nKurz zurückblicken, dann formales Task-Modell mit Ausführungszeit und Periode. Danach Auslastung \\(U\\), Strategien des Schedulers, RMS/EDF, Cortex-M-Scheduler-Mechanik und kooperatives Round-Robin im Labor.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#lernziele-des-heutigen-tages",
+    "href": "vorlesungen/02_scheduling-theorie.html#lernziele-des-heutigen-tages",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Lernziele des heutigen Tages",
+    "text": "Lernziele des heutigen Tages\n\nTask-Modell (\\(C_i\\), \\(T_i\\), \\(D_i\\)) aufstellen und skizzieren\nWCET und CPU-Auslastung (\\(U\\)) verstehen und berechnen\nKooperatives und präemptives Scheduling unterscheiden\nRate Monotonic Scheduling (RMS) einordnen und Grenzen kennen\nRound-Robin-Scheduler als Laborziel verstehen\n\n\nAm Ende: Task-Set formalisieren, \\(U\\) berechnen, RMS als Industrieprinzip kennen und Round-Robin im Labor umsetzen können.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#recap-polling-vs.-interrupts",
+    "href": "vorlesungen/02_scheduling-theorie.html#recap-polling-vs.-interrupts",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Recap: Polling vs. Interrupts",
+    "text": "Recap: Polling vs. Interrupts\n\n\n\nPolling (Super-Loop):\n\nEinfach, linear, wenige Race Conditions\nProblem: Latenzen addieren sich; lange Funktionen blockieren alles\n\nInterrupts (Vordergrund/Hintergrund):\n\nHardware erzwingt Kontextwechsel (Präemption)\nProblem: ISRs müssen extrem kurz sein\n\n\n\n/* Das Heavy-Load-Problem */\nwhile (1) {\n    Sensor_Auswerten(); /* z. B. 50 ms */\n    LED_Blinken();      /* stottert */\n}\n\n\nDie while(1)-Schleife reicht für einfache Fälle. Sobald Filter oder schwere Berechnung hinzukommen, wird das System blind. Interrupts retten die Latenz — aber lange ISRs blockieren Timer und andere IRQs.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#recap-die-spaghetti-code-falle",
+    "href": "vorlesungen/02_scheduling-theorie.html#recap-die-spaghetti-code-falle",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Recap: Die Spaghetti-Code-Falle",
+    "text": "Recap: Die Spaghetti-Code-Falle\n\nSystem wächst: Sensoren, Displays, USB, Ethernet, Motorregelung\nNicht alles darf in Interrupts (nur die kürzesten Routinen)\nFolge in Bare-Metal:\n\nISRs setzen unzählige Flags (if (usb_ready_flag) …)\nMain-Loop wird unübersichtlich\nPrioritäten und Deadlines sind kaum noch berechenbar\n\n\n\nGroße Bare-Metal-Projekte landen oft in der Flag-Suppe: ISR setzt usb_daten_da = 1, Main pollt hunderte Flags. Wer darf zuerst rechnen — Motor oder USB? Determinismus und Deadlines gehen verloren.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-paradigmenwechsel-das-betriebssystem",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-paradigmenwechsel-das-betriebssystem",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Paradigmenwechsel: Das Betriebssystem",
+    "text": "Der Paradigmenwechsel: Das Betriebssystem\n\nLösung: Zeitmanagement an ein RTOS delegieren\nStatt einer riesigen while(1): viele kleine, getrennte Endlosschleifen\nJede Schleife heißt Task (oder Thread)\nDer Scheduler entscheidet, wann welche Task laufen darf\n\n\nArchitekturwechsel: Display und Motor werden eigene Endlosschleifen — Tasks. Zwischen ihnen sitzt der Scheduler und orchestriert die CPU-Zeit.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#was-ist-scheduling",
+    "href": "vorlesungen/02_scheduling-theorie.html#was-ist-scheduling",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Was ist Scheduling?",
+    "text": "Was ist Scheduling?\n\nScheduling (Ablaufplanung): zeitliche Anordnung von Aufgaben\nRessource: CPU-Rechenzeit\nKriterien:\n\nFairness: jede Task bekommt irgendwann Zeit (Starvation vermeiden)\nEchtzeit (Spezialfall): Fairness oft egal — Deadlines haben Vorrang\n\n\n\nWindows/Linux optimieren oft auf Fairness. Harte Echtzeit: die sicherheitskritische Motor-Task hält ihre Deadline, auch wenn das Display einfriert.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#vom-c-code-zum-modell",
+    "href": "vorlesungen/02_scheduling-theorie.html#vom-c-code-zum-modell",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Vom C-Code zum Modell",
+    "text": "Vom C-Code zum Modell\n\nMathematische Garantien brauchen Abstraktion\nDer Scheduler sieht nicht „Motor“ oder „LED“, sondern Parameter\nTypisch: Ausführungszeit, Periode, Deadline\nFormalisierung: das Task-Modell\n\n\nDem Scheduler ist die Semantik des C-Codes egal. Er braucht Zahlen: Wie lange maximal? Wie oft? Welche Frist? Daraus entsteht der Fahrplan.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#definition-was-ist-eine-task",
+    "href": "vorlesungen/02_scheduling-theorie.html#definition-was-ist-eine-task",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Definition: Was ist eine Task?",
+    "text": "Definition: Was ist eine Task?\n\nEine Task \\(\\tau_i\\) ist die kleinste Ausführungseinheit in einem RTOS\nJede Task besitzt:\n\neigenen Kontext (Register, Stack)\nmeist eine endlose while(1)-Schleife\n\nIllusion: jede Task „glaubt“, die CPU allein zu haben\nJob: eine konkrete Ausführung (ein Schleifendurchlauf)\n\n\nTask = Struktur/Programm; Job = ein konkreter Durchlauf. Schnelle Kontextwechsel erzeugen die Illusion exklusiver CPU-Nutzung.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-c_i-ausführungszeit",
+    "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-c_i-ausführungszeit",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Parameter einer Task: \\(C_i\\) (Ausführungszeit)",
+    "text": "Parameter einer Task: \\(C_i\\) (Ausführungszeit)\n\n\\(C_i\\) (Computation Time / Capacity): Rechenzeit ohne Unterbrechung\nIn harten Echtzeitsystemen: \\(C_i\\) = WCET (Worst-Case Execution Time)\nOhne bekannte WCET keine mathematische Garantie\n\n\nDurchschnitte reichen nicht. Wenn die Task im Schnitt 2 ms braucht, im Worst Case 5 ms, plant der Scheduler mit 5 ms — sonst ist jeder Beweis hinfällig.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-t_i-periode",
+    "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-t_i-periode",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Parameter einer Task: \\(T_i\\) (Periode)",
+    "text": "Parameter einer Task: \\(T_i\\) (Periode)\n\n\\(T_i\\) (Period): Abstand zwischen zwei Releases der Task\nBeispiel: Temperatursensor 10-mal/s \\(\\rightarrow T_i = 100\\,\\mathrm{ms}\\)\nIn der Theorie oft strikt periodische Tasks\n\n\nViele Steuergeräte sind periodisch: Regler alle 10 ms. \\(T_i\\) ist der Abstand zwischen den Momenten, in denen die Task ready wird.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-d_i-deadline",
+    "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-d_i-deadline",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Parameter einer Task: \\(D_i\\) (Deadline)",
+    "text": "Parameter einer Task: \\(D_i\\) (Deadline)\n\n\\(D_i\\) (Deadline): maximale Zeit nach dem Release bis zum fertigen Ergebnis\n\\(R_i\\) (Response Time): tatsächliche Antwortzeit inkl. Unterbrechungen\nGoldene Regel der Echtzeit — schedulbar nur wenn:\n\n\\[R_i \\le D_i\\]\n\n\\(R_i\\) ist oft größer als \\(C_i\\), weil höherpriore Tasks und Interrupts unterbrechen. Trotzdem muss \\(R_i \\le D_i\\) in jedem Szenario gelten.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#das-grafische-task-modell",
+    "href": "vorlesungen/02_scheduling-theorie.html#das-grafische-task-modell",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Das grafische Task-Modell",
+    "text": "Das grafische Task-Modell\n\nAlle Parameter an einem Job auf dem Zeitstrahl\nRelease, Ausführung \\(C\\), Response Time \\(R\\), Deadline \\(D\\), Periode \\(T\\)\n\n\n\n\nTask-Modell mit \\(C\\), \\(T\\), \\(D\\) und \\(R\\)\n\n\n\nPfeil nach oben: Release. Rotes Feld: \\(C\\) (WCET). Distanz Release bis Ende der Ausführung: \\(R\\). Roter Abwärtspfeil: Deadline. Abstand zum nächsten Release: Periode \\(T\\).",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#deadline-klassifizierung",
+    "href": "vorlesungen/02_scheduling-theorie.html#deadline-klassifizierung",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Deadline-Klassifizierung",
+    "text": "Deadline-Klassifizierung\n\n\nVerhältnis von Deadline zu Periode:\n\nImplicit Deadline: \\(D_i = T_i\\)\nConstrained Deadline: \\(D_i \\le T_i\\)\nArbitrary Deadline: \\(D_i\\) beliebig\n\n\nFür die meisten RMS-Rechnungen: Implicit Deadlines — Standard in Steuergeräten.\n\n\nImplicit: fertig vor dem nächsten eigenen Job. Constrained: Frist kürzer als Periode. Viele Formeln heute setzen Implicit Deadlines voraus.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#task-typen-nach-auslöser",
+    "href": "vorlesungen/02_scheduling-theorie.html#task-typen-nach-auslöser",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Task-Typen nach Auslöser",
+    "text": "Task-Typen nach Auslöser\n\nPeriodisch: feste Periode \\(T_i\\), typisch Timer/Regler\nSporadisch: zufälliger Auslöser, aber garantierte Mindestzeit (Minimum Inter-Arrival Time) — wie periodisch mit \\(T_{\\min}\\)\nAperiodisch: kein Minimum (z. B. Netzwerk-Ping) — harte Garantien unmöglich\n\n\nEin Taster ist sporadisch: physisch begrenzte Rate. Netzwerk-Broadcasts können aperiodisch sein — ohne Minimum keine harte Echtzeitgarantie.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#das-rtos-task-zustandsmodell",
+    "href": "vorlesungen/02_scheduling-theorie.html#das-rtos-task-zustandsmodell",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Das RTOS Task-Zustandsmodell",
+    "text": "Das RTOS Task-Zustandsmodell\n\nRunning: besitzt die CPU (Single-Core: genau eine Task)\nReady: will rechnen, wartet in der Warteschlange\nBlocked / Waiting: wartet auf Ereignis (Delay, Semaphore, UART) — belastet die CPU nicht\n\n\nBlocked ist der Schlüssel: kein aktives Polling. Die Task kostet 0 % CPU, bis ein Interrupt sie wieder ready macht.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-der-zustandsmaschine",
+    "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-der-zustandsmaschine",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Visualisierung der Zustandsmaschine",
+    "text": "Visualisierung der Zustandsmaschine\n\n\nBlocked wird nie direkt Running — immer zuerst Ready-Queue\n\n\nDispatch wählt die höchstpriore Ready-Task. Präemption wirft die laufende Task zurück nach Ready. Events wecken nur in die Ready-Queue; der Scheduler entscheidet über Running.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#metrik-cpu-auslastung-u",
+    "href": "vorlesungen/02_scheduling-theorie.html#metrik-cpu-auslastung-u",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Metrik: CPU-Auslastung (\\(U\\))",
+    "text": "Metrik: CPU-Auslastung (\\(U\\))\n\nUtilization \\(U\\): Indikator, ob ein System überhaupt lösbar ist\nAnteil einer Task: \\(U_i = \\frac{C_i}{T_i}\\)\nBeispiel: \\(C=2\\,\\mathrm{ms}\\), \\(T=10\\,\\mathrm{ms}\\) \\(\\rightarrow U_i = 0{,}2\\) (20 %)\nSystemauslastung:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i}\\]\n\n\\(U\\) ist das Fundament jeder Schedulability-Analyse. Zuerst Teilauslastungen, dann Summe über alle Tasks.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#auslastung-ein-rechenbeispiel",
+    "href": "vorlesungen/02_scheduling-theorie.html#auslastung-ein-rechenbeispiel",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Auslastung: Ein Rechenbeispiel",
+    "text": "Auslastung: Ein Rechenbeispiel\n\nSystem mit drei Tasks:\n\n\\(\\tau_1\\): \\(C_1=1\\), \\(T_1=4\\) \\(\\rightarrow U_1=25\\%\\)\n\\(\\tau_2\\): \\(C_2=2\\), \\(T_2=5\\) \\(\\rightarrow U_2=40\\%\\)\n\\(\\tau_3\\): \\(C_3=2\\), \\(T_3=10\\) \\(\\rightarrow U_3=20\\%\\)\n\nGesamt: \\(U = 85\\%\\)\nErste Regel: \\(U &gt; 1\\) (100 %) → unmöglich schedulbar\nBei 85 %: hängt vom Algorithmus ab!\n\n\nÜber 100 % hilft kein Algorithmus — physikalische Überlast. Unter 100 % ist Schedulability algorithmusabhängig; das ist der Kern der zweiten Vorlesungshälfte.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#exkurs-das-problem-mit-der-wcet",
+    "href": "vorlesungen/02_scheduling-theorie.html#exkurs-das-problem-mit-der-wcet",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Exkurs: Das Problem mit der WCET",
+    "text": "Exkurs: Das Problem mit der WCET\n\nWarum WCET statt ACET (Average)?\n\nif (sensor_value &gt; 1000) {\n    calculate_fft(); /* ~10 ms (Worst Case) */\n} else {\n    flag = 1;        /* ~0.1 ms (Best Case) */\n}\n\nACET vielleicht 1 ms — Auslegung auf 1 ms crasht, wenn der Worst Case eintritt\n\n\nHarte Echtzeit plant immer mit WCET, auch wenn der Fall selten ist. Ein heißer Tag und die FFT reißt sonst alle Deadlines.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#wie-ermittelt-man-die-wcet",
+    "href": "vorlesungen/02_scheduling-theorie.html#wie-ermittelt-man-die-wcet",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Wie ermittelt man die WCET?",
+    "text": "Wie ermittelt man die WCET?\n\n\n\nAnalytisch (statisch)\n\nCode ohne Laufzeit mathematisch analysieren\nAbsolute Obergrenze\nSchwer bei Caches (z. B. Cortex-M7)\n\n\n\n\nEmpirisch (Messung)\n\nStresstests, Oszi, Trace-Tools\nNahe an der Realität\nKeine absolute Garantie — oft mit Puffer\n\n\n\n\nAnalytisch: sichere Schranke, aber schwer bei modernen CPUs. Praxis oft messen, Worst Case nehmen und Sicherheitspuffer aufschlagen.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-task-modell",
+    "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-task-modell",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Zusammenfassung Task-Modell",
+    "text": "Zusammenfassung Task-Modell\n\nTasks: getrennte Endlosschleifen\nOS orchestriert Ready / Running / Blocked\nParameter: \\(C_i\\) (WCET), \\(T_i\\) (Periode), \\(D_i\\) (Deadline)\nCPU-Auslastung \\(U\\) muss \\(\\le 100\\%\\) sein\n\n\nFragen zum Task-Modell? Als Nächstes: nach welchen Regeln der Scheduler die Ready-Queue auflöst.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#die-kernfrage-des-schedulings",
+    "href": "vorlesungen/02_scheduling-theorie.html#die-kernfrage-des-schedulings",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Die Kernfrage des Schedulings",
+    "text": "Die Kernfrage des Schedulings\n\nMehrere Tasks im Zustand Ready\nNur ein Core: wer darf rechnen?\nGenau das entscheidet der Scheduling-Algorithmus\nDie Wahl entscheidet über Echtzeit oder Deadline-Miss\n\n\nTimer-Tick: Motor, Display und Netzwerk sind ready. Der Algorithmus vergibt den einzigen Kern — und damit Erfolg oder Crash.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#scheduler-vs.-dispatcher",
+    "href": "vorlesungen/02_scheduling-theorie.html#scheduler-vs.-dispatcher",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Scheduler vs. Dispatcher",
+    "text": "Scheduler vs. Dispatcher\n\nScheduler (Entscheider):\n\nAlgorithmus: wer hat Vorrang?\naktualisiert Task-Control-Blöcke (TCB)\n\nDispatcher (Ausführer):\n\nContext Switch (Register sichern/laden)\nStack-Pointer der gewählten Task setzen\n\n\n\nScheduler = Gehirn (C-Logik). Dispatcher = Muskel (oft Assembler-nah). Entscheidung und physischer Wechsel sind getrennt.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#klassifizierung-offline-vs.-online",
+    "href": "vorlesungen/02_scheduling-theorie.html#klassifizierung-offline-vs.-online",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Klassifizierung: Offline vs. Online",
+    "text": "Klassifizierung: Offline vs. Online\n\n\nOffline-Scheduling - Fahrplan vor dem Flashen berechnet - Laufzeit: Tabelle abarbeiten (Time-Triggered) - Vorteil: maximal deterministisch - Nachteil: starr\n\nOnline-Scheduling - Entscheidung zur Laufzeit (Event-Triggered) - Flexibel bei unvorhersehbaren Events - Standard: FreeRTOS, Linux - Nachteil: Scheduler kostet CPU-Zeit\n\n\nOffline: Flugzeugsteuerungen, Time-Triggered. Wir fokussieren Online: flexibel, aber Scheduler-Overhead.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#klassifizierung-kooperativ-vs.-präemptiv",
+    "href": "vorlesungen/02_scheduling-theorie.html#klassifizierung-kooperativ-vs.-präemptiv",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Klassifizierung: Kooperativ vs. Präemptiv",
+    "text": "Klassifizierung: Kooperativ vs. Präemptiv\n\nWie bekommt das OS die CPU zurück?\nKooperativ (non-preemptive):\n\nTask gibt CPU freiwillig ab (task_yield() / os_yield())\n\nPräemptiv:\n\nHardware-Timer entreißt der Task die CPU\nTask merkt den Wechsel nicht\n\n\n\nKooperativ braucht Disziplin. Präemptiv: SysTick (z. B. 1 ms) stoppt die Task und gibt dem Scheduler die Kontrolle.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#kooperatives-scheduling-non-preemptive",
+    "href": "vorlesungen/02_scheduling-theorie.html#kooperatives-scheduling-non-preemptive",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Kooperatives Scheduling (Non-preemptive)",
+    "text": "Kooperatives Scheduling (Non-preemptive)\nvoid Task_Motor(void) {\n    while (1) {\n        Calculate_PID(); /* ~2 ms */\n        os_yield();      /* andere dürfen */\n        Apply_PWM();\n    }\n}\n\nVorteil: wenige Race Conditions während der Berechnung\nNachteil: vergessenes yield() oder Endlosschleife → System-Freeze\n\n\nWindows 3.x war kooperativ. Vorteil: ruhiges Schreiben globaler Daten. Nachteil: ein hängender Task friert alles ein — oft K.O. für sichere Echtzeit.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#präemptives-scheduling",
+    "href": "vorlesungen/02_scheduling-theorie.html#präemptives-scheduling",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Präemptives Scheduling",
+    "text": "Präemptives Scheduling\n\nStandard moderner RTOS (FreeRTOS, VxWorks, Zephyr)\nHardware-Interrupt (z. B. SysTick) weckt den Scheduler\nHöherpriore Ready-Task → sofortiger Wechsel\nGefahr Shared Data: Präemption mitten im Schreiben → korrupte Daten\nLösung später: Mutex/Semaphore (Ressourcen-Termin)\n\n\nPräemption verhindert Freezes, erzwingt aber Synchronisation. Details zu Mutex und Priority Inversion: spätere Termine.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#prioritätsbasiertes-scheduling",
+    "href": "vorlesungen/02_scheduling-theorie.html#prioritätsbasiertes-scheduling",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Prioritätsbasiertes Scheduling",
+    "text": "Prioritätsbasiertes Scheduling\n\nJede Task erhält eine Priorität\nDie Ready-Task mit höchster Priorität gewinnt\nStatisch: Priorität zur Erzeugung fest (Grundlage RMS)\nDynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)\n\n\nStatisch: prio = 5 bleibt. Dynamisch: z. B. kurz vor der Deadline steigt die Priorität (EDF).",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-spezialfall-round-robin-rr",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-spezialfall-round-robin-rr",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Spezialfall: Round-Robin (RR)",
+    "text": "Der Spezialfall: Round-Robin (RR)\n\nGleiche Priorität bei mehreren Ready-Tasks?\nRound-Robin: Zeitscheiben (Time Slices, z. B. 1 ms)\nA → B → C → A …\nFair, aber allein für harte Echtzeit ungeeignet (ignoriert Deadlines)\n\n\nLaborziel heute: Round-Robin. Fairness-Karussell — ohne Deadline-Bewusstsein. In FreeRTOS optional auf gleicher Prioritätsstufe.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-round-robin",
+    "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-round-robin",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Visualisierung: Round Robin",
+    "text": "Visualisierung: Round Robin\n\n\nGleiche Zeitscheibe, ringförmiger Wechsel\n\n\nPlantUML-Timing: gleiche Priorität, Timer erzwingt Wechsel. Ideal für den Labor-Einstieg als C-Array/Ringpuffer.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#das-problem-des-aushungerns-starvation",
+    "href": "vorlesungen/02_scheduling-theorie.html#das-problem-des-aushungerns-starvation",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Das Problem des Aushungerns (Starvation)",
+    "text": "Das Problem des Aushungerns (Starvation)\n\nStrikt prioritätsbasiert und präemptiv\nTask A: HIGH, Task B: LOW\nTask A in while (1) ohne Delay/Block\nErgebnis: Task B verhungert (Starvation)\nRTOS garantiert keine Fairness bei ungleichen Prioritäten\n\n\nBei strikter Priorität mischt sich das OS nicht „fair“ ein. Hochpriore Tasks müssen sich schlafen legen, sonst atmet der Rest nie.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#wann-ist-ein-system-schedulbar",
+    "href": "vorlesungen/02_scheduling-theorie.html#wann-ist-ein-system-schedulbar",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Wann ist ein System schedulbar?",
+    "text": "Wann ist ein System schedulbar?\n\nEin Task-Set ist schedulbar, wenn ein Algorithmus existiert, der allen Jobs ihre Deadlines einhält\nSchedulability-Test: Vorab-Beweis (Formel / Analyse)\nZiel: Garantie vor dem Ausliefern, nicht Hoffnung nach dem Flashen\n\n\nSchedulability = Planbarkeit. Wir wollen vor Kundenauslieferung wissen, ob Deadlines halten — mathematisch, nicht nur empirisch.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#schedulability-tests",
+    "href": "vorlesungen/02_scheduling-theorie.html#schedulability-tests",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Schedulability-Tests",
+    "text": "Schedulability-Tests\n\n\nExakter Test (hinreichend und notwendig) - Bestanden: sicher - Durchgefallen: sicher nicht schedulbar - Nachteil: oft teuer (NP-schwer)\n\nKonservativer Test (nur hinreichend) - Bestanden: Garantie - Durchgefallen: unklar (pessimistisch) - Vorteil: einfache Formel\n\n\nIngenieure nutzen oft hinreichende Tests: „Ja“ ist sicher, „Nein“ heißt nur „keine Garantie“. Merken Sie sich das für die RMS-Schranke.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#rate-monotonic-scheduling-rms",
+    "href": "vorlesungen/02_scheduling-theorie.html#rate-monotonic-scheduling-rms",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Rate Monotonic Scheduling (RMS)",
+    "text": "Rate Monotonic Scheduling (RMS)\n\nIndustrie-Standard für periodische Echtzeitsysteme\nLiu & Layland (1973)\nTyp: statisch, präemptiv, prioritätsbasiert\nGoldene Regel: je kürzer \\(T_i\\), desto höher die Priorität (höhere Rate = höhere Priorität)\n\n\nRMS ist der Klassiker in Automotive und Industrie. Kurze Periode bekommt hohe Priorität. Als Nächstes: Annahmen von Liu & Layland, Utilization Bound und Response-Time Analysis.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#rms-die-mathematischen-annahmen",
+    "href": "vorlesungen/02_scheduling-theorie.html#rms-die-mathematischen-annahmen",
+    "title": "02 · Scheduling-Theorie",
+    "section": "RMS: Die mathematischen Annahmen",
+    "text": "RMS: Die mathematischen Annahmen\n\nUm RMS mathematisch zu beweisen, trafen Liu & Layland (1973) strikte Annahmen:\n\nAlle Tasks sind strikt periodisch\nDeadline = Periode (\\(D_i = T_i\\))\nTasks sind völlig unabhängig (keine Mutexes, kein Shared Memory)\nLaufzeit des Schedulers (Context Switch) ist 0\n\nIn der Realität ist keine dieser Annahmen zu 100 % erfüllt — trotzdem ist RMS die Basis fast aller realen Systeme\n\n\nBevor wir die berühmte Schranke ansehen: Liu und Layland gingen 1973 von einem idealen System aus — periodisch, \\(D_i = T_i\\), keine Ressourcenkonflikte, Context Switch = 0. Realitätsfern, aber fast jedes AUTOSAR-Steuergerät basiert darauf. Die Kunst: Annahmen später kontrolliert aufweichen, ohne Deadlines zu verlieren.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#beispiel-1-rms-prioritäten-vergeben",
+    "href": "vorlesungen/02_scheduling-theorie.html#beispiel-1-rms-prioritäten-vergeben",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Beispiel 1: RMS-Prioritäten vergeben",
+    "text": "Beispiel 1: RMS-Prioritäten vergeben\n\nGegebenes Task-Set:\n\n\\(\\tau_1\\): \\(C_1 = 1\\), \\(T_1 = 4\\)\n\\(\\tau_2\\): \\(C_2 = 2\\), \\(T_2 = 6\\)\n\\(\\tau_3\\): \\(C_3 = 1\\), \\(T_3 = 12\\)\n\nAuslastung: \\(U = \\frac{1}{4} + \\frac{2}{6} + \\frac{1}{12} = 0{,}25 + 0{,}33\\overline{3} + 0{,}08\\overline{3} = 66{,}7\\,\\%\\)\nRegel: kürzere Periode \\(\\rightarrow\\) höhere Priorität\nErgebnis: \\(\\tau_1\\) (höchste Prio), \\(\\tau_2\\) (mittel), \\(\\tau_3\\) (niedrigste)\n\n\nDrei Tasks, Summe rund 66 Prozent — die CPU ist zu einem Drittel im Leerlauf. Nach Rate Monotonic bekommt \\(\\tau_1\\) (\\(T=4\\)) die höchste Priorität, \\(\\tau_3\\) (\\(T=12\\)) die niedrigste und wird bei Bedarf präemptiert.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-präemptives-rms",
+    "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-präemptives-rms",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Visualisierung: Präemptives RMS",
+    "text": "Visualisierung: Präemptives RMS\n\n\nBei \\(t=4\\) unterbricht \\(\\tau_1\\) die laufende \\(\\tau_3\\) präemptiv\n\n\nBei \\(t=0\\) erwachen alle drei gleichzeitig; \\(\\tau_1\\) nimmt die CPU. Nach 1 ms folgt \\(\\tau_2\\), ab \\(t=3\\) darf \\(\\tau_3\\) starten. Bei \\(t=4\\) feuert die Periode von \\(\\tau_1\\) erneut — das OS entzieht \\(\\tau_3\\) die CPU. Das ist Präemption in Reinkultur.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-kritische-moment-critical-instant",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-kritische-moment-critical-instant",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der kritische Moment (Critical Instant)",
+    "text": "Der kritische Moment (Critical Instant)\n\nSchlimmster Fall für jede Task: Start exakt zeitgleich mit allen höherprioren Tasks\nDieser Zeitpunkt heißt Critical Instant\nBeweis-Logik: Hält die Task unter diesen Bedingungen die Deadline ein, hält sie sie immer ein\n\n\nAlle Tasks bei \\(t=0\\) zu starten war Absicht. Liu und Layland: Worst Case, wenn eine Task zusammen mit allen höherprioren aufwacht — längste Wartezeit. Schedulability-Analyse muss diesen Instant prüfen; überlebt \\(\\tau_3\\) ihn, überlebt sie den Rest.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#die-rms-schranke-liu-layland-1973",
+    "href": "vorlesungen/02_scheduling-theorie.html#die-rms-schranke-liu-layland-1973",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Die RMS-Schranke (Liu & Layland, 1973)",
+    "text": "Die RMS-Schranke (Liu & Layland, 1973)\n\nHinreichender, konservativer Schedulability-Test\nEin Task-Set aus \\(n\\) Tasks ist unter RMS garantiert schedulbar, wenn:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i} \\le n\\bigl(2^{1/n}-1\\bigr)\\]\n\n\\(U\\): Systemauslastung; \\(n\\): Anzahl der Tasks\n\n\nEine der berühmtesten Formeln der Echtzeitinformatik. Unter der Schranke: Garantie — keine Deadline verpasst. Darüber: genauer hinsehen (Grauzone).",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#werte-der-rms-schranke",
+    "href": "vorlesungen/02_scheduling-theorie.html#werte-der-rms-schranke",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Werte der RMS-Schranke",
+    "text": "Werte der RMS-Schranke\n\nEinsetzen von \\(n\\) in \\(n(2^{1/n}-1)\\):\n\n\n\n\n\\(n\\)\nSchranke\n\n\n\n\n1\n\\(100\\,\\%\\)\n\n\n2\n\\(\\approx 82{,}8\\,\\%\\)\n\n\n3\n\\(\\approx 78{,}0\\,\\%\\)\n\n\n4\n\\(\\approx 75{,}7\\,\\%\\)\n\n\n\\(\\infty\\)\n\\(\\ln 2 \\approx 69{,}3\\,\\%\\)\n\n\n\n\nBei \\(n=1\\) gilt 100 %. Mit mehr Tasks sinkt die Schranke; Grenzwert \\(\\ln 2 \\approx 69{,}3\\,\\%\\) — die magische Zahl der Automatisierungstechnik.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#interpretation-der-rms-schranke",
+    "href": "vorlesungen/02_scheduling-theorie.html#interpretation-der-rms-schranke",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Interpretation der RMS-Schranke",
+    "text": "Interpretation der RMS-Schranke\n\nZone 1: \\(U \\le n(2^{1/n}-1)\\) — hinreichend schedulbar (Liu und Layland)\nFaustregel: \\(U \\le \\ln 2 \\approx 69{,}3\\,\\%\\) ist für jedes \\(n\\) sicher\nZone 2: Schranke \\(&lt; U \\le 100\\,\\%\\) — Grauzone; hinreichender Test sagt „Nein“, System kann trotzdem laufen\n\nLösung: exakter Test (Response-Time Analysis)\n\nZone 3: \\(U &gt; 100\\,\\%\\) — physikalisch unmöglich\n\n\nDie Tabelle liefert die \\(n\\)-abhängige Schranke; \\(\\ln 2\\) ist der Grenzwert. Unter der Schranke: Garantie. Darüber: Grauzone — weder blind ausliefern noch Chip verwerfen, sondern RTA. Über 100 % ist ausgeschlossen.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#response-time-analysis-rta",
+    "href": "vorlesungen/02_scheduling-theorie.html#response-time-analysis-rta",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Response-Time Analysis (RTA)",
+    "text": "Response-Time Analysis (RTA)\n\nExakter Test für die Grauzone\nWorst-Case-Antwortzeit \\(R_i\\) iterativ:\n\n\\[R_i^{(k+1)} = C_i + \\sum_{j \\in hp(i)} \\left\\lceil \\frac{R_i^{(k)}}{T_j} \\right\\rceil C_j\\]\n\n\\(hp(i)\\): Menge aller Tasks mit höherer Priorität als \\(i\\)\nAbbruch: \\(R_i^{(k+1)} = R_i^{(k)}\\) (gefunden) oder \\(R_i &gt; D_i\\) (Deadline verpasst)\n\n\n\\(R_i\\) = eigene WCET plus Unterbrechungen durch höherpriore Tasks. Da \\(R\\) auf beiden Seiten steht: Iteration bis Konvergenz oder Deadline-Bruch.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#fazit-rms-in-der-praxis",
+    "href": "vorlesungen/02_scheduling-theorie.html#fazit-rms-in-der-praxis",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Fazit: RMS in der Praxis",
+    "text": "Fazit: RMS in der Praxis\n\nVorteile:\n\nSimpler Algorithmus, minimaler OS-Overhead\nStabil bei Überlast: nur niedrigpriore Tasks verpassen Deadlines\n\nNachteil:\n\nBei harten Garantien oft keine volle 100 %-Auslastung möglich\n\n\n\nIndustrie liebt RMS: feste Prioritäten einmal setzen, kein Mathe in der ISR. Bei Überlast sterben deterministisch die langen Perioden — die kritische Motorregelung läuft weiter.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#earliest-deadline-first-edf",
+    "href": "vorlesungen/02_scheduling-theorie.html#earliest-deadline-first-edf",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Earliest Deadline First (EDF)",
+    "text": "Earliest Deadline First (EDF)\n\nRMS ist statisch — EDF berechnet Prioritäten dynamisch\nRegel: die Task mit der nächsten absoluten Deadline erhält die höchste Priorität\nScheduler muss bei jedem OS-Tick Prioritäten neu sortieren\nEinsatz: Forschung, Soft Real-Time (z. B. Linux SCHED_DEADLINE)\n\n\nEDF holt mehr aus der Hardware: absolute Frist entscheidet. Prioritäten ändern sich laufend — mehr OS-Overhead, dafür höhere theoretische Auslastung.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#die-mathematische-eleganz-von-edf",
+    "href": "vorlesungen/02_scheduling-theorie.html#die-mathematische-eleganz-von-edf",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Die mathematische Eleganz von EDF",
+    "text": "Die mathematische Eleganz von EDF\n\nFür unabhängige, präemptive Tasks mit Implicit Deadlines:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i} \\le 1\\]\n\nExakt schedulbar genau dann, wenn \\(U \\le 1\\)\nBedeutung: CPU bis 100 % auslastbar, ohne Deadlines zu verpassen\n\n\nKeine 69-Prozent-Schranke, keine Grauzone: \\(U \\le 1\\) ist hinreichend und notwendig. Theoretisch ideal, wenn jeder Taktzyklus zählt.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-dynamisches-edf",
+    "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-dynamisches-edf",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Visualisierung: Dynamisches EDF",
+    "text": "Visualisierung: Dynamisches EDF\n\n\\(\\tau_1\\): \\(C_1=2\\), \\(T_1=5\\); \\(\\tau_2\\): \\(C_2=4\\), \\(T_2=7\\)\nAuslastung \\(U \\approx 97\\,\\%\\) — Liu-und-Layland-Schranke und exakter RMS-Test scheitern\nMit EDF ändern sich die relativen Prioritäten dynamisch\n\n\n\nBei \\(t=5\\): \\(\\tau_1\\) released mit Deadline \\(t=10\\); \\(\\tau_2\\) hat Deadline \\(t=7\\). Da 7 näher liegt, rechnet \\(\\tau_2\\) weiter — unter RMS hätte \\(\\tau_1\\) präemptiert. EDF dreht Prioritäten um und bewältigt die 97 %.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-der-domino-effekt",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-der-domino-effekt",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Haken an EDF: Der Domino-Effekt",
+    "text": "Der Haken an EDF: Der Domino-Effekt\n\nWarum nutzt die Automobilindustrie kaum EDF?\nVerhalten bei Überlast (\\(U &gt; 100\\,\\%\\)):\n\nEine Task überschreitet ungeplant ihre WCET\nIhre Deadline rückt nah \\(\\rightarrow\\) EDF gibt ihr höchste Priorität\nFolge: sie blockiert andere Tasks — diese verpassen ebenfalls Deadlines\n\nDomino-Effekt: eine Überlast lässt das System kaskadierend abstürzen\n\n\nBei leichter Überlast können unter EDF plötzlich alle Tasks scheitern — auch die sicherheitskritische Motorsteuerung. In Systemen mit Menschenleben ist dieses Ausfallmuster inakzeptabel; deshalb FreeRTOS/AUTOSAR mit statischen Prioritäten.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-rms-vs.-edf",
+    "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-rms-vs.-edf",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Zusammenfassung: RMS vs. EDF",
+    "text": "Zusammenfassung: RMS vs. EDF\n\n\n\n\n\n\n\n\nEigenschaft\nRMS\nEDF\n\n\n\n\nPriorität\nStatisch (nach \\(T_i\\))\nDynamisch (nach absoluter \\(D_i\\))\n\n\nMax. \\(U\\)\nOft \\(\\le 69{,}3\\,\\%\\) garantiert\n\\(100\\,\\%\\) garantiert\n\n\nÜberlast\nDeterministisch (Low-Prio stirbt)\nChaotisch (Domino-Effekt)\n\n\nOS-Overhead\nSehr niedrig\nHoch (Listen-Sortierung)\n\n\nEinsatz\nAUTOSAR, FreeRTOS, Industrie\nForschung, Multimedia, Soft-RT\n\n\n\n\nRMS: berechenbar, geringer Overhead, klares Fehlerverhalten. EDF: volle Auslastung, aber Domino bei Überlast. Für Bremssattel und Airbag lautet die Antwort RMS.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#unter-der-haube-wie-baut-man-einen-scheduler",
+    "href": "vorlesungen/02_scheduling-theorie.html#unter-der-haube-wie-baut-man-einen-scheduler",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Unter der Haube: Wie baut man einen Scheduler?",
+    "text": "Unter der Haube: Wie baut man einen Scheduler?\n\nWechsel von Mathematik zurück zur Hardware-Praxis\nPräemptiver Scheduler (wie FreeRTOS) auf dem STM32H755 braucht zwei ARM-Komponenten:\n\nSysTick-Timer (Herzschlag)\nPendSV-Exception (heimlicher Kontextwechsel)\n\n\n\nEin RTOS ist auch nur C — braucht aber Hardware-Unterstützung. Auf Cortex-M: SysTick und PendSV, von ARM ins Silizium gebrannt.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-herzschlag-systick-timer",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-herzschlag-systick-timer",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Herzschlag: SysTick-Timer",
+    "text": "Der Herzschlag: SysTick-Timer\n\n24-Bit Down-Counter, fest in jedem ARM Cortex-M\nTypisch: Überlauf jede Millisekunde (1 kHz)\nBei Überlauf: SysTick-Interrupt\nTaktgeber des OS: jede ms prüfen, ob ein Task-Wechsel nötig ist\n\n\nIm Gegensatz zu ST-Timern ist SysTick Kernbestandteil von ARM — auf jedem Cortex-M gleich. 1000 Interrupts/s: Scheduler aktualisiert Wartezeiten und prüft RMS/RR-Regeln.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#code-die-systick-isr",
+    "href": "vorlesungen/02_scheduling-theorie.html#code-die-systick-isr",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Code: Die SysTick-ISR",
+    "text": "Code: Die SysTick-ISR\n\n\n\nWas passiert jede Millisekunde?\n\nTick-Count (Systemuhr) erhöhen\nReady-Listen prüfen\nBei wichtigerer Task: Context Switch anfordern\n\n\n\nvoid SysTick_Handler(void) {\n    os_tick_count++;\n    Task* next = Scheduler_Run();\n    if (next != current_task) {\n        Trigger_PendSV();\n    }\n}\n\n\nDrei Schritte: Zeit hochzählen, Scheduler_Run(), bei Wechsel PendSV triggern — den Registertausch nicht direkt im SysTick. Warum der Umweg? Nächste Folie.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#warum-der-umweg-über-pendsv",
+    "href": "vorlesungen/02_scheduling-theorie.html#warum-der-umweg-über-pendsv",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Warum der Umweg über PendSV?",
+    "text": "Warum der Umweg über PendSV?\n\nContext Switch direkt im SysTick steckt in einer High-Prio-ISR\nProblem: UART-ISR läuft → SysTick unterbricht und wechselt Task → UART-Daten verloren\nLösung: PendSV (Pendable Service Call)\n\nAusnahme mit niedrigster Priorität (bei 4 Priority-Bits: Stufe 15)\nSysTick merkt den Wechsel nur vor (pend)\nContext Switch erst, wenn alle anderen Interrupts fertig sind\n\n\n\nSysTick markiert: „wechseln“. Hardware wartet, bis UART & Co. fertig sind, dann PendSV als Letztes — Registertausch ohne abgebrochene Hardware-ISRs.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-task-control-block-tcb",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-task-control-block-tcb",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Task Control Block (TCB)",
+    "text": "Der Task Control Block (TCB)\n\nWoher kennt das OS den Program Counter der unterbrochenen Task?\nAlle Infos in einem C-Struct — dem TCB; jede Task hat einen eigenen\n\ntypedef struct {\n    uint32_t* stack_pointer; /* geretteter Kontext */\n    uint8_t   priority;      /* RMS-Priorität */\n    uint8_t   state;         /* READY / RUNNING / BLOCKED */\n    uint32_t  sleep_ticks;   /* Rest-Delay */\n} TCB_t;\n\nWichtigster Eintrag: Stack Pointer — Lesezeichen im RAM für R0–R15 dieser Task. Dazu Zustand, Priorität und Sleep-Ticks für delay().",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-software-context-switch-pendsv",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-software-context-switch-pendsv",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Software-Context-Switch (PendSV)",
+    "text": "Der Software-Context-Switch (PendSV)\n\nWas passiert in PendSV_Handler (Assembler)?\n\nstack_pointer der alten Task aus dem TCB lesen\nRegister R4–R11 auf den Stack pushen\nNeuen Stack-Pointer im alten TCB speichern\nstack_pointer der neuen Task laden\nR4–R11 der neuen Task poppen\nRücksprung (BX LR) — neue Task läuft\n\n\n\nHardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Software. Lesezeichen tauschen, BX LR — und die CPU rechnet im Code einer anderen Task weiter.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-die-os-architektur",
+    "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-die-os-architektur",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Zusammenfassung: Die OS-Architektur",
+    "text": "Zusammenfassung: Die OS-Architektur\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nflowchart TD\n    A[SysTick Timer] --&gt;|1 ms Interrupt| B[SysTick_Handler]\n    B --&gt;|Tick erhöhen| C{Scheduler: Next Task?}\n    C --&gt;|Ja, Wechsel| D[Trigger PendSV]\n    D --&gt;|Wartet auf CPU| E[PendSV_Handler]\n    E --&gt;|Push/Pop Register| F[Neue Task läuft]\n    style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style E fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nSysTick feuert → Handler entscheidet → PendSV wechselt Kontext. Das ist der Motor von FreeRTOS, Zephyr und vielen weiteren RTOS.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#vorbereitung-für-das-labor-heute",
+    "href": "vorlesungen/02_scheduling-theorie.html#vorbereitung-für-das-labor-heute",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Vorbereitung für das Labor heute",
+    "text": "Vorbereitung für das Labor heute\n\nPräemptives RTOS inkl. PendSV-Assembler an einem Nachmittag: zu komplex\nStattdessen: eigener kooperativer Round-Robin-Scheduler\nVorteile:\n\nKein Assembler nötig\nKein Hardware-SysTick zwingend (while(1) + yield)\nIdeal, um TCB-Arrays zu verstehen\n\nAm Start: Code-Gerüst für den STM32H755\n\n\nLogik identisch zur Entscheidungsfindung im echten OS, aber alles in C. Vorbereitung, um nächste Woche FreeRTOS-API zu verstehen.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-1-die-tcb-liste",
+    "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-1-die-tcb-liste",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Labor-Schritt 1: Die TCB-Liste",
+    "text": "Labor-Schritt 1: Die TCB-Liste\n\nArray aus Funktionszeigern und Zuständen\n\ntypedef void (*TaskFunction_t)(void);\n\ntypedef struct {\n    TaskFunction_t task_func; /* welcher C-Code? */\n    uint8_t state;            /* READY oder BLOCKED */\n    uint32_t sleep_time;      /* für os_delay() */\n} MyTCB_t;\n\nMyTCB_t task_list[3];\nuint8_t current_task_idx = 0;\n\nOhne Registertausch kein Stack-Pointer — wir speichern den Funktionszeiger. Maximal drei Tasks und ein Index für die aktuelle Position.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-2-die-scheduler-logik",
+    "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-2-die-scheduler-logik",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Labor-Schritt 2: Die Scheduler-Logik",
+    "text": "Labor-Schritt 2: Die Scheduler-Logik\n\n\n\nFunktion os_yield()\nRingförmig nächste READY-Task (Round-Robin)\nLogik:\n\nAktuelle Task pausieren\nIndex: \\((idx + 1) \\bmod 3\\)\nREADY? Dann Funktionszeiger aufrufen\n\n\n\nvoid os_yield(void) {\n    do {\n        current_task_idx =\n          (current_task_idx + 1) % 3;\n    } while (task_list[current_task_idx]\n               .state != READY);\n    task_list[current_task_idx]\n        .task_func();\n}\n\n\nos_yield() heißt: CPU freiwillig abgeben. Modulo hält den Ring. Kontextwechsel = simpler C-Funktionsaufruf.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-3-hardware-messung-oszilloskop",
+    "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-3-hardware-messung-oszilloskop",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Labor-Schritt 3: Hardware-Messung (Oszilloskop)",
+    "text": "Labor-Schritt 3: Hardware-Messung (Oszilloskop)\n\nDrei Tasks (z. B. drei LEDs umschalten)\nTest: Jitter am Oszilloskop messen\nGPIO am Anfang von Task 1 auf High, am Ende auf Low\n\n\n\nErwartung: Schwankungen — Timing hängt vom C-Code der anderen Tasks ab\n\n\nHypothese: präemptiv starr, kooperativ mit Jitter. Rechnet Task 2 länger, verschiebt sich Task 1 — genau das wollen wir sehen.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-4-den-scheduler-crashen",
+    "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-4-den-scheduler-crashen",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Labor-Schritt 4: Den Scheduler crashen",
+    "text": "Labor-Schritt 4: Den Scheduler crashen\n\nSchwachpunkt kooperativer Systeme spüren:\n\nIn Task 2 lange Zählschleife ohne os_yield()\nOszilloskop beobachten\n\nErgebnis: Task 1 aus dem Tritt oder eingefroren\nErkenntnis für Woche 3: deshalb ab nächster Woche präemptives FreeRTOS\n\n\nMutwillig crashen: Theorie wird greifbar. Harte Echtzeit darf dem Anwendungscode nicht vertrauen — Hardware muss die Kontrolle übernehmen.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-des-tages",
+    "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-des-tages",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Zusammenfassung des Tages",
+    "text": "Zusammenfassung des Tages\n\nTask-Modell: WCET \\(C\\), Periode \\(T\\), Frist \\(D\\); Auslastung \\(U\\) als Analyse-Fundament\nRMS: Priorität statisch nach Rate; Liu-und-Layland-Schranke (Grenzwert \\(\\approx 69{,}3\\,\\%\\)); deterministisch bei Überlast\nEDF: nächste Frist, \\(U \\le 1\\); bei Fehler Domino-Effekt\nCortex-M: SysTick + PendSV ermöglichen präemptives Multitasking\nLabor: kooperativer Round-Robin — und warum er scheitern kann\n\n\nSie können Software in \\(C\\), \\(T\\), \\(D\\) abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Unter \\(\\approx 69\\,\\%\\) Auslastung liefert RMS eine mathematische Garantie.",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#ausblick-auf-termin-3",
+    "href": "vorlesungen/02_scheduling-theorie.html#ausblick-auf-termin-3",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Ausblick auf Termin 3",
+    "text": "Ausblick auf Termin 3\n\nNach dem Spiel-Scheduler: Wechsel in die Profiliga\nNächste Woche: FreeRTOS auf dem Cortex-M4\nKooperative Architektur weg, harte Präemption aktiv\nFreeRTOS-API: xTaskCreate(), vTaskDelay()\nVorbereitung: Zeiger (Pointer) in C auffrischen\n\n\nNächste Woche FreeRTOS — PendSV und echte Präemption. API mit unserem Eigenbau vergleichen. Hausaufgabe: Funktions- und Strukturzeiger. Vielen Dank und bis gleich im Labor!",
+    "crumbs": [
+      "Vorlesungen",
+      "02 · Scheduling-Theorie"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Herzlich willkommen zur Vorlesung Echtzeitsysteme (EZS) an der Dualen Hochschule Baden-Württemberg Stuttgart.\nDozent: Prof. Dr.-Ing. Daniel Klünder\nKurswebsite: dantschi.github.io/echtzeitsysteme\nRepository: github.com/dantschi/echtzeitsysteme\nDas Modul vermittelt die Grundlagen zeitkritischer Rechensysteme: von harten und weichen Echtzeitanforderungen über Aufgabenmodelle und Scheduling bis zu Antwortzeitanalyse, Ressourcenprotokollen und Echtzeitbetriebssystemen. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis mit einem RTOS umzusetzen — mit klarem Blick auf die Trennung von Korrektheit der Funktion und Korrektheit im Zeitbereich.\n\n\nDer rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.\n\n\n\nZentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer\n\n\n\n\n\n\n\nTool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer\n\n\n\n\n\n\nDieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#kursübersicht",
+    "href": "index.html#kursübersicht",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Der rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, Utilization, RMS/EDF, SysTick/PendSV, Round-Robin-Labor\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nEinführung Echtzeitbetriebssysteme\nFreeRTOS, TCB/Stack, Zustände, Tickless/CMSIS, Labor STM32\nHTML\nPDF\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nFreeRTOS-Praxis (fortgeschritten)\nQueues, ISRs, Synchronisation in FreeRTOS\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#literatur",
+    "href": "index.html#literatur",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Zentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#tools-und-ressourcen",
+    "href": "index.html#tools-und-ressourcen",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Tool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
+    "objectID": "index.html#oer-und-lizenz",
+    "href": "index.html#oer-und-lizenz",
+    "title": "Echtzeitsysteme (EZS)",
+    "section": "",
+    "text": "Dieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
+    "crumbs": [
+      "Startseite"
+    ]
+  },
+  {
     "objectID": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
     "href": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zu-den-echtzeitsystemen",
     "title": "01 · Was ist Echtzeit",
@@ -558,56 +1301,6 @@
     "crumbs": [
       "Vorlesungen",
       "01 · Was ist Echtzeit"
-    ]
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Herzlich willkommen zur Vorlesung Echtzeitsysteme (EZS) an der Dualen Hochschule Baden-Württemberg Stuttgart.\nDozent: Prof. Dr.-Ing. Daniel Klünder\nKurswebsite: dantschi.github.io/echtzeitsysteme\nRepository: github.com/dantschi/echtzeitsysteme\nDas Modul vermittelt die Grundlagen zeitkritischer Rechensysteme: von harten und weichen Echtzeitanforderungen über Aufgabenmodelle und Scheduling bis zu Antwortzeitanalyse, Ressourcenprotokollen und Echtzeitbetriebssystemen. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis mit einem RTOS umzusetzen — mit klarem Blick auf die Trennung von Korrektheit der Funktion und Korrektheit im Zeitbereich.\n\n\nDer rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, WCET, Utilization, kooperativ/präemptiv, RMS-Einstieg\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nScheduling-Grundlagen\nPräemption, Prioritäten, Online/Offline, Metriken\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nEchtzeitbetriebssysteme\nTasks, Queues, ISRs, FreeRTOS-Praxis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.\n\n\n\nZentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer\n\n\n\n\n\n\n\nTool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer\n\n\n\n\n\n\nDieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#kursübersicht",
-    "href": "index.html#kursübersicht",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Der rote Faden der Veranstaltung:\nAnforderungen → Aufgabenmodell → Scheduling → Analyse → Ressourcen → RTOS\nPro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / Musterlösung). Links verweisen auf die Kurswebsite. Weitere Einheiten werden semesterbegleitend ergänzt.\n\n\n\nEinheit\nThema\nSchwerpunkt\nFolien\nHandout\nÜbungsblatt\nMusterlösung\n\n\n\n\n1\nWas ist Echtzeit\nDefinition, Latenz/Jitter, Polling, Interrupts, Paradigmenwechsel\nHTML\nPDF\n—\n—\n\n\n2\nScheduling-Theorie\nTask-Modell, WCET, Utilization, kooperativ/präemptiv, RMS-Einstieg\nHTML\nPDF\nfolgt\nfolgt\n\n\n3\nScheduling-Grundlagen\nPräemption, Prioritäten, Online/Offline, Metriken\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n4\nStatisches Priority Scheduling\nRate Monotonic (RM), Deadline Monotonic (DM)\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n5\nDynamisches Scheduling\nEarliest Deadline First (EDF), Optimalität\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n6\nSchedulability und Response Time\nUtilization Bound, Response-Time Analysis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n7\nRessourcen und Synchronisation\nPriority Inversion, PCP, Stack Resource Policy\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n8\nEchtzeitbetriebssysteme\nTasks, Queues, ISRs, FreeRTOS-Praxis\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n9\nWrap-Up und Klausur\nKommunikation, Fallstricke, Prüfungstraining\nfolgt\nfolgt\nfolgt\nfolgt\n\n\n\nHinweise: Folien im Browser öffnen (Speaker View: Taste S). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter vorlesungen/ und labs/.",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#literatur",
-    "href": "index.html#literatur",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Zentrale Referenz dieses Moduls:\n\nGiorgio C. Buttazzo\nHard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications\nSpringer\n\nDefinitionen, Terminologie und didaktischer Aufbau orientieren sich an diesem Standardwerk.\nZur Vertiefung empfohlen:\n\nHermann Kopetz\nReal-Time Systems: Design Principles for Distributed Embedded Applications\nSpringer",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#tools-und-ressourcen",
-    "href": "index.html#tools-und-ressourcen",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Tool\nEinsatz\nLink\n\n\n\n\nFreeRTOS\nPraxisnahe Tasks, Queues, Semaphoren und Timing auf Mikrocontrollern\nfreertos.org\n\n\nFreeRTOS Kernel Docs\nReferenz zu Scheduling, Interrupts und Synchronisation\nfreertos.org/Documentation\n\n\nCheddar\nScheduling-Simulation und Schedulability-Analysen zum Üben\nberu.univ-brest.fr/cheddar\n\n\nTracealyzer (optional)\nLaufzeit-Tracing von Tasks und Prioritätswechseln\npercepio.com/tracealyzer",
-    "crumbs": [
-      "Startseite"
-    ]
-  },
-  {
-    "objectID": "index.html#oer-und-lizenz",
-    "href": "index.html#oer-und-lizenz",
-    "title": "Echtzeitsysteme (EZS)",
-    "section": "",
-    "text": "Dieses Vorlesungsmaterial ist eine Open Educational Resource (OER). Die Vorlesungsinhalte – Texte, Code und Diagramme – stehen unter der Lizenz Creative Commons Attribution 4.0 International (CC BY 4.0).\nSie dürfen diese Inhalte teilen und bearbeiten, sofern Sie die Urheberschaft angemessen nennen. Der vollständige Lizenztext liegt in der Datei LICENSE im Repository.\nAusnahme: Hochschullogos und andere geschützte Markenzeichen (einschließlich des DHBW-Logos) sind von dieser Lizenz ausdrücklich ausgenommen. Sie unterliegen dem Markenrecht der jeweiligen Rechteinhaber und dürfen ohne deren Genehmigung nicht übernommen oder weiterverwendet werden.",
-    "crumbs": [
-      "Startseite"
     ]
   }
 ]
