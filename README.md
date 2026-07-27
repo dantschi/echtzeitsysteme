@@ -26,7 +26,7 @@ Pro Einheit: Folien (Reveal.js) und Handout-PDF. Links verweisen auf die Kursweb
 | 6 | Multicore-Echtzeit | AMP vs. SMP, STM32H755 Dual-Core, Shared Memory, Cache/MPU | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_multicore-echtzeit-handout.pdf) |
 | 7 | Tracing & Timing-Analyse | Non-Intrusive Observation, CoreSight, BlueBox | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_tracing-timing-analyse.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_tracing-timing-analyse-handout.pdf) |
 | 8 | Multicore-Synchronisation & Safety | HSEM, Multicore-Sync, IWDG/WWDG Watchdogs | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_multicore-synchronisation-safety.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_multicore-synchronisation-safety-handout.pdf) |
-| 9 | Wrap-Up und Klausur | Kommunikation, Fallstricke, Prüfungstraining | folgt | folgt |
+| 9 | Capstone-Projekt & Architekturmuster | Edge, Fail-Safe/Operational, AUTOSAR, Capstone | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/09_capstone-architekturmuster.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/09_capstone-architekturmuster-handout.pdf) |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/).
 
