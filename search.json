@@ -1621,441 +1621,462 @@
     "href": "vorlesungen/02_scheduling-theorie.html#willkommen-zurück-zu-echtzeitsystemen",
     "title": "02 · Scheduling-Theorie",
     "section": "Willkommen zurück zu Echtzeitsystemen!",
-    "text": "Willkommen zurück zu Echtzeitsystemen!\n\nHerzlich willkommen zum 2. Termin unserer Vorlesung\nLetzte Woche: Hardware, Cortex-M4, Interrupts und Bare-Metal\nHeute: von der Hardware-Ebene zu Informatik und Mathematik\nFokus: Wie verteile ich CPU-Zeit gerecht und vorhersagbar?\nPraxis: eigener kleiner Scheduler\n\n\nWillkommen zurück. Letzte Woche: STM32, Polling-Gefahren und Interrupts. Heute: Schedulability-Theorie — wir wollen nicht hoffen, dass Tasks rechtzeitig fertig werden, sondern das mathematisch absichern. Danach bauen Sie Ihren ersten Scheduler für den Cortex-M4."
+    "text": "Willkommen zurück zu Echtzeitsystemen!\n\nHerzlich willkommen zum 2. Termin\nLetzte Woche: Rechtzeitigkeit, Cortex-M4, Interrupts, Bare-Metal\nHeute: Task-Modell, Auslastung, RMS, RTA, EDF — ein Prozessor\nPraxis: kooperativer Round-Robin als Dispatcher (kein Register-Port)\nDer zweite Kern des H755 verdoppelt dieses Modell nicht automatisch\n\n\nZeiten und Begriffe wie in VL1: Release, Start, Completion, relative/absolute Deadline, Jitter. Alle Kernbeispiele gelten für genau eine CPU. Bus- und Speicherinterferenz des H755 liegen außerhalb des idealisierten Lehrmodells, sofern nicht im WCET enthalten."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#agenda-für-heute",
     "href": "vorlesungen/02_scheduling-theorie.html#agenda-für-heute",
     "title": "02 · Scheduling-Theorie",
     "section": "Agenda für heute",
-    "text": "Agenda für heute\n\nRecap: Warum Bare-Metal nicht skaliert\nTask-Modelle: Software mathematisch beschreiben\nMetriken: WCET und CPU-Auslastung (\\(U\\))\nScheduling-Verfahren: kooperativ bis präemptiv\nRMS, Utilization Bound, RTA und EDF\nSysTick/PendSV und Labor: Round-Robin\n\n\nKurz zurückblicken, dann formales Task-Modell mit Ausführungszeit und Periode. Danach Auslastung \\(U\\), Strategien des Schedulers, RMS/EDF, Cortex-M-Scheduler-Mechanik und kooperatives Round-Robin im Labor."
+    "text": "Agenda für heute\n\nRecap und Task-Modell (\\(C\\), \\(T\\), \\(D\\), \\(R\\))\nAuslastung, WCET, Scheduling-Klassen\nRMS-Schranke, Gantt, Response-Time Analysis\nEDF am selben Zahlenbeispiel, Überlast\nSysTick/PendSV und Labor-Dispatcher\n\n\nDurchgängige Tasksets: 75 % (Präemption), 85 % (RTA oberhalb der Schranke), 97 % (RMS scheitert, EDF hält)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#lernziele-des-heutigen-tages",
     "href": "vorlesungen/02_scheduling-theorie.html#lernziele-des-heutigen-tages",
     "title": "02 · Scheduling-Theorie",
     "section": "Lernziele des heutigen Tages",
-    "text": "Lernziele des heutigen Tages\n\nTask-Modell (\\(C_i\\), \\(T_i\\), \\(D_i\\)) aufstellen und skizzieren\nWCET und CPU-Auslastung (\\(U\\)) verstehen und berechnen\nKooperatives und präemptives Scheduling unterscheiden\nRate Monotonic Scheduling (RMS) einordnen und Grenzen kennen\nRound-Robin-Scheduler als Laborziel verstehen\n\n\nAm Ende: Task-Set formalisieren, \\(U\\) berechnen, RMS als Industrieprinzip kennen und Round-Robin im Labor umsetzen können."
+    "text": "Lernziele des heutigen Tages\n\nTask, Job und \\(C_i\\), \\(T_i\\), \\(D_i\\), \\(R_i\\) auf einer Zeitachse erklären\nAuslastung \\(U\\) berechnen und von lokalen Fristen unterscheiden\nKooperativ/präemptiv und Fixed Priority/EDF als getrennte Achsen\nEine einfache RTA selbst rechnen und die EDF-Annahmen prüfen\nDen Labor-Dispatcher ohne rekursive Tasks erklären\n\n\nAm Ende: \\(R \\le D\\) unter benannten Annahmen nachweisen, Liu-Layland von einem exakten Test unterscheiden, und den Callback-Scheduler vom RTOS-Thread trennen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#recap-polling-vs.-interrupts",
     "href": "vorlesungen/02_scheduling-theorie.html#recap-polling-vs.-interrupts",
     "title": "02 · Scheduling-Theorie",
     "section": "Recap: Polling vs. Interrupts",
-    "text": "Recap: Polling vs. Interrupts\n\n\n\nPolling (Super-Loop):\n\nEinfach, linear, wenige Race Conditions\nProblem: Latenzen addieren sich; lange Funktionen blockieren alles\n\nInterrupts (Vordergrund/Hintergrund):\n\nHardware erzwingt Kontextwechsel (Präemption)\nProblem: ISRs müssen extrem kurz sein\n\n\n\n/* Das Heavy-Load-Problem */\nwhile (1) {\n    Sensor_Auswerten(); /* z. B. 50 ms */\n    LED_Blinken();      /* stottert */\n}\n\n\nDie while(1)-Schleife reicht für einfache Fälle. Sobald Filter oder schwere Berechnung hinzukommen, wird das System blind. Interrupts retten die Latenz — aber lange ISRs blockieren Timer und andere IRQs."
+    "text": "Recap: Polling vs. Interrupts\n\n\n\nBegrenzte Super-Loop kann Fristen halten\nLange unzerlegte Arbeit sprengt das Budget\nInterrupts verkürzen bestimmte Reaktionen\nMaskierung, ISR-Zeit und Ressourcen bleiben\n\n\nwhile (1) {\n    Sensor_Auswerten(); /* z. B. 50 ms */\n    LED_Blinken();      /* verpasst das Budget */\n}\n\n\nPolling ist nicht grundsätzlich ungeeignet. Interrupts stellen keinen automatischen Determinismus her — Anschluss an VL1."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#recap-die-spaghetti-code-falle",
     "href": "vorlesungen/02_scheduling-theorie.html#recap-die-spaghetti-code-falle",
     "title": "02 · Scheduling-Theorie",
     "section": "Recap: Die Spaghetti-Code-Falle",
-    "text": "Recap: Die Spaghetti-Code-Falle\n\nSystem wächst: Sensoren, Displays, USB, Ethernet, Motorregelung\nNicht alles darf in Interrupts (nur die kürzesten Routinen)\nFolge in Bare-Metal:\n\nISRs setzen unzählige Flags (if (usb_ready_flag) …)\nMain-Loop wird unübersichtlich\nPrioritäten und Deadlines sind kaum noch berechenbar\n\n\n\nGroße Bare-Metal-Projekte landen oft in der Flag-Suppe: ISR setzt usb_daten_da = 1, Main pollt hunderte Flags. Wer darf zuerst rechnen — Motor oder USB? Determinismus und Deadlines gehen verloren."
+    "text": "Recap: Die Spaghetti-Code-Falle\n\nViele Ereignisse: Flags in der Main-Loop\nPrioritäten und Fristen werden schwer nachvollziehbar\nEin RTOS strukturiert Tasks — es beweist Fristen nicht von selbst\n\n\nFlag-Suppe ist ein Strukturproblem. Der spätere Scheduler arbeitet mit Zuständen und Prioritäten, nicht mit einem automatischen WCET-Wächter."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-paradigmenwechsel-das-betriebssystem",
     "href": "vorlesungen/02_scheduling-theorie.html#der-paradigmenwechsel-das-betriebssystem",
     "title": "02 · Scheduling-Theorie",
     "section": "Der Paradigmenwechsel: Das Betriebssystem",
-    "text": "Der Paradigmenwechsel: Das Betriebssystem\n\nLösung: Zeitmanagement an ein RTOS delegieren\nStatt einer riesigen while(1): viele kleine, getrennte Endlosschleifen\nJede Schleife heißt Task (oder Thread)\nDer Scheduler entscheidet, wann welche Task laufen darf\n\n\nArchitekturwechsel: Display und Motor werden eigene Endlosschleifen — Tasks. Zwischen ihnen sitzt der Scheduler und orchestriert die CPU-Zeit."
+    "text": "Der Paradigmenwechsel: Das Betriebssystem\n\nZeitmanagement kann ein RTOS übernehmen\nRTOS-Thread: eigener Stack, Kontextwechsel\nLabor heute: endliche Schritte, Rückkehr zum Dispatcher\nDas sind unterschiedliche Kontextmodelle\n\n\nEin Job ist nur bei passend strukturierter Anwendung ein Schleifendurchlauf. FreeRTOS-Threads und die Labor-Callbacks nicht vermischen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#was-ist-scheduling",
     "href": "vorlesungen/02_scheduling-theorie.html#was-ist-scheduling",
     "title": "02 · Scheduling-Theorie",
     "section": "Was ist Scheduling?",
-    "text": "Was ist Scheduling?\n\nScheduling (Ablaufplanung): zeitliche Anordnung von Aufgaben\nRessource: CPU-Rechenzeit\nKriterien:\n\nFairness: jede Task bekommt irgendwann Zeit (Starvation vermeiden)\nEchtzeit (Spezialfall): Fairness oft egal — Deadlines haben Vorrang\n\n\n\nWindows/Linux optimieren oft auf Fairness. Harte Echtzeit: die sicherheitskritische Motor-Task hält ihre Deadline, auch wenn das Display einfriert."
+    "text": "Was ist Scheduling?\n\nAblaufplanung: wer erhält die CPU wann?\nHeute: genau ein Prozessor\nEchtzeit: spezifizierte Fristen, nicht pauschale Fairness\nFairness und Deadline-Einhaltung sind verschiedene Ziele\n\n\nFrage: Warum darf eine zweite H755-CPU die heutige Formel \\(U \\le 1\\) nicht einfach verdoppeln? Weil das Modell, Busse und der Nachweis sich ändern."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#vom-c-code-zum-modell",
     "href": "vorlesungen/02_scheduling-theorie.html#vom-c-code-zum-modell",
     "title": "02 · Scheduling-Theorie",
     "section": "Vom C-Code zum Modell",
-    "text": "Vom C-Code zum Modell\n\nMathematische Garantien brauchen Abstraktion\nDer Scheduler sieht nicht „Motor“ oder „LED“, sondern Parameter\nTypisch: Ausführungszeit, Periode, Deadline\nFormalisierung: das Task-Modell\n\n\nDem Scheduler ist die Semantik des C-Codes egal. Er braucht Zahlen: Wie lange maximal? Wie oft? Welche Frist? Daraus entsteht der Fahrplan."
+    "text": "Vom C-Code zum Modell\n\nAnalyse beschreibt den Entwurf: \\(C\\), \\(T\\), \\(D\\)\nEin Fixed-Priority-Scheduler zur Laufzeit kennt typisch Zustand und Priorität\nEr leitet daraus keine Deadline-Garantie ab\nFreeRTOS überwacht WCET/Deadline nicht automatisch\n\n\n\n\n\n\n\n\nAnalyse\nLaufzeit (Fixed Priority)\n\n\n\n\n\\(C\\), \\(T\\), \\(D\\), Nachweis \\(R \\le D\\)\nReady/Running/Blocked, konfigurierte Priorität\n\n\n\n\nDer mathematische Fahrplan und der RTOS-Scheduler sind zwei Schichten. Garantien gelten unter den Annahmen der Analyse, nicht für jedes STM32-Programm."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#definition-was-ist-eine-task",
     "href": "vorlesungen/02_scheduling-theorie.html#definition-was-ist-eine-task",
     "title": "02 · Scheduling-Theorie",
     "section": "Definition: Was ist eine Task?",
-    "text": "Definition: Was ist eine Task?\n\nEine Task \\(\\tau_i\\) ist die kleinste Ausführungseinheit in einem RTOS\nJede Task besitzt:\n\neigenen Kontext (Register, Stack)\nmeist eine endlose while(1)-Schleife\n\nIllusion: jede Task „glaubt“, die CPU allein zu haben\nJob: eine konkrete Ausführung (ein Schleifendurchlauf)\n\n\nTask = Struktur/Programm; Job = ein konkreter Durchlauf. Schnelle Kontextwechsel erzeugen die Illusion exklusiver CPU-Nutzung."
+    "text": "Definition: Was ist eine Task?\n\nTask \\(\\tau_i\\): wiederkehrende Aufgabe\nJob \\(J_{i,k}\\): eine konkrete Aktivierung\nRTOS-Thread: eigener Kontext (Register, Stack)\nLabor-Callback: endlicher Schritt, Zustand im TCB, kein pausierter Stack\n\n\nTask \\(\\neq\\) Job. Ein while(1)-Durchlauf ist nur dann ein Job, wenn Release und Ende so definiert sind."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-c_i-ausführungszeit",
     "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-c_i-ausführungszeit",
     "title": "02 · Scheduling-Theorie",
     "section": "Parameter einer Task: \\(C_i\\) (Ausführungszeit)",
-    "text": "Parameter einer Task: \\(C_i\\) (Ausführungszeit)\n\n\\(C_i\\) (Computation Time / Capacity): Rechenzeit ohne Unterbrechung\nIn harten Echtzeitsystemen: \\(C_i\\) = WCET (Worst-Case Execution Time)\nOhne bekannte WCET keine mathematische Garantie\n\n\nDurchschnitte reichen nicht. Wenn die Task im Schnitt 2 ms braucht, im Worst Case 5 ms, plant der Scheduler mit 5 ms — sonst ist jeder Beweis hinfällig."
+    "text": "Parameter einer Task: \\(C_i\\) (Ausführungszeit)\n\n\\(C_i\\): eigener CPU-Bedarf ohne Unterbrechungszeit\nIm harten Analysemodell: angenommene WCET\nWarte- und Präemptionszeit zählen nicht zu \\(C_i\\)\nOhne dokumentierte Schranke kein Nachweis\n\n\nMessmaximum plus beliebiger Puffer ist kein WCET-Beweis. Anschluss an VL1."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-t_i-periode",
     "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-t_i-periode",
     "title": "02 · Scheduling-Theorie",
     "section": "Parameter einer Task: \\(T_i\\) (Periode)",
-    "text": "Parameter einer Task: \\(T_i\\) (Periode)\n\n\\(T_i\\) (Period): Abstand zwischen zwei Releases der Task\nBeispiel: Temperatursensor 10-mal/s \\(\\rightarrow T_i = 100\\,\\mathrm{ms}\\)\nIn der Theorie oft strikt periodische Tasks\n\n\nViele Steuergeräte sind periodisch: Regler alle 10 ms. \\(T_i\\) ist der Abstand zwischen den Momenten, in denen die Task ready wird."
+    "text": "Parameter einer Task: \\(T_i\\) (Periode)\n\n\\(T_i\\): Abstand der Releases, nicht der CPU-Starts\nBeispiel Regler: \\(T_i = 10\\,\\mathrm{ms}\\) (Lehrannahme)\nZunächst: kein Release-Jitter\n\n\nStart kann später liegen als Release. \\(T\\) und die relative Deadline \\(D\\) nicht gleichsetzen, außer das Modell sagt \\(D = T\\)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-d_i-deadline",
     "href": "vorlesungen/02_scheduling-theorie.html#parameter-einer-task-d_i-deadline",
     "title": "02 · Scheduling-Theorie",
     "section": "Parameter einer Task: \\(D_i\\) (Deadline)",
-    "text": "Parameter einer Task: \\(D_i\\) (Deadline)\n\n\\(D_i\\) (Deadline): maximale Zeit nach dem Release bis zum fertigen Ergebnis\n\\(R_i\\) (Response Time): tatsächliche Antwortzeit inkl. Unterbrechungen\nGoldene Regel der Echtzeit — schedulbar nur wenn:\n\n\\[R_i \\le D_i\\]\n\n\\(R_i\\) ist oft größer als \\(C_i\\), weil höherpriore Tasks und Interrupts unterbrechen. Trotzdem muss \\(R_i \\le D_i\\) in jedem Szenario gelten."
+    "text": "Parameter einer Task: \\(D_i\\) (Deadline)\n\nRelative Deadline \\(D_i\\): Frist ab Release\nAbsolute Deadline: \\(d_{i,k} = r_{i,k} + D_i\\)\nJob-Antwortzeit: \\(R_{i,k} = f_{i,k} - r_{i,k}\\)\n\\(R_i\\): nachgewiesene Worst-Case-Antwortzeit; gefordert \\(R_i \\le D_i\\)\nCompletion zum Zeitpunkt \\(d\\) gilt als rechtzeitig\n\n\n\\(R\\) enthält Warten und Präemption. \\(C \\le D\\) ist nötig, aber bei mehreren Tasks nicht hinreichend."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#das-grafische-task-modell",
     "href": "vorlesungen/02_scheduling-theorie.html#das-grafische-task-modell",
     "title": "02 · Scheduling-Theorie",
     "section": "Das grafische Task-Modell",
-    "text": "Das grafische Task-Modell\n\nAlle Parameter an einem Job auf dem Zeitstrahl\nRelease, Ausführung \\(C\\), Response Time \\(R\\), Deadline \\(D\\), Periode \\(T\\)\n\n\n\n\nTask-Modell mit \\(C\\), \\(T\\), \\(D\\) und \\(R\\)\n\n\n\nPfeil nach oben: Release. Rotes Feld: \\(C\\) (WCET). Distanz Release bis Ende der Ausführung: \\(R\\). Roter Abwärtspfeil: Deadline. Abstand zum nächsten Release: Periode \\(T\\)."
+    "text": "Das grafische Task-Modell\nLehrjob (ms): \\(r=0\\), Start \\(s=2\\), Ausführung \\(2\\)–\\(3\\) und \\(5\\)–\\(7\\), Präemption \\(3\\)–\\(5\\), \\(f=7\\), \\(D=8\\), \\(T=10\\).\n\n\\(C = 3\\), Startwartezeit \\(2\\), Unterbrechung \\(2\\), \\(R = 7 \\le D\\)\nNächster Release bei \\(t = 10\\), nicht beim CPU-Start\n\n\n\nBeide Laufstücke gehören demselben Job. Im Lehrmodell läuft er mit der angenommenen WCET. Frage: Warum ist \\(T=10\\) nicht der Abstand der Starts?"
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#deadline-klassifizierung",
     "href": "vorlesungen/02_scheduling-theorie.html#deadline-klassifizierung",
     "title": "02 · Scheduling-Theorie",
     "section": "Deadline-Klassifizierung",
-    "text": "Deadline-Klassifizierung\n\n\nVerhältnis von Deadline zu Periode:\n\nImplicit Deadline: \\(D_i = T_i\\)\nConstrained Deadline: \\(D_i \\le T_i\\)\nArbitrary Deadline: \\(D_i\\) beliebig\n\n\nFür die meisten RMS-Rechnungen: Implicit Deadlines — Standard in Steuergeräten.\n\n\nImplicit: fertig vor dem nächsten eigenen Job. Constrained: Frist kürzer als Periode. Viele Formeln heute setzen Implicit Deadlines voraus."
+    "text": "Deadline-Klassifizierung\n\n\nImplicit: \\(D = T\\); constrained: \\(D \\le T\\) (enthält implicit)\nArbitrary: \\(D\\) beliebig, auch \\(D &gt; T\\) und überlappende Jobs — nicht „immer \\(D &gt; T\\)“\nLiu-Layland und der einfache EDF-Test heute: \\(D = T\\)\n\n\nDie dritte Zeile ist ein Beispiel für arbitrary deadlines, keine Definition. Frage: Warum reicht \\(U \\le 1\\) bei \\(D &lt; T\\) nicht?"
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#task-typen-nach-auslöser",
     "href": "vorlesungen/02_scheduling-theorie.html#task-typen-nach-auslöser",
     "title": "02 · Scheduling-Theorie",
     "section": "Task-Typen nach Auslöser",
-    "text": "Task-Typen nach Auslöser\n\nPeriodisch: feste Periode \\(T_i\\), typisch Timer/Regler\nSporadisch: zufälliger Auslöser, aber garantierte Mindestzeit (Minimum Inter-Arrival Time) — wie periodisch mit \\(T_{\\min}\\)\nAperiodisch: kein Minimum (z. B. Netzwerk-Ping) — harte Garantien unmöglich\n\n\nEin Taster ist sporadisch: physisch begrenzte Rate. Netzwerk-Broadcasts können aperiodisch sein — ohne Minimum keine harte Echtzeitgarantie."
+    "text": "Task-Typen nach Auslöser\n\nPeriodisch: feste Release-Abstände \\(T\\)\nSporadisch: garantierter Mindestabstand, nicht „zufällig“\nAperiodischer Burst: ohne Lastgrenze keine pauschale Garantie für jeden Eingang\nBegrenzen: Zulassung, Verwerfen, reserviertes Budget (Server-Theorie später)\n\nGegenprobe, synchron, eine CPU: zwei Tasks \\(C=2\\,\\mathrm{ms}\\), \\(T=10\\,\\mathrm{ms}\\), \\(D=3\\,\\mathrm{ms}\\).\n\n\\(U = 40\\,\\%\\), aber \\(4\\,\\mathrm{ms}\\) Arbeit vor \\(t = 3\\,\\mathrm{ms}\\) — unabhängig vom Algorithmus unmöglich\n\n\nEin Taster ohne Entprellung hat keine garantierte Mindestreleasezeit. Physikalische Betätigung und modellierte Mindestankunft trennen. Die 40-%-Gegenprobe zeigt, warum \\(U \\le 1\\) bei kurzen Deadlines kein EDF-Test ist."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#das-rtos-task-zustandsmodell",
     "href": "vorlesungen/02_scheduling-theorie.html#das-rtos-task-zustandsmodell",
     "title": "02 · Scheduling-Theorie",
     "section": "Das RTOS Task-Zustandsmodell",
-    "text": "Das RTOS Task-Zustandsmodell\n\nRunning: besitzt die CPU (Single-Core: genau eine Task)\nReady: will rechnen, wartet in der Warteschlange\nBlocked / Waiting: wartet auf Ereignis (Delay, Semaphore, UART) — belastet die CPU nicht\n\n\nBlocked ist der Schlüssel: kein aktives Polling. Die Task kostet 0 % CPU, bis ein Interrupt sie wieder ready macht."
+    "text": "Das RTOS Task-Zustandsmodell\n\nRunning: hat die CPU (eine Nutz-Task; Idle wenn keine Arbeit)\nReady: will rechnen\nBlocked: wartet auf Ereignis oder Timeout, rechnet nicht\nBlocked wird Ready; die Auswahl kann unmittelbar folgen\nInterruptkontext ist kein vierter Task-Zustand\n\n\nAuf einer CPU höchstens ein Task-Kontext Running. ISRs separat. Idle darf laufen, wenn niemand Ready ist."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-der-zustandsmaschine",
     "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-der-zustandsmaschine",
     "title": "02 · Scheduling-Theorie",
     "section": "Visualisierung der Zustandsmaschine",
-    "text": "Visualisierung der Zustandsmaschine\n\n\nBlocked wird nie direkt Running — immer zuerst Ready-Queue\n\n\nDispatch wählt die höchstpriore Ready-Task. Präemption wirft die laufende Task zurück nach Ready. Events wecken nur in die Ready-Queue; der Scheduler entscheidet über Running."
+    "text": "Visualisierung der Zustandsmaschine\n\n\nScheduler wählt, Dispatcher führt aus\nRTOS: Kontextwechsel; Labor: Funktionsaufruf und Rückkehr\n\n\nEin geweckter Job wird nicht „magisch Running“, sondern zuerst Ready."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#metrik-cpu-auslastung-u",
     "href": "vorlesungen/02_scheduling-theorie.html#metrik-cpu-auslastung-u",
     "title": "02 · Scheduling-Theorie",
     "section": "Metrik: CPU-Auslastung (\\(U\\))",
-    "text": "Metrik: CPU-Auslastung (\\(U\\))\n\nUtilization \\(U\\): Indikator, ob ein System überhaupt lösbar ist\nAnteil einer Task: \\(U_i = \\frac{C_i}{T_i}\\)\nBeispiel: \\(C=2\\,\\mathrm{ms}\\), \\(T=10\\,\\mathrm{ms}\\) \\(\\rightarrow U_i = 0{,}2\\) (20 %)\nSystemauslastung:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i}\\]\n\n\\(U\\) ist das Fundament jeder Schedulability-Analyse. Zuerst Teilauslastungen, dann Summe über alle Tasks."
+    "text": "Metrik: CPU-Auslastung (\\(U\\))\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i}\\]\n\nLangfristiger Pflichtanteil auf einer CPU\n\\(U &gt; 1\\): dauerhafte Pflichtlast nicht erfüllbar\nEndliche Bursts und eine zweite H755-CPU sind ein anderes Modell\nNicht zugewiesene Prozent sind kein Fristpuffer in jedem Fenster\n\n\n\\(U\\) ist notwendig für unbegrenzte periodische Pflicht, nicht hinreichend bei \\(D &lt; T\\)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#auslastung-ein-rechenbeispiel",
     "href": "vorlesungen/02_scheduling-theorie.html#auslastung-ein-rechenbeispiel",
     "title": "02 · Scheduling-Theorie",
     "section": "Auslastung: Ein Rechenbeispiel",
-    "text": "Auslastung: Ein Rechenbeispiel\n\nSystem mit drei Tasks:\n\n\\(\\tau_1\\): \\(C_1=1\\), \\(T_1=4\\) \\(\\rightarrow U_1=25\\%\\)\n\\(\\tau_2\\): \\(C_2=2\\), \\(T_2=5\\) \\(\\rightarrow U_2=40\\%\\)\n\\(\\tau_3\\): \\(C_3=2\\), \\(T_3=10\\) \\(\\rightarrow U_3=20\\%\\)\n\nGesamt: \\(U = 85\\%\\)\nErste Regel: \\(U &gt; 1\\) (100 %) → unmöglich schedulbar\nBei 85 %: hängt vom Algorithmus ab!\n\n\nÜber 100 % hilft kein Algorithmus — physikalische Überlast. Unter 100 % ist Schedulability algorithmusabhängig; das ist der Kern der zweiten Vorlesungshälfte."
+    "text": "Auslastung: Ein Rechenbeispiel\nDurchgängiges 85-%-Set (ms), \\(D_i = T_i\\):\n\n\n\nTask\n\\(C\\)\n\\(T\\)\n\\(U_i\\)\n\n\n\n\n\\(\\tau_1\\)\n1\n4\n25 %\n\n\n\\(\\tau_2\\)\n2\n5\n40 %\n\n\n\\(\\tau_3\\)\n2\n10\n20 %\n\n\n\n\n\\(U = 0{,}85\\); restliche 15 %: nicht zugewiesen im Langfristmodell\nLokal kann die Nachfrage trotzdem eng sein (RTA gleich)\nISR-, Dispatcher- und Messoverhead getrennt bilanzieren, nicht doppelt und nicht als „Pauschalreserve = Beweis“\n\n\nDie 15 % sind keine Garantie, dass jeder Job 15 % Reserve hat. Overhead nur einrechnen, wenn er nicht schon in \\(C\\) steckt."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#exkurs-das-problem-mit-der-wcet",
     "href": "vorlesungen/02_scheduling-theorie.html#exkurs-das-problem-mit-der-wcet",
     "title": "02 · Scheduling-Theorie",
     "section": "Exkurs: Das Problem mit der WCET",
-    "text": "Exkurs: Das Problem mit der WCET\n\nWarum WCET statt ACET (Average)?\n\nif (sensor_value &gt; 1000) {\n    calculate_fft(); /* ~10 ms (Worst Case) */\n} else {\n    flag = 1;        /* ~0.1 ms (Best Case) */\n}\n\nACET vielleicht 1 ms — Auslegung auf 1 ms crasht, wenn der Worst Case eintritt\n\n\nHarte Echtzeit plant immer mit WCET, auch wenn der Fall selten ist. Ein heißer Tag und die FFT reißt sonst alle Deadlines."
+    "text": "Exkurs: Das Problem mit der WCET\nif (sensor_value &gt; 1000)\n    calculate_fft(); /* illustrative Laufzeit, z. B. länger */\nelse\n    flag = 1;        /* kurzer Pfad */\n\nEine Mittelwertannahme von \\(1\\,\\mathrm{ms}\\) braucht eine Pfadverteilung oder bleibt hypothetisch\nBeobachtetes Maximum \\(\\neq\\) sichere Obergrenze\nStatische Analyse braucht Plattform- und Codeannahmen (Cache, Bus, Waitstates)\n\n\nLehrkurve, keine Boardmessung. H755-Interferenz gehört ins WCET-Modell oder wird als außerhalb des idealen Ein-CPU-Modells gekennzeichnet."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#wie-ermittelt-man-die-wcet",
     "href": "vorlesungen/02_scheduling-theorie.html#wie-ermittelt-man-die-wcet",
     "title": "02 · Scheduling-Theorie",
     "section": "Wie ermittelt man die WCET?",
-    "text": "Wie ermittelt man die WCET?\n\n\n\nAnalytisch (statisch)\n\nCode ohne Laufzeit mathematisch analysieren\nAbsolute Obergrenze\nSchwer bei Caches (z. B. Cortex-M7)\n\n\n\n\nEmpirisch (Messung)\n\nStresstests, Oszi, Trace-Tools\nNahe an der Realität\nKeine absolute Garantie — oft mit Puffer\n\n\n\n\nAnalytisch: sichere Schranke, aber schwer bei modernen CPUs. Praxis oft messen, Worst Case nehmen und Sicherheitspuffer aufschlagen."
+    "text": "Wie ermittelt man die WCET?\n\n\nStatische Analyse\n\nPfade, Schleifengrenzen, Plattform\nSichere Schranke nur unter Annahmen\n\n\nMessung\n\nMessmaximum der Läufe\nKein Beweis durch „plus Puffer“\nAnnahmen dokumentieren\n\n\n\nBeide Wege brauchen ein Modell. „Messen und 20 % drauf“ ist eine Ingenieurpraxis, kein Nachweis."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-task-modell",
     "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-task-modell",
     "title": "02 · Scheduling-Theorie",
     "section": "Zusammenfassung Task-Modell",
-    "text": "Zusammenfassung Task-Modell\n\nTasks: getrennte Endlosschleifen\nOS orchestriert Ready / Running / Blocked\nParameter: \\(C_i\\) (WCET), \\(T_i\\) (Periode), \\(D_i\\) (Deadline)\nCPU-Auslastung \\(U\\) muss \\(\\le 100\\%\\) sein\n\n\nFragen zum Task-Modell? Als Nächstes: nach welchen Regeln der Scheduler die Ready-Queue auflöst."
+    "text": "Zusammenfassung Task-Modell\n\nTask vs. Job; \\(T\\) = Release-Abstand\n\\(C\\) eigener Bedarf; \\(R = f - r\\); Nachweis \\(R \\le D\\)\n\\(U\\) auf einer CPU; \\(U &gt; 1\\) schließt dauerhafte Pflichtlast aus\nAnalysezahlen \\(\\neq\\) automatische RTOS-Überwachung\n\n\nFrage: Erfüllt \\(U = 40\\,\\%\\) mit \\(D = 3\\,\\mathrm{ms}\\) und zwei Jobs à \\(2\\,\\mathrm{ms}\\) die Frist? Nein."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#die-kernfrage-des-schedulings",
     "href": "vorlesungen/02_scheduling-theorie.html#die-kernfrage-des-schedulings",
     "title": "02 · Scheduling-Theorie",
     "section": "Die Kernfrage des Schedulings",
-    "text": "Die Kernfrage des Schedulings\n\nMehrere Tasks im Zustand Ready\nNur ein Core: wer darf rechnen?\nGenau das entscheidet der Scheduling-Algorithmus\nDie Wahl entscheidet über Echtzeit oder Deadline-Miss\n\n\nTimer-Tick: Motor, Display und Netzwerk sind ready. Der Algorithmus vergibt den einzigen Kern — und damit Erfolg oder Crash."
+    "text": "Die Kernfrage des Schedulings\n\nMehrere Ready, eine CPU\nDer Algorithmus legt die Auswahlregel fest\nOb Fristen halten, zeigt der Test unter seinen Annahmen\n\n\nAuswahlregel und Beweis nicht vermischen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#scheduler-vs.-dispatcher",
     "href": "vorlesungen/02_scheduling-theorie.html#scheduler-vs.-dispatcher",
     "title": "02 · Scheduling-Theorie",
     "section": "Scheduler vs. Dispatcher",
-    "text": "Scheduler vs. Dispatcher\n\nScheduler (Entscheider):\n\nAlgorithmus: wer hat Vorrang?\naktualisiert Task-Control-Blöcke (TCB)\n\nDispatcher (Ausführer):\n\nContext Switch (Register sichern/laden)\nStack-Pointer der gewählten Task setzen\n\n\n\nScheduler = Gehirn (C-Logik). Dispatcher = Muskel (oft Assembler-nah). Entscheidung und physischer Wechsel sind getrennt."
+    "text": "Scheduler vs. Dispatcher\n\nScheduler: wer als Nächstes (Priorität, Deadline, Ring)\nDispatcher: setzt die Auswahl um\nRTOS-Thread: Register/PSP; Labor: step() aufrufen und Rückkehr abwarten\n\n\nIm Labor gibt es keinen PendSV-Registerwechsel."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#klassifizierung-offline-vs.-online",
     "href": "vorlesungen/02_scheduling-theorie.html#klassifizierung-offline-vs.-online",
     "title": "02 · Scheduling-Theorie",
     "section": "Klassifizierung: Offline vs. Online",
-    "text": "Klassifizierung: Offline vs. Online\n\n\nOffline-Scheduling - Fahrplan vor dem Flashen berechnet - Laufzeit: Tabelle abarbeiten (Time-Triggered) - Vorteil: maximal deterministisch - Nachteil: starr\n\nOnline-Scheduling - Entscheidung zur Laufzeit (Event-Triggered) - Flexibel bei unvorhersehbaren Events - Standard: FreeRTOS, Linux - Nachteil: Scheduler kostet CPU-Zeit\n\n\nOffline: Flugzeugsteuerungen, Time-Triggered. Wir fokussieren Online: flexibel, aber Scheduler-Overhead."
+    "text": "Klassifizierung: Offline vs. Online\n\n\n\nAchse\nAusprägungen\n\n\n\n\nZeitpunkt der Planung\noffline (Tabelle) / online (zur Laufzeit)\n\n\nAuslöser\nzeitgesteuert / ereignisgesteuert\n\n\nCPU-Abgabe\nkooperativ / präemptiv\n\n\nAuswahl\nFixed Priority / EDF / RR\n\n\n\n\nDie Achsen nicht gleichsetzen: online \\(\\neq\\) automatisch ereignisgesteuert\n\n\nEine offline Tabelle kann zeitgesteuert sein. Ein Fixed-Priority-RTOS kann auf Ereignisse reagieren, nicht nur auf den Tick."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#klassifizierung-kooperativ-vs.-präemptiv",
     "href": "vorlesungen/02_scheduling-theorie.html#klassifizierung-kooperativ-vs.-präemptiv",
     "title": "02 · Scheduling-Theorie",
     "section": "Klassifizierung: Kooperativ vs. Präemptiv",
-    "text": "Klassifizierung: Kooperativ vs. Präemptiv\n\nWie bekommt das OS die CPU zurück?\nKooperativ (non-preemptive):\n\nTask gibt CPU freiwillig ab (os_yield())\n\nPräemptiv:\n\nHardware-Timer entreißt der Task die CPU\nTask merkt den Wechsel nicht\n\n\n\nKooperativ braucht Disziplin. Präemptiv: SysTick (z. B. 1 ms) stoppt die Task und gibt dem Scheduler die Kontrolle."
+    "text": "Klassifizierung: Kooperativ vs. Präemptiv\n\nKooperativ: Task gibt die CPU frei (yield / Rückkehr)\nPräemptiv: der Kern entzieht die CPU\nFixed Priority ist nicht automatisch RMS: Prioritäten muss die Anwendung passend setzen\nRound-Robin ignoriert Fristen, kann sie aber unter nachgewiesenen Bedingungen erfüllen\n\n\nPrioritätswahl und Art der CPU-Abgabe sind verschiedene Entscheidungen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#kooperatives-scheduling-non-preemptive",
     "href": "vorlesungen/02_scheduling-theorie.html#kooperatives-scheduling-non-preemptive",
     "title": "02 · Scheduling-Theorie",
     "section": "Kooperatives Scheduling (Non-preemptive)",
-    "text": "Kooperatives Scheduling (Non-preemptive)\nvoid Task_Motor(void) {\n    while (1) {\n        Calculate_PID(); /* ~2 ms */\n        os_yield();      /* andere dürfen */\n        Apply_PWM();\n    }\n}\n\nVorteil: wenige Race Conditions während der Berechnung\nNachteil: vergessenes yield() oder Endlosschleife → System-Freeze\n\n\nWindows 3.x war kooperativ. Vorteil: ruhiges Schreiben globaler Daten. Nachteil: ein hängender Task friert alles ein — oft K.O. für sichere Echtzeit."
+    "text": "Kooperatives Scheduling (Non-preemptive)\n\nEin Schritt, der nie zurückkehrt, hält den Dispatcher an\nAktive IRQs können weiterlaufen\nCalculate_PID und Apply_PWM im Beispiel als ein begrenzter Schritt, wenn die Aktorfrist das verlangt\nyield dazwischen nicht unkommentiert einbauen\n\n\nKooperativ kann Fristen erfüllen, wenn jeder Schritt ein nachgewiesenes Budget hat und zurückkehrt."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#präemptives-scheduling",
     "href": "vorlesungen/02_scheduling-theorie.html#präemptives-scheduling",
     "title": "02 · Scheduling-Theorie",
     "section": "Präemptives Scheduling",
-    "text": "Präemptives Scheduling\n\nStandard moderner RTOS (FreeRTOS, VxWorks, Zephyr)\nHardware-Interrupt (z. B. SysTick) weckt den Scheduler\nHöherpriore Ready-Task → sofortiger Wechsel\nGefahr Shared Data: Präemption mitten im Schreiben → korrupte Daten\nLösung später: Mutex/Semaphore (Ressourcen-Termin)\n\n\nPräemption verhindert Freezes, erzwingt aber Synchronisation. Details zu Mutex und Priority Inversion: spätere Termine."
+    "text": "Präemptives Scheduling\n\nEine ISR kann eine höherpriore Task Ready machen\nPendSV kann nach ISR-Ende wechseln — nicht erst beim nächsten Tick\nPräemption verhindert keinen Starvation, wenn High ständig Ready bleibt\nShared Data: später Mutex; Shared Memory ist nicht pauschal verboten, Abhängigkeiten müssen im Modell stehen\n\n\n„Alle Wechsel passieren am Tick“ ist falsch für ereignisgesteuerte Wechsel. Frage: Warum läuft Low nicht, wenn High nur yield macht, aber Ready bleibt?"
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#prioritätsbasiertes-scheduling",
     "href": "vorlesungen/02_scheduling-theorie.html#prioritätsbasiertes-scheduling",
     "title": "02 · Scheduling-Theorie",
     "section": "Prioritätsbasiertes Scheduling",
-    "text": "Prioritätsbasiertes Scheduling\n\nJede Task erhält eine Priorität\nDie Ready-Task mit höchster Priorität gewinnt\nStatisch: Priorität zur Erzeugung fest (Grundlage RMS)\nDynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)\n\n\nStatisch: prio = 5 bleibt. Dynamisch (EDF): Ranking nach absoluter Deadline — die Task mit der frühesten Deadline hat die höchste Priorität (kein „Ansteigen kurz vorher“)."
+    "text": "Prioritätsbasiertes Scheduling\n\nFixed Priority: konfigurierte Priorität, statisch im RMS-Modell\nEDF: unter bereiten Jobs die früheste absolute Job-Deadline\nEine Deadline wird nicht allein dadurch „höher“, dass Zeit verstreicht, während andere absolute Deadlines fest bleiben\nNVIC-IRQ: kleinere Zahl = dringender; native FreeRTOS-Taskpriorität: größere Zahl = höher (CMSIS-RTOS2 separat prüfen)\n\n\nIRQ-Priorität und Task-Priorität nicht vermischen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-spezialfall-round-robin-rr",
     "href": "vorlesungen/02_scheduling-theorie.html#der-spezialfall-round-robin-rr",
     "title": "02 · Scheduling-Theorie",
     "section": "Der Spezialfall: Round-Robin (RR)",
-    "text": "Der Spezialfall: Round-Robin (RR)\n\nGleiche Priorität bei mehreren Ready-Tasks?\nRound-Robin: Zeitscheiben (Time Slices, z. B. 1 ms)\nA → B → C → A …\nFair, aber allein für harte Echtzeit ungeeignet (ignoriert Deadlines)\n\n\nLaborziel heute: Round-Robin. Fairness-Karussell — ohne Deadline-Bewusstsein. In FreeRTOS optional auf gleicher Prioritätsstufe."
+    "text": "Der Spezialfall: Round-Robin (RR)\n\nGleiche Auswahlklasse, ringförmige Zeitscheiben oder kooperative Schritte\nTimer-RR: gleiche Quanten; Labor-RR: keine erzwungenen 1-ms-Quanten\nFairness ersetzt keinen Fristnachweis\n\n\nZwei Bilder im Laborteil: gleiche Scheiben vs. unterschiedlich lange Schritte."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-round-robin",
     "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-round-robin",
     "title": "02 · Scheduling-Theorie",
     "section": "Visualisierung: Round Robin",
-    "text": "Visualisierung: Round Robin\n\n\nGleiche Zeitscheibe, ringförmiger Wechsel\n\n\nPlantUML-Timing: gleiche Priorität, Timer erzwingt Wechsel. Ideal für den Labor-Einstieg als C-Array/Ringpuffer."
+    "text": "Visualisierung: Round Robin\n\n\nGenau eine Running-Spur; idealisierte gleiche Scheiben\n\n\nDas ist timerpräemptives RR, nicht der Labor-Dispatcher."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#das-problem-des-aushungerns-starvation",
     "href": "vorlesungen/02_scheduling-theorie.html#das-problem-des-aushungerns-starvation",
     "title": "02 · Scheduling-Theorie",
     "section": "Das Problem des Aushungerns (Starvation)",
-    "text": "Das Problem des Aushungerns (Starvation)\n\nStrikt prioritätsbasiert und präemptiv\nTask A: HIGH, Task B: LOW\nTask A in while (1) ohne Delay/Block\nErgebnis: Task B verhungert (Starvation)\nRTOS garantiert keine Fairness bei ungleichen Prioritäten\n\n\nBei strikter Priorität mischt sich das OS nicht „fair“ ein. Hochpriore Tasks müssen sich schlafen legen, sonst atmet der Rest nie."
+    "text": "Das Problem des Aushungerns (Starvation)\n\nStrikte Priorität, High bleibt Ready (auch nach yield): Low kommt nicht dran\nyield behebt das nicht, solange High sofort wieder gewählt wird\nAbhilfe: Blockieren, periodische Freigabe, geprüfte Budgets\nKooperativ zusätzlich: ein Schritt ohne Rückkehr stoppt die anderen Callbacks\n\n\nPräemption garantiert weder Fairness noch Jitterfreiheit."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#wann-ist-ein-system-schedulbar",
     "href": "vorlesungen/02_scheduling-theorie.html#wann-ist-ein-system-schedulbar",
     "title": "02 · Scheduling-Theorie",
     "section": "Wann ist ein System schedulbar?",
-    "text": "Wann ist ein System schedulbar?\n\nEin Task-Set ist schedulbar, wenn ein Algorithmus existiert, der allen Jobs ihre Deadlines einhält\nSchedulability-Test: Vorab-Beweis (Formel / Analyse)\nZiel: Garantie vor dem Ausliefern, nicht Hoffnung nach dem Flashen\n\n\nSchedulability = Planbarkeit. Wir wollen vor Kundenauslieferung wissen, ob Deadlines halten — mathematisch, nicht nur empirisch."
+    "text": "Wann ist ein System schedulbar?\n\nFeasibility: es existiert irgendein zulässiger Plan\nSchedulability: ein gewählter Algorithmus hält die Fristen\nEin RMS-Test kann RMS verwerfen, obwohl EDF funktioniert (97-%-Beispiel)\nTests gelten unter ihren Annahmen, nicht für jedes STM32-Programm\n\n\nDie 40-%-Gegenprobe ist infeasible, nicht nur „RMS-ungeeignet“."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#schedulability-tests",
     "href": "vorlesungen/02_scheduling-theorie.html#schedulability-tests",
     "title": "02 · Scheduling-Theorie",
     "section": "Schedulability-Tests",
-    "text": "Schedulability-Tests\n\n\nExakter Test (hinreichend und notwendig) - Bestanden: sicher - Durchgefallen: sicher nicht schedulbar - Nachteil: oft teuer (NP-schwer)\n\nKonservativer Test (nur hinreichend) - Bestanden: Garantie - Durchgefallen: unklar (pessimistisch) - Vorteil: einfache Formel\n\n\nIngenieure nutzen oft hinreichende Tests: „Ja“ ist sicher, „Nein“ heißt nur „keine Garantie“. Merken Sie sich das für die RMS-Schranke."
+    "text": "Schedulability-Tests\n\nHinreichend: bestanden \\(\\Rightarrow\\) nachgewiesen; nicht bestanden \\(\\Rightarrow\\) keine Entscheidung\nExakt im benannten Modell: bestanden oder widerlegt\nDie einfache RTA ist dieser Fixpunkt-Test, nicht pauschal „NP-schwer“\nAllgemeine Scheduling-Probleme können schwer sein — das hier benannte Verfahren nicht damit abtun\n\n\nLiu-Layland ist hinreichend. Darüber RTA, nicht sofort „unschedulable“."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#rate-monotonic-scheduling-rms",
     "href": "vorlesungen/02_scheduling-theorie.html#rate-monotonic-scheduling-rms",
     "title": "02 · Scheduling-Theorie",
     "section": "Rate Monotonic Scheduling (RMS)",
-    "text": "Rate Monotonic Scheduling (RMS)\n\nIndustrie-Standard für periodische Echtzeitsysteme\nLiu & Layland (1973)\nTyp: statisch, präemptiv, prioritätsbasiert\nGoldene Regel: je kürzer \\(T_i\\), desto höher die Priorität (höhere Rate = höhere Priorität)\n\n\nRMS ist der Klassiker in Automotive und Industrie. Kurze Periode bekommt hohe Priorität. Als Nächstes: Annahmen von Liu & Layland, Utilization Bound und Response-Time Analysis."
+    "text": "Rate Monotonic Scheduling (RMS)\n\nFixed Priority, präemptiv, Rate: kürzeres \\(T\\) \\(\\Rightarrow\\) höhere Priorität\nLiu & Layland (1973), für das ideale Ein-CPU-Modell\nEin FP-RTOS ist nicht automatisch RMS, solange die Prioritäten nicht so vergeben sind\n\n\nKeine Branchenzuordnung „Bremse = RMS“. RMS ist eine Prioritätsregel plus Analyse."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#rms-die-mathematischen-annahmen",
     "href": "vorlesungen/02_scheduling-theorie.html#rms-die-mathematischen-annahmen",
     "title": "02 · Scheduling-Theorie",
     "section": "RMS: Die mathematischen Annahmen",
-    "text": "RMS: Die mathematischen Annahmen\n\nUm RMS mathematisch zu beweisen, trafen Liu & Layland (1973) strikte Annahmen:\n\nAlle Tasks sind strikt periodisch\nDeadline = Periode (\\(D_i = T_i\\))\nTasks sind völlig unabhängig (keine Mutexes, kein Shared Memory)\nLaufzeit des Schedulers (Context Switch) ist 0\n\nIn der Realität ist keine dieser Annahmen zu 100 % erfüllt — trotzdem ist RMS die Basis fast aller realen Systeme\n\n\nBevor wir die berühmte Schranke ansehen: Liu und Layland gingen 1973 von einem idealen System aus — periodisch, \\(D_i = T_i\\), keine Ressourcenkonflikte, Context Switch = 0. Realitätsfern, aber fast jedes AUTOSAR-Steuergerät basiert darauf. Die Kunst: Annahmen später kontrolliert aufweichen, ohne Deadlines zu verlieren."
+    "text": "RMS: Die mathematischen Annahmen\nFür die Kernbeispiele, sofern nicht anders gesagt:\n\nEin Prozessor, vollständig präemptierbar, unabhängig\nBeschränkte \\(C_i\\), kein Blocking, kein Release-Jitter, keine Selbstsuspendierung\nZunächst Overhead/ISRs = 0 (sonst in \\(C\\) oder als Interferenz modellieren)\nLiu-Layland und einfacher EDF-Test: \\(D_i = T_i\\)\nEinfache RTA: Fixed Priority mit \\(D_i \\le T_i\\)\n\n\nShared Memory ist erlaubt, wenn Abhängigkeiten und Interferenz im Modell stehen\nH755-Businterferenz: im WCET oder außerhalb dieses Idealmodells\n\n\n„Kein Shared Memory“ wäre zu hart. Entscheidend ist, ob die Störung in der Analyse vorkommt."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#beispiel-1-rms-prioritäten-vergeben",
     "href": "vorlesungen/02_scheduling-theorie.html#beispiel-1-rms-prioritäten-vergeben",
     "title": "02 · Scheduling-Theorie",
     "section": "Beispiel 1: RMS-Prioritäten vergeben",
-    "text": "Beispiel 1: RMS-Prioritäten vergeben\n\nGegebenes Task-Set:\n\n\\(\\tau_1\\): \\(C_1 = 1\\), \\(T_1 = 4\\)\n\\(\\tau_2\\): \\(C_2 = 2\\), \\(T_2 = 6\\)\n\\(\\tau_3\\): \\(C_3 = 2\\), \\(T_3 = 12\\)\n\nAuslastung: \\(U = \\frac{1}{4} + \\frac{2}{6} + \\frac{2}{12} = 0{,}25 + 0{,}33\\overline{3} + 0{,}16\\overline{6} = 75\\,\\%\\)\nRegel: kürzere Periode \\(\\rightarrow\\) höhere Priorität\nErgebnis: \\(\\tau_1\\) (höchste Prio), \\(\\tau_2\\) (mittel), \\(\\tau_3\\) (niedrigste)\n\n\nDrei Tasks, Summe \\(75\\,\\%\\). Nach Rate Monotonic bekommt \\(\\tau_1\\) (\\(T=4\\)) die höchste Priorität, \\(\\tau_3\\) (\\(T=12\\)) die niedrigste. Mit \\(C_3=2\\) wird \\(\\tau_3\\) bei \\(t=4\\) mitten in ihrer Ausführung von \\(\\tau_1\\) präemptiert — genau das wollen wir zeigen."
+    "text": "Beispiel 1: RMS-Prioritäten vergeben\n75-%-Set (ms), \\(D = T\\), Release aller ersten Jobs bei \\(t = 0\\):\n\n\\(\\tau_1=(1,4)\\), \\(\\tau_2=(2,6)\\), \\(\\tau_3=(2,12)\\)\n\\(U = \\tfrac{1}{4}+\\tfrac{2}{6}+\\tfrac{2}{12} = 0{,}75\\)\nPriorität \\(\\tau_1 &gt; \\tau_2 &gt; \\tau_3\\)\n\n\nDieses Set zeigt Präemption von \\(\\tau_3\\) bei \\(t = 4\\)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-präemptives-rms",
     "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-präemptives-rms",
     "title": "02 · Scheduling-Theorie",
     "section": "Visualisierung: Präemptives RMS",
-    "text": "Visualisierung: Präemptives RMS\n\n\nBei \\(t=4\\) unterbricht \\(\\tau_1\\) die laufende \\(\\tau_3\\) präemptiv (\\(C_3=2\\): erste Zeiteinheit \\(t=3\\)–\\(4\\), Rest nach Präemption)\n\n\nBei \\(t=0\\) erwachen alle drei gleichzeitig; \\(\\tau_1\\) nimmt die CPU. Nach 1 ms folgt \\(\\tau_2\\), ab \\(t=3\\) darf \\(\\tau_3\\) starten. Bei \\(t=4\\) feuert die Periode von \\(\\tau_1\\) erneut — das OS entzieht \\(\\tau_3\\) die CPU mitten in \\(C_3=2\\). Das ist Präemption in Reinkultur; \\(\\tau_3\\) setzt ab \\(t=5\\) fort und ist bei \\(t=6\\) fertig."
+    "text": "Visualisierung: Präemptives RMS\nIntervalle halboffen \\([Start, Ende)\\). CPU: \\(0\\)–\\(1\\) \\(\\tau_1\\), \\(1\\)–\\(3\\) \\(\\tau_2\\), \\(3\\)–\\(4\\) \\(\\tau_3\\), \\(4\\)–\\(5\\) \\(\\tau_1\\), \\(5\\)–\\(6\\) \\(\\tau_3\\), \\(6\\)–\\(8\\) \\(\\tau_2\\), \\(8\\)–\\(9\\) \\(\\tau_1\\), \\(9\\)–\\(12\\) Idle.\n\n\\(\\tau_3\\): \\(C = 2\\), \\(R = 6 \\le 12\\); Completion bei \\(t = 6\\) hält\nNeues \\(\\tau_2\\) startet bei seinem Release \\(t = 6\\)\n\n\n\nBei \\(t = 4\\) unterbricht \\(\\tau_1\\) den noch offenen ersten Job von \\(\\tau_3\\). Critical Instant ist der gemeinsame Release, nicht ein gemeinsamer CPU-Start — auf einer CPU starten sie nicht gleichzeitig."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-kritische-moment-critical-instant",
     "href": "vorlesungen/02_scheduling-theorie.html#der-kritische-moment-critical-instant",
     "title": "02 · Scheduling-Theorie",
     "section": "Der kritische Moment (Critical Instant)",
-    "text": "Der kritische Moment (Critical Instant)\n\nSchlimmster Fall für jede Task: Start exakt zeitgleich mit allen höherprioren Tasks\nDieser Zeitpunkt heißt Critical Instant\nBeweis-Logik: Hält die Task unter diesen Bedingungen die Deadline ein, hält sie sie immer ein\n\n\nAlle Tasks bei \\(t=0\\) zu starten war Absicht. Liu und Layland: Worst Case, wenn eine Task zusammen mit allen höherprioren aufwacht — längste Wartezeit. Schedulability-Analyse muss diesen Instant prüfen; überlebt \\(\\tau_3\\) ihn, überlebt sie den Rest."
+    "text": "Der kritische Moment (Critical Instant)\n\nFür dieses FP-Modell: Release zusammen mit allen höherprioren Aufgaben\n„Hält hier, hält im Modell“ — nicht für Jitter, Blocking oder Selbstsuspendierung\nAngepasste Analysen, wenn die Annahmen fallen\n\n\nRTA für 75 %: \\(R_1 = 1\\), \\(R_2 = 3\\), \\(R_3 = 6\\)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#die-rms-schranke-liu-layland-1973",
     "href": "vorlesungen/02_scheduling-theorie.html#die-rms-schranke-liu-layland-1973",
     "title": "02 · Scheduling-Theorie",
     "section": "Die RMS-Schranke (Liu & Layland, 1973)",
-    "text": "Die RMS-Schranke (Liu & Layland, 1973)\n\nHinreichender, konservativer Schedulability-Test\nEin Task-Set aus \\(n\\) Tasks ist unter RMS garantiert schedulbar, wenn:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i} \\le n\\bigl(2^{1/n}-1\\bigr)\\]\n\n\\(U\\): Systemauslastung; \\(n\\): Anzahl der Tasks\n\n\nEine der berühmtesten Formeln der Echtzeitinformatik. Unter der Schranke: Garantie — keine Deadline verpasst. Darüber: genauer hinsehen (Grauzone)."
+    "text": "Die RMS-Schranke (Liu & Layland, 1973)\n\\[U \\le U_{LL}(n) = n\\bigl(2^{1/n}-1\\bigr)\\]\n\n\n\n\\(n\\)\n\\(U_{LL}\\)\n\n\n\n\n1\n100 %\n\n\n2\n82,84 %\n\n\n3\n77,98 %\n\n\n4\n75,68 %\n\n\n\\(\\infty\\)\n\\(\\ln 2 \\approx 69{,}31\\,\\%\\)\n\n\n\n\nHinreichend unter den LL-Annahmen, nicht notwendig\n69,3 % ist keine allgemeine RMS-Obergrenze\n\n\nHarmonische Gegenprobe (Anhang in den Notizen): \\((C=2,T=D=4)\\) und \\((C=4,T=D=8)\\), \\(U = 100\\,\\%\\). Ablauf \\(0\\)–\\(2\\) \\(\\tau_1\\), \\(2\\)–\\(4\\) \\(\\tau_2\\), \\(4\\)–\\(6\\) \\(\\tau_1\\), \\(6\\)–\\(8\\) \\(\\tau_2\\) hält unter RMS."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#werte-der-rms-schranke",
     "href": "vorlesungen/02_scheduling-theorie.html#werte-der-rms-schranke",
     "title": "02 · Scheduling-Theorie",
     "section": "Werte der RMS-Schranke",
-    "text": "Werte der RMS-Schranke\n\nEinsetzen von \\(n\\) in \\(n(2^{1/n}-1)\\):\n\n\n\n\n\\(n\\)\nSchranke\n\n\n\n\n1\n\\(100\\,\\%\\)\n\n\n2\n\\(\\approx 82{,}8\\,\\%\\)\n\n\n3\n\\(\\approx 78{,}0\\,\\%\\)\n\n\n4\n\\(\\approx 75{,}7\\,\\%\\)\n\n\n\\(\\infty\\)\n\\(\\ln 2 \\approx 69{,}3\\,\\%\\)\n\n\n\n\nBei \\(n=1\\) gilt 100 %. Mit mehr Tasks sinkt die Schranke; Grenzwert \\(\\ln 2 \\approx 69{,}3\\,\\%\\) — die magische Zahl der Automatisierungstechnik."
+    "text": "Werte der RMS-Schranke\nFür \\(n = 3\\):\n\nbis 77,98 %: unter den Modellannahmen durch die Schranke nachgewiesen\ndarüber bis 100 %: genauer testen (RTA)\nüber 100 %: dauerhafte Pflichtlast auf einer CPU nicht erfüllbar\n75-%-Set liegt im ersten Bereich; 85-%-Set braucht RTA\n„Schranke nicht erfüllt“ \\(\\neq\\) „nicht schedulbar“\n\n\nTabelle und Aussage bleiben auf einer Folie. Faustregel \\(\\ln 2\\) ist der Grenzwert, kein Verbot höherer Auslastung."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#interpretation-der-rms-schranke",
     "href": "vorlesungen/02_scheduling-theorie.html#interpretation-der-rms-schranke",
     "title": "02 · Scheduling-Theorie",
     "section": "Interpretation der RMS-Schranke",
-    "text": "Interpretation der RMS-Schranke\n\nZone 1: \\(U \\le n(2^{1/n}-1)\\) — hinreichend schedulbar (Liu und Layland)\nFaustregel: \\(U \\le \\ln 2 \\approx 69{,}3\\,\\%\\) ist für jedes \\(n\\) sicher\nZone 2: Schranke \\(&lt; U \\le 100\\,\\%\\) — Grauzone; hinreichender Test sagt „Nein“, System kann trotzdem laufen\n\nLösung: exakter Test (Response-Time Analysis)\n\nZone 3: \\(U &gt; 100\\,\\%\\) — physikalisch unmöglich\n\n\nDie Tabelle liefert die \\(n\\)-abhängige Schranke; \\(\\ln 2\\) ist der Grenzwert. Unter der Schranke: Garantie. Darüber: Grauzone — weder blind ausliefern noch Chip verwerfen, sondern RTA. Über 100 % ist ausgeschlossen."
+    "text": "Interpretation der RMS-Schranke\n\nDie Schranke ist eine Entscheidungshilfe, kein vollständiger RMS-Test\nFP-Prioritäten im RTOS müssen zur Rate passen, sonst ist es nicht RMS\nOverhead nicht stillschweigend ignorieren, wenn er die Annahmen verletzt\n\n\nFrage: Liegt \\(U = 85\\,\\%\\) bei drei Tasks unter oder über \\(U_{LL}(3)\\)? Darüber — deshalb RTA, nicht automatisch Fail."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#response-time-analysis-rta",
     "href": "vorlesungen/02_scheduling-theorie.html#response-time-analysis-rta",
     "title": "02 · Scheduling-Theorie",
     "section": "Response-Time Analysis (RTA)",
-    "text": "Response-Time Analysis (RTA)\n\nExakter Test für die Grauzone\nWorst-Case-Antwortzeit \\(R_i\\) iterativ:\n\n\\[R_i^{(k+1)} = C_i + \\sum_{j \\in hp(i)} \\left\\lceil \\frac{R_i^{(k)}}{T_j} \\right\\rceil C_j\\]\n\n\\(hp(i)\\): Menge aller Tasks mit höherer Priorität als \\(i\\)\nAbbruch: \\(R_i^{(k+1)} = R_i^{(k)}\\) (gefunden) oder \\(R_i &gt; D_i\\) (Deadline verpasst)\n\n\n\\(R_i\\) = eigene WCET plus Unterbrechungen durch höherpriore Tasks. Da \\(R\\) auf beiden Seiten steht: Iteration bis Konvergenz oder Deadline-Bruch."
+    "text": "Response-Time Analysis (RTA)\nEinfaches FP-Modell, \\(D_i \\le T_i\\), \\(hp(i)\\) = höherpriore Tasks:\n\\[R_i^{(0)} = C_i, \\qquad R_i^{(k+1)} = C_i + \\sum_{j \\in hp(i)} \\left\\lceil \\frac{R_i^{(k)}}{T_j} \\right\\rceil C_j\\]\n\nAufrundung: Anzahl störender Jobs im Fenster\nStopp bei Fixpunkt oder bei \\(R &gt; D\\); \\(R = D\\) besteht\nExakt nur in diesem Modell; kein stiller Blocking-/Jitter-Term\n\n85-%-Set, RMS-Prioritäten:\n\n\\(\\tau_1\\): \\(1 \\to 1\\), \\(R_1 = 1 \\le 4\\)\n\\(\\tau_2\\): \\(2 \\to 3 \\to 3\\), \\(R_2 = 3 \\le 5\\)\n\n\n\\(hp(\\tau_2)=\\{\\tau_1\\}\\). \\(2+\\lceil 2/4\\rceil\\cdot 1 = 3\\), dann stabil."
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#rta-für-das-85--set",
+    "href": "vorlesungen/02_scheduling-theorie.html#rta-für-das-85--set",
+    "title": "02 · Scheduling-Theorie",
+    "section": "RTA für das 85-%-Set",
+    "text": "RTA für das 85-%-Set\n\\(\\tau_3\\), \\(C_3 = 2\\), \\(hp = \\{\\tau_1,\\tau_2\\}\\):\n\n\n\nSchritt\nRechnung\nWert\n\n\n\n\n0\n\\(C_3\\)\n2\n\n\n1\n\\(2+\\lceil 2/4\\rceil\\cdot 1+\\lceil 2/5\\rceil\\cdot 2\\)\n5\n\n\n2\n\\(2+\\lceil 5/4\\rceil\\cdot 1+\\lceil 5/5\\rceil\\cdot 2\\)\n6\n\n\n3\n\\(2+\\lceil 6/4\\rceil\\cdot 1+\\lceil 6/5\\rceil\\cdot 2\\)\n8\n\n\n4\n\\(2+\\lceil 8/4\\rceil\\cdot 1+\\lceil 8/5\\rceil\\cdot 2\\)\n8\n\n\n\n\nFixpunkt \\(R_3 = 8 \\le 10\\)\nKritischer Ablauf: \\(0\\)–\\(1\\) \\(\\tau_1\\), \\(1\\)–\\(3\\) \\(\\tau_2\\), \\(3\\)–\\(4\\) \\(\\tau_3\\), \\(4\\)–\\(5\\) \\(\\tau_1\\), \\(5\\)–\\(7\\) \\(\\tau_2\\), \\(7\\)–\\(8\\) \\(\\tau_3\\)\n85 % liegen über \\(U_{LL}(3)\\), dieses Set ist unter RMS dennoch nachgewiesen\nDaraus folgt nicht „85 % ist immer sicher“\n\n\nBei Fenster 5: \\(2+2+2 = 6\\). Bei Fenster 6: \\(2+2+4 = 8\\). Releases bei \\(t = 4\\) und \\(t = 5\\). Quellen: Liu/Layland 1973; Audsley u. a. zur statischen Prioritätsanalyse."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#fazit-rms-in-der-praxis",
     "href": "vorlesungen/02_scheduling-theorie.html#fazit-rms-in-der-praxis",
     "title": "02 · Scheduling-Theorie",
     "section": "Fazit: RMS in der Praxis",
-    "text": "Fazit: RMS in der Praxis\n\nVorteile:\n\nSimpler Algorithmus, minimaler OS-Overhead\nStabil bei Überlast: nur niedrigpriore Tasks verpassen Deadlines\n\nNachteil:\n\nBei harten Garantien oft keine volle 100 %-Auslastung möglich\n\n\n\nIndustrie liebt RMS: feste Prioritäten einmal setzen, kein Mathe in der ISR. Bei Überlast sterben deterministisch die langen Perioden — die kritische Motorregelung läuft weiter."
+    "text": "Fazit: RMS in der Praxis\n\nFeste Prioritäten: geringer Laufzeitaufwand, Analyse vorab\nÜberlast: eine für sich nachgewiesene höherpriore Teilmenge wird im unabhängigen präemptiven Modell nicht durch zusätzliche Low-Prio-CPU-Arbeit verdrängt\nDas ist keine Garantie „nur Low-Prio verpasst Fristen“\nHöchstpriore kann die eigene Frist verfehlen (Budget, Maskierung, Sperren)\n\n\nGegenbeispiel gleich bei der Überlastfolie: \\(C = 5\\), \\(T = D = 4\\) scheitert allein."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#earliest-deadline-first-edf",
     "href": "vorlesungen/02_scheduling-theorie.html#earliest-deadline-first-edf",
     "title": "02 · Scheduling-Theorie",
     "section": "Earliest Deadline First (EDF)",
-    "text": "Earliest Deadline First (EDF)\n\nRMS ist statisch — EDF berechnet Prioritäten dynamisch\nRegel: die Task mit der nächsten absoluten Deadline erhält die höchste Priorität\nScheduler muss bei jedem OS-Tick Prioritäten neu sortieren\nEinsatz: Forschung, Soft Real-Time (z. B. Linux SCHED_DEADLINE)\n\n\nEDF holt mehr aus der Hardware: absolute Frist entscheidet. Prioritäten ändern sich laufend — mehr OS-Overhead, dafür höhere theoretische Auslastung."
+    "text": "Earliest Deadline First (EDF)\n\nUnter den bereiten Jobs: früheste absolute Deadline\nEreignisgesteuert; geeignete Datenstruktur, nicht „jede ms komplett neu sortieren“ als Definition\nNicht auf Soft Real-Time beschränkt\nLinux SCHED_DEADLINE: EDF mit CBS und Zulassungskontrolle — nicht ungeschütztes Lehrbuch-EDF\n\n\nGleichstand heute: die laufende Aufgabe behält die CPU."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#die-mathematische-eleganz-von-edf",
     "href": "vorlesungen/02_scheduling-theorie.html#die-mathematische-eleganz-von-edf",
     "title": "02 · Scheduling-Theorie",
     "section": "Die mathematische Eleganz von EDF",
-    "text": "Die mathematische Eleganz von EDF\n\nFür unabhängige, präemptive Tasks mit Implicit Deadlines:\n\n\\[U = \\sum_{i=1}^{n} \\frac{C_i}{T_i} \\le 1\\]\n\nExakt schedulbar genau dann, wenn \\(U \\le 1\\)\nBedeutung: CPU bis 100 % auslastbar, ohne Deadlines zu verpassen\n\n\nKeine 69-Prozent-Schranke, keine Grauzone: \\(U \\le 1\\) ist hinreichend und notwendig. Theoretisch ideal, wenn jeder Taktzyklus zählt."
+    "text": "Die mathematische Eleganz von EDF\nFür unabhängige, präemptive Tasks auf einer CPU mit \\(D_i = T_i\\), ohne Overhead:\n\\[U \\le 1 \\quad \\text{genau dann schedulbar unter EDF}\\]\n\nGilt nicht für \\(D &lt; T\\) (40-%-Gegenprobe)\nGilt nicht automatisch auf dem H755 mit zweitem Kern oder unmodellierter Interferenz\n\n\nNotwendig und hinreichend nur in diesem Idealmodell."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#visualisierung-dynamisches-edf",
     "href": "vorlesungen/02_scheduling-theorie.html#visualisierung-dynamisches-edf",
     "title": "02 · Scheduling-Theorie",
     "section": "Visualisierung: Dynamisches EDF",
-    "text": "Visualisierung: Dynamisches EDF\n\n\\(\\tau_1\\): \\(C_1=2\\), \\(T_1=5\\); \\(\\tau_2\\): \\(C_2=4\\), \\(T_2=7\\)\nAuslastung \\(U \\approx 97\\,\\%\\) — Liu-und-Layland-Schranke und exakter RMS-Test scheitern\nMit EDF ändern sich die relativen Prioritäten dynamisch\n\n\n\nBei \\(t=5\\): \\(\\tau_1\\) released mit Deadline \\(t=10\\); \\(\\tau_2\\) hat Deadline \\(t=7\\). Da 7 näher liegt, rechnet \\(\\tau_2\\) weiter — unter RMS hätte \\(\\tau_1\\) präemptiert. EDF dreht Prioritäten um und bewältigt die 97 %."
+    "text": "Visualisierung: Dynamisches EDF\n97-%-Set: \\(\\tau_1=(2,5,5)\\), \\(\\tau_2=(4,7,7)\\), synchron bei 0. \\(U = 2/5+4/7 = 34/35 \\approx 97{,}14\\,\\%\\).\nRMS scheitert: \\(0\\)–\\(2\\) \\(\\tau_1\\), \\(2\\)–\\(5\\) \\(\\tau_2\\), \\(5\\)–\\(7\\) \\(\\tau_1\\); bei \\(t = 7\\) fehlt \\(\\tau_2\\) noch \\(1\\,\\mathrm{ms}\\), \\(D_2\\) verletzt. RTA: \\(4 \\to 6 \\to 8 &gt; 7\\).\nEDF (Gleichstand: laufende Task bleibt):\n\n\\(0\\)–\\(2\\) \\(\\tau_1/J_1\\), \\(2\\)–\\(6\\) \\(\\tau_2/J_1\\), \\(6\\)–\\(8\\) \\(\\tau_1/J_2\\), \\(8\\)–\\(12\\) \\(\\tau_2/J_2\\), \\(12\\)–\\(14\\) \\(\\tau_1/J_3\\)\nBei \\(t = 5\\): Deadline 7 schlägt Deadline 10, \\(\\tau_2\\) läuft weiter\n\n\n\n\\(\\tau_1/J_2\\) ist \\(5\\)–\\(6\\) Ready und \\(6\\)–\\(8\\) Running. Frage: Warum unterbricht \\(\\tau_1\\) bei \\(t = 5\\) nicht?"
   },
   {
-    "objectID": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-der-domino-effekt",
-    "href": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-der-domino-effekt",
+    "objectID": "vorlesungen/02_scheduling-theorie.html#edf-entscheidungen-bis-t-12",
+    "href": "vorlesungen/02_scheduling-theorie.html#edf-entscheidungen-bis-t-12",
     "title": "02 · Scheduling-Theorie",
-    "section": "Der Haken an EDF: Der Domino-Effekt",
-    "text": "Der Haken an EDF: Der Domino-Effekt\n\nWarum nutzt die Automobilindustrie kaum EDF?\nVerhalten bei Überlast (\\(U &gt; 100\\,\\%\\)):\n\nEine Task überschreitet ungeplant ihre WCET\nIhre Deadline rückt nah \\(\\rightarrow\\) EDF gibt ihr höchste Priorität\nFolge: sie blockiert andere Tasks — diese verpassen ebenfalls Deadlines\n\nDomino-Effekt: eine Überlast lässt das System kaskadierend abstürzen\n\n\nBei leichter Überlast können unter EDF plötzlich alle Tasks scheitern — auch die sicherheitskritische Motorsteuerung. In Systemen mit Menschenleben ist dieses Ausfallmuster inakzeptabel; deshalb FreeRTOS/AUTOSAR mit statischen Prioritäten."
+    "section": "EDF: Entscheidungen bis \\(t = 12\\)",
+    "text": "EDF: Entscheidungen bis \\(t = 12\\)\n\n\n\n\\(t\\)\nBereit, Regel\n\n\n\n\n0\n\\(d(\\tau_1)=5 &lt; d(\\tau_2)=7\\) → \\(\\tau_1\\)\n\n\n2\n\\(\\tau_1\\) fertig → \\(\\tau_2\\) (\\(d=7\\))\n\n\n5\n\\(\\tau_2\\) läuft, \\(d=7 &lt; 10\\) → bleibt\n\n\n6\n\\(\\tau_2/J_1\\) fertig → \\(\\tau_1/J_2\\) (\\(d=10\\))\n\n\n7\n\\(\\tau_2/J_2\\) kommt, \\(d=14 &gt; 10\\) → \\(\\tau_1\\) bleibt\n\n\n8\n\\(\\tau_1\\) fertig → \\(\\tau_2/J_2\\)\n\n\n10\n\\(\\tau_1/J_3\\), \\(d=15 &gt; 14\\) → \\(\\tau_2\\) bleibt\n\n\n12\n\\(\\tau_2\\) fertig → \\(\\tau_1/J_3\\) bis 14\n\n\n\nHyperperiode 35 (Notizen): \\(14\\)–\\(15\\) \\(\\tau_2/J_3\\), \\(15\\)–\\(17\\) \\(\\tau_1/J_4\\), \\(17\\)–\\(20\\) \\(\\tau_2/J_3\\), \\(20\\)–\\(22\\) \\(\\tau_1/J_5\\), \\(22\\)–\\(26\\) \\(\\tau_2/J_4\\), \\(26\\)–\\(28\\) \\(\\tau_1/J_6\\), \\(28\\)–\\(32\\) \\(\\tau_2/J_5\\), \\(32\\)–\\(34\\) \\(\\tau_1/J_7\\), \\(34\\)–\\(35\\) Idle.\n\nBei gleicher absoluter Deadline bleibt die laufende Aufgabe (so bei \\(t = 30\\) in der Hyperperiode). Simulation illustriert; der Nachweis für implizite Deadlines ist \\(U \\le 1\\)."
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-überlast",
+    "href": "vorlesungen/02_scheduling-theorie.html#der-haken-an-edf-überlast",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Der Haken an EDF: Überlast",
+    "text": "Der Haken an EDF: Überlast\n\nEDF ist deterministisch unter festen Regeln, nicht „chaotisch“\nÜberlast kann weitere Misses verursachen — abhängig von Set und Miss-Behandlung\nHöchstpriore \\(H\\): tatsächlicher Bedarf \\(5\\,\\mathrm{ms}\\), \\(T = D = 4\\,\\mathrm{ms}\\) verfehlt die Frist allein\nGeplanten \\(C\\) und überschrittenen Bedarf getrennt benennen\nStrategien: verspäteten Job beenden, verwerfen oder Budget begrenzen — jede ändert das Verhalten\nFeste absolute Deadline-Marker bleiben; ein überfälliger Job wird nicht automatisch „wichtiger“ nur weil die Uhr läuft, solange seine absolute Deadline fest ist und die Regel „früheste \\(d\\)“ gilt\n\n\nKeine Empfehlung „Airbag = RMS“. Linux SCHED_DEADLINE schützt per CBS/Admission; das ist keine Garantie bei unzulässiger Gesamtlast. Einen Überlast-Gantt nur mit vollständigen Kosten zeichnen — hier reicht das Einzeljob-Gegenbeispiel."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-rms-vs.-edf",
     "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-rms-vs.-edf",
     "title": "02 · Scheduling-Theorie",
     "section": "Zusammenfassung: RMS vs. EDF",
-    "text": "Zusammenfassung: RMS vs. EDF\n\n\n\n\n\n\n\n\nEigenschaft\nRMS\nEDF\n\n\n\n\nPriorität\nStatisch (nach \\(T_i\\))\nDynamisch (nach absoluter \\(D_i\\))\n\n\nMax. \\(U\\)\nHinreichende Faustregel \\(\\ln 2\\approx 69{,}3\\,\\%\\) (\\(n\\)-abhängig; bei \\(n=3\\approx 78\\,\\%\\)); exakt bis \\(100\\,\\%\\) möglich (RTA)\n\\(100\\,\\%\\) garantiert\n\n\nÜberlast\nDeterministisch (Low-Prio stirbt)\nChaotisch (Domino-Effekt)\n\n\nOS-Overhead\nSehr niedrig\nHoch (Listen-Sortierung)\n\n\nEinsatz\nAUTOSAR, FreeRTOS, Industrie\nForschung, Multimedia, Soft-RT\n\n\n\n\nRMS: berechenbar, geringer Overhead, klares Fehlerverhalten. EDF: volle Auslastung, aber Domino bei Überlast. Für Bremssattel und Airbag lautet die Antwort RMS."
+    "text": "Zusammenfassung: RMS vs. EDF\n\n\n\n\n\n\n\n\n\nRMS (FP nach Rate)\nEDF\n\n\n\n\nAuswahl\nfeste Priorität aus \\(T\\)\nfrüheste absolute \\(d\\)\n\n\nTest hier\nLL hinreichend; RTA im FP-Modell\n\\(U \\le 1\\) bei \\(D = T\\), eine CPU\n\n\n75 % / 85 % / 97 %\n75 % und 85 % halten; 97 % scheitert\n97 % hält im Idealmodell\n\n\nÜberlast\nLow-CPU verdrängt High nicht; eigene Budgets können trotzdem reißen\nweitere Misses möglich; Strategie festlegen\n\n\nAufwand\nPriorität konfigurieren\nDeadline-Ereignisse verwalten\n\n\n\n\nKeine universelle Branchenzuordnung. Beide brauchen das passende Fehlermodell."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#unter-der-haube-wie-baut-man-einen-scheduler",
     "href": "vorlesungen/02_scheduling-theorie.html#unter-der-haube-wie-baut-man-einen-scheduler",
     "title": "02 · Scheduling-Theorie",
     "section": "Unter der Haube: Wie baut man einen Scheduler?",
-    "text": "Unter der Haube: Wie baut man einen Scheduler?\n\nWechsel von Mathematik zurück zur Hardware-Praxis\nPräemptiver Scheduler (wie FreeRTOS) auf dem STM32H755 braucht zwei ARM-Komponenten:\n\nSysTick-Timer (Herzschlag)\nPendSV-Exception (heimlicher Kontextwechsel)\n\n\n\nEin RTOS ist auch nur C — braucht aber Hardware-Unterstützung. Auf Cortex-M: SysTick und PendSV, von ARM ins Silizium gebrannt."
+    "text": "Unter der Haube: Wie baut man einen Scheduler?\n\nPräemptiver RTOS-Port (Referenz FreeRTOS CM4F): SysTick und PendSV\nLabor heute: kein selbstgeschriebener Registerwechsel\nPendSV ist nicht „von Natur aus“ niedrigprior; der Port setzt die Priorität\n\n\nÖffentliche Referenz: FreeRTOS-Kernel portable/GCC/ARM_CM4F/port.c. Die lokal eingesetzte Version kann abweichen; main allein belegt sie nicht. Keine .ioc im Kursrepo."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-herzschlag-systick-timer",
     "href": "vorlesungen/02_scheduling-theorie.html#der-herzschlag-systick-timer",
     "title": "02 · Scheduling-Theorie",
     "section": "Der Herzschlag: SysTick-Timer",
-    "text": "Der Herzschlag: SysTick-Timer\n\n24-Bit Down-Counter, fest in jedem ARM Cortex-M\nTypisch: Überlauf jede Millisekunde (1 kHz)\nBei Überlauf: SysTick-Interrupt\nTaktgeber des OS: jede ms prüfen, ob ein Task-Wechsel nötig ist\n\n\nIm Gegensatz zu ST-Timern ist SysTick Kernbestandteil von ARM — auf jedem Cortex-M gleich. 1000 Interrupts/s: Scheduler aktualisiert Wartezeiten und prüft RMS/RR-Regeln."
+    "text": "Der Herzschlag: SysTick-Timer\n\n24-Bit-Downcounter, Reload \\(\\mathrm{LOAD} = f_{\\mathrm{Quelle}}/f_{\\mathrm{Tick}} - 1\\) (Wertebereich prüfen)\nTypische Tickquelle, nicht die einzige (anderer Timer, Tickless Idle möglich)\nIm üblichen CM4F-Port: SysTick und PendSV auf niedrigste IRQ-Priorität\nKleinere NVIC-Zahl = höhere IRQ-Dringlichkeit; nicht mit der Taskpriorität verwechseln\n\n\nKeine unbelegte Behauptung „SysTick ist High-Prio“. Taktquelle am Projekt ablesen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#code-die-systick-isr",
     "href": "vorlesungen/02_scheduling-theorie.html#code-die-systick-isr",
     "title": "02 · Scheduling-Theorie",
     "section": "Code: Die SysTick-ISR",
-    "text": "Code: Die SysTick-ISR\n\n\n\nWas passiert jede Millisekunde?\n\nTick-Count (Systemuhr) erhöhen\nReady-Listen prüfen\nBei wichtigerer Task: Context Switch anfordern\n\n\n\nvoid SysTick_Handler(void) {\n    os_tick_count++;\n    Task* next = Scheduler_Run();\n    if (next != current_task) {\n        Trigger_PendSV();\n    }\n}\n\n\nDrei Schritte: Zeit hochzählen, Scheduler_Run(), bei Wechsel PendSV triggern — den Registertausch nicht direkt im SysTick. Warum der Umweg? Nächste Folie."
+    "text": "Code: Die SysTick-ISR\nKonsistentes Muster: Zeit und Timeouts; Wechsel anfordern, Auswahl im PendSV ausführen. Eine lokale Variable next gilt nicht als übergebene Entscheidung, solange sie nicht gespeichert wird.\nvoid SysTick_Handler(void) {\n    os_tick_count++;\n    os_update_timeouts();\n    /* Wechsel nur vormerken, nicht die Register hier tauschen */\n    os_request_switch(); /* setzt PendSV pending */\n}\n\nEntweder nur Ready-Zustände hier aktualisieren oder die Auswahl zuverlässig hinterlegen. Kein unvollständiger Assembler als „der FreeRTOS-Port“."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#warum-der-umweg-über-pendsv",
     "href": "vorlesungen/02_scheduling-theorie.html#warum-der-umweg-über-pendsv",
     "title": "02 · Scheduling-Theorie",
     "section": "Warum der Umweg über PendSV?",
-    "text": "Warum der Umweg über PendSV?\n\nContext Switch direkt im SysTick steckt in einer High-Prio-ISR\nProblem: UART-ISR läuft → SysTick unterbricht und wechselt Task → UART-Daten verloren\nLösung: PendSV (Pendable Service Call)\n\nAusnahme mit niedrigster Priorität (bei 4 Priority-Bits: Stufe 15)\nSysTick merkt den Wechsel nur vor (pend)\nContext Switch erst, wenn alle anderen Interrupts fertig sind\n\n\n\nSysTick markiert: „wechseln“. Hardware wartet, bis UART & Co. fertig sind, dann PendSV als Letztes — Registertausch ohne abgebrochene Hardware-ISRs."
+    "text": "Warum der Umweg über PendSV?\n\nAufgeschobener Task-Wechsel: ISR setzt Pending, PendSV läuft wenn die Priorität drankommt\nPending \\(\\neq\\) Running\nEine UART-ISR verliert nicht automatisch Daten, weil SysTick eintritt\nDatenverlust: zu späte Bedienung, FIFO, zu lange Maskierung\nHöherpriore ISR kann eine Task wecken; PendSV danach, vor dem nächsten Tick\n\n\n\nVerschachtelte Exceptions: höhere IRQ-Priorität vor PendSV. Maskierung verschiebt den Wechsel zusätzlich."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-task-control-block-tcb",
     "href": "vorlesungen/02_scheduling-theorie.html#der-task-control-block-tcb",
     "title": "02 · Scheduling-Theorie",
     "section": "Der Task Control Block (TCB)",
-    "text": "Der Task Control Block (TCB)\n\nWoher kennt das OS den Program Counter der unterbrochenen Task?\nAlle Infos in einem C-Struct — dem TCB; jede Task hat einen eigenen\n\ntypedef struct {\n    uint32_t* stack_pointer; /* geretteter Kontext */\n    uint8_t   priority;      /* RMS-Priorität */\n    uint8_t   state;         /* READY / RUNNING / BLOCKED */\n    uint32_t  sleep_ticks;   /* Rest-Delay */\n} TCB_t;\n\nWichtigster Eintrag: Stack Pointer — Lesezeichen im RAM für R0–R15 dieser Task. Dazu Zustand, Priorität und Sleep-Ticks für delay()."
+    "text": "Der Task Control Block (TCB)\n\nRTOS-TCB: Stackpointer auf den gesicherten Kontext, Priorität, Zustand\nPC liegt im Frame, nicht als einzelnes TCB-Feld „neben“ dem Stack\nPSP: Taskkontext; MSP: Handlerkontext\nLabor-TCB: Funktionszeiger, Zustand, wake_at — kein Stackpointer\n\n\nZwei TCBs nicht vermischen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#der-software-context-switch-pendsv",
     "href": "vorlesungen/02_scheduling-theorie.html#der-software-context-switch-pendsv",
     "title": "02 · Scheduling-Theorie",
     "section": "Der Software-Context-Switch (PendSV)",
-    "text": "Der Software-Context-Switch (PendSV)\n\nWas passiert in PendSV_Handler (Assembler, FreeRTOS-typisch)?\n\nAktuellen PSP lesen (Stack der alten Task)\nRegister R4–R11 auf diesen Stack pushen\nAktualisierten SP im TCB der alten Task speichern\nSP der neuen Task aus deren TCB laden\nR4–R11 der neuen Task poppen\nKontext wiederherstellen / Rücksprung (BX LR) — neue Task läuft\n\n\n\nHardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Software. Lesezeichen tauschen, BX LR — und die CPU rechnet im Code einer anderen Task weiter."
+    "text": "Der Software-Context-Switch (PendSV)\nBasis-Hardwareframe: R0–R3, R12, LR, PC, xPSR (VL1).\nSoftware zusätzlich, portabhängig: R4–R11, EXC_RETURN; FPU nur bei aktivem FP-Kontext.\nRestore, vollständig gedacht:\n\nKontextpointer der laufenden Task sichern\nZiel-TCB wählen\nZiel-SP laden, Software-Register zurück\nPSP auf den neuen Task-Stack setzen\nException Return über EXC_RETURN (BX LR nur mit diesem Wert)\n\n\nKein lauffähiger Minimal-Port in dieser Vorlesung; Referenz ist der eingesetzte FreeRTOS-Port\n\n\nBisher fehlte das Setzen des PSP. Ohne EXC_RETURN ist der Rücksprung kein Task-Wechsel. PM0214."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-die-os-architektur",
     "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-die-os-architektur",
     "title": "02 · Scheduling-Theorie",
     "section": "Zusammenfassung: Die OS-Architektur",
-    "text": "Zusammenfassung: Die OS-Architektur\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nflowchart LR\n    A[SysTick Timer] --&gt;|1 ms Interrupt| B[SysTick_Handler]\n    B --&gt;|Tick erhöhen| C{Scheduler: Next Task?}\n    C --&gt;|Ja, Wechsel| D[Trigger PendSV]\n    D --&gt;|Wartet auf CPU| E[PendSV_Handler]\n    E --&gt;|Push/Pop Register| F[Neue Task läuft]\n    style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style E fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nSysTick feuert → Handler entscheidet → PendSV wechselt Kontext. Das ist der Motor von FreeRTOS, Zephyr und vielen weiteren RTOS."
+    "text": "Zusammenfassung: Die OS-Architektur\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nflowchart LR\n  subgraph evt [Ereignis]\n    ST[SysTick niedrig]\n    UART[UART-ISR höher]\n  end\n  ST --&gt; PEND[PendSV pending]\n  UART --&gt; PEND\n  PEND --&gt; RUN[PendSV Running]\n  RUN --&gt; PSP[PSP setzen und EXC_RETURN]\n  PSP --&gt; TB[Task B]\n  style PEND fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nTick oder ISR kann den Wechsel vormerken\n\n\nNicht mehr die schmale Kette „nur SysTick ist High und schaltet sofort“."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#vorbereitung-für-das-labor-heute",
     "href": "vorlesungen/02_scheduling-theorie.html#vorbereitung-für-das-labor-heute",
     "title": "02 · Scheduling-Theorie",
     "section": "Vorbereitung für das Labor heute",
-    "text": "Vorbereitung für das Labor heute\n\nPräemptives RTOS inkl. PendSV-Assembler an einem Nachmittag: zu komplex\nStattdessen: eigener kooperativer Round-Robin-Scheduler\nVorteile:\n\nKein Assembler nötig\nKein Hardware-SysTick zwingend (while(1) + yield)\nIdeal, um TCB-Arrays zu verstehen\n\nAm Start: Code-Gerüst für den STM32H755\n\n\nLogik identisch zur Entscheidungsfindung im echten OS, aber alles in C. Vorbereitung, um nächste Woche FreeRTOS-API zu verstehen."
+    "text": "Vorbereitung für das Labor heute\n\nBoard: NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, Arbeit auf dem CM4\nKein PendSV-Assembler\nStacklos: step() kehrt zurück; Fortsetzung im TCB (wake_at, Zähler)\nZeitbasis: z. B. HAL_GetTick(); der Tick präemptiert die Steps nicht\n\n\nOhne eigenen Stack kann ein normaler Aufruf keine Endlosschleife mitten im yield fortsetzen. Keine .ioc im Repo — Takt im Cube-Projekt ablesen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-1-die-tcb-liste",
     "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-1-die-tcb-liste",
     "title": "02 · Scheduling-Theorie",
     "section": "Labor-Schritt 1: Die TCB-Liste",
-    "text": "Labor-Schritt 1: Die TCB-Liste\n\nArray aus Funktionszeigern und Zuständen\n\ntypedef void (*TaskFunction_t)(void);\n\ntypedef struct {\n    TaskFunction_t task_func; /* welcher C-Code? */\n    uint8_t state;            /* READY oder BLOCKED */\n    uint32_t sleep_time;      /* für os_delay() */\n} MyTCB_t;\n\nMyTCB_t task_list[3];\nuint8_t current_task_idx = 0;\n\nOhne Registertausch kein Stack-Pointer — wir speichern den Funktionszeiger. Maximal drei Tasks und ein Index für die aktuelle Position."
+    "text": "Labor-Schritt 1: Die TCB-Liste\n#define N 3\ntypedef enum { ST_READY, ST_BLOCKED } TaskState;\ntypedef struct {\n    void (*step)(void); /* endliche Arbeit, kehrt zurück */\n    TaskState state;\n    uint32_t wake_at;   /* Tick; Wrap: (int32_t)(now-wake) &gt;= 0 */\n} MyTCB_t;\nMyTCB_t task_list[N];\nuint8_t rr_cursor;\nuint8_t running_idx;    /* nur während step() gültig */\n\nZustand nicht auf einem vermeintlich pausierten Stack."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-2-die-scheduler-logik",
     "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-2-die-scheduler-logik",
     "title": "02 · Scheduling-Theorie",
     "section": "Labor-Schritt 2: Die Scheduler-Logik",
-    "text": "Labor-Schritt 2: Die Scheduler-Logik\n\n\n\nFunktion os_yield()\nRingförmig nächste READY-Task (Round-Robin)\nLogik:\n\nAktuelle Task pausieren\nIndex: \\((idx + 1) \\bmod 3\\)\nREADY? Dann Funktionszeiger aufrufen\n\nWarnung: task_func() aus os_yield ist didaktisch — Stack wächst; Produktion: Dispatcher\n\n\nvoid os_yield(void) {\n    do {\n        current_task_idx =\n          (current_task_idx + 1) % 3;\n    } while (task_list[current_task_idx]\n               .state != READY);\n    /* Didaktische Vereinfachung: ruft Task rekursiv auf\n       (Stack wächst). Produktion: Rückkehr zum Dispatcher. */\n    task_list[current_task_idx]\n        .task_func();\n}\n\n\nos_yield() heißt: CPU freiwillig abgeben. Modulo hält den Ring. Achtung: Der direkte Aufruf von task_func() ist eine didaktische Vereinfachung — bei while(1) + Yield wächst der Stack. Ein echtes kooperatives OS kehrt zum Dispatcher zurück und startet die nächste Task ohne geschachtelte Aufrufe."
+    "text": "Labor-Schritt 2: Die Scheduler-Logik\nZentraler Dispatcher, kein step() aus step():\nvoid dispatcher(void) {\n  for (;;) {\n    uint32_t now = HAL_GetTick();\n    for (uint8_t i = 0; i &lt; N; i++)\n      if (task_list[i].state == ST_BLOCKED &&\n          (int32_t)(now - task_list[i].wake_at) &gt;= 0)\n        task_list[i].state = ST_READY;\n    int sel = -1;\n    for (uint8_t k = 0; k &lt; N; k++) {\n      uint8_t i = (uint8_t)((rr_cursor + k) % N);\n      if (task_list[i].state == ST_READY) { sel = i; break; }\n    }\n    if (sel &lt; 0) { __WFI(); continue; } /* Wake-Quelle nötig */\n    rr_cursor = (uint8_t)((sel + 1) % N);\n    running_idx = (uint8_t)sel;\n    task_list[sel].step(); /* kehrt zurück */\n  }\n}\n\nHöchstens \\(N\\) Kandidaten, dann Idle — keine Endlossuche\n__WFI nur mit aktiver Wake-Quelle (Tick)\nos_delay: wake_at setzen, Zustand Blocked, sofort return — kein stackhaltendes os_delay mitten in der Funktion\n\n\nGeschachtelt wäre A→yield→B→yield→C und der Stack wächst. Hier bleibt die Tiefe begrenzt."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-3-hardware-messung-oszilloskop",
     "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-3-hardware-messung-oszilloskop",
     "title": "02 · Scheduling-Theorie",
     "section": "Labor-Schritt 3: Hardware-Messung (Oszilloskop)",
-    "text": "Labor-Schritt 3: Hardware-Messung (Oszilloskop)\n\nDrei Tasks (z. B. drei LEDs umschalten)\nTest: Jitter am Oszilloskop messen\nGPIO am Anfang von Task 1 auf High, am Ende auf Low\n\n\n\nErwartung: Schwankungen — Timing hängt vom C-Code der anderen Tasks ab\n\n\nHypothese: präemptiv starr, kooperativ mit Jitter. Rechnet Task 2 länger, verschiebt sich Task 1 — genau das wollen wir sehen."
+    "text": "Labor-Schritt 3: Hardware-Messung (Oszilloskop)\nPulsbreite \\(w_k = f_k - s_k\\) (verstrichen, inkl. möglicher IRQs) und Startabstand \\(P_k = s_{k+1}-s_k\\) unterscheiden.\nIdealisierte Lehre, keine Boardmessung:\n\n\\(C_1=C_2=C_3=1\\,\\mathrm{ms}\\): Task-1-Starts \\(0/3/6/9\\), Abstände konstant\nkonstantes \\(C_2=3\\,\\mathrm{ms}\\): Abstände konstant \\(5\\,\\mathrm{ms}\\) — noch kein Jitter\n\\(C_2=1/3/1/3\\), \\(C_1=C_3=1\\): Starts \\(0/3/8/11/16\\), Abstände \\(3/5/3/5\\), Spanne \\(2\\,\\mathrm{ms}\\); Pulsbreite von Task 1 bleibt \\(1\\,\\mathrm{ms}\\)\n\n\n\nGleiche Compiler-/Taktbedingungen, bekannter Pin, hohe Abtastrate, Marker für Task und ggf. ISR\nZahlen erst nach Messung; Pin (z. B. PA0) nach Belegung prüfen\n\n\n„Präemptiv starr, kooperativ mit Jitter“ ersetzen: Jitter nur bei schwankender Last. Konstante Verlängerung ist ein Bias."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#labor-schritt-4-den-scheduler-crashen",
     "href": "vorlesungen/02_scheduling-theorie.html#labor-schritt-4-den-scheduler-crashen",
     "title": "02 · Scheduling-Theorie",
     "section": "Labor-Schritt 4: Den Scheduler crashen",
-    "text": "Labor-Schritt 4: Den Scheduler crashen\n\nSchwachpunkt kooperativer Systeme spüren:\n\nIn Task 2 lange Zählschleife ohne os_yield()\nOszilloskop beobachten\n\nErgebnis: Task 1 aus dem Tritt oder eingefroren\nErkenntnis für Woche 3: deshalb ab nächster Woche präemptives FreeRTOS\n\n\nMutwillig crashen: Theorie wird greifbar. Harte Echtzeit darf dem Anwendungscode nicht vertrauen — Hardware muss die Kontrolle übernehmen."
+    "text": "Labor-Schritt 4: Den Scheduler crashen\n\nSchritt ohne Rückkehr: weitere Callbacks bleiben aus; IRQs können weiterlaufen\nSeparat, präemptiv: High ständig Ready \\(\\Rightarrow\\) Low verhungert; yield reicht nicht\nDeshalb Budgets, Blockieren und — ab Termin 3 — präemptives FreeRTOS mit Nachweis, nicht als Automatik\n\n\nZwei Fehlerbilder nicht zu einem „Crash“ vermischen."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-des-tages",
     "href": "vorlesungen/02_scheduling-theorie.html#zusammenfassung-des-tages",
     "title": "02 · Scheduling-Theorie",
     "section": "Zusammenfassung des Tages",
-    "text": "Zusammenfassung des Tages\n\nTask-Modell: WCET \\(C\\), Periode \\(T\\), Frist \\(D\\); Auslastung \\(U\\) als Analyse-Fundament\nRMS: Priorität statisch nach Rate; Liu-Layland hinreichend (\\(n\\)-abhängig, Grenzwert \\(\\approx 69{,}3\\,\\%\\)), exakt via RTA; deterministisch bei Überlast\nEDF: nächste Frist, \\(U \\le 1\\); bei Fehler Domino-Effekt\nCortex-M: SysTick + PendSV ermöglichen präemptives Multitasking\nLabor: kooperativer Round-Robin — und warum er scheitern kann\n\n\nSie können Software in \\(C\\), \\(T\\), \\(D\\) abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Liu-Layland ist hinreichend (\\(n\\)-abhängig); exakte Schedulability liefert die Response-Time Analysis."
+    "text": "Zusammenfassung des Tages\n\nEin Prozessor: \\(C\\), \\(T\\), \\(D\\), \\(R \\le D\\); 75 % / 85 % / 97 % durchgerechnet\nLL-Schranke hinreichend; 85 % via RTA (\\(R_3 = 8\\)); 97 % RMS fail, EDF hält im Idealmodell\n\\(U = 40\\,\\%\\) mit \\(D = 3\\,\\mathrm{ms}\\) kann unmöglich sein\nSysTick/PendSV: beide im CM4F-Port niedrig; PSP setzen\nLabor: Dispatcher und endliche Steps\n\n\nKontrollwerte: \\(U_{75}=0{,}75\\), \\(U_{85}=0{,}85\\), \\(U_{97}=34/35\\). RTA 75 %: \\(1,3,6\\). RTA 85 %: \\(1,3,8\\)."
   },
   {
     "objectID": "vorlesungen/02_scheduling-theorie.html#ausblick-auf-termin-3",
     "href": "vorlesungen/02_scheduling-theorie.html#ausblick-auf-termin-3",
     "title": "02 · Scheduling-Theorie",
     "section": "Ausblick auf Termin 3",
-    "text": "Ausblick auf Termin 3\n\nNach dem Spiel-Scheduler: Wechsel in die Profiliga\nNächste Woche: FreeRTOS auf dem Cortex-M4\nKooperative Architektur weg, harte Präemption aktiv\nFreeRTOS-API (CMSIS_V2 im Labor): osThreadNew(), osDelay()\nVorbereitung: Zeiger (Pointer) in C auffrischen\n\n\nNächste Woche FreeRTOS — PendSV und echte Präemption. API mit unserem Eigenbau vergleichen. Hausaufgabe: Funktions- und Strukturzeiger. Vielen Dank und bis gleich im Labor!"
+    "text": "Ausblick auf Termin 3\n\nFreeRTOS auf dem Cortex-M4, präemptive Threads\nAPI: osThreadNew, osDelay — anderer Kontext als step()\nPrioritäten konfigurieren ist noch kein RMS-Beweis\nVorbereitung: Funktions- und Strukturzeiger\n\n\nMutex und Priority Inheritance folgen später, nicht heute."
+  },
+  {
+    "objectID": "vorlesungen/02_scheduling-theorie.html#quellen",
+    "href": "vorlesungen/02_scheduling-theorie.html#quellen",
+    "title": "02 · Scheduling-Theorie",
+    "section": "Quellen",
+    "text": "Quellen\n\nLiu & Layland (1973), Scheduling Algorithms for Multiprogramming\nAudsley u. a., Response-Time Analysis für statische Prioritäten\nFreeRTOS-Kernel, Port GCC/ARM_CM4F (Version am Projekt prüfen)\nLinux-Doku SCHED_DEADLINE (EDF, CBS, Admission)\nST PM0214, Cortex-M4 Exceptions / PSP / EXC_RETURN\n\n\nKeine Branchenstatistiken. Keine Messwerte ohne Oszilloskop-Protokoll."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#willkommen-auf-der-dunklen-seite-der-echtzeit",

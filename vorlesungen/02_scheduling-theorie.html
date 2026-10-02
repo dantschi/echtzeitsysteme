@@ -222,14 +222,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-zurück-zu-echtzeitsystemen" class="slide level2">
 <h2>Willkommen zurück zu Echtzeitsystemen!</h2>
 <ul>
-<li>Herzlich willkommen zum 2. Termin unserer Vorlesung</li>
-<li>Letzte Woche: Hardware, Cortex-M4, Interrupts und Bare-Metal</li>
-<li>Heute: von der Hardware-Ebene zu Informatik und Mathematik</li>
-<li>Fokus: Wie verteile ich CPU-Zeit gerecht und vorhersagbar?</li>
-<li>Praxis: eigener kleiner Scheduler</li>
+<li>Herzlich willkommen zum 2. Termin</li>
+<li>Letzte Woche: Rechtzeitigkeit, Cortex-M4, Interrupts, Bare-Metal</li>
+<li>Heute: Task-Modell, Auslastung, RMS, RTA, EDF — <strong>ein Prozessor</strong></li>
+<li>Praxis: kooperativer Round-Robin als Dispatcher (kein Register-Port)</li>
+<li>Der zweite Kern des H755 verdoppelt dieses Modell nicht automatisch</li>
 </ul>
 <aside class="notes">
-<p>Willkommen zurück. Letzte Woche: STM32, Polling-Gefahren und Interrupts. Heute: Schedulability-Theorie — wir wollen nicht hoffen, dass Tasks rechtzeitig fertig werden, sondern das mathematisch absichern. Danach bauen Sie Ihren ersten Scheduler für den Cortex-M4.</p>
+<p>Zeiten und Begriffe wie in VL1: Release, Start, Completion, relative/absolute Deadline, Jitter. Alle Kernbeispiele gelten für genau eine CPU. Bus- und Speicherinterferenz des H755 liegen außerhalb des idealisierten Lehrmodells, sofern nicht im WCET enthalten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -245,15 +245,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
 <ol type="1">
-<li>Recap: Warum Bare-Metal nicht skaliert</li>
-<li>Task-Modelle: Software mathematisch beschreiben</li>
-<li>Metriken: WCET und CPU-Auslastung (<span class="math inline">\(U\)</span>)</li>
-<li>Scheduling-Verfahren: kooperativ bis präemptiv</li>
-<li>RMS, Utilization Bound, RTA und EDF</li>
-<li>SysTick/PendSV und Labor: Round-Robin</li>
+<li>Recap und Task-Modell (<span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span>, <span class="math inline">\(R\)</span>)</li>
+<li>Auslastung, WCET, Scheduling-Klassen</li>
+<li>RMS-Schranke, Gantt, Response-Time Analysis</li>
+<li>EDF am selben Zahlenbeispiel, Überlast</li>
+<li>SysTick/PendSV und Labor-Dispatcher</li>
 </ol>
 <aside class="notes">
-<p>Kurz zurückblicken, dann formales Task-Modell mit Ausführungszeit und Periode. Danach Auslastung <span class="math inline">\(U\)</span>, Strategien des Schedulers, RMS/EDF, Cortex-M-Scheduler-Mechanik und kooperatives Round-Robin im Labor.</p>
+<p>Durchgängige Tasksets: 75 % (Präemption), 85 % (RTA oberhalb der Schranke), 97 % (RMS scheitert, EDF hält).</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -269,14 +268,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="lernziele-des-heutigen-tages" class="slide level2">
 <h2>Lernziele des heutigen Tages</h2>
 <ol type="1">
-<li>Task-Modell (<span class="math inline">\(C_i\)</span>, <span class="math inline">\(T_i\)</span>, <span class="math inline">\(D_i\)</span>) aufstellen und skizzieren</li>
-<li>WCET und CPU-Auslastung (<span class="math inline">\(U\)</span>) verstehen und berechnen</li>
-<li>Kooperatives und präemptives Scheduling unterscheiden</li>
-<li>Rate Monotonic Scheduling (RMS) einordnen und Grenzen kennen</li>
-<li>Round-Robin-Scheduler als Laborziel verstehen</li>
+<li>Task, Job und <span class="math inline">\(C_i\)</span>, <span class="math inline">\(T_i\)</span>, <span class="math inline">\(D_i\)</span>, <span class="math inline">\(R_i\)</span> auf einer Zeitachse erklären</li>
+<li>Auslastung <span class="math inline">\(U\)</span> berechnen und von lokalen Fristen unterscheiden</li>
+<li>Kooperativ/präemptiv und Fixed Priority/EDF als getrennte Achsen</li>
+<li>Eine einfache RTA selbst rechnen und die EDF-Annahmen prüfen</li>
+<li>Den Labor-Dispatcher ohne rekursive Tasks erklären</li>
 </ol>
 <aside class="notes">
-<p>Am Ende: Task-Set formalisieren, <span class="math inline">\(U\)</span> berechnen, RMS als Industrieprinzip kennen und Round-Robin im Labor umsetzen können.</p>
+<p>Am Ende: <span class="math inline">\(R \le D\)</span> unter benannten Annahmen nachweisen, Liu-Layland von einem exakten Test unterscheiden, und den Callback-Scheduler vom RTOS-Thread trennen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -294,26 +293,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <div class="columns">
 <div class="column" style="width:50%;">
 <ul>
-<li>Polling (Super-Loop):
-<ul>
-<li>Einfach, linear, wenige Race Conditions</li>
-<li>Problem: Latenzen addieren sich; lange Funktionen blockieren alles</li>
-</ul></li>
-<li>Interrupts (Vordergrund/Hintergrund):
-<ul>
-<li>Hardware erzwingt Kontextwechsel (Präemption)</li>
-<li>Problem: ISRs müssen extrem kurz sein</li>
-</ul></li>
+<li>Begrenzte Super-Loop kann Fristen halten</li>
+<li>Lange unzerlegte Arbeit sprengt das Budget</li>
+<li>Interrupts verkürzen bestimmte Reaktionen</li>
+<li>Maskierung, ISR-Zeit und Ressourcen bleiben</li>
 </ul>
 </div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">/* Das Heavy-Load-Problem */</span></span>
-<span id="cb1-2"><a aria-label="2"></a><span class="cf">while</span> <span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb1-3"><a aria-label="3"></a>    Sensor_Auswerten<span class="op">();</span> <span class="co">/* z. B. 50 ms */</span></span>
-<span id="cb1-4"><a aria-label="4"></a>    LED_Blinken<span class="op">();</span>      <span class="co">/* stottert */</span></span>
-<span id="cb1-5"><a aria-label="5"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="cf">while</span> <span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a aria-label="2"></a>    Sensor_Auswerten<span class="op">();</span> <span class="co">/* z. B. 50 ms */</span></span>
+<span id="cb1-3"><a aria-label="3"></a>    LED_Blinken<span class="op">();</span>      <span class="co">/* verpasst das Budget */</span></span>
+<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div></div>
 <aside class="notes">
-<p>Die <code>while(1)</code>-Schleife reicht für einfache Fälle. Sobald Filter oder schwere Berechnung hinzukommen, wird das System blind. Interrupts retten die Latenz — aber lange ISRs blockieren Timer und andere IRQs.</p>
+<p>Polling ist nicht grundsätzlich ungeeignet. Interrupts stellen keinen automatischen Determinismus her — Anschluss an VL1.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -329,17 +321,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="recap-die-spaghetti-code-falle" class="slide level2">
 <h2>Recap: Die Spaghetti-Code-Falle</h2>
 <ul>
-<li>System wächst: Sensoren, Displays, USB, Ethernet, Motorregelung</li>
-<li>Nicht alles darf in Interrupts (nur die kürzesten Routinen)</li>
-<li>Folge in Bare-Metal:
-<ul>
-<li>ISRs setzen unzählige Flags (<code>if (usb_ready_flag) …</code>)</li>
-<li>Main-Loop wird unübersichtlich</li>
-<li>Prioritäten und Deadlines sind kaum noch berechenbar</li>
-</ul></li>
+<li>Viele Ereignisse: Flags in der Main-Loop</li>
+<li>Prioritäten und Fristen werden schwer nachvollziehbar</li>
+<li>Ein RTOS strukturiert Tasks — es beweist Fristen nicht von selbst</li>
 </ul>
 <aside class="notes">
-<p>Große Bare-Metal-Projekte landen oft in der Flag-Suppe: ISR setzt <code>usb_daten_da = 1</code>, Main pollt hunderte Flags. Wer darf zuerst rechnen — Motor oder USB? Determinismus und Deadlines gehen verloren.</p>
+<p>Flag-Suppe ist ein Strukturproblem. Der spätere Scheduler arbeitet mit Zuständen und Prioritäten, nicht mit einem automatischen WCET-Wächter.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -355,13 +342,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-paradigmenwechsel-das-betriebssystem" class="slide level2">
 <h2>Der Paradigmenwechsel: Das Betriebssystem</h2>
 <ul>
-<li>Lösung: Zeitmanagement an ein RTOS delegieren</li>
-<li>Statt einer riesigen <code>while(1)</code>: viele kleine, getrennte Endlosschleifen</li>
-<li>Jede Schleife heißt Task (oder Thread)</li>
-<li>Der Scheduler entscheidet, wann welche Task laufen darf</li>
+<li>Zeitmanagement kann ein RTOS übernehmen</li>
+<li>RTOS-Thread: eigener Stack, Kontextwechsel</li>
+<li>Labor heute: endliche Schritte, Rückkehr zum Dispatcher</li>
+<li>Das sind unterschiedliche Kontextmodelle</li>
 </ul>
 <aside class="notes">
-<p>Architekturwechsel: Display und Motor werden eigene Endlosschleifen — Tasks. Zwischen ihnen sitzt der Scheduler und orchestriert die CPU-Zeit.</p>
+<p>Ein Job ist nur bei passend strukturierter Anwendung ein Schleifendurchlauf. FreeRTOS-Threads und die Labor-Callbacks nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -377,16 +364,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-ist-scheduling" class="slide level2">
 <h2>Was ist Scheduling?</h2>
 <ul>
-<li>Scheduling (Ablaufplanung): zeitliche Anordnung von Aufgaben</li>
-<li>Ressource: CPU-Rechenzeit</li>
-<li>Kriterien:
-<ul>
-<li>Fairness: jede Task bekommt irgendwann Zeit (Starvation vermeiden)</li>
-<li>Echtzeit (Spezialfall): Fairness oft egal — Deadlines haben Vorrang</li>
-</ul></li>
+<li>Ablaufplanung: wer erhält die CPU wann?</li>
+<li>Heute: genau <strong>ein</strong> Prozessor</li>
+<li>Echtzeit: spezifizierte Fristen, nicht pauschale Fairness</li>
+<li>Fairness und Deadline-Einhaltung sind verschiedene Ziele</li>
 </ul>
 <aside class="notes">
-<p>Windows/Linux optimieren oft auf Fairness. Harte Echtzeit: die sicherheitskritische Motor-Task hält ihre Deadline, auch wenn das Display einfriert.</p>
+<p>Frage: Warum darf eine zweite H755-CPU die heutige Formel <span class="math inline">\(U \le 1\)</span> nicht einfach verdoppeln? Weil das Modell, Busse und der Nachweis sich ändern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -402,13 +386,31 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="vom-c-code-zum-modell" class="slide level2">
 <h2>Vom C-Code zum Modell</h2>
 <ul>
-<li>Mathematische Garantien brauchen Abstraktion</li>
-<li>Der Scheduler sieht nicht „Motor“ oder „LED“, sondern Parameter</li>
-<li>Typisch: Ausführungszeit, Periode, Deadline</li>
-<li>Formalisierung: das Task-Modell</li>
+<li>Analyse beschreibt den Entwurf: <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span></li>
+<li>Ein Fixed-Priority-Scheduler zur Laufzeit kennt typisch Zustand und Priorität</li>
+<li>Er leitet daraus keine Deadline-Garantie ab</li>
+<li>FreeRTOS überwacht WCET/Deadline nicht automatisch</li>
 </ul>
+<table class="caption-top">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 75%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Analyse</th>
+<th>Laufzeit (Fixed Priority)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span>, Nachweis <span class="math inline">\(R \le D\)</span></td>
+<td>Ready/Running/Blocked, konfigurierte Priorität</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Dem Scheduler ist die Semantik des C-Codes egal. Er braucht Zahlen: Wie lange maximal? Wie oft? Welche Frist? Daraus entsteht der Fahrplan.</p>
+<p>Der mathematische Fahrplan und der RTOS-Scheduler sind zwei Schichten. Garantien gelten unter den Annahmen der Analyse, nicht für jedes STM32-Programm.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -424,17 +426,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="definition-was-ist-eine-task" class="slide level2">
 <h2>Definition: Was ist eine Task?</h2>
 <ul>
-<li>Eine Task <span class="math inline">\(\tau_i\)</span> ist die kleinste Ausführungseinheit in einem RTOS</li>
-<li>Jede Task besitzt:
-<ul>
-<li>eigenen Kontext (Register, Stack)</li>
-<li>meist eine endlose <code>while(1)</code>-Schleife</li>
-</ul></li>
-<li>Illusion: jede Task „glaubt“, die CPU allein zu haben</li>
-<li>Job: eine konkrete Ausführung (ein Schleifendurchlauf)</li>
+<li>Task <span class="math inline">\(\tau_i\)</span>: wiederkehrende Aufgabe</li>
+<li>Job <span class="math inline">\(J_{i,k}\)</span>: eine konkrete Aktivierung</li>
+<li>RTOS-Thread: eigener Kontext (Register, Stack)</li>
+<li>Labor-Callback: endlicher Schritt, Zustand im TCB, kein pausierter Stack</li>
 </ul>
 <aside class="notes">
-<p>Task = Struktur/Programm; Job = ein konkreter Durchlauf. Schnelle Kontextwechsel erzeugen die Illusion exklusiver CPU-Nutzung.</p>
+<p>Task <span class="math inline">\(\neq\)</span> Job. Ein <code>while(1)</code>-Durchlauf ist nur dann ein Job, wenn Release und Ende so definiert sind.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -450,12 +448,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="parameter-einer-task-c_i-ausführungszeit" class="slide level2">
 <h2>Parameter einer Task: <span class="math inline">\(C_i\)</span> (Ausführungszeit)</h2>
 <ul>
-<li><span class="math inline">\(C_i\)</span> (Computation Time / Capacity): Rechenzeit ohne Unterbrechung</li>
-<li>In harten Echtzeitsystemen: <span class="math inline">\(C_i\)</span> = WCET (Worst-Case Execution Time)</li>
-<li>Ohne bekannte WCET keine mathematische Garantie</li>
+<li><span class="math inline">\(C_i\)</span>: eigener CPU-Bedarf ohne Unterbrechungszeit</li>
+<li>Im harten Analysemodell: angenommene WCET</li>
+<li>Warte- und Präemptionszeit zählen nicht zu <span class="math inline">\(C_i\)</span></li>
+<li>Ohne dokumentierte Schranke kein Nachweis</li>
 </ul>
 <aside class="notes">
-<p>Durchschnitte reichen nicht. Wenn die Task im Schnitt 2 ms braucht, im Worst Case 5 ms, plant der Scheduler mit 5 ms — sonst ist jeder Beweis hinfällig.</p>
+<p>Messmaximum plus beliebiger Puffer ist kein WCET-Beweis. Anschluss an VL1.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -471,12 +470,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="parameter-einer-task-t_i-periode" class="slide level2">
 <h2>Parameter einer Task: <span class="math inline">\(T_i\)</span> (Periode)</h2>
 <ul>
-<li><span class="math inline">\(T_i\)</span> (Period): Abstand zwischen zwei Releases der Task</li>
-<li>Beispiel: Temperatursensor 10-mal/s <span class="math inline">\(\rightarrow T_i = 100\,\mathrm{ms}\)</span></li>
-<li>In der Theorie oft strikt periodische Tasks</li>
+<li><span class="math inline">\(T_i\)</span>: Abstand der <strong>Releases</strong>, nicht der CPU-Starts</li>
+<li>Beispiel Regler: <span class="math inline">\(T_i = 10\,\mathrm{ms}\)</span> (Lehrannahme)</li>
+<li>Zunächst: kein Release-Jitter</li>
 </ul>
 <aside class="notes">
-<p>Viele Steuergeräte sind periodisch: Regler alle 10 ms. <span class="math inline">\(T_i\)</span> ist der Abstand zwischen den Momenten, in denen die Task ready wird.</p>
+<p>Start kann später liegen als Release. <span class="math inline">\(T\)</span> und die relative Deadline <span class="math inline">\(D\)</span> nicht gleichsetzen, außer das Modell sagt <span class="math inline">\(D = T\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -492,13 +491,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="parameter-einer-task-d_i-deadline" class="slide level2">
 <h2>Parameter einer Task: <span class="math inline">\(D_i\)</span> (Deadline)</h2>
 <ul>
-<li><span class="math inline">\(D_i\)</span> (Deadline): maximale Zeit nach dem Release bis zum fertigen Ergebnis</li>
-<li><span class="math inline">\(R_i\)</span> (Response Time): tatsächliche Antwortzeit inkl. Unterbrechungen</li>
-<li>Goldene Regel der Echtzeit — schedulbar nur wenn:</li>
+<li>Relative Deadline <span class="math inline">\(D_i\)</span>: Frist ab Release</li>
+<li>Absolute Deadline: <span class="math inline">\(d_{i,k} = r_{i,k} + D_i\)</span></li>
+<li>Job-Antwortzeit: <span class="math inline">\(R_{i,k} = f_{i,k} - r_{i,k}\)</span></li>
+<li><span class="math inline">\(R_i\)</span>: nachgewiesene Worst-Case-Antwortzeit; gefordert <span class="math inline">\(R_i \le D_i\)</span></li>
+<li>Completion zum Zeitpunkt <span class="math inline">\(d\)</span> gilt als rechtzeitig</li>
 </ul>
-<p><span class="math display">\[R_i \le D_i\]</span></p>
 <aside class="notes">
-<p><span class="math inline">\(R_i\)</span> ist oft größer als <span class="math inline">\(C_i\)</span>, weil höherpriore Tasks und Interrupts unterbrechen. Trotzdem muss <span class="math inline">\(R_i \le D_i\)</span> in jedem Szenario gelten.</p>
+<p><span class="math inline">\(R\)</span> enthält Warten und Präemption. <span class="math inline">\(C \le D\)</span> ist nötig, aber bei mehreren Tasks nicht hinreichend.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -513,18 +513,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-grafische-task-modell" class="slide level2">
 <h2>Das grafische Task-Modell</h2>
+<p>Lehrjob (ms): <span class="math inline">\(r=0\)</span>, Start <span class="math inline">\(s=2\)</span>, Ausführung <span class="math inline">\(2\)</span>–<span class="math inline">\(3\)</span> und <span class="math inline">\(5\)</span>–<span class="math inline">\(7\)</span>, Präemption <span class="math inline">\(3\)</span>–<span class="math inline">\(5\)</span>, <span class="math inline">\(f=7\)</span>, <span class="math inline">\(D=8\)</span>, <span class="math inline">\(T=10\)</span>.</p>
 <ul>
-<li>Alle Parameter an einem Job auf dem Zeitstrahl</li>
-<li>Release, Ausführung <span class="math inline">\(C\)</span>, Response Time <span class="math inline">\(R\)</span>, Deadline <span class="math inline">\(D\)</span>, Periode <span class="math inline">\(T\)</span></li>
+<li><span class="math inline">\(C = 3\)</span>, Startwartezeit <span class="math inline">\(2\)</span>, Unterbrechung <span class="math inline">\(2\)</span>, <span class="math inline">\(R = 7 \le D\)</span></li>
+<li>Nächster Release bei <span class="math inline">\(t = 10\)</span>, nicht beim CPU-Start</li>
 </ul>
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="../assets/images/task_model.png" class=""></p>
-<figcaption>Task-Modell mit <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span> und <span class="math inline">\(R\)</span></figcaption>
-</figure>
-</div>
+<p><img data-src="../_livefigures/inline-plantuml-cc592924.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Pfeil nach oben: Release. Rotes Feld: <span class="math inline">\(C\)</span> (WCET). Distanz Release bis Ende der Ausführung: <span class="math inline">\(R\)</span>. Roter Abwärtspfeil: Deadline. Abstand zum nächsten Release: Periode <span class="math inline">\(T\)</span>.</p>
+<p>Beide Laufstücke gehören demselben Job. Im Lehrmodell läuft er mit der angenommenen WCET. Frage: Warum ist <span class="math inline">\(T=10\)</span> nicht der Abstand der Starts?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -539,19 +535,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="deadline-klassifizierung" class="slide level2">
 <h2>Deadline-Klassifizierung</h2>
-<div class="columns">
-<div class="column" style="width:60%;">
-<p>Verhältnis von Deadline zu Periode:</p>
+<p><img data-src="../_livefigures/inline-plantuml-9343a1fc.svg" class="livefigure"></p>
 <ul>
-<li>Implicit Deadline: <span class="math inline">\(D_i = T_i\)</span></li>
-<li>Constrained Deadline: <span class="math inline">\(D_i \le T_i\)</span></li>
-<li>Arbitrary Deadline: <span class="math inline">\(D_i\)</span> beliebig</li>
+<li>Implicit: <span class="math inline">\(D = T\)</span>; constrained: <span class="math inline">\(D \le T\)</span> (enthält implicit)</li>
+<li>Arbitrary: <span class="math inline">\(D\)</span> beliebig, auch <span class="math inline">\(D &gt; T\)</span> und überlappende Jobs — nicht „immer <span class="math inline">\(D &gt; T\)</span>“</li>
+<li>Liu-Layland und der einfache EDF-Test heute: <span class="math inline">\(D = T\)</span></li>
 </ul>
-</div><div class="column" style="width:40%;">
-<p>Für die meisten RMS-Rechnungen: Implicit Deadlines — Standard in Steuergeräten.</p>
-</div></div>
 <aside class="notes">
-<p>Implicit: fertig vor dem nächsten eigenen Job. Constrained: Frist kürzer als Periode. Viele Formeln heute setzen Implicit Deadlines voraus.</p>
+<p>Die dritte Zeile ist ein Beispiel für arbitrary deadlines, keine Definition. Frage: Warum reicht <span class="math inline">\(U \le 1\)</span> bei <span class="math inline">\(D &lt; T\)</span> nicht?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -567,12 +558,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="task-typen-nach-auslöser" class="slide level2">
 <h2>Task-Typen nach Auslöser</h2>
 <ul>
-<li>Periodisch: feste Periode <span class="math inline">\(T_i\)</span>, typisch Timer/Regler</li>
-<li>Sporadisch: zufälliger Auslöser, aber garantierte Mindestzeit (Minimum Inter-Arrival Time) — wie periodisch mit <span class="math inline">\(T_{\min}\)</span></li>
-<li>Aperiodisch: kein Minimum (z. B. Netzwerk-Ping) — harte Garantien unmöglich</li>
+<li>Periodisch: feste Release-Abstände <span class="math inline">\(T\)</span></li>
+<li>Sporadisch: garantierter Mindestabstand, nicht „zufällig“</li>
+<li>Aperiodischer Burst: ohne Lastgrenze keine pauschale Garantie für jeden Eingang</li>
+<li>Begrenzen: Zulassung, Verwerfen, reserviertes Budget (Server-Theorie später)</li>
+</ul>
+<p>Gegenprobe, synchron, eine CPU: zwei Tasks <span class="math inline">\(C=2\,\mathrm{ms}\)</span>, <span class="math inline">\(T=10\,\mathrm{ms}\)</span>, <span class="math inline">\(D=3\,\mathrm{ms}\)</span>.</p>
+<ul>
+<li><span class="math inline">\(U = 40\,\%\)</span>, aber <span class="math inline">\(4\,\mathrm{ms}\)</span> Arbeit vor <span class="math inline">\(t = 3\,\mathrm{ms}\)</span> — unabhängig vom Algorithmus unmöglich</li>
 </ul>
 <aside class="notes">
-<p>Ein Taster ist sporadisch: physisch begrenzte Rate. Netzwerk-Broadcasts können aperiodisch sein — ohne Minimum keine harte Echtzeitgarantie.</p>
+<p>Ein Taster ohne Entprellung hat keine garantierte Mindestreleasezeit. Physikalische Betätigung und modellierte Mindestankunft trennen. Die 40-%-Gegenprobe zeigt, warum <span class="math inline">\(U \le 1\)</span> bei kurzen Deadlines kein EDF-Test ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -588,12 +584,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-rtos-task-zustandsmodell" class="slide level2">
 <h2>Das RTOS Task-Zustandsmodell</h2>
 <ul>
-<li>Running: besitzt die CPU (Single-Core: genau eine Task)</li>
-<li>Ready: will rechnen, wartet in der Warteschlange</li>
-<li>Blocked / Waiting: wartet auf Ereignis (Delay, Semaphore, UART) — belastet die CPU nicht</li>
+<li>Running: hat die CPU (eine Nutz-Task; Idle wenn keine Arbeit)</li>
+<li>Ready: will rechnen</li>
+<li>Blocked: wartet auf Ereignis oder Timeout, rechnet nicht</li>
+<li>Blocked wird Ready; die Auswahl kann unmittelbar folgen</li>
+<li>Interruptkontext ist kein vierter Task-Zustand</li>
 </ul>
 <aside class="notes">
-<p>Blocked ist der Schlüssel: kein aktives Polling. Die Task kostet 0 % CPU, bis ein Interrupt sie wieder ready macht.</p>
+<p>Auf einer CPU höchstens ein Task-Kontext Running. ISRs separat. Idle darf laufen, wenn niemand Ready ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -608,12 +606,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-der-zustandsmaschine" class="slide level2 scrollable">
 <h2>Visualisierung der Zustandsmaschine</h2>
-<p><img data-src="../_livefigures/inline-plantuml-0f691d8b.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-d5693071.svg" class="livefigure"></p>
 <ul>
-<li>Blocked wird nie direkt Running — immer zuerst Ready-Queue</li>
+<li>Scheduler wählt, Dispatcher führt aus</li>
+<li>RTOS: Kontextwechsel; Labor: Funktionsaufruf und Rückkehr</li>
 </ul>
 <aside class="notes">
-<p>Dispatch wählt die höchstpriore Ready-Task. Präemption wirft die laufende Task zurück nach Ready. Events wecken nur in die Ready-Queue; der Scheduler entscheidet über Running.</p>
+<p>Ein geweckter Job wird nicht „magisch Running“, sondern zuerst Ready.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -628,15 +627,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="metrik-cpu-auslastung-u" class="slide level2">
 <h2>Metrik: CPU-Auslastung (<span class="math inline">\(U\)</span>)</h2>
-<ul>
-<li>Utilization <span class="math inline">\(U\)</span>: Indikator, ob ein System überhaupt lösbar ist</li>
-<li>Anteil einer Task: <span class="math inline">\(U_i = \frac{C_i}{T_i}\)</span></li>
-<li>Beispiel: <span class="math inline">\(C=2\,\mathrm{ms}\)</span>, <span class="math inline">\(T=10\,\mathrm{ms}\)</span> <span class="math inline">\(\rightarrow U_i = 0{,}2\)</span> (20 %)</li>
-<li>Systemauslastung:</li>
-</ul>
 <p><span class="math display">\[U = \sum_{i=1}^{n} \frac{C_i}{T_i}\]</span></p>
+<ul>
+<li>Langfristiger Pflichtanteil auf <strong>einer</strong> CPU</li>
+<li><span class="math inline">\(U &gt; 1\)</span>: dauerhafte Pflichtlast nicht erfüllbar</li>
+<li>Endliche Bursts und eine zweite H755-CPU sind ein anderes Modell</li>
+<li>Nicht zugewiesene Prozent sind kein Fristpuffer in jedem Fenster</li>
+</ul>
 <aside class="notes">
-<p><span class="math inline">\(U\)</span> ist das Fundament jeder Schedulability-Analyse. Zuerst Teilauslastungen, dann Summe über alle Tasks.</p>
+<p><span class="math inline">\(U\)</span> ist notwendig für unbegrenzte periodische Pflicht, nicht hinreichend bei <span class="math inline">\(D &lt; T\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -651,19 +650,44 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="auslastung-ein-rechenbeispiel" class="slide level2">
 <h2>Auslastung: Ein Rechenbeispiel</h2>
+<p>Durchgängiges 85-%-Set (ms), <span class="math inline">\(D_i = T_i\)</span>:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Task</th>
+<th style="text-align: right;"><span class="math inline">\(C\)</span></th>
+<th style="text-align: right;"><span class="math inline">\(T\)</span></th>
+<th style="text-align: right;"><span class="math inline">\(U_i\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(\tau_1\)</span></td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">25 %</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\tau_2\)</span></td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">40 %</td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\tau_3\)</span></td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">20 %</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>System mit drei Tasks:
-<ul>
-<li><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(C_1=1\)</span>, <span class="math inline">\(T_1=4\)</span> <span class="math inline">\(\rightarrow U_1=25\%\)</span></li>
-<li><span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(C_2=2\)</span>, <span class="math inline">\(T_2=5\)</span> <span class="math inline">\(\rightarrow U_2=40\%\)</span></li>
-<li><span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(C_3=2\)</span>, <span class="math inline">\(T_3=10\)</span> <span class="math inline">\(\rightarrow U_3=20\%\)</span></li>
-</ul></li>
-<li>Gesamt: <span class="math inline">\(U = 85\%\)</span></li>
-<li>Erste Regel: <span class="math inline">\(U &gt; 1\)</span> (100 %) → unmöglich schedulbar</li>
-<li>Bei 85 %: hängt vom Algorithmus ab!</li>
+<li><span class="math inline">\(U = 0{,}85\)</span>; restliche 15 %: nicht zugewiesen im Langfristmodell</li>
+<li>Lokal kann die Nachfrage trotzdem eng sein (RTA gleich)</li>
+<li>ISR-, Dispatcher- und Messoverhead getrennt bilanzieren, nicht doppelt und nicht als „Pauschalreserve = Beweis“</li>
 </ul>
 <aside class="notes">
-<p>Über 100 % hilft kein Algorithmus — physikalische Überlast. Unter 100 % ist Schedulability algorithmusabhängig; das ist der Kern der zweiten Vorlesungshälfte.</p>
+<p>Die 15 % sind keine Garantie, dass jeder Job 15 % Reserve hat. Overhead nur einrechnen, wenn er nicht schon in <span class="math inline">\(C\)</span> steckt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -678,19 +702,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="exkurs-das-problem-mit-der-wcet" class="slide level2">
 <h2>Exkurs: Das Problem mit der WCET</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>sensor_value <span class="op">&gt;</span> <span class="dv">1000</span><span class="op">)</span></span>
+<span id="cb2-2"><a aria-label="2"></a>    calculate_fft<span class="op">();</span> <span class="co">/* illustrative Laufzeit, z. B. länger */</span></span>
+<span id="cb2-3"><a aria-label="3"></a><span class="cf">else</span></span>
+<span id="cb2-4"><a aria-label="4"></a>    flag <span class="op">=</span> <span class="dv">1</span><span class="op">;</span>        <span class="co">/* kurzer Pfad */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Warum WCET statt ACET (Average)?</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>sensor_value <span class="op">&gt;</span> <span class="dv">1000</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb2-2"><a aria-label="2"></a>    calculate_fft<span class="op">();</span> <span class="co">/* ~10 ms (Worst Case) */</span></span>
-<span id="cb2-3"><a aria-label="3"></a><span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
-<span id="cb2-4"><a aria-label="4"></a>    flag <span class="op">=</span> <span class="dv">1</span><span class="op">;</span>        <span class="co">/* ~0.1 ms (Best Case) */</span></span>
-<span id="cb2-5"><a aria-label="5"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>ACET vielleicht 1 ms — Auslegung auf 1 ms crasht, wenn der Worst Case eintritt</li>
+<li>Eine Mittelwertannahme von <span class="math inline">\(1\,\mathrm{ms}\)</span> braucht eine Pfadverteilung oder bleibt hypothetisch</li>
+<li>Beobachtetes Maximum <span class="math inline">\(\neq\)</span> sichere Obergrenze</li>
+<li>Statische Analyse braucht Plattform- und Codeannahmen (Cache, Bus, Waitstates)</li>
 </ul>
 <aside class="notes">
-<p>Harte Echtzeit plant immer mit WCET, auch wenn der Fall selten ist. Ein heißer Tag und die FFT reißt sonst alle Deadlines.</p>
+<p>Lehrkurve, keine Boardmessung. H755-Interferenz gehört ins WCET-Modell oder wird als außerhalb des idealen Ein-CPU-Modells gekennzeichnet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -707,26 +729,21 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Wie ermittelt man die WCET?</h2>
 <div class="columns">
 <div class="column" style="width:50%;">
-<ol type="1">
-<li>Analytisch (statisch)
+<p>Statische Analyse</p>
 <ul>
-<li>Code ohne Laufzeit mathematisch analysieren</li>
-<li>Absolute Obergrenze</li>
-<li>Schwer bei Caches (z. B. Cortex-M7)</li>
-</ul></li>
-</ol>
+<li>Pfade, Schleifengrenzen, Plattform</li>
+<li>Sichere Schranke nur unter Annahmen</li>
+</ul>
 </div><div class="column" style="width:50%;">
-<ol start="2" type="1">
-<li>Empirisch (Messung)
+<p>Messung</p>
 <ul>
-<li>Stresstests, Oszi, Trace-Tools</li>
-<li>Nahe an der Realität</li>
-<li>Keine absolute Garantie — oft mit Puffer</li>
-</ul></li>
-</ol>
+<li>Messmaximum der Läufe</li>
+<li>Kein Beweis durch „plus Puffer“</li>
+<li>Annahmen dokumentieren</li>
+</ul>
 </div></div>
 <aside class="notes">
-<p>Analytisch: sichere Schranke, aber schwer bei modernen CPUs. Praxis oft messen, Worst Case nehmen und Sicherheitspuffer aufschlagen.</p>
+<p>Beide Wege brauchen ein Modell. „Messen und 20 % drauf“ ist eine Ingenieurpraxis, kein Nachweis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -742,13 +759,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-task-modell" class="slide level2">
 <h2>Zusammenfassung Task-Modell</h2>
 <ul>
-<li>Tasks: getrennte Endlosschleifen</li>
-<li>OS orchestriert Ready / Running / Blocked</li>
-<li>Parameter: <span class="math inline">\(C_i\)</span> (WCET), <span class="math inline">\(T_i\)</span> (Periode), <span class="math inline">\(D_i\)</span> (Deadline)</li>
-<li>CPU-Auslastung <span class="math inline">\(U\)</span> muss <span class="math inline">\(\le 100\%\)</span> sein</li>
+<li>Task vs.&nbsp;Job; <span class="math inline">\(T\)</span> = Release-Abstand</li>
+<li><span class="math inline">\(C\)</span> eigener Bedarf; <span class="math inline">\(R = f - r\)</span>; Nachweis <span class="math inline">\(R \le D\)</span></li>
+<li><span class="math inline">\(U\)</span> auf einer CPU; <span class="math inline">\(U &gt; 1\)</span> schließt dauerhafte Pflichtlast aus</li>
+<li>Analysezahlen <span class="math inline">\(\neq\)</span> automatische RTOS-Überwachung</li>
 </ul>
 <aside class="notes">
-<p>Fragen zum Task-Modell? Als Nächstes: nach welchen Regeln der Scheduler die Ready-Queue auflöst.</p>
+<p>Frage: Erfüllt <span class="math inline">\(U = 40\,\%\)</span> mit <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> und zwei Jobs à <span class="math inline">\(2\,\mathrm{ms}\)</span> die Frist? Nein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -764,13 +781,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-kernfrage-des-schedulings" class="slide level2">
 <h2>Die Kernfrage des Schedulings</h2>
 <ul>
-<li>Mehrere Tasks im Zustand Ready</li>
-<li>Nur ein Core: wer darf rechnen?</li>
-<li>Genau das entscheidet der Scheduling-Algorithmus</li>
-<li>Die Wahl entscheidet über Echtzeit oder Deadline-Miss</li>
+<li>Mehrere Ready, eine CPU</li>
+<li>Der Algorithmus legt die Auswahlregel fest</li>
+<li>Ob Fristen halten, zeigt der Test unter seinen Annahmen</li>
 </ul>
 <aside class="notes">
-<p>Timer-Tick: Motor, Display und Netzwerk sind ready. Der Algorithmus vergibt den einzigen Kern — und damit Erfolg oder Crash.</p>
+<p>Auswahlregel und Beweis nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -786,19 +802,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="scheduler-vs.-dispatcher" class="slide level2">
 <h2>Scheduler vs.&nbsp;Dispatcher</h2>
 <ul>
-<li>Scheduler (Entscheider):
-<ul>
-<li>Algorithmus: wer hat Vorrang?</li>
-<li>aktualisiert Task-Control-Blöcke (TCB)</li>
-</ul></li>
-<li>Dispatcher (Ausführer):
-<ul>
-<li>Context Switch (Register sichern/laden)</li>
-<li>Stack-Pointer der gewählten Task setzen</li>
-</ul></li>
+<li>Scheduler: wer als Nächstes (Priorität, Deadline, Ring)</li>
+<li>Dispatcher: setzt die Auswahl um</li>
+<li>RTOS-Thread: Register/PSP; Labor: <code>step()</code> aufrufen und Rückkehr abwarten</li>
 </ul>
 <aside class="notes">
-<p>Scheduler = Gehirn (C-Logik). Dispatcher = Muskel (oft Assembler-nah). Entscheidung und physischer Wechsel sind getrennt.</p>
+<p>Im Labor gibt es keinen PendSV-Registerwechsel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -813,14 +822,37 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="klassifizierung-offline-vs.-online" class="slide level2">
 <h2>Klassifizierung: Offline vs.&nbsp;Online</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Offline-Scheduling - Fahrplan vor dem Flashen berechnet - Laufzeit: Tabelle abarbeiten (Time-Triggered) - Vorteil: maximal deterministisch - Nachteil: starr</p>
-</div><div class="column" style="width:50%;">
-<p>Online-Scheduling - Entscheidung zur Laufzeit (Event-Triggered) - Flexibel bei unvorhersehbaren Events - Standard: FreeRTOS, Linux - Nachteil: Scheduler kostet CPU-Zeit</p>
-</div></div>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Achse</th>
+<th>Ausprägungen</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Zeitpunkt der Planung</td>
+<td>offline (Tabelle) / online (zur Laufzeit)</td>
+</tr>
+<tr class="even">
+<td>Auslöser</td>
+<td>zeitgesteuert / ereignisgesteuert</td>
+</tr>
+<tr class="odd">
+<td>CPU-Abgabe</td>
+<td>kooperativ / präemptiv</td>
+</tr>
+<tr class="even">
+<td>Auswahl</td>
+<td>Fixed Priority / EDF / RR</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Die Achsen nicht gleichsetzen: online <span class="math inline">\(\neq\)</span> automatisch ereignisgesteuert</li>
+</ul>
 <aside class="notes">
-<p>Offline: Flugzeugsteuerungen, Time-Triggered. Wir fokussieren Online: flexibel, aber Scheduler-Overhead.</p>
+<p>Eine offline Tabelle kann zeitgesteuert sein. Ein Fixed-Priority-RTOS kann auf Ereignisse reagieren, nicht nur auf den Tick.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -836,19 +868,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="klassifizierung-kooperativ-vs.-präemptiv" class="slide level2">
 <h2>Klassifizierung: Kooperativ vs.&nbsp;Präemptiv</h2>
 <ul>
-<li>Wie bekommt das OS die CPU zurück?</li>
-<li>Kooperativ (non-preemptive):
-<ul>
-<li>Task gibt CPU freiwillig ab (<code>os_yield()</code>)</li>
-</ul></li>
-<li>Präemptiv:
-<ul>
-<li>Hardware-Timer entreißt der Task die CPU</li>
-<li>Task merkt den Wechsel nicht</li>
-</ul></li>
+<li>Kooperativ: Task gibt die CPU frei (<code>yield</code> / Rückkehr)</li>
+<li>Präemptiv: der Kern entzieht die CPU</li>
+<li>Fixed Priority ist nicht automatisch RMS: Prioritäten muss die Anwendung passend setzen</li>
+<li>Round-Robin ignoriert Fristen, kann sie aber unter nachgewiesenen Bedingungen erfüllen</li>
 </ul>
 <aside class="notes">
-<p>Kooperativ braucht Disziplin. Präemptiv: SysTick (z. B. 1 ms) stoppt die Task und gibt dem Scheduler die Kontrolle.</p>
+<p>Prioritätswahl und Art der CPU-Abgabe sind verschiedene Entscheidungen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -863,19 +889,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="kooperatives-scheduling-non-preemptive" class="slide level2">
 <h2>Kooperatives Scheduling (Non-preemptive)</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> Task_Motor<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-2"><a aria-label="2"></a>    <span class="cf">while</span> <span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-3"><a aria-label="3"></a>        Calculate_PID<span class="op">();</span> <span class="co">/* ~2 ms */</span></span>
-<span id="cb3-4"><a aria-label="4"></a>        os_yield<span class="op">();</span>      <span class="co">/* andere dürfen */</span></span>
-<span id="cb3-5"><a aria-label="5"></a>        Apply_PWM<span class="op">();</span></span>
-<span id="cb3-6"><a aria-label="6"></a>    <span class="op">}</span></span>
-<span id="cb3-7"><a aria-label="7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Vorteil: wenige Race Conditions während der Berechnung</li>
-<li>Nachteil: vergessenes <code>yield()</code> oder Endlosschleife → System-Freeze</li>
+<li>Ein Schritt, der nie zurückkehrt, hält den Dispatcher an</li>
+<li>Aktive IRQs können weiterlaufen</li>
+<li><code>Calculate_PID</code> und <code>Apply_PWM</code> im Beispiel als <strong>ein</strong> begrenzter Schritt, wenn die Aktorfrist das verlangt</li>
+<li><code>yield</code> dazwischen nicht unkommentiert einbauen</li>
 </ul>
 <aside class="notes">
-<p>Windows 3.x war kooperativ. Vorteil: ruhiges Schreiben globaler Daten. Nachteil: ein hängender Task friert alles ein — oft K.O. für sichere Echtzeit.</p>
+<p>Kooperativ kann Fristen erfüllen, wenn jeder Schritt ein nachgewiesenes Budget hat und zurückkehrt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -891,14 +912,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="präemptives-scheduling" class="slide level2">
 <h2>Präemptives Scheduling</h2>
 <ul>
-<li>Standard moderner RTOS (FreeRTOS, VxWorks, Zephyr)</li>
-<li>Hardware-Interrupt (z. B. SysTick) weckt den Scheduler</li>
-<li>Höherpriore Ready-Task → sofortiger Wechsel</li>
-<li>Gefahr Shared Data: Präemption mitten im Schreiben → korrupte Daten</li>
-<li>Lösung später: Mutex/Semaphore (Ressourcen-Termin)</li>
+<li>Eine ISR kann eine höherpriore Task Ready machen</li>
+<li>PendSV kann <strong>nach ISR-Ende</strong> wechseln — nicht erst beim nächsten Tick</li>
+<li>Präemption verhindert keinen Starvation, wenn High ständig Ready bleibt</li>
+<li>Shared Data: später Mutex; Shared Memory ist nicht pauschal verboten, Abhängigkeiten müssen im Modell stehen</li>
 </ul>
 <aside class="notes">
-<p>Präemption verhindert Freezes, erzwingt aber Synchronisation. Details zu Mutex und Priority Inversion: spätere Termine.</p>
+<p>„Alle Wechsel passieren am Tick“ ist falsch für ereignisgesteuerte Wechsel. Frage: Warum läuft Low nicht, wenn High nur <code>yield</code> macht, aber Ready bleibt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -914,13 +934,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="prioritätsbasiertes-scheduling" class="slide level2">
 <h2>Prioritätsbasiertes Scheduling</h2>
 <ul>
-<li>Jede Task erhält eine Priorität</li>
-<li>Die Ready-Task mit höchster Priorität gewinnt</li>
-<li>Statisch: Priorität zur Erzeugung fest (Grundlage RMS)</li>
-<li>Dynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)</li>
+<li>Fixed Priority: konfigurierte Priorität, statisch im RMS-Modell</li>
+<li>EDF: unter bereiten Jobs die früheste <strong>absolute</strong> Job-Deadline</li>
+<li>Eine Deadline wird nicht allein dadurch „höher“, dass Zeit verstreicht, während andere absolute Deadlines fest bleiben</li>
+<li>NVIC-IRQ: kleinere Zahl = dringender; native FreeRTOS-Taskpriorität: größere Zahl = höher (CMSIS-RTOS2 separat prüfen)</li>
 </ul>
 <aside class="notes">
-<p>Statisch: <code>prio = 5</code> bleibt. Dynamisch (EDF): Ranking nach absoluter Deadline — die Task mit der frühesten Deadline hat die höchste Priorität (kein „Ansteigen kurz vorher“).</p>
+<p>IRQ-Priorität und Task-Priorität nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -936,13 +956,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-spezialfall-round-robin-rr" class="slide level2">
 <h2>Der Spezialfall: Round-Robin (RR)</h2>
 <ul>
-<li>Gleiche Priorität bei mehreren Ready-Tasks?</li>
-<li>Round-Robin: Zeitscheiben (Time Slices, z. B. 1 ms)</li>
-<li>A → B → C → A …</li>
-<li>Fair, aber allein für harte Echtzeit ungeeignet (ignoriert Deadlines)</li>
+<li>Gleiche Auswahlklasse, ringförmige Zeitscheiben <strong>oder</strong> kooperative Schritte</li>
+<li>Timer-RR: gleiche Quanten; Labor-RR: keine erzwungenen 1-ms-Quanten</li>
+<li>Fairness ersetzt keinen Fristnachweis</li>
 </ul>
 <aside class="notes">
-<p>Laborziel heute: Round-Robin. Fairness-Karussell — ohne Deadline-Bewusstsein. In FreeRTOS optional auf gleicher Prioritätsstufe.</p>
+<p>Zwei Bilder im Laborteil: gleiche Scheiben vs.&nbsp;unterschiedlich lange Schritte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -957,12 +976,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-round-robin" class="slide level2 scrollable">
 <h2>Visualisierung: Round Robin</h2>
-<p><img data-src="../_livefigures/inline-plantuml-2f4796d0.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-5b853055.svg" class="livefigure"></p>
 <ul>
-<li>Gleiche Zeitscheibe, ringförmiger Wechsel</li>
+<li>Genau eine Running-Spur; idealisierte gleiche Scheiben</li>
 </ul>
 <aside class="notes">
-<p>PlantUML-Timing: gleiche Priorität, Timer erzwingt Wechsel. Ideal für den Labor-Einstieg als C-Array/Ringpuffer.</p>
+<p>Das ist timerpräemptives RR, nicht der Labor-Dispatcher.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -978,14 +997,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-problem-des-aushungerns-starvation" class="slide level2">
 <h2>Das Problem des Aushungerns (Starvation)</h2>
 <ul>
-<li>Strikt prioritätsbasiert und präemptiv</li>
-<li>Task A: HIGH, Task B: LOW</li>
-<li>Task A in <code>while (1)</code> ohne Delay/Block</li>
-<li>Ergebnis: Task B verhungert (Starvation)</li>
-<li>RTOS garantiert keine Fairness bei ungleichen Prioritäten</li>
+<li>Strikte Priorität, High bleibt Ready (auch nach <code>yield</code>): Low kommt nicht dran</li>
+<li><code>yield</code> behebt das nicht, solange High sofort wieder gewählt wird</li>
+<li>Abhilfe: Blockieren, periodische Freigabe, geprüfte Budgets</li>
+<li>Kooperativ zusätzlich: ein Schritt ohne Rückkehr stoppt die anderen Callbacks</li>
 </ul>
 <aside class="notes">
-<p>Bei strikter Priorität mischt sich das OS nicht „fair“ ein. Hochpriore Tasks müssen sich schlafen legen, sonst atmet der Rest nie.</p>
+<p>Präemption garantiert weder Fairness noch Jitterfreiheit.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1001,12 +1019,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="wann-ist-ein-system-schedulbar" class="slide level2">
 <h2>Wann ist ein System schedulbar?</h2>
 <ul>
-<li>Ein Task-Set ist schedulbar, wenn ein Algorithmus existiert, der allen Jobs ihre Deadlines einhält</li>
-<li>Schedulability-Test: Vorab-Beweis (Formel / Analyse)</li>
-<li>Ziel: Garantie vor dem Ausliefern, nicht Hoffnung nach dem Flashen</li>
+<li><strong>Feasibility:</strong> es existiert irgendein zulässiger Plan</li>
+<li><strong>Schedulability:</strong> ein <strong>gewählter</strong> Algorithmus hält die Fristen</li>
+<li>Ein RMS-Test kann RMS verwerfen, obwohl EDF funktioniert (97-%-Beispiel)</li>
+<li>Tests gelten unter ihren Annahmen, nicht für jedes STM32-Programm</li>
 </ul>
 <aside class="notes">
-<p>Schedulability = Planbarkeit. Wir wollen vor Kundenauslieferung wissen, ob Deadlines halten — mathematisch, nicht nur empirisch.</p>
+<p>Die 40-%-Gegenprobe ist infeasible, nicht nur „RMS-ungeeignet“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1021,14 +1040,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schedulability-tests" class="slide level2">
 <h2>Schedulability-Tests</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Exakter Test (hinreichend und notwendig) - Bestanden: sicher - Durchgefallen: sicher nicht schedulbar - Nachteil: oft teuer (NP-schwer)</p>
-</div><div class="column" style="width:50%;">
-<p>Konservativer Test (nur hinreichend) - Bestanden: Garantie - Durchgefallen: unklar (pessimistisch) - Vorteil: einfache Formel</p>
-</div></div>
+<ul>
+<li>Hinreichend: bestanden <span class="math inline">\(\Rightarrow\)</span> nachgewiesen; nicht bestanden <span class="math inline">\(\Rightarrow\)</span> <strong>keine Entscheidung</strong></li>
+<li>Exakt im benannten Modell: bestanden oder widerlegt</li>
+<li>Die einfache RTA ist dieser Fixpunkt-Test, nicht pauschal „NP-schwer“</li>
+<li>Allgemeine Scheduling-Probleme können schwer sein — das hier benannte Verfahren nicht damit abtun</li>
+</ul>
 <aside class="notes">
-<p>Ingenieure nutzen oft hinreichende Tests: „Ja“ ist sicher, „Nein“ heißt nur „keine Garantie“. Merken Sie sich das für die RMS-Schranke.</p>
+<p>Liu-Layland ist hinreichend. Darüber RTA, nicht sofort „unschedulable“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1044,13 +1063,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="rate-monotonic-scheduling-rms" class="slide level2">
 <h2>Rate Monotonic Scheduling (RMS)</h2>
 <ul>
-<li>Industrie-Standard für periodische Echtzeitsysteme</li>
-<li>Liu &amp; Layland (1973)</li>
-<li>Typ: statisch, präemptiv, prioritätsbasiert</li>
-<li>Goldene Regel: je kürzer <span class="math inline">\(T_i\)</span>, desto höher die Priorität (höhere Rate = höhere Priorität)</li>
+<li>Fixed Priority, präemptiv, Rate: kürzeres <span class="math inline">\(T\)</span> <span class="math inline">\(\Rightarrow\)</span> höhere Priorität</li>
+<li>Liu &amp; Layland (1973), für das ideale Ein-CPU-Modell</li>
+<li>Ein FP-RTOS ist nicht automatisch RMS, solange die Prioritäten nicht so vergeben sind</li>
 </ul>
 <aside class="notes">
-<p>RMS ist der Klassiker in Automotive und Industrie. Kurze Periode bekommt hohe Priorität. Als Nächstes: Annahmen von Liu &amp; Layland, Utilization Bound und Response-Time Analysis.</p>
+<p>Keine Branchenzuordnung „Bremse = RMS“. RMS ist eine Prioritätsregel plus Analyse.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1065,18 +1083,20 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="rms-die-mathematischen-annahmen" class="slide level2">
 <h2>RMS: Die mathematischen Annahmen</h2>
-<ul>
-<li>Um RMS mathematisch zu beweisen, trafen Liu &amp; Layland (1973) strikte Annahmen:
+<p>Für die Kernbeispiele, sofern nicht anders gesagt:</p>
 <ol type="1">
-<li>Alle Tasks sind strikt periodisch</li>
-<li>Deadline = Periode (<span class="math inline">\(D_i = T_i\)</span>)</li>
-<li>Tasks sind völlig unabhängig (keine Mutexes, kein Shared Memory)</li>
-<li>Laufzeit des Schedulers (Context Switch) ist 0</li>
-</ol></li>
-<li>In der Realität ist keine dieser Annahmen zu 100 % erfüllt — trotzdem ist RMS die Basis fast aller realen Systeme</li>
+<li>Ein Prozessor, vollständig präemptierbar, unabhängig</li>
+<li>Beschränkte <span class="math inline">\(C_i\)</span>, kein Blocking, kein Release-Jitter, keine Selbstsuspendierung</li>
+<li>Zunächst Overhead/ISRs = 0 (sonst in <span class="math inline">\(C\)</span> oder als Interferenz modellieren)</li>
+<li>Liu-Layland und einfacher EDF-Test: <span class="math inline">\(D_i = T_i\)</span></li>
+<li>Einfache RTA: Fixed Priority mit <span class="math inline">\(D_i \le T_i\)</span></li>
+</ol>
+<ul>
+<li>Shared Memory ist erlaubt, wenn Abhängigkeiten und Interferenz im Modell stehen</li>
+<li>H755-Businterferenz: im WCET oder außerhalb dieses Idealmodells</li>
 </ul>
 <aside class="notes">
-<p>Bevor wir die berühmte Schranke ansehen: Liu und Layland gingen 1973 von einem idealen System aus — periodisch, <span class="math inline">\(D_i = T_i\)</span>, keine Ressourcenkonflikte, Context Switch = 0. Realitätsfern, aber fast jedes AUTOSAR-Steuergerät basiert darauf. Die Kunst: Annahmen später kontrolliert aufweichen, ohne Deadlines zu verlieren.</p>
+<p>„Kein Shared Memory“ wäre zu hart. Entscheidend ist, ob die Störung in der Analyse vorkommt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1091,19 +1111,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="beispiel-1-rms-prioritäten-vergeben" class="slide level2">
 <h2>Beispiel 1: RMS-Prioritäten vergeben</h2>
+<p>75-%-Set (ms), <span class="math inline">\(D = T\)</span>, Release aller ersten Jobs bei <span class="math inline">\(t = 0\)</span>:</p>
 <ul>
-<li>Gegebenes Task-Set:
-<ul>
-<li><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(C_1 = 1\)</span>, <span class="math inline">\(T_1 = 4\)</span></li>
-<li><span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(C_2 = 2\)</span>, <span class="math inline">\(T_2 = 6\)</span></li>
-<li><span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(C_3 = 2\)</span>, <span class="math inline">\(T_3 = 12\)</span></li>
-</ul></li>
-<li>Auslastung: <span class="math inline">\(U = \frac{1}{4} + \frac{2}{6} + \frac{2}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}16\overline{6} = 75\,\%\)</span></li>
-<li>Regel: kürzere Periode <span class="math inline">\(\rightarrow\)</span> höhere Priorität</li>
-<li>Ergebnis: <span class="math inline">\(\tau_1\)</span> (höchste Prio), <span class="math inline">\(\tau_2\)</span> (mittel), <span class="math inline">\(\tau_3\)</span> (niedrigste)</li>
+<li><span class="math inline">\(\tau_1=(1,4)\)</span>, <span class="math inline">\(\tau_2=(2,6)\)</span>, <span class="math inline">\(\tau_3=(2,12)\)</span></li>
+<li><span class="math inline">\(U = \tfrac{1}{4}+\tfrac{2}{6}+\tfrac{2}{12} = 0{,}75\)</span></li>
+<li>Priorität <span class="math inline">\(\tau_1 &gt; \tau_2 &gt; \tau_3\)</span></li>
 </ul>
 <aside class="notes">
-<p>Drei Tasks, Summe <span class="math inline">\(75\,\%\)</span>. Nach Rate Monotonic bekommt <span class="math inline">\(\tau_1\)</span> (<span class="math inline">\(T=4\)</span>) die höchste Priorität, <span class="math inline">\(\tau_3\)</span> (<span class="math inline">\(T=12\)</span>) die niedrigste. Mit <span class="math inline">\(C_3=2\)</span> wird <span class="math inline">\(\tau_3\)</span> bei <span class="math inline">\(t=4\)</span> mitten in ihrer Ausführung von <span class="math inline">\(\tau_1\)</span> präemptiert — genau das wollen wir zeigen.</p>
+<p>Dieses Set zeigt Präemption von <span class="math inline">\(\tau_3\)</span> bei <span class="math inline">\(t = 4\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1118,12 +1133,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-präemptives-rms" class="slide level2 scrollable">
 <h2>Visualisierung: Präemptives RMS</h2>
-<p><img data-src="../_livefigures/inline-plantuml-55af0f6b.svg" class="livefigure"></p>
+<p>Intervalle halboffen <span class="math inline">\([Start, Ende)\)</span>. CPU: <span class="math inline">\(0\)</span>–<span class="math inline">\(1\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(1\)</span>–<span class="math inline">\(3\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(3\)</span>–<span class="math inline">\(4\)</span> <span class="math inline">\(\tau_3\)</span>, <span class="math inline">\(4\)</span>–<span class="math inline">\(5\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(5\)</span>–<span class="math inline">\(6\)</span> <span class="math inline">\(\tau_3\)</span>, <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(8\)</span>–<span class="math inline">\(9\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(9\)</span>–<span class="math inline">\(12\)</span> Idle.</p>
 <ul>
-<li>Bei <span class="math inline">\(t=4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> die laufende <span class="math inline">\(\tau_3\)</span> präemptiv (<span class="math inline">\(C_3=2\)</span>: erste Zeiteinheit <span class="math inline">\(t=3\)</span>–<span class="math inline">\(4\)</span>, Rest nach Präemption)</li>
+<li><span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(C = 2\)</span>, <span class="math inline">\(R = 6 \le 12\)</span>; Completion bei <span class="math inline">\(t = 6\)</span> hält</li>
+<li>Neues <span class="math inline">\(\tau_2\)</span> startet bei seinem Release <span class="math inline">\(t = 6\)</span></li>
 </ul>
+<p><img data-src="../_livefigures/inline-plantuml-5ef3d365.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Bei <span class="math inline">\(t=0\)</span> erwachen alle drei gleichzeitig; <span class="math inline">\(\tau_1\)</span> nimmt die CPU. Nach 1 ms folgt <span class="math inline">\(\tau_2\)</span>, ab <span class="math inline">\(t=3\)</span> darf <span class="math inline">\(\tau_3\)</span> starten. Bei <span class="math inline">\(t=4\)</span> feuert die Periode von <span class="math inline">\(\tau_1\)</span> erneut — das OS entzieht <span class="math inline">\(\tau_3\)</span> die CPU mitten in <span class="math inline">\(C_3=2\)</span>. Das ist Präemption in Reinkultur; <span class="math inline">\(\tau_3\)</span> setzt ab <span class="math inline">\(t=5\)</span> fort und ist bei <span class="math inline">\(t=6\)</span> fertig.</p>
+<p>Bei <span class="math inline">\(t = 4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> den noch offenen ersten Job von <span class="math inline">\(\tau_3\)</span>. Critical Instant ist der gemeinsame <strong>Release</strong>, nicht ein gemeinsamer CPU-Start — auf einer CPU starten sie nicht gleichzeitig.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1139,12 +1156,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-kritische-moment-critical-instant" class="slide level2">
 <h2>Der kritische Moment (Critical Instant)</h2>
 <ul>
-<li>Schlimmster Fall für jede Task: Start exakt zeitgleich mit allen höherprioren Tasks</li>
-<li>Dieser Zeitpunkt heißt Critical Instant</li>
-<li>Beweis-Logik: Hält die Task unter diesen Bedingungen die Deadline ein, hält sie sie immer ein</li>
+<li>Für dieses FP-Modell: Release zusammen mit allen höherprioren Aufgaben</li>
+<li>„Hält hier, hält im Modell“ — nicht für Jitter, Blocking oder Selbstsuspendierung</li>
+<li>Angepasste Analysen, wenn die Annahmen fallen</li>
 </ul>
 <aside class="notes">
-<p>Alle Tasks bei <span class="math inline">\(t=0\)</span> zu starten war Absicht. Liu und Layland: Worst Case, wenn eine Task zusammen mit allen höherprioren aufwacht — längste Wartezeit. Schedulability-Analyse muss diesen Instant prüfen; überlebt <span class="math inline">\(\tau_3\)</span> ihn, überlebt sie den Rest.</p>
+<p>RTA für 75 %: <span class="math inline">\(R_1 = 1\)</span>, <span class="math inline">\(R_2 = 3\)</span>, <span class="math inline">\(R_3 = 6\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1159,16 +1176,43 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-rms-schranke-liu-layland-1973" class="slide level2">
 <h2>Die RMS-Schranke (Liu &amp; Layland, 1973)</h2>
+<p><span class="math display">\[U \le U_{LL}(n) = n\bigl(2^{1/n}-1\bigr)\]</span></p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;"><span class="math inline">\(n\)</span></th>
+<th><span class="math inline">\(U_{LL}\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>100 %</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>82,84 %</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>77,98 %</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>75,68 %</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><span class="math inline">\(\infty\)</span></td>
+<td><span class="math inline">\(\ln 2 \approx 69{,}31\,\%\)</span></td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Hinreichender, konservativer Schedulability-Test</li>
-<li>Ein Task-Set aus <span class="math inline">\(n\)</span> Tasks ist unter RMS garantiert schedulbar, wenn:</li>
-</ul>
-<p><span class="math display">\[U = \sum_{i=1}^{n} \frac{C_i}{T_i} \le n\bigl(2^{1/n}-1\bigr)\]</span></p>
-<ul>
-<li><span class="math inline">\(U\)</span>: Systemauslastung; <span class="math inline">\(n\)</span>: Anzahl der Tasks</li>
+<li>Hinreichend unter den LL-Annahmen, nicht notwendig</li>
+<li>69,3 % ist <strong>keine</strong> allgemeine RMS-Obergrenze</li>
 </ul>
 <aside class="notes">
-<p>Eine der berühmtesten Formeln der Echtzeitinformatik. Unter der Schranke: Garantie — keine Deadline verpasst. Darüber: genauer hinsehen (Grauzone).</p>
+<p>Harmonische Gegenprobe (Anhang in den Notizen): <span class="math inline">\((C=2,T=D=4)\)</span> und <span class="math inline">\((C=4,T=D=8)\)</span>, <span class="math inline">\(U = 100\,\%\)</span>. Ablauf <span class="math inline">\(0\)</span>–<span class="math inline">\(2\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(2\)</span>–<span class="math inline">\(4\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(4\)</span>–<span class="math inline">\(6\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> <span class="math inline">\(\tau_2\)</span> hält unter RMS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1183,41 +1227,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="werte-der-rms-schranke" class="slide level2">
 <h2>Werte der RMS-Schranke</h2>
+<p>Für <span class="math inline">\(n = 3\)</span>:</p>
 <ul>
-<li>Einsetzen von <span class="math inline">\(n\)</span> in <span class="math inline">\(n(2^{1/n}-1)\)</span>:</li>
+<li>bis 77,98 %: unter den Modellannahmen durch die Schranke nachgewiesen</li>
+<li>darüber bis 100 %: genauer testen (RTA)</li>
+<li>über 100 %: dauerhafte Pflichtlast auf einer CPU nicht erfüllbar</li>
+<li>75-%-Set liegt im ersten Bereich; 85-%-Set braucht RTA</li>
+<li>„Schranke nicht erfüllt“ <span class="math inline">\(\neq\)</span> „nicht schedulbar“</li>
 </ul>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th style="text-align: right;"><span class="math inline">\(n\)</span></th>
-<th style="text-align: left;">Schranke</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: right;">1</td>
-<td style="text-align: left;"><span class="math inline">\(100\,\%\)</span></td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">2</td>
-<td style="text-align: left;"><span class="math inline">\(\approx 82{,}8\,\%\)</span></td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">3</td>
-<td style="text-align: left;"><span class="math inline">\(\approx 78{,}0\,\%\)</span></td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">4</td>
-<td style="text-align: left;"><span class="math inline">\(\approx 75{,}7\,\%\)</span></td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;"><span class="math inline">\(\infty\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(\ln 2 \approx 69{,}3\,\%\)</span></td>
-</tr>
-</tbody>
-</table>
 <aside class="notes">
-<p>Bei <span class="math inline">\(n=1\)</span> gilt 100 %. Mit mehr Tasks sinkt die Schranke; Grenzwert <span class="math inline">\(\ln 2 \approx 69{,}3\,\%\)</span> — die magische Zahl der Automatisierungstechnik.</p>
+<p>Tabelle und Aussage bleiben auf einer Folie. Faustregel <span class="math inline">\(\ln 2\)</span> ist der Grenzwert, kein Verbot höherer Auslastung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1233,16 +1252,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="interpretation-der-rms-schranke" class="slide level2">
 <h2>Interpretation der RMS-Schranke</h2>
 <ul>
-<li>Zone 1: <span class="math inline">\(U \le n(2^{1/n}-1)\)</span> — hinreichend schedulbar (Liu und Layland)</li>
-<li>Faustregel: <span class="math inline">\(U \le \ln 2 \approx 69{,}3\,\%\)</span> ist für jedes <span class="math inline">\(n\)</span> sicher</li>
-<li>Zone 2: Schranke <span class="math inline">\(&lt; U \le 100\,\%\)</span> — Grauzone; hinreichender Test sagt „Nein“, System kann trotzdem laufen
-<ul>
-<li>Lösung: exakter Test (Response-Time Analysis)</li>
-</ul></li>
-<li>Zone 3: <span class="math inline">\(U &gt; 100\,\%\)</span> — physikalisch unmöglich</li>
+<li>Die Schranke ist eine Entscheidungshilfe, kein vollständiger RMS-Test</li>
+<li>FP-Prioritäten im RTOS müssen zur Rate passen, sonst ist es nicht RMS</li>
+<li>Overhead nicht stillschweigend ignorieren, wenn er die Annahmen verletzt</li>
 </ul>
 <aside class="notes">
-<p>Die Tabelle liefert die <span class="math inline">\(n\)</span>-abhängige Schranke; <span class="math inline">\(\ln 2\)</span> ist der Grenzwert. Unter der Schranke: Garantie. Darüber: Grauzone — weder blind ausliefern noch Chip verwerfen, sondern RTA. Über 100 % ist ausgeschlossen.</p>
+<p>Frage: Liegt <span class="math inline">\(U = 85\,\%\)</span> bei drei Tasks unter oder über <span class="math inline">\(U_{LL}(3)\)</span>? Darüber — deshalb RTA, nicht automatisch Fail.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1257,17 +1272,79 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="response-time-analysis-rta" class="slide level2">
 <h2>Response-Time Analysis (RTA)</h2>
+<p>Einfaches FP-Modell, <span class="math inline">\(D_i \le T_i\)</span>, <span class="math inline">\(hp(i)\)</span> = höherpriore Tasks:</p>
+<p><span class="math display">\[R_i^{(0)} = C_i, \qquad R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j\]</span></p>
 <ul>
-<li>Exakter Test für die Grauzone</li>
-<li>Worst-Case-Antwortzeit <span class="math inline">\(R_i\)</span> iterativ:</li>
+<li>Aufrundung: Anzahl störender Jobs im Fenster</li>
+<li>Stopp bei Fixpunkt oder bei <span class="math inline">\(R &gt; D\)</span>; <span class="math inline">\(R = D\)</span> besteht</li>
+<li>Exakt nur in diesem Modell; kein stiller Blocking-/Jitter-Term</li>
 </ul>
-<p><span class="math display">\[R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j\]</span></p>
+<p>85-%-Set, RMS-Prioritäten:</p>
 <ul>
-<li><span class="math inline">\(hp(i)\)</span>: Menge aller Tasks mit höherer Priorität als <span class="math inline">\(i\)</span></li>
-<li>Abbruch: <span class="math inline">\(R_i^{(k+1)} = R_i^{(k)}\)</span> (gefunden) oder <span class="math inline">\(R_i &gt; D_i\)</span> (Deadline verpasst)</li>
+<li><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(1 \to 1\)</span>, <span class="math inline">\(R_1 = 1 \le 4\)</span></li>
+<li><span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(2 \to 3 \to 3\)</span>, <span class="math inline">\(R_2 = 3 \le 5\)</span></li>
 </ul>
 <aside class="notes">
-<p><span class="math inline">\(R_i\)</span> = eigene WCET plus Unterbrechungen durch höherpriore Tasks. Da <span class="math inline">\(R\)</span> auf beiden Seiten steht: Iteration bis Konvergenz oder Deadline-Bruch.</p>
+<p><span class="math inline">\(hp(\tau_2)=\{\tau_1\}\)</span>. <span class="math inline">\(2+\lceil 2/4\rceil\cdot 1 = 3\)</span>, dann stabil.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="rta-für-das-85--set" class="slide level2">
+<h2>RTA für das 85-%-Set</h2>
+<p><span class="math inline">\(\tau_3\)</span>, <span class="math inline">\(C_3 = 2\)</span>, <span class="math inline">\(hp = \{\tau_1,\tau_2\}\)</span>:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;">Schritt</th>
+<th>Rechnung</th>
+<th style="text-align: right;">Wert</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td><span class="math inline">\(C_3\)</span></td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1</td>
+<td><span class="math inline">\(2+\lceil 2/4\rceil\cdot 1+\lceil 2/5\rceil\cdot 2\)</span></td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">2</td>
+<td><span class="math inline">\(2+\lceil 5/4\rceil\cdot 1+\lceil 5/5\rceil\cdot 2\)</span></td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">3</td>
+<td><span class="math inline">\(2+\lceil 6/4\rceil\cdot 1+\lceil 6/5\rceil\cdot 2\)</span></td>
+<td style="text-align: right;">8</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">4</td>
+<td><span class="math inline">\(2+\lceil 8/4\rceil\cdot 1+\lceil 8/5\rceil\cdot 2\)</span></td>
+<td style="text-align: right;">8</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Fixpunkt <span class="math inline">\(R_3 = 8 \le 10\)</span></li>
+<li>Kritischer Ablauf: <span class="math inline">\(0\)</span>–<span class="math inline">\(1\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(1\)</span>–<span class="math inline">\(3\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(3\)</span>–<span class="math inline">\(4\)</span> <span class="math inline">\(\tau_3\)</span>, <span class="math inline">\(4\)</span>–<span class="math inline">\(5\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(5\)</span>–<span class="math inline">\(7\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(7\)</span>–<span class="math inline">\(8\)</span> <span class="math inline">\(\tau_3\)</span></li>
+<li>85 % liegen über <span class="math inline">\(U_{LL}(3)\)</span>, dieses Set ist unter RMS dennoch nachgewiesen</li>
+<li>Daraus folgt nicht „85 % ist immer sicher“</li>
+</ul>
+<aside class="notes">
+<p>Bei Fenster 5: <span class="math inline">\(2+2+2 = 6\)</span>. Bei Fenster 6: <span class="math inline">\(2+2+4 = 8\)</span>. Releases bei <span class="math inline">\(t = 4\)</span> und <span class="math inline">\(t = 5\)</span>. Quellen: Liu/Layland 1973; Audsley u. a. zur statischen Prioritätsanalyse.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1283,18 +1360,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="fazit-rms-in-der-praxis" class="slide level2">
 <h2>Fazit: RMS in der Praxis</h2>
 <ul>
-<li>Vorteile:
-<ul>
-<li>Simpler Algorithmus, minimaler OS-Overhead</li>
-<li>Stabil bei Überlast: nur niedrigpriore Tasks verpassen Deadlines</li>
-</ul></li>
-<li>Nachteil:
-<ul>
-<li>Bei harten Garantien oft keine volle 100 %-Auslastung möglich</li>
-</ul></li>
+<li>Feste Prioritäten: geringer Laufzeitaufwand, Analyse vorab</li>
+<li>Überlast: eine für sich nachgewiesene höherpriore Teilmenge wird im unabhängigen präemptiven Modell nicht durch zusätzliche Low-Prio-CPU-Arbeit verdrängt</li>
+<li>Das ist keine Garantie „nur Low-Prio verpasst Fristen“</li>
+<li>Höchstpriore kann die eigene Frist verfehlen (Budget, Maskierung, Sperren)</li>
 </ul>
 <aside class="notes">
-<p>Industrie liebt RMS: feste Prioritäten einmal setzen, kein Mathe in der ISR. Bei Überlast sterben deterministisch die langen Perioden — die kritische Motorregelung läuft weiter.</p>
+<p>Gegenbeispiel gleich bei der Überlastfolie: <span class="math inline">\(C = 5\)</span>, <span class="math inline">\(T = D = 4\)</span> scheitert allein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1310,13 +1382,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="earliest-deadline-first-edf" class="slide level2">
 <h2>Earliest Deadline First (EDF)</h2>
 <ul>
-<li>RMS ist statisch — EDF berechnet Prioritäten dynamisch</li>
-<li>Regel: die Task mit der nächsten absoluten Deadline erhält die höchste Priorität</li>
-<li>Scheduler muss bei jedem OS-Tick Prioritäten neu sortieren</li>
-<li>Einsatz: Forschung, Soft Real-Time (z. B. Linux <code>SCHED_DEADLINE</code>)</li>
+<li>Unter den bereiten Jobs: früheste absolute Deadline</li>
+<li>Ereignisgesteuert; geeignete Datenstruktur, nicht „jede ms komplett neu sortieren“ als Definition</li>
+<li>Nicht auf Soft Real-Time beschränkt</li>
+<li>Linux <code>SCHED_DEADLINE</code>: EDF <strong>mit</strong> CBS und Zulassungskontrolle — nicht ungeschütztes Lehrbuch-EDF</li>
 </ul>
 <aside class="notes">
-<p>EDF holt mehr aus der Hardware: absolute Frist entscheidet. Prioritäten ändern sich laufend — mehr OS-Overhead, dafür höhere theoretische Auslastung.</p>
+<p>Gleichstand heute: die <strong>laufende</strong> Aufgabe behält die CPU.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1331,16 +1403,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-mathematische-eleganz-von-edf" class="slide level2">
 <h2>Die mathematische Eleganz von EDF</h2>
+<p>Für unabhängige, präemptive Tasks auf <strong>einer</strong> CPU mit <span class="math inline">\(D_i = T_i\)</span>, ohne Overhead:</p>
+<p><span class="math display">\[U \le 1 \quad \text{genau dann schedulbar unter EDF}\]</span></p>
 <ul>
-<li>Für unabhängige, präemptive Tasks mit Implicit Deadlines:</li>
-</ul>
-<p><span class="math display">\[U = \sum_{i=1}^{n} \frac{C_i}{T_i} \le 1\]</span></p>
-<ul>
-<li>Exakt schedulbar genau dann, wenn <span class="math inline">\(U \le 1\)</span></li>
-<li>Bedeutung: CPU bis 100 % auslastbar, ohne Deadlines zu verpassen</li>
+<li>Gilt nicht für <span class="math inline">\(D &lt; T\)</span> (40-%-Gegenprobe)</li>
+<li>Gilt nicht automatisch auf dem H755 mit zweitem Kern oder unmodellierter Interferenz</li>
 </ul>
 <aside class="notes">
-<p>Keine 69-Prozent-Schranke, keine Grauzone: <span class="math inline">\(U \le 1\)</span> ist hinreichend und notwendig. Theoretisch ideal, wenn jeder Taktzyklus zählt.</p>
+<p>Notwendig und hinreichend nur in diesem Idealmodell.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1355,14 +1425,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-dynamisches-edf" class="slide level2 scrollable">
 <h2>Visualisierung: Dynamisches EDF</h2>
+<p>97-%-Set: <span class="math inline">\(\tau_1=(2,5,5)\)</span>, <span class="math inline">\(\tau_2=(4,7,7)\)</span>, synchron bei 0. <span class="math inline">\(U = 2/5+4/7 = 34/35 \approx 97{,}14\,\%\)</span>.</p>
+<p>RMS scheitert: <span class="math inline">\(0\)</span>–<span class="math inline">\(2\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(2\)</span>–<span class="math inline">\(5\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(5\)</span>–<span class="math inline">\(7\)</span> <span class="math inline">\(\tau_1\)</span>; bei <span class="math inline">\(t = 7\)</span> fehlt <span class="math inline">\(\tau_2\)</span> noch <span class="math inline">\(1\,\mathrm{ms}\)</span>, <span class="math inline">\(D_2\)</span> verletzt. RTA: <span class="math inline">\(4 \to 6 \to 8 &gt; 7\)</span>.</p>
+<p>EDF (Gleichstand: laufende Task bleibt):</p>
 <ul>
-<li><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(C_1=2\)</span>, <span class="math inline">\(T_1=5\)</span>; <span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(C_2=4\)</span>, <span class="math inline">\(T_2=7\)</span></li>
-<li>Auslastung <span class="math inline">\(U \approx 97\,\%\)</span> — Liu-und-Layland-Schranke und exakter RMS-Test scheitern</li>
-<li>Mit EDF ändern sich die relativen Prioritäten dynamisch</li>
+<li><span class="math inline">\(0\)</span>–<span class="math inline">\(2\)</span> <span class="math inline">\(\tau_1/J_1\)</span>, <span class="math inline">\(2\)</span>–<span class="math inline">\(6\)</span> <span class="math inline">\(\tau_2/J_1\)</span>, <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> <span class="math inline">\(\tau_1/J_2\)</span>, <span class="math inline">\(8\)</span>–<span class="math inline">\(12\)</span> <span class="math inline">\(\tau_2/J_2\)</span>, <span class="math inline">\(12\)</span>–<span class="math inline">\(14\)</span> <span class="math inline">\(\tau_1/J_3\)</span></li>
+<li>Bei <span class="math inline">\(t = 5\)</span>: Deadline 7 schlägt Deadline 10, <span class="math inline">\(\tau_2\)</span> läuft weiter</li>
 </ul>
-<p><img data-src="../_livefigures/inline-plantuml-14e902a3.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-88872e64.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Bei <span class="math inline">\(t=5\)</span>: <span class="math inline">\(\tau_1\)</span> released mit Deadline <span class="math inline">\(t=10\)</span>; <span class="math inline">\(\tau_2\)</span> hat Deadline <span class="math inline">\(t=7\)</span>. Da 7 näher liegt, rechnet <span class="math inline">\(\tau_2\)</span> weiter — unter RMS hätte <span class="math inline">\(\tau_1\)</span> präemptiert. EDF dreht Prioritäten um und bewältigt die 97 %.</p>
+<p><span class="math inline">\(\tau_1/J_2\)</span> ist <span class="math inline">\(5\)</span>–<span class="math inline">\(6\)</span> Ready und <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> Running. Frage: Warum unterbricht <span class="math inline">\(\tau_1\)</span> bei <span class="math inline">\(t = 5\)</span> nicht?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1375,20 +1447,77 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
           display:block!important;
       }</style></aside>
 </section>
-<section id="der-haken-an-edf-der-domino-effekt" class="slide level2">
-<h2>Der Haken an EDF: Der Domino-Effekt</h2>
+<section id="edf-entscheidungen-bis-t-12" class="slide level2">
+<h2>EDF: Entscheidungen bis <span class="math inline">\(t = 12\)</span></h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;"><span class="math inline">\(t\)</span></th>
+<th>Bereit, Regel</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td><span class="math inline">\(d(\tau_1)=5 &lt; d(\tau_2)=7\)</span> → <span class="math inline">\(\tau_1\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td><span class="math inline">\(\tau_1\)</span> fertig → <span class="math inline">\(\tau_2\)</span> (<span class="math inline">\(d=7\)</span>)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td><span class="math inline">\(\tau_2\)</span> läuft, <span class="math inline">\(d=7 &lt; 10\)</span> → bleibt</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td><span class="math inline">\(\tau_2/J_1\)</span> fertig → <span class="math inline">\(\tau_1/J_2\)</span> (<span class="math inline">\(d=10\)</span>)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td><span class="math inline">\(\tau_2/J_2\)</span> kommt, <span class="math inline">\(d=14 &gt; 10\)</span> → <span class="math inline">\(\tau_1\)</span> bleibt</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td><span class="math inline">\(\tau_1\)</span> fertig → <span class="math inline">\(\tau_2/J_2\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">10</td>
+<td><span class="math inline">\(\tau_1/J_3\)</span>, <span class="math inline">\(d=15 &gt; 14\)</span> → <span class="math inline">\(\tau_2\)</span> bleibt</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td><span class="math inline">\(\tau_2\)</span> fertig → <span class="math inline">\(\tau_1/J_3\)</span> bis 14</td>
+</tr>
+</tbody>
+</table>
+<p>Hyperperiode 35 (Notizen): <span class="math inline">\(14\)</span>–<span class="math inline">\(15\)</span> <span class="math inline">\(\tau_2/J_3\)</span>, <span class="math inline">\(15\)</span>–<span class="math inline">\(17\)</span> <span class="math inline">\(\tau_1/J_4\)</span>, <span class="math inline">\(17\)</span>–<span class="math inline">\(20\)</span> <span class="math inline">\(\tau_2/J_3\)</span>, <span class="math inline">\(20\)</span>–<span class="math inline">\(22\)</span> <span class="math inline">\(\tau_1/J_5\)</span>, <span class="math inline">\(22\)</span>–<span class="math inline">\(26\)</span> <span class="math inline">\(\tau_2/J_4\)</span>, <span class="math inline">\(26\)</span>–<span class="math inline">\(28\)</span> <span class="math inline">\(\tau_1/J_6\)</span>, <span class="math inline">\(28\)</span>–<span class="math inline">\(32\)</span> <span class="math inline">\(\tau_2/J_5\)</span>, <span class="math inline">\(32\)</span>–<span class="math inline">\(34\)</span> <span class="math inline">\(\tau_1/J_7\)</span>, <span class="math inline">\(34\)</span>–<span class="math inline">\(35\)</span> Idle.</p>
+<aside class="notes">
+<p>Bei gleicher absoluter Deadline bleibt die laufende Aufgabe (so bei <span class="math inline">\(t = 30\)</span> in der Hyperperiode). Simulation illustriert; der Nachweis für implizite Deadlines ist <span class="math inline">\(U \le 1\)</span>.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="der-haken-an-edf-überlast" class="slide level2">
+<h2>Der Haken an EDF: Überlast</h2>
 <ul>
-<li>Warum nutzt die Automobilindustrie kaum EDF?</li>
-<li>Verhalten bei Überlast (<span class="math inline">\(U &gt; 100\,\%\)</span>):
-<ul>
-<li>Eine Task überschreitet ungeplant ihre WCET</li>
-<li>Ihre Deadline rückt nah <span class="math inline">\(\rightarrow\)</span> EDF gibt ihr höchste Priorität</li>
-<li>Folge: sie blockiert andere Tasks — diese verpassen ebenfalls Deadlines</li>
-</ul></li>
-<li>Domino-Effekt: eine Überlast lässt das System kaskadierend abstürzen</li>
+<li>EDF ist deterministisch unter festen Regeln, nicht „chaotisch“</li>
+<li>Überlast kann weitere Misses verursachen — abhängig von Set und Miss-Behandlung</li>
+<li>Höchstpriore <span class="math inline">\(H\)</span>: tatsächlicher Bedarf <span class="math inline">\(5\,\mathrm{ms}\)</span>, <span class="math inline">\(T = D = 4\,\mathrm{ms}\)</span> verfehlt die Frist <strong>allein</strong></li>
+<li>Geplanten <span class="math inline">\(C\)</span> und überschrittenen Bedarf getrennt benennen</li>
+<li>Strategien: verspäteten Job beenden, verwerfen oder Budget begrenzen — jede ändert das Verhalten</li>
+<li>Feste absolute Deadline-Marker bleiben; ein überfälliger Job wird nicht automatisch „wichtiger“ nur weil die Uhr läuft, solange seine absolute Deadline fest ist und die Regel „früheste <span class="math inline">\(d\)</span>“ gilt</li>
 </ul>
 <aside class="notes">
-<p>Bei leichter Überlast können unter EDF plötzlich alle Tasks scheitern — auch die sicherheitskritische Motorsteuerung. In Systemen mit Menschenleben ist dieses Ausfallmuster inakzeptabel; deshalb FreeRTOS/AUTOSAR mit statischen Prioritäten.</p>
+<p>Keine Empfehlung „Airbag = RMS“. Linux SCHED_DEADLINE schützt per CBS/Admission; das ist keine Garantie bei unzulässiger Gesamtlast. Einen Überlast-Gantt nur mit vollständigen Kosten zeichnen — hier reicht das Einzeljob-Gegenbeispiel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1403,49 +1532,49 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zusammenfassung-rms-vs.-edf" class="slide level2">
 <h2>Zusammenfassung: RMS vs.&nbsp;EDF</h2>
-<table class="caption-top" style="width:100%;">
+<table class="caption-top">
 <colgroup>
-<col style="width: 56%">
-<col style="width: 21%">
-<col style="width: 21%">
+<col style="width: 7%">
+<col style="width: 74%">
+<col style="width: 18%">
 </colgroup>
 <thead>
 <tr class="header">
-<th style="text-align: left;">Eigenschaft</th>
-<th style="text-align: left;">RMS</th>
-<th style="text-align: left;">EDF</th>
+<th></th>
+<th>RMS (FP nach Rate)</th>
+<th>EDF</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">Priorität</td>
-<td style="text-align: left;">Statisch (nach <span class="math inline">\(T_i\)</span>)</td>
-<td style="text-align: left;">Dynamisch (nach absoluter <span class="math inline">\(D_i\)</span>)</td>
+<td>Auswahl</td>
+<td>feste Priorität aus <span class="math inline">\(T\)</span></td>
+<td>früheste absolute <span class="math inline">\(d\)</span></td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Max. <span class="math inline">\(U\)</span></td>
-<td style="text-align: left;">Hinreichende Faustregel <span class="math inline">\(\ln 2\approx 69{,}3\,\%\)</span> (<span class="math inline">\(n\)</span>-abhängig; bei <span class="math inline">\(n=3\approx 78\,\%\)</span>); exakt bis <span class="math inline">\(100\,\%\)</span> möglich (RTA)</td>
-<td style="text-align: left;"><span class="math inline">\(100\,\%\)</span> garantiert</td>
+<td>Test hier</td>
+<td>LL hinreichend; RTA im FP-Modell</td>
+<td><span class="math inline">\(U \le 1\)</span> bei <span class="math inline">\(D = T\)</span>, eine CPU</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Überlast</td>
-<td style="text-align: left;">Deterministisch (Low-Prio stirbt)</td>
-<td style="text-align: left;">Chaotisch (Domino-Effekt)</td>
+<td>75 % / 85 % / 97 %</td>
+<td>75 % und 85 % halten; 97 % scheitert</td>
+<td>97 % hält im Idealmodell</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">OS-Overhead</td>
-<td style="text-align: left;">Sehr niedrig</td>
-<td style="text-align: left;">Hoch (Listen-Sortierung)</td>
+<td>Überlast</td>
+<td>Low-CPU verdrängt High nicht; eigene Budgets können trotzdem reißen</td>
+<td>weitere Misses möglich; Strategie festlegen</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Einsatz</td>
-<td style="text-align: left;">AUTOSAR, FreeRTOS, Industrie</td>
-<td style="text-align: left;">Forschung, Multimedia, Soft-RT</td>
+<td>Aufwand</td>
+<td>Priorität konfigurieren</td>
+<td>Deadline-Ereignisse verwalten</td>
 </tr>
 </tbody>
 </table>
 <aside class="notes">
-<p>RMS: berechenbar, geringer Overhead, klares Fehlerverhalten. EDF: volle Auslastung, aber Domino bei Überlast. Für Bremssattel und Airbag lautet die Antwort RMS.</p>
+<p>Keine universelle Branchenzuordnung. Beide brauchen das passende Fehlermodell.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1461,15 +1590,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="unter-der-haube-wie-baut-man-einen-scheduler" class="slide level2">
 <h2>Unter der Haube: Wie baut man einen Scheduler?</h2>
 <ul>
-<li>Wechsel von Mathematik zurück zur Hardware-Praxis</li>
-<li>Präemptiver Scheduler (wie FreeRTOS) auf dem STM32H755 braucht zwei ARM-Komponenten:
-<ul>
-<li>SysTick-Timer (Herzschlag)</li>
-<li>PendSV-Exception (heimlicher Kontextwechsel)</li>
-</ul></li>
+<li>Präemptiver RTOS-Port (Referenz FreeRTOS CM4F): SysTick und PendSV</li>
+<li>Labor heute: <strong>kein</strong> selbstgeschriebener Registerwechsel</li>
+<li>PendSV ist nicht „von Natur aus“ niedrigprior; der Port setzt die Priorität</li>
 </ul>
 <aside class="notes">
-<p>Ein RTOS ist auch nur C — braucht aber Hardware-Unterstützung. Auf Cortex-M: SysTick und PendSV, von ARM ins Silizium gebrannt.</p>
+<p>Öffentliche Referenz: FreeRTOS-Kernel <code>portable/GCC/ARM_CM4F/port.c</code>. Die lokal eingesetzte Version kann abweichen; <code>main</code> allein belegt sie nicht. Keine .ioc im Kursrepo.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1485,13 +1611,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-herzschlag-systick-timer" class="slide level2">
 <h2>Der Herzschlag: SysTick-Timer</h2>
 <ul>
-<li>24-Bit Down-Counter, fest in jedem ARM Cortex-M</li>
-<li>Typisch: Überlauf jede Millisekunde (1 kHz)</li>
-<li>Bei Überlauf: SysTick-Interrupt</li>
-<li>Taktgeber des OS: jede ms prüfen, ob ein Task-Wechsel nötig ist</li>
+<li>24-Bit-Downcounter, Reload <span class="math inline">\(\mathrm{LOAD} = f_{\mathrm{Quelle}}/f_{\mathrm{Tick}} - 1\)</span> (Wertebereich prüfen)</li>
+<li>Typische Tickquelle, nicht die einzige (anderer Timer, Tickless Idle möglich)</li>
+<li>Im üblichen CM4F-Port: SysTick <strong>und</strong> PendSV auf niedrigste IRQ-Priorität</li>
+<li>Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit; nicht mit der Taskpriorität verwechseln</li>
 </ul>
 <aside class="notes">
-<p>Im Gegensatz zu ST-Timern ist SysTick Kernbestandteil von ARM — auf jedem Cortex-M gleich. 1000 Interrupts/s: Scheduler aktualisiert Wartezeiten und prüft RMS/RR-Regeln.</p>
+<p>Keine unbelegte Behauptung „SysTick ist High-Prio“. Taktquelle am Projekt ablesen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1506,27 +1632,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="code-die-systick-isr" class="slide level2">
 <h2>Code: Die SysTick-ISR</h2>
-<div class="columns">
-<div class="column" style="width:45%;">
-<ul>
-<li>Was passiert jede Millisekunde?
-<ul>
-<li>Tick-Count (Systemuhr) erhöhen</li>
-<li>Ready-Listen prüfen</li>
-<li>Bei wichtigerer Task: Context Switch anfordern</li>
-</ul></li>
-</ul>
-</div><div class="column" style="width:55%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> SysTick_Handler<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>    os_tick_count<span class="op">++;</span></span>
-<span id="cb4-3"><a aria-label="3"></a>    Task<span class="op">*</span> next <span class="op">=</span> Scheduler_Run<span class="op">();</span></span>
-<span id="cb4-4"><a aria-label="4"></a>    <span class="cf">if</span> <span class="op">(</span>next <span class="op">!=</span> current_task<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-5"><a aria-label="5"></a>        Trigger_PendSV<span class="op">();</span></span>
-<span id="cb4-6"><a aria-label="6"></a>    <span class="op">}</span></span>
-<span id="cb4-7"><a aria-label="7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
+<p>Konsistentes Muster: Zeit und Timeouts; Wechsel <strong>anfordern</strong>, Auswahl im PendSV ausführen. Eine lokale Variable <code>next</code> gilt nicht als übergebene Entscheidung, solange sie nicht gespeichert wird.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> SysTick_Handler<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    os_tick_count<span class="op">++;</span></span>
+<span id="cb3-3"><a aria-label="3"></a>    os_update_timeouts<span class="op">();</span></span>
+<span id="cb3-4"><a aria-label="4"></a>    <span class="co">/* Wechsel nur vormerken, nicht die Register hier tauschen */</span></span>
+<span id="cb3-5"><a aria-label="5"></a>    os_request_switch<span class="op">();</span> <span class="co">/* setzt PendSV pending */</span></span>
+<span id="cb3-6"><a aria-label="6"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Drei Schritte: Zeit hochzählen, Scheduler_Run(), bei Wechsel PendSV triggern — den Registertausch nicht direkt im SysTick. Warum der Umweg? Nächste Folie.</p>
+<p>Entweder nur Ready-Zustände hier aktualisieren oder die Auswahl zuverlässig hinterlegen. Kein unvollständiger Assembler als „der FreeRTOS-Port“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1542,17 +1656,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="warum-der-umweg-über-pendsv" class="slide level2">
 <h2>Warum der Umweg über PendSV?</h2>
 <ul>
-<li>Context Switch direkt im SysTick steckt in einer High-Prio-ISR</li>
-<li>Problem: UART-ISR läuft → SysTick unterbricht und wechselt Task → UART-Daten verloren</li>
-<li>Lösung: PendSV (Pendable Service Call)
-<ul>
-<li>Ausnahme mit niedrigster Priorität (bei 4 Priority-Bits: Stufe 15)</li>
-<li>SysTick merkt den Wechsel nur vor (<code>pend</code>)</li>
-<li>Context Switch erst, wenn alle anderen Interrupts fertig sind</li>
-</ul></li>
+<li>Aufgeschobener Task-Wechsel: ISR setzt Pending, PendSV läuft wenn die Priorität drankommt</li>
+<li>Pending <span class="math inline">\(\neq\)</span> Running</li>
+<li>Eine UART-ISR verliert nicht automatisch Daten, weil SysTick eintritt</li>
+<li>Datenverlust: zu späte Bedienung, FIFO, zu lange Maskierung</li>
+<li>Höherpriore ISR kann eine Task wecken; PendSV danach, vor dem nächsten Tick</li>
 </ul>
+<p><img data-src="../_livefigures/inline-plantuml-a4e90a90.svg" class="livefigure"></p>
 <aside class="notes">
-<p>SysTick markiert: „wechseln“. Hardware wartet, bis UART &amp; Co.&nbsp;fertig sind, dann PendSV als Letztes — Registertausch ohne abgebrochene Hardware-ISRs.</p>
+<p>Verschachtelte Exceptions: höhere IRQ-Priorität vor PendSV. Maskierung verschiebt den Wechsel zusätzlich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1568,17 +1680,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-task-control-block-tcb" class="slide level2">
 <h2>Der Task Control Block (TCB)</h2>
 <ul>
-<li>Woher kennt das OS den Program Counter der unterbrochenen Task?</li>
-<li>Alle Infos in einem C-Struct — dem TCB; jede Task hat einen eigenen</li>
+<li>RTOS-TCB: Stackpointer auf den gesicherten Kontext, Priorität, Zustand</li>
+<li>PC liegt im Frame, nicht als einzelnes TCB-Feld „neben“ dem Stack</li>
+<li>PSP: Taskkontext; MSP: Handlerkontext</li>
+<li>Labor-TCB: Funktionszeiger, Zustand, <code>wake_at</code> — <strong>kein</strong> Stackpointer</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
-<span id="cb5-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span><span class="op">*</span> stack_pointer<span class="op">;</span> <span class="co">/* geretteter Kontext */</span></span>
-<span id="cb5-3"><a aria-label="3"></a>    <span class="dt">uint8_t</span>   priority<span class="op">;</span>      <span class="co">/* RMS-Priorität */</span></span>
-<span id="cb5-4"><a aria-label="4"></a>    <span class="dt">uint8_t</span>   state<span class="op">;</span>         <span class="co">/* READY / RUNNING / BLOCKED */</span></span>
-<span id="cb5-5"><a aria-label="5"></a>    <span class="dt">uint32_t</span>  sleep_ticks<span class="op">;</span>   <span class="co">/* Rest-Delay */</span></span>
-<span id="cb5-6"><a aria-label="6"></a><span class="op">}</span> TCB_t<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Wichtigster Eintrag: Stack Pointer — Lesezeichen im RAM für R0–R15 dieser Task. Dazu Zustand, Priorität und Sleep-Ticks für <code>delay()</code>.</p>
+<p>Zwei TCBs nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1593,19 +1701,21 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-software-context-switch-pendsv" class="slide level2 scrollable">
 <h2>Der Software-Context-Switch (PendSV)</h2>
-<ul>
-<li>Was passiert in <code>PendSV_Handler</code> (Assembler, FreeRTOS-typisch)?
+<p>Basis-Hardwareframe: R0–R3, R12, LR, PC, xPSR (VL1).</p>
+<p>Software zusätzlich, portabhängig: R4–R11, EXC_RETURN; FPU nur bei aktivem FP-Kontext.</p>
+<p>Restore, vollständig gedacht:</p>
 <ol type="1">
-<li>Aktuellen PSP lesen (Stack der alten Task)</li>
-<li>Register R4–R11 auf diesen Stack pushen</li>
-<li>Aktualisierten SP im TCB der alten Task speichern</li>
-<li>SP der neuen Task aus deren TCB laden</li>
-<li>R4–R11 der neuen Task poppen</li>
-<li>Kontext wiederherstellen / Rücksprung (<code>BX LR</code>) — neue Task läuft</li>
-</ol></li>
+<li>Kontextpointer der laufenden Task sichern</li>
+<li>Ziel-TCB wählen</li>
+<li>Ziel-SP laden, Software-Register zurück</li>
+<li><strong>PSP auf den neuen Task-Stack setzen</strong></li>
+<li>Exception Return über EXC_RETURN (<code>BX LR</code> nur mit diesem Wert)</li>
+</ol>
+<ul>
+<li>Kein lauffähiger Minimal-Port in dieser Vorlesung; Referenz ist der eingesetzte FreeRTOS-Port</li>
 </ul>
 <aside class="notes">
-<p>Hardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Software. Lesezeichen tauschen, <code>BX LR</code> — und die CPU rechnet im Code einer anderen Task weiter.</p>
+<p>Bisher fehlte das Setzen des PSP. Ohne EXC_RETURN ist der Rücksprung kein Task-Wechsel. PM0214.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1627,21 +1737,27 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <div>
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
 flowchart LR
-    A[SysTick Timer] --&gt;|1 ms Interrupt| B[SysTick_Handler]
-    B --&gt;|Tick erhöhen| C{Scheduler: Next Task?}
-    C --&gt;|Ja, Wechsel| D[Trigger PendSV]
-    D --&gt;|Wartet auf CPU| E[PendSV_Handler]
-    E --&gt;|Push/Pop Register| F[Neue Task läuft]
-    style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style E fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  subgraph evt [Ereignis]
+    ST[SysTick niedrig]
+    UART[UART-ISR höher]
+  end
+  ST --&gt; PEND[PendSV pending]
+  UART --&gt; PEND
+  PEND --&gt; RUN[PendSV Running]
+  RUN --&gt; PSP[PSP setzen und EXC_RETURN]
+  PSP --&gt; TB[Task B]
+  style PEND fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 </pre>
 </div>
 <p></p></figure><p></p>
 </div>
 </div>
 </div>
+<ul>
+<li>Tick <strong>oder</strong> ISR kann den Wechsel vormerken</li>
+</ul>
 <aside class="notes">
-<p>SysTick feuert → Handler entscheidet → PendSV wechselt Kontext. Das ist der Motor von FreeRTOS, Zephyr und vielen weiteren RTOS.</p>
+<p>Nicht mehr die schmale Kette „nur SysTick ist High und schaltet sofort“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1657,18 +1773,13 @@ flowchart LR
 <section id="vorbereitung-für-das-labor-heute" class="slide level2">
 <h2>Vorbereitung für das Labor heute</h2>
 <ul>
-<li>Präemptives RTOS inkl. PendSV-Assembler an einem Nachmittag: zu komplex</li>
-<li>Stattdessen: eigener kooperativer Round-Robin-Scheduler</li>
-<li>Vorteile:
-<ul>
-<li>Kein Assembler nötig</li>
-<li>Kein Hardware-SysTick zwingend (<code>while(1)</code> + <code>yield</code>)</li>
-<li>Ideal, um TCB-Arrays zu verstehen</li>
-</ul></li>
-<li>Am Start: Code-Gerüst für den STM32H755</li>
+<li>Board: NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, Arbeit auf dem CM4</li>
+<li>Kein PendSV-Assembler</li>
+<li>Stacklos: <code>step()</code> kehrt zurück; Fortsetzung im TCB (<code>wake_at</code>, Zähler)</li>
+<li>Zeitbasis: z. B. <code>HAL_GetTick()</code>; der Tick präemptiert die Steps nicht</li>
 </ul>
 <aside class="notes">
-<p>Logik identisch zur Entscheidungsfindung im echten OS, aber alles in C. Vorbereitung, um nächste Woche FreeRTOS-API zu verstehen.</p>
+<p>Ohne eigenen Stack kann ein normaler Aufruf keine Endlosschleife mitten im <code>yield</code> fortsetzen. Keine .ioc im Repo — Takt im Cube-Projekt ablesen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1683,21 +1794,18 @@ flowchart LR
 </section>
 <section id="labor-schritt-1-die-tcb-liste" class="slide level2">
 <h2>Labor-Schritt 1: Die TCB-Liste</h2>
-<ul>
-<li>Array aus Funktionszeigern und Zuständen</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="dt">void</span> <span class="op">(*</span>TaskFunction_t<span class="op">)(</span><span class="dt">void</span><span class="op">);</span></span>
-<span id="cb6-2"><a aria-label="2"></a></span>
-<span id="cb6-3"><a aria-label="3"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
-<span id="cb6-4"><a aria-label="4"></a>    TaskFunction_t task_func<span class="op">;</span> <span class="co">/* welcher C-Code? */</span></span>
-<span id="cb6-5"><a aria-label="5"></a>    <span class="dt">uint8_t</span> state<span class="op">;</span>            <span class="co">/* READY oder BLOCKED */</span></span>
-<span id="cb6-6"><a aria-label="6"></a>    <span class="dt">uint32_t</span> sleep_time<span class="op">;</span>      <span class="co">/* für os_delay() */</span></span>
-<span id="cb6-7"><a aria-label="7"></a><span class="op">}</span> MyTCB_t<span class="op">;</span></span>
-<span id="cb6-8"><a aria-label="8"></a></span>
-<span id="cb6-9"><a aria-label="9"></a>MyTCB_t task_list<span class="op">[</span><span class="dv">3</span><span class="op">];</span></span>
-<span id="cb6-10"><a aria-label="10"></a><span class="dt">uint8_t</span> current_task_idx <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="pp">#define N </span><span class="dv">3</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="kw">typedef</span> <span class="kw">enum</span> <span class="op">{</span> ST_READY<span class="op">,</span> ST_BLOCKED <span class="op">}</span> TaskState<span class="op">;</span></span>
+<span id="cb4-3"><a aria-label="3"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb4-4"><a aria-label="4"></a>    <span class="dt">void</span> <span class="op">(*</span>step<span class="op">)(</span><span class="dt">void</span><span class="op">);</span> <span class="co">/* endliche Arbeit, kehrt zurück */</span></span>
+<span id="cb4-5"><a aria-label="5"></a>    TaskState state<span class="op">;</span></span>
+<span id="cb4-6"><a aria-label="6"></a>    <span class="dt">uint32_t</span> wake_at<span class="op">;</span>   <span class="co">/* Tick; Wrap: (int32_t)(now-wake) &gt;= 0 */</span></span>
+<span id="cb4-7"><a aria-label="7"></a><span class="op">}</span> MyTCB_t<span class="op">;</span></span>
+<span id="cb4-8"><a aria-label="8"></a>MyTCB_t task_list<span class="op">[</span>N<span class="op">];</span></span>
+<span id="cb4-9"><a aria-label="9"></a><span class="dt">uint8_t</span> rr_cursor<span class="op">;</span></span>
+<span id="cb4-10"><a aria-label="10"></a><span class="dt">uint8_t</span> running_idx<span class="op">;</span>    <span class="co">/* nur während step() gültig */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Ohne Registertausch kein Stack-Pointer — wir speichern den Funktionszeiger. Maximal drei Tasks und ein Index für die aktuelle Position.</p>
+<p>Zustand nicht auf einem vermeintlich pausierten Stack.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1712,34 +1820,32 @@ flowchart LR
 </section>
 <section id="labor-schritt-2-die-scheduler-logik" class="slide level2">
 <h2>Labor-Schritt 2: Die Scheduler-Logik</h2>
-<div class="columns">
-<div class="column" style="width:55%;">
+<p>Zentraler Dispatcher, <strong>kein</strong> <code>step()</code> aus <code>step()</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">void</span> dispatcher<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-2"><a aria-label="2"></a>  <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb5-3"><a aria-label="3"></a>    <span class="dt">uint32_t</span> now <span class="op">=</span> HAL_GetTick<span class="op">();</span></span>
+<span id="cb5-4"><a aria-label="4"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">uint8_t</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> N<span class="op">;</span> i<span class="op">++)</span></span>
+<span id="cb5-5"><a aria-label="5"></a>      <span class="cf">if</span> <span class="op">(</span>task_list<span class="op">[</span>i<span class="op">].</span>state <span class="op">==</span> ST_BLOCKED <span class="op">&amp;&amp;</span></span>
+<span id="cb5-6"><a aria-label="6"></a>          <span class="op">(</span><span class="dt">int32_t</span><span class="op">)(</span>now <span class="op">-</span> task_list<span class="op">[</span>i<span class="op">].</span>wake_at<span class="op">)</span> <span class="op">&gt;=</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb5-7"><a aria-label="7"></a>        task_list<span class="op">[</span>i<span class="op">].</span>state <span class="op">=</span> ST_READY<span class="op">;</span></span>
+<span id="cb5-8"><a aria-label="8"></a>    <span class="dt">int</span> sel <span class="op">=</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span></span>
+<span id="cb5-9"><a aria-label="9"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">uint8_t</span> k <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> k <span class="op">&lt;</span> N<span class="op">;</span> k<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb5-10"><a aria-label="10"></a>      <span class="dt">uint8_t</span> i <span class="op">=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">)((</span>rr_cursor <span class="op">+</span> k<span class="op">)</span> <span class="op">%</span> N<span class="op">);</span></span>
+<span id="cb5-11"><a aria-label="11"></a>      <span class="cf">if</span> <span class="op">(</span>task_list<span class="op">[</span>i<span class="op">].</span>state <span class="op">==</span> ST_READY<span class="op">)</span> <span class="op">{</span> sel <span class="op">=</span> i<span class="op">;</span> <span class="cf">break</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-12"><a aria-label="12"></a>    <span class="op">}</span></span>
+<span id="cb5-13"><a aria-label="13"></a>    <span class="cf">if</span> <span class="op">(</span>sel <span class="op">&lt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span> __WFI<span class="op">();</span> <span class="cf">continue</span><span class="op">;</span> <span class="op">}</span> <span class="co">/* Wake-Quelle nötig */</span></span>
+<span id="cb5-14"><a aria-label="14"></a>    rr_cursor <span class="op">=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">)((</span>sel <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> N<span class="op">);</span></span>
+<span id="cb5-15"><a aria-label="15"></a>    running_idx <span class="op">=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">)</span>sel<span class="op">;</span></span>
+<span id="cb5-16"><a aria-label="16"></a>    task_list<span class="op">[</span>sel<span class="op">].</span>step<span class="op">();</span> <span class="co">/* kehrt zurück */</span></span>
+<span id="cb5-17"><a aria-label="17"></a>  <span class="op">}</span></span>
+<span id="cb5-18"><a aria-label="18"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Funktion <code>os_yield()</code></li>
-<li>Ringförmig nächste READY-Task (Round-Robin)</li>
-<li>Logik:
-<ul>
-<li>Aktuelle Task pausieren</li>
-<li>Index: <span class="math inline">\((idx + 1) \bmod 3\)</span></li>
-<li>READY? Dann Funktionszeiger aufrufen</li>
-</ul></li>
-<li>Warnung: <code>task_func()</code> aus <code>os_yield</code> ist didaktisch — Stack wächst; Produktion: Dispatcher</li>
+<li>Höchstens <span class="math inline">\(N\)</span> Kandidaten, dann Idle — keine Endlossuche</li>
+<li><code>__WFI</code> nur mit aktiver Wake-Quelle (Tick)</li>
+<li><code>os_delay</code>: <code>wake_at</code> setzen, Zustand Blocked, <strong>sofort return</strong> — kein stackhaltendes <code>os_delay</code> mitten in der Funktion</li>
 </ul>
-</div><div class="column" style="width:45%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">void</span> os_yield<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb7-2"><a aria-label="2"></a>    <span class="cf">do</span> <span class="op">{</span></span>
-<span id="cb7-3"><a aria-label="3"></a>        current_task_idx <span class="op">=</span></span>
-<span id="cb7-4"><a aria-label="4"></a>          <span class="op">(</span>current_task_idx <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">%</span> <span class="dv">3</span><span class="op">;</span></span>
-<span id="cb7-5"><a aria-label="5"></a>    <span class="op">}</span> <span class="cf">while</span> <span class="op">(</span>task_list<span class="op">[</span>current_task_idx<span class="op">]</span></span>
-<span id="cb7-6"><a aria-label="6"></a>               <span class="op">.</span>state <span class="op">!=</span> READY<span class="op">);</span></span>
-<span id="cb7-7"><a aria-label="7"></a>    <span class="co">/* Didaktische Vereinfachung: ruft Task rekursiv auf</span></span>
-<span id="cb7-8"><a aria-label="8"></a><span class="co">       (Stack wächst). Produktion: Rückkehr zum Dispatcher. */</span></span>
-<span id="cb7-9"><a aria-label="9"></a>    task_list<span class="op">[</span>current_task_idx<span class="op">]</span></span>
-<span id="cb7-10"><a aria-label="10"></a>        <span class="op">.</span>task_func<span class="op">();</span></span>
-<span id="cb7-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p><code>os_yield()</code> heißt: CPU freiwillig abgeben. Modulo hält den Ring. Achtung: Der direkte Aufruf von <code>task_func()</code> ist eine didaktische Vereinfachung — bei <code>while(1)</code> + Yield wächst der Stack. Ein echtes kooperatives OS kehrt zum Dispatcher zurück und startet die nächste Task ohne geschachtelte Aufrufe.</p>
+<p>Geschachtelt wäre A→yield→B→yield→C und der Stack wächst. Hier bleibt die Tiefe begrenzt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1754,17 +1860,20 @@ flowchart LR
 </section>
 <section id="labor-schritt-3-hardware-messung-oszilloskop" class="slide level2">
 <h2>Labor-Schritt 3: Hardware-Messung (Oszilloskop)</h2>
+<p>Pulsbreite <span class="math inline">\(w_k = f_k - s_k\)</span> (verstrichen, inkl. möglicher IRQs) und Startabstand <span class="math inline">\(P_k = s_{k+1}-s_k\)</span> unterscheiden.</p>
+<p>Idealisierte Lehre, keine Boardmessung:</p>
 <ul>
-<li>Drei Tasks (z. B. drei LEDs umschalten)</li>
-<li>Test: Jitter am Oszilloskop messen</li>
-<li>GPIO am Anfang von Task 1 auf High, am Ende auf Low</li>
+<li><span class="math inline">\(C_1=C_2=C_3=1\,\mathrm{ms}\)</span>: Task-1-Starts <span class="math inline">\(0/3/6/9\)</span>, Abstände konstant</li>
+<li>konstantes <span class="math inline">\(C_2=3\,\mathrm{ms}\)</span>: Abstände konstant <span class="math inline">\(5\,\mathrm{ms}\)</span> — noch kein Jitter</li>
+<li><span class="math inline">\(C_2=1/3/1/3\)</span>, <span class="math inline">\(C_1=C_3=1\)</span>: Starts <span class="math inline">\(0/3/8/11/16\)</span>, Abstände <span class="math inline">\(3/5/3/5\)</span>, Spanne <span class="math inline">\(2\,\mathrm{ms}\)</span>; Pulsbreite von Task 1 bleibt <span class="math inline">\(1\,\mathrm{ms}\)</span></li>
 </ul>
-<p><img data-src="../_livefigures/inline-wavedrom-0c6a4389.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-wavedrom-6ccb9486.svg" class="livefigure"></p>
 <ul>
-<li>Erwartung: Schwankungen — Timing hängt vom C-Code der anderen Tasks ab</li>
+<li>Gleiche Compiler-/Taktbedingungen, bekannter Pin, hohe Abtastrate, Marker für Task und ggf. ISR</li>
+<li>Zahlen erst nach Messung; Pin (z. B. PA0) nach Belegung prüfen</li>
 </ul>
 <aside class="notes">
-<p>Hypothese: präemptiv starr, kooperativ mit Jitter. Rechnet Task 2 länger, verschiebt sich Task 1 — genau das wollen wir sehen.</p>
+<p>„Präemptiv starr, kooperativ mit Jitter“ ersetzen: Jitter nur bei schwankender Last. Konstante Verlängerung ist ein Bias.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1780,16 +1889,12 @@ flowchart LR
 <section id="labor-schritt-4-den-scheduler-crashen" class="slide level2">
 <h2>Labor-Schritt 4: Den Scheduler crashen</h2>
 <ul>
-<li>Schwachpunkt kooperativer Systeme spüren:
-<ul>
-<li>In Task 2 lange Zählschleife ohne <code>os_yield()</code></li>
-<li>Oszilloskop beobachten</li>
-</ul></li>
-<li>Ergebnis: Task 1 aus dem Tritt oder eingefroren</li>
-<li>Erkenntnis für Woche 3: deshalb ab nächster Woche präemptives FreeRTOS</li>
+<li>Schritt ohne Rückkehr: weitere Callbacks bleiben aus; IRQs können weiterlaufen</li>
+<li>Separat, präemptiv: High ständig Ready <span class="math inline">\(\Rightarrow\)</span> Low verhungert; <code>yield</code> reicht nicht</li>
+<li>Deshalb Budgets, Blockieren und — ab Termin 3 — präemptives FreeRTOS mit Nachweis, nicht als Automatik</li>
 </ul>
 <aside class="notes">
-<p>Mutwillig crashen: Theorie wird greifbar. Harte Echtzeit darf dem Anwendungscode nicht vertrauen — Hardware muss die Kontrolle übernehmen.</p>
+<p>Zwei Fehlerbilder nicht zu einem „Crash“ vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1805,14 +1910,14 @@ flowchart LR
 <section id="zusammenfassung-des-tages" class="slide level2">
 <h2>Zusammenfassung des Tages</h2>
 <ul>
-<li>Task-Modell: WCET <span class="math inline">\(C\)</span>, Periode <span class="math inline">\(T\)</span>, Frist <span class="math inline">\(D\)</span>; Auslastung <span class="math inline">\(U\)</span> als Analyse-Fundament</li>
-<li>RMS: Priorität statisch nach Rate; Liu-Layland hinreichend (<span class="math inline">\(n\)</span>-abhängig, Grenzwert <span class="math inline">\(\approx 69{,}3\,\%\)</span>), exakt via RTA; deterministisch bei Überlast</li>
-<li>EDF: nächste Frist, <span class="math inline">\(U \le 1\)</span>; bei Fehler Domino-Effekt</li>
-<li>Cortex-M: SysTick + PendSV ermöglichen präemptives Multitasking</li>
-<li>Labor: kooperativer Round-Robin — und warum er scheitern kann</li>
+<li>Ein Prozessor: <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span>, <span class="math inline">\(R \le D\)</span>; 75 % / 85 % / 97 % durchgerechnet</li>
+<li>LL-Schranke hinreichend; 85 % via RTA (<span class="math inline">\(R_3 = 8\)</span>); 97 % RMS fail, EDF hält im Idealmodell</li>
+<li><span class="math inline">\(U = 40\,\%\)</span> mit <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> kann unmöglich sein</li>
+<li>SysTick/PendSV: beide im CM4F-Port niedrig; PSP setzen</li>
+<li>Labor: Dispatcher und endliche Steps</li>
 </ul>
 <aside class="notes">
-<p>Sie können Software in <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span>, <span class="math inline">\(D\)</span> abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Liu-Layland ist hinreichend (<span class="math inline">\(n\)</span>-abhängig); exakte Schedulability liefert die Response-Time Analysis.</p>
+<p>Kontrollwerte: <span class="math inline">\(U_{75}=0{,}75\)</span>, <span class="math inline">\(U_{85}=0{,}85\)</span>, <span class="math inline">\(U_{97}=34/35\)</span>. RTA 75 %: <span class="math inline">\(1,3,6\)</span>. RTA 85 %: <span class="math inline">\(1,3,8\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1828,14 +1933,36 @@ flowchart LR
 <section id="ausblick-auf-termin-3" class="slide level2">
 <h2>Ausblick auf Termin 3</h2>
 <ul>
-<li>Nach dem Spiel-Scheduler: Wechsel in die Profiliga</li>
-<li>Nächste Woche: FreeRTOS auf dem Cortex-M4</li>
-<li>Kooperative Architektur weg, harte Präemption aktiv</li>
-<li>FreeRTOS-API (CMSIS_V2 im Labor): <code>osThreadNew()</code>, <code>osDelay()</code></li>
-<li>Vorbereitung: Zeiger (Pointer) in C auffrischen</li>
+<li>FreeRTOS auf dem Cortex-M4, präemptive Threads</li>
+<li>API: <code>osThreadNew</code>, <code>osDelay</code> — anderer Kontext als <code>step()</code></li>
+<li>Prioritäten konfigurieren ist noch kein RMS-Beweis</li>
+<li>Vorbereitung: Funktions- und Strukturzeiger</li>
 </ul>
 <aside class="notes">
-<p>Nächste Woche FreeRTOS — PendSV und echte Präemption. API mit unserem Eigenbau vergleichen. Hausaufgabe: Funktions- und Strukturzeiger. Vielen Dank und bis gleich im Labor!</p>
+<p>Mutex und Priority Inheritance folgen später, nicht heute.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="quellen" class="slide level2">
+<h2>Quellen</h2>
+<ul>
+<li>Liu &amp; Layland (1973), Scheduling Algorithms for Multiprogramming</li>
+<li>Audsley u. a., Response-Time Analysis für statische Prioritäten</li>
+<li>FreeRTOS-Kernel, Port GCC/ARM_CM4F (Version am Projekt prüfen)</li>
+<li>Linux-Doku <code>SCHED_DEADLINE</code> (EDF, CBS, Admission)</li>
+<li>ST PM0214, Cortex-M4 Exceptions / PSP / EXC_RETURN</li>
+</ul>
+<aside class="notes">
+<p>Keine Branchenstatistiken. Keine Messwerte ohne Oszilloskop-Protokoll.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
