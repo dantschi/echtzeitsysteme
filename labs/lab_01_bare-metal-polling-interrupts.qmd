@@ -11,7 +11,7 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Zielsetzung
 
-In dieser ersten Laborübung machen Sie sich mit der Entwicklungsumgebung und der Hardware vertraut. Sie lernen die praktischen Grenzen von klassischen Polling-Architekturen (Super-Loops) kennen, insbesondere das *Heavy-Load-Problem*. Anschließend lösen Sie dieses Problem, indem Sie die zeitkritischen Aufgaben in deterministische Hardware-Interrupts (Foreground/Background-Architektur) auslagern. Als Hardware dient das Dual-Core-Board **STM32H755**.
+In dieser ersten Laborübung machen Sie sich mit der Entwicklungsumgebung und der Hardware vertraut. Sie lernen Grenzen und Einsatzbedingungen von Polling-Architekturen (Super-Loops) kennen — insbesondere das *Heavy-Load-Problem* bei langen unzerlegten Abschnitten. Anschließend verlagern Sie die periodische LED-Aktion in einen Timer-Interrupt (Foreground/Background). Hardware: **Board NUCLEO-H755ZI-Q** (MB1363), **MCU STM32H755ZIT6**, Arbeit auf dem Cortex-M4.
 
 ---
 
@@ -19,10 +19,10 @@ In dieser ersten Laborübung machen Sie sich mit der Entwicklungsumgebung und de
 
 Um die Toolchain zu überprüfen, erstellen wir ein einfaches Bare-Metal-Programm auf dem Cortex-M4-Kern.
 
-1. Legen Sie ein neues Projekt für das Board **STM32H755ZI-Q** in der STM32CubeIDE an.
-2. Konfigurieren Sie eine LED (z. B. an Pin **PE1**) als `GPIO_Output` und weisen Sie diese dem Cortex-M4 zu (*Pin Context Assignment*).
-3. Generieren Sie den Code.
-4. Lassen Sie die LED in der `main.c` des CM4-Projekts im Abstand von $500\text{ ms}$ blinken. Nutzen Sie dafür die blockierende Funktion `HAL_Delay()`.
+1. Legen Sie ein neues Projekt für das Board **NUCLEO-H755ZI-Q** (MCU STM32H755ZIT6) in der STM32CubeIDE an.
+2. Konfigurieren Sie die gelbe LED **LD2 an PE1** (MB1363) als `GPIO_Output` und weisen Sie sie dem Cortex-M4 zu (*Pin Context Assignment*). Boardrevision/Bestückung bei Bedarf in UM2408 prüfen.
+3. Generieren Sie den Code; prüfen Sie GPIO- und Clock-Initialisierung.
+4. Lassen Sie die LED in der `main.c` des CM4-Projekts toggeln (`HAL_Delay(500)`). Hinweis: Toggle alle $500\,\mathrm{ms}$ ergibt Flankenabstand $500\,\mathrm{ms}$, aber einen vollständigen On-Off-Zyklus von $\approx 1\,\mathrm{s}$ ($1\,\mathrm{Hz}$).
 
 ### Ihre Lösung {.unnumbered}
 
@@ -31,14 +31,12 @@ Um die Toolchain zu überprüfen, erstellen wir ein einfaches Bare-Metal-Program
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-Das Projekt wird generiert und der Code ausschließlich in den dafür vorgesehenen `USER CODE`-Blöcken eingefügt, damit er beim erneuten Generieren nicht gelöscht wird.
+Code nur in `USER CODE`-Blöcken; die generierte `while(1)` nicht durch eine zweite Endlosschleife im USER-Block ersetzen.
 
 ```c
-/* USER CODE BEGIN 3 */
-while (1) {
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    HAL_Delay(500); /* blockiert 500 ms */
-}
+/* USER CODE BEGIN 3 — Inhalt der vorhandenen while(1) */
+HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2 gelb */
+HAL_Delay(500); /* blockiert; kompletter LED-Zyklus ≈ 1 s */
 /* USER CODE END 3 */
 ```
 :::
@@ -47,11 +45,11 @@ while (1) {
 
 ## Aufgabe 2: Das Polling-Desaster
 
-Wir provozieren nun einen Timing-Fehler, der zeigt, warum Polling-Loops in der Industrie oft ungeeignet sind.
+Wir provozieren einen Timing-Fehler, der Grenzen einer Super-Loop bei langer Hintergrundarbeit zeigt. Polling ist nicht grundsätzlich ungeeignet — lange unzerlegte Arbeit kann aber das Zeitbudget sprengen.
 
-1. Schreiben Sie eine einfache *Heavy-Load*-Funktion (z. B. eine sinnlose Zählschleife `Heavy_Load(800000)`), die CPU-Last und damit Ausführungszeit simuliert.
-2. Rufen Sie diese Funktion in Ihrer `while(1)`-Schleife direkt vor dem LED-Toggle auf.
-3. Flashen Sie den Code und beobachten Sie die LED. Erklären Sie, warum das $500\text{-ms}$-Timing nun zerstört ist.
+1. Schreiben Sie eine *Heavy-Load*-Funktion (Zählschleife), deren Arbeit der Compiler nicht entfernt (Parameter/`volatile`, Ergebnis ggf. nach außen nutzen). Iterationen sind **keine** bekannte Millisekunden-Dauer; Buildoptionen notieren.
+2. Rufen Sie die Funktion in der vorhandenen `while(1)` direkt vor dem LED-Toggle auf.
+3. Beobachten Sie die LED. Unterscheiden Sie: **konstante** Last verlängert den Abstand konstant (noch kein Periodenjitter); für Schwankungen bewusst **variable** Lasten einsetzen.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -60,7 +58,7 @@ Wir provozieren nun einen Timing-Fehler, der zeigt, warum Polling-Loops in der I
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 2**
 
-Hilfsfunktion (in einem `USER CODE`-Block, z. B. `USER CODE BEGIN 0`; Parameter als `volatile`, damit der Compiler die Schleife nicht wegoptimiert):
+Hilfsfunktion (z. B. `USER CODE BEGIN 0`; Parameter `volatile`, damit die Schleife nicht wegoptimiert wird):
 
 ```c
 void Heavy_Load(volatile uint32_t n)
@@ -71,41 +69,35 @@ void Heavy_Load(volatile uint32_t n)
 }
 ```
 
-Schleife in `main`:
-
-\newpage
-
 ```c
-/* USER CODE BEGIN 3 */
-while (1) {
-    Heavy_Load(800000); /* CPU-Last simulieren */
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    HAL_Delay(500);
-}
+/* USER CODE BEGIN 3 — in vorhandener while(1) */
+Heavy_Load(800000); /* Iterationen ≠ bekannte ms-Dauer */
+HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+HAL_Delay(500);
 /* USER CODE END 3 */
 ```
 
-**Erklärung des Polling-Desasters:** In einer Super-Loop (Polling) liegen Hintergrundarbeit und zeitkritische Aktion *sequenziell* hintereinander. Die unbekannte und variable Laufzeit von `Heavy_Load()` addiert sich zur Wartezeit von `HAL_Delay(500)`. Die CPU ist mit Rechnen beschäftigt und erreicht den Toggle-Befehl zu spät. Latenz und Periodizität werden unvorhersagbar (erhöhter Jitter). Das illustriert das klassische *Heavy-Load-Problem* einer Super-Loop-Architektur.
+**Erklärung:** In der Super-Loop liegen Last und Toggle sequenziell. Die Laufzeit von `Heavy_Load()` addiert sich zum Delay — der sichtbare Takt weicht vom Soll ab. Bei konstanter Last ist das zunächst eine Periodenverschiebung; Jitter entsteht erst bei schwankender Laufzeit (Optimierung, Interrupts, variable $n$).
 :::
 
 ---
 
 ## Aufgabe 3: Rettung durch den Timer
 
-Wir stellen den Determinismus durch Hardware-Präemption wieder her.
+Wir stellen periodische Flanken per Hardware-Timer wieder her — unter dokumentierten Bedingungen messbar, aber ohne automatischen harten Fristnachweis.
 
-1. Aktivieren Sie im Device Configuration Tool (CubeMX) den Timer **TIM2** und wählen Sie als *Clock Source* „Internal Clock“.
-2. Setzen Sie im Reiter *NVIC Settings* den Haken bei „TIM2 global interrupt“, damit die Hardware den IRQ zur CPU weiterleitet.
-3. Berechnen und setzen Sie die Werte für Prescaler (`PSC`) und Auto-Reload Register (`ARR`), sodass der Timer exakt alle $500\text{ ms}$ ($2\text{ Hz}$) überläuft. Nutzen Sie die Formel
+1. Aktivieren Sie für den CM4 im Device Configuration Tool **TIM2**, *Clock Source* „Internal Clock“.
+2. NVIC: Haken bei „TIM2 global interrupt“.
+3. Berechnen Sie `PSC` und `ARR` für Update alle $500\,\mathrm{ms}$ ($f_{\mathrm{UPD}}=2\,\mathrm{Hz}$):
 
 $$
-f_{\mathrm{UPD}} = \frac{f_{\mathrm{CLK}}}{(PSC+1)\,(ARR+1)}
+f_{\mathrm{UPD}} = \frac{f_{\mathrm{TIM}}}{(PSC+1)\,(ARR+1)}
 $$
 
-   Lesen Sie den tatsächlichen Timer-Takt $f_{\mathrm{CLK}}$ in der CubeMX-*Clock Configuration* ab (nicht raten!).
+   $f_{\mathrm{TIM}}$ aus dem Clock-Tree lesen (APB-Prescaler/TIMPRE beachten) — nicht automatisch `SystemCoreClock`.
 
-4. Generieren Sie den Code. Starten Sie den Timer in der `main()` mit `HAL_TIM_Base_Start_IT(&htim2)`.
-5. Entfernen Sie den Toggle-Befehl und das Delay aus der `while(1)`-Schleife (dort verbleibt nur `Heavy_Load()`) und verlagern Sie das Umschalten der LED in die Timer-Callback-Funktion `HAL_TIM_PeriodElapsedCallback`.
+4. Generieren Sie den Code. Vor der Schleife: `HAL_TIM_Base_Start_IT(&htim2)` mit Fehlerprüfung. Handler-Kette prüfen: `TIM2_IRQHandler` → `HAL_TIM_IRQHandler` → Callback.
+5. Toggle/`HAL_Delay` aus der Main-Schleife entfernen (dort z. B. nur `Heavy_Load()`). Callback **einmal** im vorgesehenen USER-Block (nicht doppelt definieren).
 
 ### Ihre Lösung {.unnumbered}
 
@@ -115,51 +107,48 @@ $$
 **Musterlösung Aufgabe 3**
 
 **1. Hardware-Konfiguration (Beispielrechnung):**  
-Angenommen, der Timer-Takt beträgt $f_{\mathrm{CLK}} = 200\text{ MHz}$ (bitte am eigenen Projekt in CubeMX verifizieren; bei APB-Prescaler $\neq 1$ verdoppelt der STM32 oft den Timer-Takt). Für $f_{\mathrm{UPD}} = 2\text{ Hz}$ muss $(PSC+1)(ARR+1) = 100\,000\,000$ gelten.
-
-Beispiel: $PSC = 19999$ und $ARR = 4999$ ergeben
-$(19999+1)\,(4999+1) = 20000 \cdot 5000 = 100\,000\,000$, also
-$f_{\mathrm{UPD}} = 200\,\mathrm{MHz}/100\,\mathrm{MHz} = 2\text{ Hz}$ (Toggle alle $500\text{ ms}$).
+$f_{\mathrm{TIM}}$ am eigenen Projekt in CubeMX verifizieren. Lehrbeispiel bei $f_{\mathrm{TIM}}=100\,\mathrm{MHz}$: $PSC=9999$, $ARR=4999$ $\Rightarrow$ $f_{\mathrm{UPD}}=2\,\mathrm{Hz}$ (Updateabstand $500\,\mathrm{ms}$). LED-Toggle $\Rightarrow$ vollständiger Blinkzyklus $\approx 1\,\mathrm{Hz}$.
 
 **2. Main-Setup und Hintergrundschleife:**
 
 ```c
 /* USER CODE BEGIN 2 */
-HAL_TIM_Base_Start_IT(&htim2);
+if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK) {
+    Error_Handler();
+}
 /* USER CODE END 2 */
 
-/* USER CODE BEGIN 3 */
-while (1) {
-    Heavy_Load(800000); /* Hintergrund-Last */
-}
+/* USER CODE BEGIN 3 — in vorhandener while(1) */
+Heavy_Load(800000); /* Hintergrund-Last */
 /* USER CODE END 3 */
 ```
 
-**3. Interrupt-Callback** (typischerweise am Ende von `main.c`):
+**3. Interrupt-Callback** (einmal, z. B. `USER CODE BEGIN 4`):
 
 ```c
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM2) {
-        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* zeitkritische Arbeit */
+        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2 gelb */
     }
 }
 /* USER CODE END 4 */
 ```
 
-**Fazit:** Dies entspricht der Foreground/Background-Architektur. Die ISR (Foreground) präemptiert die belastete Main-Loop (Background). Das Blinken ist wieder deterministisch — unabhängig von der CPU-Last im Hintergrund. Im Gegensatz zum Polling läuft die zeitkritische Aktion *neben* der Last, nicht *dahinter*.
+**Fazit:** Foreground/Background — die ISR toggelt neben der Main-Last. Unter dieser Konfiguration sind periodische Flanken trotz Hintergrundlast erwartbar; das ersetzt keinen allgemeinen harten Fristnachweis und keine Aussage „Jitter $\approx 0$“ ohne Messung.
 :::
 
 ---
 
-## Aufgabe 4 (Bonus): Messung am Oszilloskop
+## Aufgabe 4 (Bonus): Drei Messungen am Oszilloskop
 
-In der Industrie wird Timing nicht nur berechnet, sondern physikalisch gemessen.
+Timing wird gemessen, nicht nur behauptet. Pin z. B. **PA0** erst nach Pinbelegung freigeben.
 
-1. Konfigurieren Sie einen freien Pin (z. B. **PA0**) als `GPIO_Output` und weisen Sie ihn ebenfalls dem Cortex-M4 zu (*Pin Context Assignment*).
-2. Messen Sie die Ausführungszeit Ihrer CPU-Last, indem Sie den Pin vor `Heavy_Load()` auf HIGH und direkt danach auf LOW setzen. Messen Sie die Pulsweite am Oszilloskop.
-3. Vergleichen Sie den Jitter (die Schwankung der Ausführungszeitpunkte) der LED-Flanken in der Main-Loop (Aufgabe 2) mit dem Jitter der LED-Flanken im Timer-Interrupt (Aufgabe 3).
+1. **Messung A:** Puls um `Heavy_Load()` (HIGH → Last → LOW). Breite = verstrichene Dauer inkl. möglicher IRQ-Unterbrechungen.
+2. **Messung B:** periodische Flanken Main (Aufgabe 2) vs. TIM2-Callback (Aufgabe 3); gleiche Sollperiode; konstante vs. variable Last getrennt untersuchen.
+3. **Messung C (optional):** Referenz/Stimulus mit gemeinsamem Zeitbezug vs. früher Handler-Marker; Anfang/Ende nennen (HAL-Callback $\neq$ reine Hardware-Entry).
+4. Trigger, Zeitbasis, Sampleanzahl notieren. Schema: Min/Max/Mittel/Peak-to-Peak — Zahlen erst nach Messung. Formulierung: „gemessene Schwankung unter dieser Konfiguration innerhalb …“, nicht „Jitter $\approx 0$“.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -168,7 +157,7 @@ In der Industrie wird Timing nicht nur berechnet, sondern physikalisch gemessen.
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4 (Bonus)**
 
-Messaufbau für die Laufzeit von `Heavy_Load()`:
+Messung A:
 
 ```c
 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
@@ -176,10 +165,11 @@ Heavy_Load(800000);
 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
 ```
 
-**Erwartetes Messergebnis:**
+**Erwartete qualitative Aussage (keine erfundenen µs-Werte):**
 
-- **Main-Loop (Aufgabe 2):** Die LED-Periodizität schwankt sichtbar (hoher Jitter), weil sich die variable Dauer von `Heavy_Load()` zum Delay addiert. Compiler-Optimierung und Cache können die Last zusätzlich streuen.
-- **Timer-ISR (Aufgabe 3):** Die LED-Flanken sind sehr stabil (Jitter $\approx 0$), weil der NVIC die CPU hardwaregesteuert auf Basis des Quarztakts unterbricht — unabhängig von der Hintergrundlast.
+- **A:** Pulsweite = verstrichene Funktionsdauer; bei Präemption durch TIM2 ggf. mit ISR-Anteilen — ggf. zweite Markerspur.
+- **B:** Main-Loop zeigt oft größere Periodenschwankung bei variabler Last; TIM2-Pfad ist typischerweise stabiler — die gemessene Peak-to-Peak-Schwankung unter der konkreten Konfiguration dokumentieren.
+- **C:** Nur vergleichen, wenn Referenz und Ereignis denselben Zeitbezug haben.
 
-Die Pulsweite auf PA0 misst die *Ausführungszeit* der Lastfunktion (Beitrag zur WCET-Schätzung); der LED-Vergleich zeigt den Unterschied zwischen Software-Polling und Hardware-Präemption.
+Optimierung, höhere IRQs und Debug-Halt beeinflussen Ergebnisse. Optisch stabiles Blinken ist kein harter Fristnachweis. Messmaximum $\neq$ sichere WCET-Schranke.
 :::

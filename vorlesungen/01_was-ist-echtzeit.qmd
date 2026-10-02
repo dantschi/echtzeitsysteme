@@ -55,21 +55,22 @@ Kopetz und Buttazzo decken Theorie und Scheduling ab. Für die Praxis brauchen S
 ## Einstieg: Diskussion
 
 - Stellen Sie sich vor: Ihr ABS reagiert erst $200\,\mathrm{ms}$ später — ist das noch „richtig“ oder schon „falsch“?
+  *(Diskussionsannahme: $200\,\mathrm{ms}$ ist keine reale ABS-Spezifikation.)*
 
 ::: notes
-Kurze Diskussionsrunde. Ziel: Die Intuition wecken, dass bei Echtzeitsystemen *funktionale* Korrektheit und *zeitliche* Korrektheit untrennbar sind. $200\,\mathrm{ms}$ klingt wenig — für ABS kann es den Unterschied zwischen kontrolliertem Bremsen und Unfall bedeuten. Die Antwort „falsch“ führt direkt zur Motivation der nächsten Folie.
+Kurze Diskussionsrunde. Ziel: Intuition, dass funktionale und zeitliche Korrektheit zusammengehören. Die $200\,\mathrm{ms}$ sind eine Diskussionsannahme, keine universale Auslösefrist. Die Antwort „unter dieser Annahme falsch“ führt zur Motivation.
 :::
 
 ## Motivation: Warum Echtzeit?
 
 - Steigende Komplexität in Embedded Systems
-- Autonomes Fahren, Medizintechnik, Industrie 4.0
-- Ein normaler PC (Windows/Linux) gibt keine harten Garantien
-- Timing-Fehler können katastrophale Folgen haben
-- Ziel: Systeme, die vorhersagbar reagieren
+- Autonomes Fahren, Medizintechnik, Industrie 4.0 (Beispiele, keine pauschale Klassenzuordnung)
+- Desktop-OS (Windows/Linux) liefern typischerweise keine harten Fristgarantien
+- Timing-Fehler können sicherheitsrelevant sein — aber nicht jede Fristverletzung ist „katastrophal“
+- Ziel: vorhersagbare Reaktionen innerhalb spezifizierter Fristen
 
 ::: notes
-Wenn der Browser eine halbe Sekunde hängt, ist das ärgerlich. Wenn die Fräsmaschinensteuerung hängt, wird es gefährlich. Es geht nicht um „schnell“, sondern um garantierte, vorhersagbare Reaktionszeiten.
+Wenn der Browser eine halbe Sekunde hängt, ist das ärgerlich. Wenn die Fräsmaschinensteuerung hängt, wird es gefährlich. Es geht nicht um „schnell“, sondern um spezifizierte, vorhersagbare Reaktionszeiten. Katastrophale Folgen sind ein möglicher Kontext — keine allgemeine Definition von Echtzeit.
 :::
 
 ## Der große Mythos der Echtzeit
@@ -87,7 +88,7 @@ Was viele denken:
 ::: {.column width="48%"}
 Was es wirklich ist:
 
-- Echtzeit = Rechtzeitigkeit
+- Echtzeit = Rechtzeitigkeit (Fristvertrag)
 - Ein 400-MHz-Controller mit Garantie kann echtzeitfähig sein
 - Ein 4-GHz-PC ohne Garantie ist es oft nicht
 :::
@@ -95,106 +96,235 @@ Was es wirklich ist:
 
 ::: notes
 Echtzeit hat nichts mit maximalem Durchsatz zu tun. Ein kleiner Mikrocontroller mit fester 10-ms-Reaktion schlägt einen Server, der im Mittel 1 ms braucht, aber gelegentlich 50 ms blockiert.
+Lernkontrolle: Reicht ein Mittelwert von $1\,\mathrm{ms}$ für eine Deadline von $10\,\mathrm{ms}$? Nein — ohne Schranke/Garantie sagt der Mittelwert allein nichts über harte Fristen.
+:::
+
+## Mythos: Mittelwert ≠ harte Garantie
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+
+robust "System A" as A
+A has reagiert,bereit
+robust "System B" as B
+B has reagiert,bereit
+
+highlight 0 to 10 #F5F5F7
+highlight 20 to 30 #F5F5F7
+highlight 40 to 50 #F5F5F7
+highlight 60 to 70 #F5F5F7
+
+@A
+0 is reagiert
+2 is bereit
+20 is reagiert
+22 is bereit
+40 is reagiert
+42 is bereit
+60 is reagiert
+78 is bereit
+
+@B
+0 is reagiert
+8 is bereit
+20 is reagiert
+28 is bereit
+40 is reagiert
+48 is bereit
+60 is reagiert
+68 is bereit
+
+A@60 <-> @78 : 18 ms
+B@60 <-> @68 : 8 ms
+@enduml
+```
+
+- Illustrative Einzelbeobachtungen, graue Fenster = Deadline $D = 10\,\mathrm{ms}$
+- A: $2 / 2 / 2 / 18\,\mathrm{ms}$ (Mittel $6\,\mathrm{ms}$), B: $8 / 8 / 8 / 8\,\mathrm{ms}$ (Mittel $8\,\mathrm{ms}$)
+- A ist im Mittel schneller als B — und verletzt trotzdem die Frist
+- Vier Messungen bei B sind kein allgemeiner Nachweis; eine separat angenommene Schranke wäre z. B. $R \le 9\,\mathrm{ms}$
+- Rechtzeitigkeit braucht eine spezifizierte Obergrenze, nicht nur einen Mittelwert
+
+::: notes
+Didaktischer Kontrast: „schneller im Mittel“ ist keine harte Garantie. Folge B erfüllt in diesen vier Beobachtungen die Deadline, belegt aber ohne zusätzliche Schranke noch keinen allgemeinen Beweis. Die Schranke $R \le 9\,\mathrm{ms}$ ist hier eine Lehrannahme, keine Messaussage.
 :::
 
 ## Konsequenzen von Timing-Fehlern
 
-- Ausfälle entstehen logisch oder zeitlich
-- Beispiel Airbag:
-  - Crash erkannt (logisch korrekt)
-  - Zündung ausgelöst (logisch korrekt)
-  - Zündung 50 ms zu spät (zeitlich falsch)
-- Fazit: logisch richtig zur falschen Zeit ist ein Fehler
+- Funktionale Korrektheit und Rechtzeitigkeit sind unabhängige Kriterien
+- Diskussionsannahme Airbag (Zahlen illustrativ, nicht Spezifikation):
+  - Crash erkannt (funktional ok)
+  - Zündung ausgelöst (funktional ok)
+  - Zündung $50\,\mathrm{ms}$ zu spät (zeitlich falsch unter angenommener Frist)
+- Bei hartem Fristvertrag: Ergebnis nach der Deadline gilt als Anforderungsverletzung
+- Nicht pauschal: bei weicher Echtzeit kann ein spätes Ergebnis noch Restnutzen haben
 
 ::: notes
-Beim Airbag reicht korrekte Logik nicht. Zu späte Zündung ist nutzlos oder lebensgefährlich. In Echtzeitsystemen ist ein Ergebnis nach der Deadline ein falsches Ergebnis.
+Beim Airbag reicht korrekte Logik nicht — unter der Diskussionsannahme einer engen Zündfrist. Der Satz „Ergebnis nach der Deadline ist falsch“ gilt für den harten Fristvertrag, nicht universell für jede Soft-Real-Time-Anzeige. ABS-$200\,\mathrm{ms}$ auf der Einstiegsfolie ebenfalls als Diskussionsannahme führen.
 :::
 
 ## Lernziele des heutigen Tages
 
-1. Klassische Echtzeit-Definition (Werte- und Zeitbereich) erklären
-2. Harte, feste und weiche Echtzeit unterscheiden
-3. Metriken Latenz und Jitter verstehen
-4. Gefahren von Polling-Loops (Super-Loops) kennen
-5. Einfache Hardware-Interrupts einordnen und konfigurieren
+1. Arbeitsdefinition von Echtzeit (Werte- und Zeitbereich) erklären
+2. Harte, feste und weiche Echtzeit anhand Aufgabe+Frist unterscheiden
+3. Metriken Latenz, Antwortzeit, Jitter und WCET sauber trennen
+4. Polling, Interrupts und Foreground/Background zeitlich einordnen
+5. Erkennen: Architektur hilft — Deadlines bleiben nachzuweisen
 
 ::: notes
-Am Ende des Tages: Definition und Klassifikation, Latenz/Jitter, warum `while(1)`-Polling für komplexe Echtzeit ungeeignet ist, und wie Interrupts Determinismus zurückbringen.
+Am Ende des Tages: Definition und Klassifikation, Metriken ohne Vermischung, warum lange Super-Loop-Arbeit Fristen gefährdet, und wie Interrupts/RTOS strukturieren — ohne automatischen Determinismus zu behaupten.
 :::
 
 ## Was ist Echtzeit? (Definition)
 
-- Klassische Definition (häufig nach DIN 44300 zitiert, klassisch / historisch): Echtzeitbetrieb, wenn
-  1. Ergebnisse logisch korrekt sind (Wertebereich)
-  2. Ergebnisse innerhalb eines vorgegebenen Zeitintervalls vorliegen (Zeitbereich)
-- Determinismus: zeitliches Verhalten in jedem Zustand vorhersagbar
+- Zwei unabhängige Kriterien, beide müssen erfüllt sein:
+  1. funktional korrekt — der Wert ist richtig (Wertebereich)
+  2. rechtzeitig — der Wert liegt bis zur Frist vor (Zeitbereich)
+- Keines der beiden Kriterien folgt aus dem anderen
+- Historischer Bezug: „Echtzeitbetrieb“ in Anlehnung an DIN 44300 — Lehrzitat, kein geprüfter Normwortlaut
+- Arbeitsdefinition (Lehrkontext): ein System erfüllt Echtzeitanforderungen, wenn spezifizierte Fristen unter den genannten Annahmen eingehalten werden
+- Determinismus (Arbeitsbegriff): zeitliches Verhalten unter dokumentierten Bedingungen begrenzt vorhersagbar
 
 ::: notes
-Zwei Dimensionen: Wertebereich und Zeitbereich. Die Formulierung geht auf die klassische / historische DIN-44300-Tradition zurück und wird in der Lehre weiterhin so zitiert. Beim Design streben wir Determinismus an — zeitliches Verhalten vorhersagen oder garantieren können.
+Die beiden Kriterien sind wirklich unabhängig: Ein Regler kann den perfekten Stellwert viel zu spät liefern, und ein pünktlicher Wert kann fachlich falsch sein. Deshalb prüfen wir beides getrennt. DIN 44300 zitieren wir als historische Traditionslinie, nicht als geprüften Normwortlaut — verbindlich ist hier die Arbeitsdefinition. Determinismus heißt nicht „immer dieselbe Laufzeit“, sondern vorhersagbare Schranken unter benannten Annahmen.
 :::
 
 ## Klassifizierung von Echtzeitsystemen
 
-- Nicht jede Fristverletzung ist gleich dramatisch
-- Unterscheidung nach Konsequenzen eines Deadline Miss:
+- Nicht jede Fristverletzung ist gleich zu bewerten
+- Unterscheidung nach spezifizierter Konsequenz eines Deadline Miss:
   - Harte Echtzeit (Hard Real-Time)
   - Feste Echtzeit (Firm Real-Time)
   - Weiche Echtzeit (Soft Real-Time)
-- Grenzen in der Praxis oft fließend und applikationsabhängig
+- Beispiele immer als konkrete Aufgabe + Frist, nicht als ganze Branche dauerhaft einer Klasse
 
 ::: notes
-Je nach Kategorie wählen wir Architekturen und Betriebssysteme unterschiedlich. In einem Gerät können alle drei Kategorien auf verschiedene Tasks verteilt sein.
+In einem Gerät können alle drei Kategorien auf verschiedene Aufgaben verteilt sein. „Automotive = hard“ ist zu grob — Motorregelung und Status-LED sind unterschiedliche Fristverträge.
 :::
 
 ## Harte Echtzeit (Hard Real-Time)
 
-- Deadline-Überschreitung hat katastrophale Folgen
-- Schäden an Mensch, Umwelt oder extrem hoher Verlust
-- Nutzen nach der Deadline: abrupt null oder negativ
-- Beispiele: Motorsteuerung, Fly-by-Wire, Herzschrittmacher
+- Spezifikation darf die Frist nicht verletzen
+- Deadline Miss = Anforderungsverletzung (unabhängig vom Mittelwert)
+- Nutzenkurve (illustratives Modell): Nutzen nach Miss abrupt null oder negativ
+
+- Beispielaufgabe: PWM-Update für Motorstromregelung vor nächstem PWM-Zyklus
+- Frist: z. B. $D = 100\,\mathrm{\mu s}$ (Lehrannahme)
+
+::: {.callout-note title="Sicherheit ist möglicher Kontext, nicht Definition"}
+Sicherheitsfolgen für Mensch oder Umwelt können einen harten Fristvertrag begründen — hart bleibt die Klasse aber auch dann, wenn ein Miss „nur“ die Anforderung verletzt.
+:::
 
 ::: notes
-Kein Spielraum: Fristverletzung = Systemversagen. Hier müssen wir die Worst-Case Execution Time (WCET) absichern — mathematisch oder durch extreme Tests.
+Kein Spielraum im spezifizierten Vertrag: Fristverletzung = Anforderung verletzt. Ob daraus physische Katastrophe folgt, ist Anwendungs- und Safety-Frage — nicht die Definition selbst. Nutzenkurven sind illustrative Modelle.
 :::
 
 ## Feste Echtzeit (Firm Real-Time)
 
-- Zwischenstufe zwischen hard und soft
-- Keine Katastrophe bei Fristverletzung
-- Aber: Ergebnis nach der Deadline völlig wertlos (Nutzen = 0)
-- Beispiele: High-Frequency Trading; Ausschuss-Erkennung am Band
+- Ergebnis muss vor einem Übergabepunkt vorliegen
+- Danach: Ergebnis für diese Aktion wertlos (Nutzen $= 0$), ohne zwingend Systemausfall
+- Beispielaufgabe: Werkstück sortieren — Kamera klassifiziert, Weiche schleust aus
+- Übergabepunkt $150\,\mathrm{mm}$ hinter der Kamera, Band $1\,\mathrm{m/s}$ → $D = 150\,\mathrm{ms}$ (Lehrannahme)
+- Miss-Toleranz explizit festlegen, z. B. höchstens $1$ verworfenes Teil je $1000$ (Lehrannahme)
+- Nutzenkurve (illustratives Modell): Sprung auf null nach der Deadline
 
 ::: notes
-Späte Börsenorder: wertlos, System fällt nicht aus. Späte Qualitätsprüfung: Teil ist schon vorbei — Ergebnis verwerfen.
+Der Übergabepunkt macht die Frist physikalisch greifbar: $D = s/v = 0{,}15\,\mathrm{m} \,/\, 1\,\mathrm{m/s} = 150\,\mathrm{ms}$. Späte Prüfung: Teil ist vorbei — dieses Ergebnis verwerfen, die Anlage läuft weiter. Entscheidend für die Spezifikation ist die Zahl bei der Miss-Toleranz: „gelegentlich darf es ausfallen“ ist kein prüfbarer Vertrag, „höchstens 1 von 1000“ schon.
 :::
 
 ## Weiche Echtzeit (Soft Real-Time)
 
-- Deadline-Überschreitung mindert Qualität, führt aber nicht zum Ausfall
-- Ergebnis behält nach der Deadline oft noch Restwert
-- Beispiele: Video-Streaming, UI-Verzögerung, Raumtemperaturüberwachung
-- Die meisten Standard-IT-Systeme fallen hier hinein
+- Deadline-Miss mindert Qualität; Ausfall ist nicht zwingend
+- Aktualität / Nutzen nimmt typischerweise ab (kein universelles Video-Nutzenprofil)
+- Nutzenkurve (illustratives Modell): allmählicher Abfall — Form applikationsspezifisch
+- Beispielaufgabe: Statusanzeige einer Temperatur mit Zielaktualität $1\,\mathrm{s}$
+- Fristverletzung: Anzeige veraltet — Qualitätsziel verfehlt, nicht automatisch Systemversagen
 
 ::: notes
-Design oft auf den Average Case und hohen Durchsatz; gelegentliche Ausreißer werden toleriert. Video ruckelt — unschön, aber kein Crash.
+Design oft auf Average Case und hohen Durchsatz; gelegentliche Ausreißer werden toleriert. Vermeiden Sie die Erzählung „Video hat immer diese Nutzenkurve“ — die Kurve ist ein illustratives Modell.
 :::
 
-## Determinismus und WCET
+## Zeitstrahl-Vokabular
 
-- WCET: maximale, garantierte Ausführungszeit unter Worst-Case-Bedingungen
-- BCET: minimale Ausführungszeit
-- Harte Echtzeit immer auf Basis der WCET designen
-- Caches, Pipeline-Stalls und Interrupts erschweren WCET bei modernen CPUs
+Lehrbeispiel (eine Job-Ausführung, Zeiten in $\mathrm{ms}$):
+
+- Ereignis / Release $r = 0$, Start $s = 2$, Fertig $f = 7$, absolute Deadline $d = 10$
+- Ausführung $2$–$3$ und $5$–$7$; Präemption $3$–$5$
+- Startverzögerung $= 2$, CPU-Bedarf $C = 3$, Präemption $= 2$
+- Antwortzeit $R = f - r = 7$, Fristreserve $= d - f = 3$
+- Relative Deadline $D = d - r = 10$ (daneben notieren)
+- Absolute/relative Deadline $\neq$ Periode $T$
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+
+concise "Ereignis" as E
+robust "Task" as T
+T has Done,Running,Preempted,Ready
+concise "Deadline" as DL
+
+@0
+E is "r = 0"
+T is Ready
+DL is "Frist offen"
+
+@2
+T is Running
+
+@3
+T is Preempted
+
+@5
+T is Running
+
+@7
+T is Done
+
+@10
+DL is "d = 10"
+
+T@0 <-> @2 : Startverzug 2
+T@3 <-> @5 : Preemption 2
+T@0 <-> @7 : R = 7
+T@7 <-> @10 : Reserve 3
+@enduml
+```
 
 ::: notes
-Durchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, Branch Prediction) machen dieselbe Codezeile mal schnell, mal langsam — WCET wird zur Herausforderung.
+$C$ ist CPU-Bedarf (hier $3\,\mathrm{ms}$ reine Ausführung), nicht die Antwortzeit. $R$ enthält Warte-/Präemptionszeiten. Periode $T$ ist ein anderer Parameter — Formalisierung in VL2. Absolute Deadline $d$ vs. relative $D = d-r$ klar trennen.
 :::
 
 ## Latenz (Reaktionsverzögerung)
 
-- Latenz: Verzögerung zwischen Ereignis und Reaktion
+- Latenz: Verzögerung zwischen Ereignis und einer definierten Reaktion
 - Interrupt-Latenz: Flanke am Pin bis erste Instruktion der ISR
-- Response Time $R_i$ (Release → Completion): formal erst in VL2; nicht gleich Interrupt-Latenz
+- Kurze Hardware-Kette: Pin-Flanke $\rightarrow$ IRQ $\rightarrow$ erste Handlerinstruktion $\rightarrow$ HAL-Callback $\rightarrow$ GPIO
+- Response Time $R$ (Release $\rightarrow$ Completion): formal vertieft in VL2; $\neq$ Interrupt-Latenz
+- Feste Latenz (konstant) $\neq$ Jitter (Schwankung)
 
 ```{.wavedrom}
 {
@@ -208,40 +338,87 @@ Durchschnittswerte reichen für harte Echtzeit nicht. Moderne Features (Caches, 
 ```
 
 ::: notes
-Zwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Exception Entry / Stacking), Sprung in die ISR. Beim Cortex-M oft in der Größenordnung von ca. 12 Taktzyklen Hardware-Latenz — plus Software.
-Die Response Time $R_i$ (Release → Completion) kommt formal erst in VL2 und ist etwas anderes als die Interrupt-Latenz hier.
+Zwischen GPIO-Flanke und ISR: Interrupt erkennen, Pipeline leeren, Register sichern (Exception Entry), Sprung in die ISR. Beim Cortex-M oft Größenordnung ca. 12 Taktzyklen Hardware-Latenz — plus Software bis HAL-Callback. $R_i$ kommt formal in VL2.
 :::
 
 ## Jitter
 
-- Jitter: Varianz der Latenz oder der Periodizität
-- Soll alle 10 ms laufen, Ist 9,8 ms / 10,2 ms → Peak-to-Peak-Jitter $=0{,}4\,\mathrm{ms}$
-- Regelungstechnik: hoher Jitter verschlechtert PID-Qualität stark
+Illustrative Messreihe (Sollperiode $T = 10\,\mathrm{ms}$):
+
+| | $t_0$ | $t_1$ | $t_2$ | $t_3$ | $t_4$ |
+|---|------:|------:|------:|------:|------:|
+| Ideal | $0$ | $10$ | $20$ | $30$ | $40$ |
+| Ist | $0$ | $9{,}8$ | $20$ | $29{,}8$ | $40$ |
+
+- Perioden (Ist): $9{,}8 / 10{,}2 / 9{,}8 / 10{,}2\,\mathrm{ms}$
+- Peak-to-Peak-Periodenjitter $= 10{,}2 - 9{,}8 = 0{,}4\,\mathrm{ms}$
+- Phasenfehler zu Ideal: $0 / -0{,}2 / 0 / -0{,}2 / 0\,\mathrm{ms}$; Spanne $0{,}2\,\mathrm{ms}$ (nicht mit Periodenjitter vertauschen)
+- Latenzjitter separat: $\max(L) - \min(L)$
+- Metrik nennen: Spanne / Peak-to-Peak in $\mathrm{ms}$; Varianz in $\mathrm{ms}^2$, Standardabweichung in $\mathrm{ms}$
+- Regler: Entwurfsfrage (Abtastmodell, Robustheit) — keine pauschale „Stabilitätszerstörung“
 
 ```{.wavedrom}
 {
   "signal": [
-    {"name": "Ideal T", "wave": "l...H.l...H.l..."},
-    {"name": "Ist", "wave": "l..H..l....H.l.."}
+    {"name": "Ideal", "wave": "1.0.1.0.1.0.1.0.1"},
+    {"name": "Ist",   "wave": "1.0.10.1.0.10.1.0.1"}
   ],
   "config": {"hscale": 2}
 }
 ```
 
 ::: notes
-Schwankendes `dt` zerstört Annahmen im Regler. Oft wichtiger als pure Geschwindigkeit: Jitter nahe null, Periodizität stabil.
+Periodenjitter und Phasenfehler sind verwandt, aber Zahlen nicht vertauschen: hier PpP $0{,}4\,\mathrm{ms}$, Phasenspanne $0{,}2\,\mathrm{ms}$. „Jitter = Varianz“ ist ungenau — Varianz hat Einheit $\mathrm{ms}^2$.
+Lernkontrolle: Konstanter Abstand $550\,\mathrm{ms}$ statt $500\,\mathrm{ms}$ — ist das Jitter? Nein: das ist eine konstante Periodenabweichung (Bias); Jitter beschreibt Schwankung um den Soll-/Mittelwert.
+:::
+
+## Determinismus und WCET
+
+- WCET: sichere Obergrenze der Ausführungszeit unter Worst-Case-Annahmen
+- BCET: untere Grenze / minimale Ausführungszeit
+- Deterministisch: unter dokumentierten Bedingungen begrenzt vorhersagbar (nicht: immer identische Laufzeit)
+- Trennen: CPU-Bedarf $C$ vs. präemptierte Zeit vs. Antwortzeit $R$
+- Caches, Buskonflikte, Pfade und Interrupts erschweren enge Schranken
+
+::: notes
+Durchschnittswerte reichen für harte Echtzeit nicht. Dieselbe Funktion kann kalt/warm, mit/ohne Flash-Waitstates unterschiedlich lang laufen — deshalb Annahmen explizit machen.
+:::
+
+## Messmaximum vs. WCET
+
+Lehrwerte (erfunden, keine Boardmessung): beobachtetes Maximum $80\,\mathrm{\mu s}$, sichere Obergrenze $120\,\mathrm{\mu s}$.
+
+```{mermaid}
+%%| fig-width: 5.2
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
+flowchart LR
+  A[Beobachtete Zeiten] --> B[Messmaximum 80 us]
+  B --> C[Sichere Obergrenze 120 us]
+  C --> D[WCET-Schranke im Entwurf]
+  style B fill:#F5F5F7,stroke:#86868B,stroke-width:1px !important
+  style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
+- Messmaximum $\neq$ WCET: seltenere/ungünstigere Fälle können fehlen
+- Annahmen notieren: Cold/Warm-Cache, Flash-Waitstates, Buslast, ausgeführte Pfade
+- Vermeiden: „kein D-Cache = immer gleiche Laufzeit“
+- Nicht: „WCET absichern nur durch extreme Tests“ — Analyse, Messung und Annahmen gehören zusammen (Vertiefung VL2)
+
+::: notes
+Die $80/120\,\mathrm{\mu s}$ sind reine Lehrzahlen. Ein Messmaximum aus $N$ Läufen ist eine Stichprobe. WCET-Arbeit kombiniert Messung, Strukturanalyse und dokumentierte Worst-Case-Annahmen — nicht nur „langer Stresstest“.
 :::
 
 ## Zusammenfassung: Metriken
 
-- Deadline: Zeitpunkt, bis zu dem das Ergebnis vorliegen muss
-- WCET: längste Abarbeitungsdauer des Codes
-- Latenz: Startverzögerung bis zur Reaktion
-- Jitter: Schwankungsbreite der zeitlichen Ausführung
-- Goldene Regel: Vorhersagbarkeit (Determinismus), nicht Durchsatz
+- Deadline $d$ / $D$: Zeitpunkt bzw. relative Frist bis zum Ergebnis
+- WCET: sichere Schranke für den CPU-Bedarf — Messmaximum allein reicht nicht
+- Latenz: Verzögerung Ereignis $\rightarrow$ definierte Reaktion (fest $\neq$ schwankend)
+- Antwortzeit $R$: Release bis Completion (inkl. Warte-/Präemptionszeiten)
+- Jitter: Schwankungsmaß — Metrik nennen (z. B. Peak-to-Peak in $\mathrm{ms}$)
+- Goldene Regel: Vorhersagbarkeit unter Annahmen, nicht Durchsatz
 
 ::: notes
-Fragen zu diesem Theorieblock? Danach: wie man das klassisch programmiert.
+Fragen zu diesem Theorieblock? Danach: wie man das klassisch programmiert. Kurz: Mittelwert $1\,\mathrm{ms}$ vs. Deadline $10\,\mathrm{ms}$ — ohne Schranke kein Nachweis.
 :::
 
 ## Architekturen: Wie programmieren wir das?
@@ -252,17 +429,19 @@ Fragen zu diesem Theorieblock? Danach: wie man das klassisch programmiert.
   1. Polling-Loops (Super-Loop)
   2. Interrupt-getriebene Systeme
   3. Foreground/Background-Systeme
+- Keiner davon liefert automatisch einen Deadline-Nachweis
 
 ::: notes
-Code läuft direkt auf der Hardware. Die drei Muster sind historisch und didaktisch der Weg zum RTOS.
+Code läuft direkt auf der Hardware. Die drei Muster sind historisch und didaktisch der Weg zum RTOS — als Strukturierung, nicht als Garantieautomat.
 :::
 
 ## Architektur 1: Die Polling-Loop (Super-Loop)
 
 - Simpelstes Muster: Endlosschleife `while(1)`
-- Tasks strikt sequenziell
+- Tasks strikt sequenziell (kooperativ)
 - Status wird aktiv abgefragt („Polling“)
 - Vorteil: simpel, wenig Overhead, leicht zu debuggen
+- Qualifikation: zeitlich begrenzte kooperative Abläufe können Deadlines erfüllen
 
 ```{mermaid}
 %%| fig-width: 3.5
@@ -277,7 +456,7 @@ graph TD
 ```
 
 ::: notes
-Klassisches Arduino-Muster: linearer Kontrollfluss. Polling heißt: aktiv nachfragen, ob etwas passiert ist.
+Klassisches Arduino-Muster: linearer Kontrollfluss. Polling heißt: aktiv nachfragen, ob etwas passiert ist. Nicht pauschal „ungeeignet“ — entscheidend ist das Zeitbudget der Runde.
 :::
 
 ## Code-Beispiel: Polling
@@ -297,11 +476,12 @@ void main(void) {
 }
 ```
 
-- Der Code fragt den Status zyklisch ab
-- Frage: Was passiert, wenn `Update_Display()` sehr lange dauert?
+- Super-Loop-Modell (Lehrannahme): Eingang $0{,}1\,\mathrm{ms}$, Komm. $0{,}2\,\mathrm{ms}$, Display $5\,\mathrm{ms}$
+- Maximale Runde $\approx 5{,}3\,\mathrm{ms}$; bei $D = 10\,\mathrm{ms}$ ggf. ok
+- Frage: Was passiert, wenn `Update_Display()` $50\,\mathrm{ms}$ braucht?
 
 ::: notes
-Während einer langen Display-Funktion ist das System für Taster und UART blind. Latenz summiert sich über alle Tasks in der Schleife.
+Während einer langen Display-Funktion ist das System für Taster und UART blind. Die Latenz summiert sich über alle Abschnitte der Schleife. Bei $5{,}3\,\mathrm{ms}$ und $D=10\,\mathrm{ms}$ kann das Modell greifen — bei $50\,\mathrm{ms}$ Display ist das Budget gerissen.
 :::
 
 ## Die Gefahr: Das Heavy-Load-Problem
@@ -310,8 +490,9 @@ Während einer langen Display-Funktion ist das System für Taster und UART blind
 ::: {.column width="55%"}
 - Eine lang laufende Funktion blockiert die gesamte Schleife
 - Auf Eingänge kann nicht reagiert werden
-- Latenzgarantien sind zerstört
+- Fristbudget der Runde wird überschritten
 - Typische Sünden: `delay(100)`, blockierende Warteschleifen
+- Kurzer Puls zwischen zwei Kontrollen: Verlust hängt von Latch/FIFO/Signalbreite ab
 :::
 ::: {.column width="45%"}
 ```c
@@ -321,22 +502,23 @@ void Update_Display(void) {
 }
 ```
 
-Worst-Case-Latenz für den Taster: $>50\,\mathrm{ms}$
+Worst-Case-Runde mit Display $50\,\mathrm{ms}$: Budget $D=10\,\mathrm{ms}$ gerissen
 :::
 ::::
 
 ::: notes
-Eine 50-ms-Funktion lässt die Super-Loop stehen. Kurze Tasterimpulse gehen verloren. So darf man in der Industrie nicht programmieren.
+Eine 50-ms-Funktion lässt die Super-Loop stehen. Ob ein kurzer Tasterimpuls verloren geht, hängt davon ab, ob die Hardware latched/FIFOed oder nur während der Abfrage sichtbar ist — nicht pauschal „immer verloren“.
 :::
 
 ## Fazit: Polling
 
-- Vorteile: simpel, keine Race Conditions, feste Reihenfolge
-- Nachteile: hoher Stromverbrauch, keine Priorisierung, hohe Latenzen
-- Einsatz: nur extrem simple Single-Purpose-Geräte
+- Vorteile: simpel, keine ISR-Races, feste Reihenfolge
+- Nachteile: Priorisierung fehlt, lange Abschnitte gefährden Fristen, oft höherer Strom (aktives Warten)
+- Einsatz: passende Zeitbudgets und wenige asynchrone Ereignisse
+- Nicht: „Polling ist grundsätzlich ungeeignet für Echtzeit“
 
 ::: notes
-Für einen dummen Temperatursensor oft ok. Sobald mehrere asynchrone Ereignisse mit unterschiedlicher Dringlichkeit kommen, scheitert das Modell.
+Für einen einfachen Temperatursensor mit großzügigem $D$ oft ok. Sobald mehrere asynchrone Ereignisse mit engen Fristen kommen, wird das Modell unpraktisch — dann Interrupts oder RTOS als Strukturierung.
 :::
 
 ## Architektur 2: Interrupts zur Rettung
@@ -345,9 +527,10 @@ Für einen dummen Temperatursensor oft ok. Sobald mehrere asynchrone Ereignisse 
 - Kontext sichern, Sprung in die ISR
 - Nicht mehr fragen — die Hardware meldet sich
 - Ereignisse priorisierbar (z. B. Not-Halt vor Display)
+- Interrupts erzeugen nicht automatisch Determinismus oder Fristnachweise
 
 ::: notes
-Asynchrone Reaktion mit geringer Latenz, unabhängig von der Main-Loop. Das ist der Schlüssel gegen das Heavy-Load-Problem.
+Asynchrone Reaktion mit geringer Latenz, unabhängig von der Main-Loop — gegen das Heavy-Load-Problem. Höhere IRQs, Maskierung und lange ISRs bleiben Timing-Faktoren.
 :::
 
 ## Der Ablauf eines Interrupts
@@ -370,7 +553,7 @@ sequenceDiagram
 ```
 
 ::: notes
-Context Switch sichert Register und Program Counter. Danach ISR, dann Rückkehr genau an die Unterbrechungsstelle.
+Context Switch sichert Register und Program Counter. Danach ISR, dann Rückkehr genau an die Unterbrechungsstelle. Details Cortex-M: Deep Dive gleich im Anschluss.
 :::
 
 ## Code-Beispiel: Timer-Interrupt (STM32 HAL)
@@ -403,25 +586,27 @@ void HAL_TIM_PeriodElapsedCallback(
 ::::
 
 ::: notes
-`_IT` startet den Timer im Interrupt-Modus. Die LED blinkt deterministisch, auch wenn `Update_Display()` lange braucht.
+`_IT` startet den Timer im Interrupt-Modus. Die LED kann periodisch toggeln, auch wenn `Update_Display()` lange braucht — das ist Strukturierung, kein vollständiger harter Fristnachweis.
 :::
 
 ## Gefahren von Interrupts
 
 - Race Conditions bei gemeinsamen globalen Variablen
 - Lange ISRs blockieren niederpriore IRQs und die Main-Loop
-- Goldene Regel: ISRs extrem kurz halten — kein `printf`, keine Delays
+- Budget je ISR festlegen: kurz halten, kein `printf`, keine Delays, Maskierungsdauer begrenzen
 - Jitter: laufende höhere IRQs verzögern niederpriore ISRs
+- Flag-Race (Lehrfall): Main liest Flag $\rightarrow$ neues Event $\rightarrow$ Main löscht Flag — `volatile` allein reicht nicht
 
 ::: notes
-Asynchronität bringt Korrektheitsfallen. In der ISR: Flag setzen, Wert kopieren, sofort zurück. Lange Arbeit gehört in den Hintergrund oder später in Tasks.
+Asynchronität bringt Korrektheitsfallen. In der ISR: Auftrag/Flag setzen, sofort zurück. Lange Arbeit gehört in den Hintergrund oder später in Tasks. „Kurz halten“ ist als Budget zu formulieren: eine Zahl pro ISR, die in die Antwortzeitrechnung der niederprioren Arbeit eingeht — inklusive der Zeit mit gesperrten Interrupts. Beim Flag-Race braucht es atomare Abschnitte oder sichere Übergabeprotokolle; `volatile` verhindert nur Compiler-Optimierungen und liefert weder Atomarität noch Schutz bei Read-Modify-Write — Vertiefung bei Synchronisation.
 :::
 
 ## Architektur 3: Foreground / Background
 
 - Kombination: Main-Loop + Interrupts
-- Background: unkritische Polling-Loop (`main`)
+- Background: unkritische Arbeit (`main`)
 - Foreground: zeitkritische ISRs
+- ISR setzt Auftrag; lange Main $\rightarrow$ Antwortzeit kann groß werden
 - Standard für kleine bis mittlere Bare-Metal-Projekte
 
 ```{.plantuml}
@@ -457,7 +642,65 @@ Main is Running
 ```
 
 ::: notes
-ISR präemptiert die Main-Loop. Fertig → Main läuft weiter. Das ist das klassische Bare-Metal-Muster vor dem RTOS.
+ISR präemptiert die Main-Loop. Fertig $\rightarrow$ Main läuft weiter. Das ist das klassische Bare-Metal-Muster vor dem RTOS. Wenn Main den Auftrag erst nach langer Arbeit bearbeitet, wächst $R$ trotz schneller ISR.
+:::
+
+## Drei Architektur-Zeitachsen
+
+Lehrskizze derselben Frist $D = 10\,\mathrm{ms}$:
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+
+robust "Polling-Runde" as P
+robust "FB: ISR/Main" as F
+robust "RTOS-Tasks" as R
+
+@0
+P is Eingang
+F is Main
+R is Low
+
+@1
+P is Komm
+F is ISR
+R is High
+
+@2
+P is Display
+F is Main
+R is High
+
+@5
+P is Idle
+F is Main
+R is Low
+
+@7
+P is Idle
+F is Main
+R is Low
+@enduml
+```
+
+- Polling: Reaktion erst in der nächsten Abfrage der Runde
+- Foreground/Background: ISR reagiert sofort, Arbeit oft erst in Main
+- RTOS: Scheduler wählt Ready-Tasks — Fristen trotzdem nachweisen
+
+::: notes
+Die drei Achsen sind didaktische Vereinfachungen. Polling kann bei kleinem Rundentakt Fristen halten; FB verschiebt oft Arbeit in die Main; RTOS strukturiert Prioritäten — ersetzt aber keine Response-Time-Analyse (VL2).
 :::
 
 ## Grenzen der klassischen Architekturen
@@ -465,21 +708,59 @@ ISR präemptiert die Main-Loop. Fertig → Main läuft weiter. Das ist das klass
 - Warum reicht Foreground/Background oft nicht mehr?
 - Spaghetti-Falle: ISRs setzen Flags, Main pollt endlos
 - Bei vielen Tasks verliert man den Überblick über den Kontrollfluss
-- Wir brauchen Priorisierung und Schlafen von Tasks
+- Priorisierung und Schlafen von Tasks werden nötig
+- Teaser Prioritätsinversion (Task-Kontext): Low hält Ressource, High blockiert, Medium verzögert Low — nur eine Running-Spur; kein Mutex in ISR → VL4
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+
+robust "Running (ein Core)" as Run
+Run has High,Medium,Low
+concise "Ressource" as Res
+
+@0
+Run is Low
+Res is "Low belegt"
+
+@2
+Run is Medium
+
+@5
+Run is Low
+
+@6
+Run is High
+Res is frei
+
+Run@0 <-> @6 : High blockiert
+@enduml
+```
 
 ::: notes
-ISR darf nicht lange rechnen → Flag. Main wird Flag-Suppe. Deadlines in der Main-Loop sind dann kaum noch garantierbar.
+ISR darf nicht lange rechnen → Flag. Main wird Flag-Suppe. Deadlines in der Main-Loop sind dann kaum noch garantierbar. Die eine Running-Spur zeigt das PI-Muster ohne parallele „Running“-Illusion — Details und Priority Inheritance in VL4.
 :::
 
 ## Der Paradigmenwechsel
 
 - Wenn Bare-Metal nicht skaliert: RTOS (Real-Time Operating System)
-- Bare-Metal: Code pollt oder wartet aktiv
-- RTOS: Kontrolle über die Zeit an den Scheduler
-- Monolith → unabhängige Tasks
+- RTOS: Strukturierungswerkzeug (Tasks, Prioritäten, Blockieren) — kein automatischer Deadline-Nachweis
+- Bare-Metal kann ereignisgetrieben schlafen (WFE/Idle) — nicht nur aktives Polling
+- Monolith → unabhängige Tasks unter Scheduler-Kontrolle
 
 ::: notes
-Ab hier ändert sich die Denkweise: nicht mehr eine riesige `while(1)` orchestrieren, sondern Tasks und Scheduler. FreeRTOS folgt in späteren Terminen.
+Ab hier ändert sich die Denkweise: nicht mehr eine riesige `while(1)` orchestrieren, sondern Tasks und Scheduler. FreeRTOS folgt in späteren Terminen. Vermeiden Sie die Erzählung „Interrupts + RTOS = Determinismus“.
 :::
 
 ## Vorschau: Das Task-Modell
@@ -500,7 +781,9 @@ skinparam timing {
 }
 
 robust "Task A (High Prio)" as TA
+TA has Running,Ready,Blocked
 robust "Task B (Low Prio)" as TB
+TB has Running,Ready,Blocked
 
 @0
 TA is Blocked
@@ -508,34 +791,40 @@ TB is Running
 
 @2
 TA is Ready
+
+@3
 TA is Running
 TB is Ready
 
 @5
 TA is Blocked
 TB is Running
+
+TA@2 <-> @3 : Scheduler-Latenz
 @enduml
 ```
 
 - Task B rechnet; Event weckt Task A
 - RTOS entzieht Task B die CPU (Präemption) und gibt sie Task A
+- Pro Core ist immer genau eine Task `Running` — Ready heißt wartend, nicht rechnend
+- Ob Deadlines gehalten werden, bleibt Analyse-/Messaufgabe (VL2)
 
 ::: notes
-Echtes präemptives Multitasking auf einem Core. Details zu Scheduler-Latenzen und Synchronisation: spätere Vorlesungen mit FreeRTOS.
+Echtes präemptives Multitasking auf einem Core. Achten Sie auf die Zustände: Zwischen `Ready` bei $2$ und `Running` bei $3$ liegt die Scheduler-Latenz — das Aufwecken kostet Zeit und ist nicht null. Verbreiteter Zeichenfehler in Übungen: zwei Tasks gleichzeitig `Running` auf einem Core; das kann es nicht geben. Details zu Scheduler-Latenzen, Mutexen (nie in einer ISR) und Prioritätsinversion folgen mit FreeRTOS in VL4.
 :::
 
 ## Deep Dive: Die ARM Cortex-M Architektur
 
 - Um Interrupts zu beherrschen, müssen wir die CPU verstehen
-- Der STM32H755 basiert auf ARM Cortex-M (M7 und M4)
+- Der STM32H755: Cortex-M7 und Cortex-M4 (AMP)
 - Cortex-M ist für eingebettete Echtzeitsysteme optimiert
 - Merkmale:
-  - 32-Bit-Architektur (Register, Busse, ALU)
-  - Deterministisches Interrupt-Verhalten
-  - Keine MMU (virtuelle Adressen), sondern MPU (Memory Protection Unit)
+  - 32-Bit-**Programmier-/Registermodell** (nicht jede Busbreite ist „32 Bit“)
+  - Deterministisches Interrupt-Verhalten (unter dokumentierten Annahmen)
+  - Keine MMU, sondern MPU (Memory Protection Unit)
 
 ::: notes
-Cortex-M („Microcontroller“) ist auf Determinismus ausgelegt — anders als Cortex-A mit MMU. Physische Adressierung und enge Anbindung des Interrupt-Controllers halten Latenzen vorhersagbar.
+Cortex-M („Microcontroller“) ist auf Determinismus ausgelegt — anders als Cortex-A mit MMU. „32-Bit“ bezieht sich auf Register/ALU/Programmierung. Quellen: PM0214 (Cortex-M4 Programming Manual), RM0399.
 :::
 
 ## Das Register-Set der CPU
@@ -544,72 +833,99 @@ Cortex-M („Microcontroller“) ist auf Determinismus ausgelegt — anders als 
 |----------|-------|
 | R0–R12 | Allgemeine Datenregister |
 | R13 (SP) | Stack Pointer |
-| R14 (LR) | Link Register (Rücksprungadresse) |
+| R14 (LR) | Link Register |
 | R15 (PC) | Program Counter |
 | xPSR | Statusregister (Flags) |
 
 - 16 Basis-Register à 32 Bit
-- Bei Interrupt: Kontext dieser Register sichern (Hardware-Push)
+- Bei Exception Entry: **nicht** alle 16 automatisch auf den Stack
 
 ::: notes
-Bei einem Interrupt sind diese Register voll mit dem Zustand der Main-Loop. Die ISR nutzt dieselben Register — deshalb muss der Kontext gesichert werden. R13 (SP) ist für den Context Switch besonders zentral.
+Die ISR nutzt dieselben Register. Hardware sichert nur einen Teil — der Rest ggf. durch Compiler/Software. Details auf der nächsten Folie.
 :::
 
-## Was passiert beim Context Switch?
+## Exception Entry (nicht „voller Taskwechsel“)
 
-- Interrupt unterbricht die Main-Loop
-- CPU muss den Zustand retten, um später fortzusetzen
-- Ablauf (hardwaregesteuert):
-  1. Pipeline Flush, Abarbeitung stoppt
-  2. Automatischer Push: R0–R3, R12, LR, PC, xPSR auf den Stack
-  3. PC auf Startadresse der ISR setzen
-  4. ISR ausführen
-  5. Pop: Register vom Stack wiederherstellen
+- Interrupt unterbricht den laufenden Thread
+- Hardwaregesteuerter **einfacher** Stackframe (ohne FPU):
+
+| Offset | Inhalt |
+|--------|--------|
+| 0…7 | R0, R1, R2, R3, R12, LR, PC, xPSR |
+
+- Grundgröße: $8 \times 4 = 32\,\mathrm{Byte}$ (plus ggf. Alignment)
+- R4–R11: bei Bedarf durch Compiler/Software (nicht automatisch)
+- LR im Handler enthält typisch **EXC_RETURN** — kein gewöhnlicher Funktionsrücksprung
 
 ::: notes
-Der Cortex-M pusht die wichtigsten Register automatisch. Danach erst der Sprung in die C-ISR. Nach dem Rücksprung merkt die Main-Loop die Unterbrechung nicht — sofern die ISR den Stack korrekt hinterlässt.
+Lehrannahme: einfaches Stacking ohne FP-Frame, idealisierte Speicherbedingungen. Exception Entry ≠ RTOS-Taskwechsel: dieselbe unterbrochene Arbeit kann fortgesetzt werden, ohne einen anderen Task zu wählen. Quelle: PM0214 / Arm Exception Model.
+:::
+
+## Von der Pin-Flanke zum HAL-Callback
+
+```{mermaid}
+%%| fig-width: 5.2
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
+flowchart LR
+  A[Pin-Flanke] --> B[Peripherie-Flag]
+  B --> C[NVIC Pending]
+  C --> D[Exception Entry]
+  D --> E[erste Handler-Instruktion]
+  E --> F[C-Prolog / HAL]
+  F --> G[HAL-Callback]
+  G --> H[GPIO-Reaktion]
+  style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  style F fill:#F5F5F7,stroke:#86868B,stroke-width:1px !important
+```
+
+- Hardware-Entry und HAL-Software farblich/logisch trennen
+- Idealisiert oft $\approx 12$ Entry-Zyklen (Cortex-M4, passende Annahmen) — **keine** Flanke-bis-Callback-Garantie
+
+::: notes
+Jede Latenzangabe braucht klaren Anfang und Endpunkt. „GPIO-Flanke → HAL-Callback“ enthält Peripherie, NVIC, Stacking, Vektorabruf, C-Prolog und HAL. Quelle: Arm Interrupt-Latency-Guide (Joseph Yiu) — Voraussetzungen beachten.
 :::
 
 ## Der NVIC: Herr der Interrupts
 
 - NVIC = Nested Vectored Interrupt Controller
 - Sitzt im Cortex-M-Kern, eng mit der CPU verzahnt
-- Verwaltet viele Interrupt-Quellen (beim STM32 bis zu 240)
-- Vectored: jeder Interrupt hat einen Eintrag in der Vector Table
-- Hardware springt direkt zur ISR — kein Software-Switch-Case
+- **Architekturgrenze** Cortex-M: bis zu 240 externe IRQs
+- **STM32H755-Implementierung:** bis zu ca. $150$ maskierbare Kanäle, $16$ Prioritätsstufen — **pro Kern eigener NVIC**
+- Vectored: direkter Sprung über Vector Table
 
 ::: notes
-„Vectored“ spart Latenz: kein allgemeiner Handler mit IF-Kaskade, sondern direkter Sprung über die Vektortabelle.
+Nicht Architekturgrenze und Chip-Implementierung vermischen. Beide Kerne (M7/M4) haben eigene NVIC-Instanzen. Datenblatt STM32H755 / RM0399.
 :::
 
 ## Prioritäten im NVIC
 
-- Nested: ein wichtiger Interrupt darf einen unwichtigeren unterbrechen
-- Prioritäten als Nummern (z. B. 4 Bit → 0 bis 15)
-- Falle: je kleiner die Zahl, desto höher die Priorität
-- Priorität 0: höchste Priorität
-- Priorität 15: niedrigste Priorität
+- Nested: höhere Dringlichkeit darf niedere ISR unterbrechen
+- Falle: **kleinere Zahl = höhere Priorität**
+- Priorität $0$: höchste *konfigurierbare* Priorität
+- Feste Systemausnahmen (z. B. NMI) gesondert einordnen
+- Zustände getrennt denken: Enabled / Pending / Active; Peripherieflag $\neq$ NVIC-Pending
 
 ::: notes
-Lowest number = highest priority. Not-Halt mit Prio 0 muss eine laufende UART-ISR unterbrechen können.
+Beispiel (Lehr): TIM2 mit Preemption-Prio 5 darf UART mit Prio 8 unterbrechen, sofern keine Maskierung. Priorität allein erzeugt keine obere Latenzgrenze — Maskierung und höhere ISRs zählen.
 :::
 
 ## Preemption Priority vs. Subpriority
 
 - Prioritäts-Bits lassen sich aufteilen (Grouping)
 - Preemption Priority: darf ein IRQ einen laufenden IRQ unterbrechen?
-- Subpriority: bei gleichzeitigem Auftreten — wer zuerst?
-- Höhere Subpriority unterbricht niemals einen bereits laufenden Interrupt
+- Subpriority: bei gleichzeitigem Warten — wer zuerst?
+- Lehrbeispiel 2+2 Bits: A=$(1,0)$, B=$(1,3)$ — A zuerst bei Pending; A präemptiert laufendes B **nicht** (gleiche Preemption Priority)
 
 ::: notes
-Subpriority entscheidet nur die Warteschlange, nicht die Präemption. In FreeRTOS konfigurieren wir das Grouping typischerweise so, dass wir reine Preemption Priorities nutzen.
+CMSIS/HAL-Werte und rohe Registerbits nicht vermischen; `__NVIC_PRIO_BITS` und Grouping aus dem Projekt prüfen. Keine ungesicherte Bitverschiebung in Anwendungscode.
 :::
 
 ## Prioritätsinversion (Teaser)
 
-- Low hält Ressource, High muss warten, Medium präemptiert Low
-- Ergebnis: Medium blockiert indirekt High (Priority Inversion)
-- Vollständige Behandlung (inkl. Priority Inheritance): VL4
+- **Task-Kontext** (nicht ISR): Low hält Ressource, High wartet, Medium verzögert Low
+- Pro Kern maximal eine Spur gleichzeitig *Running*
+- Mutex-Erwerb/-Freigabe markieren; **kein** blockierender Mutex in einer ISR
+- Vollständige Behandlung (Priority Inheritance): VL4
 
 ```{.plantuml}
 @startuml
@@ -632,7 +948,12 @@ robust "Low" as L
 
 @0
 L is Running
+H is Ready
+M is Idle
+
+@1
 H is Blocked
+L is Running
 M is Idle
 
 @2
@@ -652,90 +973,112 @@ M is Idle
 @enduml
 ```
 
-- Teaser: Mars Pathfinder (1997) — Details und Abhilfe in VL4
+- Teaser: Mars Pathfinder (1997) — Details in VL4
 
 ::: notes
-Low hält die Ressource, High wartet, Medium präemptiert Low — High bleibt blockiert. Das Muster brachte 1997 den Mars Pathfinder in Schwierigkeiten. Vollständige Behandlung (Priority Inheritance Protocol u. a.) folgt in VL4.
+Bei t≈1: High will Ressource, Low hält sie → High Blocked. Medium präemptiert Low → High bleibt blockiert. Nach Freigabe läuft High. Priority Inheritance folgt in VL4.
 :::
 
 ## Tail-Chaining: ARMs Geheimwaffe
 
 - Zwei Interrupts A und B treten kurz nacheinander auf
-- Klassisch: Push → ISR A → Pop → Push → ISR B → Pop
-- Tail-Chaining: Cortex-M überspringt sinnloses Pop/Push zwischen ISRs
-- Dauer: typisch 6 Taktzyklen statt ca. 24 Zyklen Latenz
+- Ohne Optimierung: Entry A → A → Return A → Entry B → B → Return B
+- Mit Tail-Chaining: Entry A → A → Übergang zu anstehendem zulässigem B → B → Return
+- Idealisiertes Cortex-M4-Modell: Return+neuer Entry $\approx 12+12$ vs. Übergang $\approx 6$ Zyklen → **18 Übergangszyklen gespart** (nicht „jede Latenz = 6“)
 
 ![ARM Cortex-M Tail-Chaining: Vergleich mit und ohne Overhead](../assets/images/tail_chaining.png){.nostretch}
 
+- Bedingung: B steht beim Exception Return an **und** darf angenommen werden
+
 ::: notes
-Wenn nach ISR 1 noch IRQ 2 ansteht, entfällt das teure Pop+Push. Der NVIC kettet die Handler an — Determinismus und Latenzgewinn in Hardware.
+Voraussetzungen: passende Speicherbedingungen, keine Maskierung, kein FP-Kontext-Wechsel. Kein Tail-Chaining zwischen zwei Cores. Late Arrival und nested Preemption sind abgegrenzte Alternativen. Quelle: Arm Interrupt Latency Blog / Cortex-M TRM.
 :::
 
-## Exkurs Hardware: Der STM32H755
+## Exkurs Hardware: Der STM32H755 / NUCLEO-H755ZI-Q
 
-- Dual-Core-Mikrocontroller, Asymmetric Multiprocessing (AMP)
-- Cortex-M7 (bis 480 MHz): hohe Leistung, Caches, FPU
-- Cortex-M4 (bis 240 MHz): harte Echtzeit, hochdeterministisch
-- Beide Cores teilen Chip, Busse und teilweise Speicher
+- **Board:** NUCLEO-H755ZI-Q (Nucleo-144, MB1363, internes SMPS `-Q`)
+- **MCU auf dem Board:** STM32H755ZIT6 (LQFP144, 2 MB Flash) — nicht mit dem Boardnamen verwechseln
+- Cortex-M7 (Spec bis $480\,\mathrm{MHz}$): Leistung, Caches, FPU
+- Cortex-M4 (Spec bis $240\,\mathrm{MHz}$): oft für Regelung genutzt
+- Beide teilen Chip, Busse und teilweise Speicher → **Interferenz möglich**
 
 ::: notes
-Anders als SMP beim PC: zwei ungleiche Kerne im selben Gehäuse. M7 für Durchsatz, M4 für deterministische Steuerung.
+LEDs MB1363 (UM2408 §7.6): LD1 grün PB0 oder PA5 (Jumper SB65/SB54); LD2 gelb **PE1** (fest); LD3 rot **PB14**. HIGH = an. Keine .ioc im Kursrepo — Konfiguration in CubeIDE am gestellten Board. Quellen: UM2408, Produktseite NUCLEO-H755ZI-Q / STM32H755ZI.
 :::
 
 ## Warum Dual-Core (AMP) in der Echtzeit?
 
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
+flowchart TB
+  subgraph M7["Cortex-M7 (eigenes Projekt)"]
+    NV7[eigener NVIC]
+    VT7[Vector Table / Stack]
+  end
+  subgraph M4["Cortex-M4 (eigenes Projekt)"]
+    NV4[eigener NVIC]
+    VT4[Vector Table / Stack]
+  end
+  SRAM[(Shared SRAM)]
+  BUS[Interconnect / gemeinsame Busse]
+  PER[gemeinsame Peripherie]
+  M7 --- BUS
+  M4 --- BUS
+  BUS --- SRAM
+  BUS --- PER
+  style SRAM fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
 :::: {.columns}
 ::: {.column width="48%"}
-Cortex-M7 (eher soft):
+Lehrbeispiel-Verteilung:
 
-- Ethernet-Stack (TCP/IP)
-- GUI
-- aufwändige Filter (DSP)
-- Latenz schwankend (Caches)
+- M7: Ethernet, GUI, Filter
+- Latenz kann durch Caches schwanken
 :::
 ::: {.column width="4%"}
 :::
 ::: {.column width="48%"}
-Cortex-M4 (eher hard):
+Lehrbeispiel-Verteilung:
 
-- Motorsteuerung (PWM)
-- harte Timing-Loops
-- sicherheitskritische Logik
-- Latenz hochdeterministisch
+- M4: Motor-PWM, Timing-Loops
+- oft besser vorhersagbar (kein D-Cache)
 :::
 ::::
 
-- Inter-Core-Kommunikation: Shared Memory im SRAM
+- **Keine Garantie** „M4 = hard, M7 = soft“ — beide können Echtzeitaufgaben tragen
+- Konflikt um Shared SRAM/Peripherie → Zuständigkeit + Synchronisation (HSEM)
+- HSEM: Zugriff/Benachrichtigung — **keine** Cache-Kohärenz
 
 ::: notes
-Display/Netzwerk und Motorregelung auf einem Kern stören sich gegenseitig. Cache-Misses erzeugen Jitter. AMP trennt die Welten physisch.
+AMP hilft, Welten zu trennen, ersetzt aber keinen Timing-Nachweis. Gemeinsame Ressourcen bleiben. Inter-Core-Datenübergabe und M7-Cache: offene Entwurfsaufgabe späterer Termine.
 :::
 
-## Boot-Sequenz des STM32H755
+## Gewählte Bootfolge (CubeIDE-Typ)
 
-- Beim Reset starten nicht beide Cores gleichzeitig
-- Cortex-M7 bootet als Master
-- Cortex-M4 bleibt zunächst im Reset/Sleep
-- M7 konfiguriert Systemtakt (PLL), dann weckt M4 (HSEM/RCC)
+- Beschreibt die **häufige CubeIDE-/Template-Sequenz** bei beiden aktivierten Kernen — keine universelle Reset-Regel
+- Typisch: M4 startet, meldet sich per HSEM und geht in **D2 STOP** (WFE); M7 konfiguriert Clocks und weckt M4 (HSEM-Release)
+- Das ist **Software-Sync nach gemeinsamem Boot**, kein „M4 ab Reset festgehalten“
+- Echtes Hold-from-Reset nur über Option Bytes (z. B. BCM4/BCM7) — nicht beiläufig ändern
 
 ```{mermaid}
 %%| fig-width: 5.2
 %%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
 sequenceDiagram
-  participant Reset as Reset Hardware
+  participant Reset as Reset
   participant M7 as Cortex-M7
   participant M4 as Cortex-M4
-  Reset->>M7: Boot Power-On
-  Reset->>M4: Held in Reset
-  Note over M7: System Clock PLL
-  M7->>M7: Init HAL und Peripherie
-  M7->>M4: Wakeup RCC/HSEM
-  Note over M4: unabhängiger Boot
-  M4->>M4: Init lokale Peripherie
+  Reset->>M7: Boot
+  Reset->>M4: Boot (beide enabled)
+  Note over M4: HSEM + D2 STOP (WFE)
+  Note over M7: SystemClock_Config
+  M7->>M4: HSEM Release / Wake
+  Note over M4: lokale Init
 ```
 
 ::: notes
-Beide würden sonst gleichzeitig den Takt konfigurieren. Für Hello World wecken wir den M4 und nutzen ihn als Arbeitskern.
+Option Bytes und Images sind Voraussetzungen. Andere Bootkonfigurationen: AN5361, AN5557. Cube-Template ≠ BCM4-gated Hold. Keine beiläufige Option-Byte-Änderung als Standardschritt.
 :::
 
 ## Einführung in die Tools: STM32CubeIDE
@@ -757,25 +1100,22 @@ Statt hundert Seiten Register-Doku: Pin wählen, Funktion zuweisen, Takt konfigu
 - HAL: lesbar und oft portabel innerhalb der STM32-Familie
 - Nachteil: leichter Aufruf-Overhead
 - Extreme Echtzeit: LL oder direkte Register
+- Vergleich nur bei **gleichwertiger** Initialisierung/Statusbehandlung
 :::
 ::: {.column width="45%"}
 ```c
-/* HAL (Standard) */
+/* HAL (nach vollständiger Init) */
 HAL_TIM_Base_Start_IT(&htim2);
 
-/* LL (schneller) */
+/* LL: Enable allein ≠ komplette Init */
 LL_TIM_EnableIT_UPDATE(TIM2);
 LL_TIM_EnableCounter(TIM2);
-
-/* Register */
-TIM2->DIER |= (1u << 0);
-TIM2->CR1  |= (1u << 0);
 ```
 :::
 ::::
 
 ::: notes
-Für den Großteil der Vorlesung reicht HAL. Wenn jede Nanosekunde zählt, wechseln wir gezielt auf LL oder Registerzugriff.
+Nur Enable-Bits setzen ersetzt keine CubeMX-Init, Clock-Enable und Statusflags. Für den Großteil der Vorlesung reicht HAL.
 :::
 
 ## Projektstruktur und Code-Generierung
@@ -784,6 +1124,7 @@ Für den Großteil der Vorlesung reicht HAL. Wenn jede Nanosekunde zählt, wechs
 - Je eigene `main.c` und `stm32h7xx_it.c`
 - Eigener Code nur zwischen `USER CODE BEGIN` und `USER CODE END`
 - Code außerhalb dieser Blöcke wird beim erneuten Generieren gelöscht
+- Keine zweite `while(1)` in USER-Blöcken schachteln; Callbacks nicht doppelt definieren
 
 ::: notes
 Die wichtigste Anfängerregel: nur in USER-CODE-Blöcken schreiben — sonst ist die Arbeit mit einem Speichern in der GUI weg.
@@ -793,108 +1134,147 @@ Die wichtigste Anfängerregel: nur in USER-CODE-Blöcken schreiben — sonst ist
 
 - Ziel: Toolchain prüfen, Cortex-M4 nutzen
 - Schritte:
-  1. Projekt anlegen (Board STM32H755ZI-Q)
-  2. LED (z. B. PE1) als `GPIO_Output` für CM4
-  3. Code generieren
+  1. Projekt anlegen (**Board** NUCLEO-H755ZI-Q / MCU STM32H755ZIT6)
+  2. LED **PE1** (LD2 gelb auf MB1363) als `GPIO_Output` für CM4
+  3. Code generieren; GPIO-/Clock-Init prüfen
   4. In `main.c` (CM4) toggeln
 
 ```c
-/* USER CODE BEGIN 3 */
-while (1) {
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    HAL_Delay(500); /* blockiert 500 ms */
-}
+/* USER CODE BEGIN 3 — Inhalt der vorhandenen while(1) */
+HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+HAL_Delay(500); /* blockiert; kompletter LED-Zyklus ≈ 1 s */
 /* USER CODE END 3 */
 ```
 
 ::: notes
-Wenn die LED blinkt, laufen IDE, Flash und Debugger. Das Delay ist bewusst blockierend — als Kontrast zu Aufgabe 3.
+`Toggle` alle 500 ms → zwei Flanken/s, aber ein voller On-Off-Zyklus ≈ 1 Hz. Wenn die LED blinkt, laufen IDE, Flash und Debugger.
 :::
 
 ## Laboraufgabe 2: Das Polling-Desaster
 
 - Ziel: Grenzen der Super-Loop spüren
-- `Heavy_Load()` vor dem Toggle aufrufen (simuliert Filter/Display)
+- `Heavy_Load()` so schreiben, dass der Compiler die Arbeit nicht entfernt (Ergebnis nutzen)
+- **Konstante** Last verlängert den Abstand konstant (noch kein Jitter); für Jitter bewusst **variable** Lasten
 
 ```c
-while (1) {
-    Heavy_Load(800000); /* CPU-Last */
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    HAL_Delay(500);
-}
+/* in vorhandener while(1), USER CODE BEGIN 3 */
+Heavy_Load(800000); /* Iterationen ≠ bekannte ms-Dauer */
+HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+HAL_Delay(500);
 ```
 
-- Beobachtung: Warum ist der 500-ms-Takt zerstört?
+- Beobachtung: Warum weicht der sichtbare Takt vom Soll ab?
 
 ::: notes
-Die unbekannte Laufzeit von `Heavy_Load()` addiert sich zum Delay. Latenz und Periodizität werden unvorhersagbar — genau das Heavy-Load-Problem aus der Theorie.
+Buildoptionen dokumentieren. `Heavy_Load`-Iterationen sind keine bekannte Zeitdauer. Konstante Verlängerung ≠ Periodenjitter; für Schwankungen Last wechseln.
 :::
 
 ## Laboraufgabe 3: Rettung durch den Timer
 
-- Ziel: Determinismus per Interrupt wiederherstellen
-- In der `.ioc`: TIM2 aktivieren, Clock Source Internal
-- NVIC: „TIM2 global interrupt“ aktivieren
-- Timer im Interrupt-Modus starten
-- Periodizität berechnen, z. B. 500 ms (2 Hz):
+- Ziel: periodische LED-Flanken per TIM2-IRQ
+- In der `.ioc` (CM4): TIM2, Clock Source Internal; NVIC „TIM2 global interrupt“
+- Vor der Schleife: `HAL_TIM_Base_Start_IT(&htim2)` mit Fehlerprüfung
 
-$$f_{\mathrm{UPD}} = \frac{f_{\mathrm{CLK}}}{(PSC+1)\,(ARR+1)}$$
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
+flowchart LR
+  CLK[Taktquelle] --> FT[f_TIM dokumentiert]
+  FT --> PSC[PSC]
+  PSC --> CNT[CNT / ARR]
+  CNT --> UF[Update-Flag]
+  UF --> DIER[Peripherie-IRQ]
+  DIER --> NVIC[CM4-NVIC]
+  NVIC --> H[TIM2_IRQHandler]
+  H --> HAL[HAL_TIM_IRQHandler]
+  HAL --> CB[Callback]
+  CB --> LED[PE1 / LD2]
+  style LED fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
+- Upcounter-Modell:
+
+$$f_{\mathrm{UPD}} = \frac{f_{\mathrm{TIM}}}{(PSC+1)\,(ARR+1)}$$
+
+- Lehrbeispiel (nur wenn $f_{\mathrm{TIM}}=100\,\mathrm{MHz}$ in der `.ioc` gilt): $PSC=9999$, $ARR=4999$ → $2\,\mathrm{Hz}$ Update ($500\,\mathrm{ms}$), LED-Zyklus $\approx 1\,\mathrm{Hz}$
+- $f_{\mathrm{TIM}}$ aus Clock-Tree (APB-Prescaler/`TIMPRE`: oft $2\times\mathrm{PCLK}$ bei Prescaler $\neq 1$) — nicht automatisch `SystemCoreClock`
+- TIM2 ohne Repetition Counter: $(\mathrm{RCR}+1)=1$
 
 ::: notes
-Ohne NVIC-Haken feuert die Hardware den IRQ nicht zur CPU. PSC und ARR aus dem tatsächlichen Timer-Takt ableiten.
+Ohne NVIC-Haken und Handler-Kette (`TIM2_IRQHandler` → `HAL_TIM_IRQHandler` → Callback) feuert nichts Sichtbares. TIM2-Kernel-Takt in CubeMX ablesen. Updatefrequenz ≠ Blinkzyklus (Toggle → halbe Frequenz für On-Off).
 :::
 
 ## Laboraufgabe 3: Der Callback-Code
 
-- Toggle und Delay aus der `while(1)` entfernen — dort nur noch `Heavy_Load()`
-- Callback ans Ende von `main.c`:
+- Toggle/`HAL_Delay` aus der Main-Schleife entfernen — dort z. B. nur noch `Heavy_Load()`
+- Callback **einmal** im vorgesehenen USER-Block (nicht doppelt definieren):
 
 ```c
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) {
-        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2 gelb */
     }
 }
 /* USER CODE END 4 */
 ```
 
-- Ergebnis: LED blinkt präzise, unabhängig von der CPU-Last
+- Messbare Aussage: unter dieser Konfiguration periodische Flanken trotz Hintergrundlast — **kein** automatischer harter Fristnachweis
 
 ::: notes
-Foreground/Background: ISR toggelt die LED, Main rechnet Heavy Load. Präzises Blinken trotz Last.
+Foreground/Background: ISR toggelt, Main rechnet. „Unabhängig von CPU-Last / Jitter ≈ 0“ durch Messung ersetzen (Aufgabe 4).
 :::
 
-## Laboraufgabe 4 (Bonus): Messung am Oszi
+## Laboraufgabe 4 (Bonus): Drei Oszi-Messungen
 
-- Ziel: Jitter Main-Loop vs. Timer-ISR messen
-- Freien GPIO (z. B. PA0) als Output nutzen
-- Ablauf: Pin High → `Heavy_Load()` → Pin Low; Pulsweite am Oszi
-- Vergleich: Pin-Toggle in der ISR (Jitter $\approx 0$)
+| Messung | Was | Aussage |
+|---------|-----|---------|
+| A | Puls um `Heavy_Load()` | verstrichene Dauer inkl. möglicher IRQs |
+| B | periodische Flanken Main vs. TIM2-Callback | gleiche Sollperiode; konstante vs. variable Last getrennt |
+| C | Stimulus/Referenz vs. früher Handler-Marker | Anfang/Ende nennen; HAL-Callback ≠ reine Entry-Zeit |
+
+- Pin z. B. PA0 erst nach Pinbelegung prüfen; Trigger, Zeitbasis, Sampleanzahl notieren
+- Schema: Min/Max/Mittel/Peak-to-Peak — Zahlen **erst nach Messung** eintragen
+- Ersetze „Jitter ≈ 0“ durch „gemessene Schwankung unter dieser Konfiguration innerhalb …“
 
 ::: notes
-In der Industrie glauben wir Timing nicht, wir messen es. WCET der Berechnung vs. fast jitterfreie ISR-Flanke.
+Referenz und Ereignis brauchen gemeinsamen Zeitbezug (kein Vergleich zweier unabhängiger Signale). Optimierung, höhere IRQs und Debug-Halt beeinflussen Ergebnisse. Optisch stabiles Blinken ist kein harter Fristnachweis.
 :::
 
 ## Zusammenfassung des Tages
 
-- Echtzeit = Rechtzeitigkeit, nicht pure Rechenleistung
-- Super-Loops skalieren schlecht (Latenz-Akkumulation)
-- Interrupts ermöglichen Hardware-Präemption (Foreground/Background)
-- NVIC: Prioritäten hardwarenah, inkl. Tail-Chaining
-- Workflow: Bare-Metal-Code auf Cortex-M4 generieren und erweitern
+- Echtzeit = Rechtzeitigkeit (Fristvertrag), nicht pure Rechenleistung
+- Hard/Firm/Soft: Konsequenz und Nutzen nach Miss spezifizieren
+- Messmaximum $\neq$ sichere WCET-Schranke; Jitter ≠ Varianz (Metrik nennen)
+- Polling kann Deadlines erfüllen — lange unzerlegte Arbeit oft nicht
+- Interrupts/RTOS helfen strukturieren; Deadlines weiterhin nachweisen
+- Exception Entry ≠ Taskwechsel; NVIC/Tail-Chaining mit Annahmen
+- Labor: NUCLEO-H755ZI-Q, TIM2-Pfad messen statt „Jitter ≈ 0“ behaupten
 
 ::: notes
-Determinismus und Deadlines stehen im Zentrum. Interrupts retten Latenz — mit neuen Gefahren (Race Conditions, lange ISRs). Hardware-Features wie Tail-Chaining senken Overhead.
+Kurzkontrolle: Erfüllt Mittelwert 1 ms die Deadline 10 ms? (Nein allein.) Ist konstanter Abstand 550 ms Jitter? (Zuerst Periodenabweichung.) Toggle alle 500 ms → LED-Zyklus ≈ 1 Hz. Separater M4 garantiert nicht alle Fristen.
 :::
 
 ## Ausblick auf Termin 2
 
 - Bare-Metal mit vielen IRQs skaliert nicht ewig (Spaghetti-Flags)
-- Nächste Woche: Scheduling-Theorie
+- Nächste Woche: Scheduling-Theorie (Task-Modell, Utilization, RMS/EDF)
 - Praxis: eigener einfacher Round-Robin-Scheduler auf dem STM32
 - Vorbereitung: heutiges Projekt mitbringen
 
 ::: notes
-Danach der Weg zu FreeRTOS. Bitte Projekte speichern — wir bauen darauf auf. Fragen? Dann weiter im Labor.
+Danach der Weg zu FreeRTOS. Bitte Projekte speichern — wir bauen darauf auf.
+:::
+
+## Quellenhinweise (Hardware)
+
+- ST, STM32H755-Datenblatt / RM0399 (NVIC $\approx 150$ Kanäle/Kern, Busse, Timer)
+- ST, UM2408 (NUCLEO-H7 MB1363, LED/Pinbelegung)
+- ST, AN5361 / AN5557 (Dual-Core CubeIDE bzw. Architektur/Boot)
+- ST, PM0214 (Cortex-M4 Exceptions / Stackframe)
+- Arm CMSIS-Core NVIC; Arm Interrupt-Latency-Guide (Voraussetzungen idealer Zykluszahlen $\approx 12$ Entry / $6$ Tail-Chaining)
+- Kopetz / Buttazzo: Begriffe und Scheduling (Ausgabe im Semesterapparat)
+
+::: notes
+Dokumentrevisionen am Board/IDE-Stand prüfen. Keine Messwerte aus Lehrbeispielen als Board-Messungen ausgeben.
 :::
