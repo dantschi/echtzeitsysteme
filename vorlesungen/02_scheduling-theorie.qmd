@@ -11,208 +11,266 @@ format: revealjs
 
 ## Willkommen zurück zu Echtzeitsystemen!
 
-- Herzlich willkommen zum 2. Termin unserer Vorlesung
-- Letzte Woche: Hardware, Cortex-M4, Interrupts und Bare-Metal
-- Heute: von der Hardware-Ebene zu Informatik und Mathematik
-- Fokus: Wie verteile ich CPU-Zeit gerecht und vorhersagbar?
-- Praxis: eigener kleiner Scheduler
+- Herzlich willkommen zum 2. Termin
+- Letzte Woche: Rechtzeitigkeit, Cortex-M4, Interrupts, Bare-Metal
+- Heute: Task-Modell, Auslastung, RMS, RTA, EDF — **ein Prozessor**
+- Praxis: kooperativer Round-Robin als Dispatcher (kein Register-Port)
+- Der zweite Kern des H755 verdoppelt dieses Modell nicht automatisch
 
 ::: notes
-Willkommen zurück. Letzte Woche: STM32, Polling-Gefahren und Interrupts. Heute: Schedulability-Theorie — wir wollen nicht hoffen, dass Tasks rechtzeitig fertig werden, sondern das mathematisch absichern. Danach bauen Sie Ihren ersten Scheduler für den Cortex-M4.
+Zeiten und Begriffe wie in VL1: Release, Start, Completion, relative/absolute Deadline, Jitter. Alle Kernbeispiele gelten für genau eine CPU. Bus- und Speicherinterferenz des H755 liegen außerhalb des idealisierten Lehrmodells, sofern nicht im WCET enthalten.
 :::
 
 ## Agenda für heute
 
-1. Recap: Warum Bare-Metal nicht skaliert
-2. Task-Modelle: Software mathematisch beschreiben
-3. Metriken: WCET und CPU-Auslastung ($U$)
-4. Scheduling-Verfahren: kooperativ bis präemptiv
-5. RMS, Utilization Bound, RTA und EDF
-6. SysTick/PendSV und Labor: Round-Robin
+1. Recap und Task-Modell ($C$, $T$, $D$, $R$)
+2. Auslastung, WCET, Scheduling-Klassen
+3. RMS-Schranke, Gantt, Response-Time Analysis
+4. EDF am selben Zahlenbeispiel, Überlast
+5. SysTick/PendSV und Labor-Dispatcher
 
 ::: notes
-Kurz zurückblicken, dann formales Task-Modell mit Ausführungszeit und Periode. Danach Auslastung $U$, Strategien des Schedulers, RMS/EDF, Cortex-M-Scheduler-Mechanik und kooperatives Round-Robin im Labor.
+Durchgängige Tasksets: 75 % (Präemption), 85 % (RTA oberhalb der Schranke), 97 % (RMS scheitert, EDF hält).
 :::
-
 
 ## Lernziele des heutigen Tages
 
-1. Task-Modell ($C_i$, $T_i$, $D_i$) aufstellen und skizzieren
-2. WCET und CPU-Auslastung ($U$) verstehen und berechnen
-3. Kooperatives und präemptives Scheduling unterscheiden
-4. Rate Monotonic Scheduling (RMS) einordnen und Grenzen kennen
-5. Round-Robin-Scheduler als Laborziel verstehen
+1. Task, Job und $C_i$, $T_i$, $D_i$, $R_i$ auf einer Zeitachse erklären
+2. Auslastung $U$ berechnen und von lokalen Fristen unterscheiden
+3. Kooperativ/präemptiv und Fixed Priority/EDF als getrennte Achsen
+4. Eine einfache RTA selbst rechnen und die EDF-Annahmen prüfen
+5. Den Labor-Dispatcher ohne rekursive Tasks erklären
 
 ::: notes
-Am Ende: Task-Set formalisieren, $U$ berechnen, RMS als Industrieprinzip kennen und Round-Robin im Labor umsetzen können.
+Am Ende: $R \le D$ unter benannten Annahmen nachweisen, Liu-Layland von einem exakten Test unterscheiden, und den Callback-Scheduler vom RTOS-Thread trennen.
 :::
 
 ## Recap: Polling vs. Interrupts
 
 :::: {.columns}
 ::: {.column width="50%"}
-- Polling (Super-Loop):
-  - Einfach, linear, wenige Race Conditions
-  - Problem: Latenzen addieren sich; lange Funktionen blockieren alles
-- Interrupts (Vordergrund/Hintergrund):
-  - Hardware erzwingt Kontextwechsel (Präemption)
-  - Problem: ISRs müssen extrem kurz sein
+- Begrenzte Super-Loop kann Fristen halten
+- Lange unzerlegte Arbeit sprengt das Budget
+- Interrupts verkürzen bestimmte Reaktionen
+- Maskierung, ISR-Zeit und Ressourcen bleiben
 :::
 ::: {.column width="50%"}
 ```c
-/* Das Heavy-Load-Problem */
 while (1) {
     Sensor_Auswerten(); /* z. B. 50 ms */
-    LED_Blinken();      /* stottert */
+    LED_Blinken();      /* verpasst das Budget */
 }
 ```
 :::
 ::::
 
 ::: notes
-Die `while(1)`-Schleife reicht für einfache Fälle. Sobald Filter oder schwere Berechnung hinzukommen, wird das System blind. Interrupts retten die Latenz — aber lange ISRs blockieren Timer und andere IRQs.
+Polling ist nicht grundsätzlich ungeeignet. Interrupts stellen keinen automatischen Determinismus her — Anschluss an VL1.
 :::
 
 ## Recap: Die Spaghetti-Code-Falle
 
-- System wächst: Sensoren, Displays, USB, Ethernet, Motorregelung
-- Nicht alles darf in Interrupts (nur die kürzesten Routinen)
-- Folge in Bare-Metal:
-  - ISRs setzen unzählige Flags (`if (usb_ready_flag) …`)
-  - Main-Loop wird unübersichtlich
-  - Prioritäten und Deadlines sind kaum noch berechenbar
+- Viele Ereignisse: Flags in der Main-Loop
+- Prioritäten und Fristen werden schwer nachvollziehbar
+- Ein RTOS strukturiert Tasks — es beweist Fristen nicht von selbst
 
 ::: notes
-Große Bare-Metal-Projekte landen oft in der Flag-Suppe: ISR setzt `usb_daten_da = 1`, Main pollt hunderte Flags. Wer darf zuerst rechnen — Motor oder USB? Determinismus und Deadlines gehen verloren.
+Flag-Suppe ist ein Strukturproblem. Der spätere Scheduler arbeitet mit Zuständen und Prioritäten, nicht mit einem automatischen WCET-Wächter.
 :::
 
 ## Der Paradigmenwechsel: Das Betriebssystem
 
-- Lösung: Zeitmanagement an ein RTOS delegieren
-- Statt einer riesigen `while(1)`: viele kleine, getrennte Endlosschleifen
-- Jede Schleife heißt Task (oder Thread)
-- Der Scheduler entscheidet, wann welche Task laufen darf
+- Zeitmanagement kann ein RTOS übernehmen
+- RTOS-Thread: eigener Stack, Kontextwechsel
+- Labor heute: endliche Schritte, Rückkehr zum Dispatcher
+- Das sind unterschiedliche Kontextmodelle
 
 ::: notes
-Architekturwechsel: Display und Motor werden eigene Endlosschleifen — Tasks. Zwischen ihnen sitzt der Scheduler und orchestriert die CPU-Zeit.
+Ein Job ist nur bei passend strukturierter Anwendung ein Schleifendurchlauf. FreeRTOS-Threads und die Labor-Callbacks nicht vermischen.
 :::
 
 ## Was ist Scheduling?
 
-- Scheduling (Ablaufplanung): zeitliche Anordnung von Aufgaben
-- Ressource: CPU-Rechenzeit
-- Kriterien:
-  - Fairness: jede Task bekommt irgendwann Zeit (Starvation vermeiden)
-  - Echtzeit (Spezialfall): Fairness oft egal — Deadlines haben Vorrang
+- Ablaufplanung: wer erhält die CPU wann?
+- Heute: genau **ein** Prozessor
+- Echtzeit: spezifizierte Fristen, nicht pauschale Fairness
+- Fairness und Deadline-Einhaltung sind verschiedene Ziele
 
 ::: notes
-Windows/Linux optimieren oft auf Fairness. Harte Echtzeit: die sicherheitskritische Motor-Task hält ihre Deadline, auch wenn das Display einfriert.
+Frage: Warum darf eine zweite H755-CPU die heutige Formel $U \le 1$ nicht einfach verdoppeln? Weil das Modell, Busse und der Nachweis sich ändern.
 :::
 
 ## Vom C-Code zum Modell
 
-- Mathematische Garantien brauchen Abstraktion
-- Der Scheduler sieht nicht „Motor“ oder „LED“, sondern Parameter
-- Typisch: Ausführungszeit, Periode, Deadline
-- Formalisierung: das Task-Modell
+- Analyse beschreibt den Entwurf: $C$, $T$, $D$
+- Ein Fixed-Priority-Scheduler zur Laufzeit kennt typisch Zustand und Priorität
+- Er leitet daraus keine Deadline-Garantie ab
+- FreeRTOS überwacht WCET/Deadline nicht automatisch
+
+| Analyse | Laufzeit (Fixed Priority) |
+|---------|---------------------------|
+| $C$, $T$, $D$, Nachweis $R \le D$ | Ready/Running/Blocked, konfigurierte Priorität |
 
 ::: notes
-Dem Scheduler ist die Semantik des C-Codes egal. Er braucht Zahlen: Wie lange maximal? Wie oft? Welche Frist? Daraus entsteht der Fahrplan.
+Der mathematische Fahrplan und der RTOS-Scheduler sind zwei Schichten. Garantien gelten unter den Annahmen der Analyse, nicht für jedes STM32-Programm.
 :::
 
 ## Definition: Was ist eine Task?
 
-- Eine Task $\tau_i$ ist die kleinste Ausführungseinheit in einem RTOS
-- Jede Task besitzt:
-  - eigenen Kontext (Register, Stack)
-  - meist eine endlose `while(1)`-Schleife
-- Illusion: jede Task „glaubt“, die CPU allein zu haben
-- Job: eine konkrete Ausführung (ein Schleifendurchlauf)
+- Task $\tau_i$: wiederkehrende Aufgabe
+- Job $J_{i,k}$: eine konkrete Aktivierung
+- RTOS-Thread: eigener Kontext (Register, Stack)
+- Labor-Callback: endlicher Schritt, Zustand im TCB, kein pausierter Stack
 
 ::: notes
-Task = Struktur/Programm; Job = ein konkreter Durchlauf. Schnelle Kontextwechsel erzeugen die Illusion exklusiver CPU-Nutzung.
+Task $\neq$ Job. Ein `while(1)`-Durchlauf ist nur dann ein Job, wenn Release und Ende so definiert sind.
 :::
 
 ## Parameter einer Task: $C_i$ (Ausführungszeit)
 
-- $C_i$ (Computation Time / Capacity): Rechenzeit ohne Unterbrechung
-- In harten Echtzeitsystemen: $C_i$ = WCET (Worst-Case Execution Time)
-- Ohne bekannte WCET keine mathematische Garantie
+- $C_i$: eigener CPU-Bedarf ohne Unterbrechungszeit
+- Im harten Analysemodell: angenommene WCET
+- Warte- und Präemptionszeit zählen nicht zu $C_i$
+- Ohne dokumentierte Schranke kein Nachweis
 
 ::: notes
-Durchschnitte reichen nicht. Wenn die Task im Schnitt 2 ms braucht, im Worst Case 5 ms, plant der Scheduler mit 5 ms — sonst ist jeder Beweis hinfällig.
+Messmaximum plus beliebiger Puffer ist kein WCET-Beweis. Anschluss an VL1.
 :::
 
 ## Parameter einer Task: $T_i$ (Periode)
 
-- $T_i$ (Period): Abstand zwischen zwei Releases der Task
-- Beispiel: Temperatursensor 10-mal/s $\rightarrow T_i = 100\,\mathrm{ms}$
-- In der Theorie oft strikt periodische Tasks
+- $T_i$: Abstand der **Releases**, nicht der CPU-Starts
+- Beispiel Regler: $T_i = 10\,\mathrm{ms}$ (Lehrannahme)
+- Zunächst: kein Release-Jitter
 
 ::: notes
-Viele Steuergeräte sind periodisch: Regler alle 10 ms. $T_i$ ist der Abstand zwischen den Momenten, in denen die Task ready wird.
+Start kann später liegen als Release. $T$ und die relative Deadline $D$ nicht gleichsetzen, außer das Modell sagt $D = T$.
 :::
 
 ## Parameter einer Task: $D_i$ (Deadline)
 
-- $D_i$ (Deadline): maximale Zeit nach dem Release bis zum fertigen Ergebnis
-- $R_i$ (Response Time): tatsächliche Antwortzeit inkl. Unterbrechungen
-- Goldene Regel der Echtzeit — schedulbar nur wenn:
-
-$$R_i \le D_i$$
+- Relative Deadline $D_i$: Frist ab Release
+- Absolute Deadline: $d_{i,k} = r_{i,k} + D_i$
+- Job-Antwortzeit: $R_{i,k} = f_{i,k} - r_{i,k}$
+- $R_i$: nachgewiesene Worst-Case-Antwortzeit; gefordert $R_i \le D_i$
+- Completion zum Zeitpunkt $d$ gilt als rechtzeitig
 
 ::: notes
-$R_i$ ist oft größer als $C_i$, weil höherpriore Tasks und Interrupts unterbrechen. Trotzdem muss $R_i \le D_i$ in jedem Szenario gelten.
+$R$ enthält Warten und Präemption. $C \le D$ ist nötig, aber bei mehreren Tasks nicht hinreichend.
 :::
 
 ## Das grafische Task-Modell
 
-- Alle Parameter an einem Job auf dem Zeitstrahl
-- Release, Ausführung $C$, Response Time $R$, Deadline $D$, Periode $T$
+Lehrjob (ms): $r=0$, Start $s=2$, Ausführung $2$–$3$ und $5$–$7$, Präemption $3$–$5$, $f=7$, $D=8$, $T=10$.
 
-![Task-Modell mit $C$, $T$, $D$ und $R$](../assets/images/task_model.png){.nostretch}
+- $C = 3$, Startwartezeit $2$, Unterbrechung $2$, $R = 7 \le D$
+- Nächster Release bei $t = 10$, nicht beim CPU-Start
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+robust "Job J1" as J
+J has Running,Preempted,Ready,Done
+concise "Release/Deadline" as M
+@0
+J is Ready
+M is "r=0"
+@2
+J is Running
+@3
+J is Preempted
+@5
+J is Running
+@7
+J is Done
+M is "f=7"
+@8
+M is "d=8"
+@10
+M is "r=10"
+J@0 <-> @2 : Warten 2
+J@3 <-> @5 : Präemption 2
+J@0 <-> @7 : R=7
+@enduml
+```
 
 ::: notes
-Pfeil nach oben: Release. Rotes Feld: $C$ (WCET). Distanz Release bis Ende der Ausführung: $R$. Roter Abwärtspfeil: Deadline. Abstand zum nächsten Release: Periode $T$.
+Beide Laufstücke gehören demselben Job. Im Lehrmodell läuft er mit der angenommenen WCET. Frage: Warum ist $T=10$ nicht der Abstand der Starts?
 :::
 
 ## Deadline-Klassifizierung
 
-:::: {.columns}
-::: {.column width="60%"}
-Verhältnis von Deadline zu Periode:
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+concise "D = T" as A
+concise "D < T" as B
+concise "D > T (Beispiel)" as C
+@0
+A is Release
+B is Release
+C is Release
+@6
+B is Deadline
+@10
+A is "Deadline = nächstes Release"
+C is Running
+@14
+C is Deadline
+@enduml
+```
 
-- Implicit Deadline: $D_i = T_i$
-- Constrained Deadline: $D_i \le T_i$
-- Arbitrary Deadline: $D_i$ beliebig
-:::
-::: {.column width="40%"}
-Für die meisten RMS-Rechnungen: Implicit Deadlines — Standard in Steuergeräten.
-:::
-::::
+- Implicit: $D = T$; constrained: $D \le T$ (enthält implicit)
+- Arbitrary: $D$ beliebig, auch $D > T$ und überlappende Jobs — nicht „immer $D > T$“
+- Liu-Layland und der einfache EDF-Test heute: $D = T$
 
 ::: notes
-Implicit: fertig vor dem nächsten eigenen Job. Constrained: Frist kürzer als Periode. Viele Formeln heute setzen Implicit Deadlines voraus.
+Die dritte Zeile ist ein Beispiel für arbitrary deadlines, keine Definition. Frage: Warum reicht $U \le 1$ bei $D < T$ nicht?
 :::
 
 ## Task-Typen nach Auslöser
 
-- Periodisch: feste Periode $T_i$, typisch Timer/Regler
-- Sporadisch: zufälliger Auslöser, aber garantierte Mindestzeit (Minimum Inter-Arrival Time) — wie periodisch mit $T_{\min}$
-- Aperiodisch: kein Minimum (z. B. Netzwerk-Ping) — harte Garantien unmöglich
+- Periodisch: feste Release-Abstände $T$
+- Sporadisch: garantierter Mindestabstand, nicht „zufällig“
+- Aperiodischer Burst: ohne Lastgrenze keine pauschale Garantie für jeden Eingang
+- Begrenzen: Zulassung, Verwerfen, reserviertes Budget (Server-Theorie später)
+
+Gegenprobe, synchron, eine CPU: zwei Tasks $C=2\,\mathrm{ms}$, $T=10\,\mathrm{ms}$, $D=3\,\mathrm{ms}$.
+
+- $U = 40\,\%$, aber $4\,\mathrm{ms}$ Arbeit vor $t = 3\,\mathrm{ms}$ — unabhängig vom Algorithmus unmöglich
 
 ::: notes
-Ein Taster ist sporadisch: physisch begrenzte Rate. Netzwerk-Broadcasts können aperiodisch sein — ohne Minimum keine harte Echtzeitgarantie.
+Ein Taster ohne Entprellung hat keine garantierte Mindestreleasezeit. Physikalische Betätigung und modellierte Mindestankunft trennen. Die 40-%-Gegenprobe zeigt, warum $U \le 1$ bei kurzen Deadlines kein EDF-Test ist.
 :::
 
 ## Das RTOS Task-Zustandsmodell
 
-- Running: besitzt die CPU (Single-Core: genau eine Task)
-- Ready: will rechnen, wartet in der Warteschlange
-- Blocked / Waiting: wartet auf Ereignis (Delay, Semaphore, UART) — belastet die CPU nicht
+- Running: hat die CPU (eine Nutz-Task; Idle wenn keine Arbeit)
+- Ready: will rechnen
+- Blocked: wartet auf Ereignis oder Timeout, rechnet nicht
+- Blocked wird Ready; die Auswahl kann unmittelbar folgen
+- Interruptkontext ist kein vierter Task-Zustand
 
 ::: notes
-Blocked ist der Schlüssel: kein aktives Polling. Die Task kostet 0 % CPU, bis ein Interrupt sie wieder ready macht.
+Auf einer CPU höchstens ein Task-Kontext Running. ISRs separat. Idle darf laufen, wenn niemand Ready ist.
 :::
 
 ## Visualisierung der Zustandsmaschine {.scrollable}
@@ -223,219 +281,192 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam StateBackgroundColor #FFFFFF
 skinparam StateBorderColor #E5E5EA
-skinparam StateFontColor #1D1D1F
-
-[*] --> Ready : Create Task
+[*] --> Ready : erzeugen
 Ready --> Running : Dispatch
-Running --> Ready : Preempt
-Running --> Blocked : Wait / Delay
-Blocked --> Ready : Event (z. B. IRQ)
-Running --> [*] : Task Deleted
-
-note right of Blocked
-  belastet die CPU nicht
-end note
+Running --> Ready : Präemption
+Running --> Blocked : Blockieren / Delay
+Blocked --> Ready : Ereignis oder Timeout
+Running --> [*] : beenden
 @enduml
 ```
 
-- Blocked wird nie direkt Running — immer zuerst Ready-Queue
+- Scheduler wählt, Dispatcher führt aus
+- RTOS: Kontextwechsel; Labor: Funktionsaufruf und Rückkehr
 
 ::: notes
-Dispatch wählt die höchstpriore Ready-Task. Präemption wirft die laufende Task zurück nach Ready. Events wecken nur in die Ready-Queue; der Scheduler entscheidet über Running.
+Ein geweckter Job wird nicht „magisch Running“, sondern zuerst Ready.
 :::
 
 ## Metrik: CPU-Auslastung ($U$)
 
-- Utilization $U$: Indikator, ob ein System überhaupt lösbar ist
-- Anteil einer Task: $U_i = \frac{C_i}{T_i}$
-- Beispiel: $C=2\,\mathrm{ms}$, $T=10\,\mathrm{ms}$ $\rightarrow U_i = 0{,}2$ (20 %)
-- Systemauslastung:
-
 $$U = \sum_{i=1}^{n} \frac{C_i}{T_i}$$
 
+- Langfristiger Pflichtanteil auf **einer** CPU
+- $U > 1$: dauerhafte Pflichtlast nicht erfüllbar
+- Endliche Bursts und eine zweite H755-CPU sind ein anderes Modell
+- Nicht zugewiesene Prozent sind kein Fristpuffer in jedem Fenster
+
 ::: notes
-$U$ ist das Fundament jeder Schedulability-Analyse. Zuerst Teilauslastungen, dann Summe über alle Tasks.
+$U$ ist notwendig für unbegrenzte periodische Pflicht, nicht hinreichend bei $D < T$.
 :::
 
 ## Auslastung: Ein Rechenbeispiel
 
-- System mit drei Tasks:
-  - $\tau_1$: $C_1=1$, $T_1=4$ $\rightarrow U_1=25\%$
-  - $\tau_2$: $C_2=2$, $T_2=5$ $\rightarrow U_2=40\%$
-  - $\tau_3$: $C_3=2$, $T_3=10$ $\rightarrow U_3=20\%$
-- Gesamt: $U = 85\%$
-- Erste Regel: $U > 1$ (100 %) → unmöglich schedulbar
-- Bei 85 %: hängt vom Algorithmus ab!
+Durchgängiges 85-%-Set (ms), $D_i = T_i$:
+
+| Task | $C$ | $T$ | $U_i$ |
+|------|----:|----:|------:|
+| $\tau_1$ | 1 | 4 | 25 % |
+| $\tau_2$ | 2 | 5 | 40 % |
+| $\tau_3$ | 2 | 10 | 20 % |
+
+- $U = 0{,}85$; restliche 15 %: nicht zugewiesen im Langfristmodell
+- Lokal kann die Nachfrage trotzdem eng sein (RTA gleich)
+- ISR-, Dispatcher- und Messoverhead getrennt bilanzieren, nicht doppelt und nicht als „Pauschalreserve = Beweis“
 
 ::: notes
-Über 100 % hilft kein Algorithmus — physikalische Überlast. Unter 100 % ist Schedulability algorithmusabhängig; das ist der Kern der zweiten Vorlesungshälfte.
+Die 15 % sind keine Garantie, dass jeder Job 15 % Reserve hat. Overhead nur einrechnen, wenn er nicht schon in $C$ steckt.
 :::
 
 ## Exkurs: Das Problem mit der WCET
 
-- Warum WCET statt ACET (Average)?
-
 ```c
-if (sensor_value > 1000) {
-    calculate_fft(); /* ~10 ms (Worst Case) */
-} else {
-    flag = 1;        /* ~0.1 ms (Best Case) */
-}
+if (sensor_value > 1000)
+    calculate_fft(); /* illustrative Laufzeit, z. B. länger */
+else
+    flag = 1;        /* kurzer Pfad */
 ```
 
-- ACET vielleicht 1 ms — Auslegung auf 1 ms crasht, wenn der Worst Case eintritt
+- Eine Mittelwertannahme von $1\,\mathrm{ms}$ braucht eine Pfadverteilung oder bleibt hypothetisch
+- Beobachtetes Maximum $\neq$ sichere Obergrenze
+- Statische Analyse braucht Plattform- und Codeannahmen (Cache, Bus, Waitstates)
 
 ::: notes
-Harte Echtzeit plant immer mit WCET, auch wenn der Fall selten ist. Ein heißer Tag und die FFT reißt sonst alle Deadlines.
+Lehrkurve, keine Boardmessung. H755-Interferenz gehört ins WCET-Modell oder wird als außerhalb des idealen Ein-CPU-Modells gekennzeichnet.
 :::
 
 ## Wie ermittelt man die WCET?
 
 :::: {.columns}
 ::: {.column width="50%"}
-1. Analytisch (statisch)
-   - Code ohne Laufzeit mathematisch analysieren
-   - Absolute Obergrenze
-   - Schwer bei Caches (z. B. Cortex-M7)
+Statische Analyse
+
+- Pfade, Schleifengrenzen, Plattform
+- Sichere Schranke nur unter Annahmen
 :::
 ::: {.column width="50%"}
-2. Empirisch (Messung)
-   - Stresstests, Oszi, Trace-Tools
-   - Nahe an der Realität
-   - Keine absolute Garantie — oft mit Puffer
+Messung
+
+- Messmaximum der Läufe
+- Kein Beweis durch „plus Puffer“
+- Annahmen dokumentieren
 :::
 ::::
 
 ::: notes
-Analytisch: sichere Schranke, aber schwer bei modernen CPUs. Praxis oft messen, Worst Case nehmen und Sicherheitspuffer aufschlagen.
+Beide Wege brauchen ein Modell. „Messen und 20 % drauf“ ist eine Ingenieurpraxis, kein Nachweis.
 :::
 
 ## Zusammenfassung Task-Modell
 
-- Tasks: getrennte Endlosschleifen
-- OS orchestriert Ready / Running / Blocked
-- Parameter: $C_i$ (WCET), $T_i$ (Periode), $D_i$ (Deadline)
-- CPU-Auslastung $U$ muss $\le 100\%$ sein
+- Task vs. Job; $T$ = Release-Abstand
+- $C$ eigener Bedarf; $R = f - r$; Nachweis $R \le D$
+- $U$ auf einer CPU; $U > 1$ schließt dauerhafte Pflichtlast aus
+- Analysezahlen $\neq$ automatische RTOS-Überwachung
 
 ::: notes
-Fragen zum Task-Modell? Als Nächstes: nach welchen Regeln der Scheduler die Ready-Queue auflöst.
+Frage: Erfüllt $U = 40\,\%$ mit $D = 3\,\mathrm{ms}$ und zwei Jobs à $2\,\mathrm{ms}$ die Frist? Nein.
 :::
 
 ## Die Kernfrage des Schedulings
 
-- Mehrere Tasks im Zustand Ready
-- Nur ein Core: wer darf rechnen?
-- Genau das entscheidet der Scheduling-Algorithmus
-- Die Wahl entscheidet über Echtzeit oder Deadline-Miss
+- Mehrere Ready, eine CPU
+- Der Algorithmus legt die Auswahlregel fest
+- Ob Fristen halten, zeigt der Test unter seinen Annahmen
 
 ::: notes
-Timer-Tick: Motor, Display und Netzwerk sind ready. Der Algorithmus vergibt den einzigen Kern — und damit Erfolg oder Crash.
+Auswahlregel und Beweis nicht vermischen.
 :::
 
 ## Scheduler vs. Dispatcher
 
-- Scheduler (Entscheider):
-  - Algorithmus: wer hat Vorrang?
-  - aktualisiert Task-Control-Blöcke (TCB)
-- Dispatcher (Ausführer):
-  - Context Switch (Register sichern/laden)
-  - Stack-Pointer der gewählten Task setzen
+- Scheduler: wer als Nächstes (Priorität, Deadline, Ring)
+- Dispatcher: setzt die Auswahl um
+- RTOS-Thread: Register/PSP; Labor: `step()` aufrufen und Rückkehr abwarten
 
 ::: notes
-Scheduler = Gehirn (C-Logik). Dispatcher = Muskel (oft Assembler-nah). Entscheidung und physischer Wechsel sind getrennt.
+Im Labor gibt es keinen PendSV-Registerwechsel.
 :::
 
 ## Klassifizierung: Offline vs. Online
 
-:::: {.columns}
-::: {.column width="50%"}
-Offline-Scheduling
-- Fahrplan vor dem Flashen berechnet
-- Laufzeit: Tabelle abarbeiten (Time-Triggered)
-- Vorteil: maximal deterministisch
-- Nachteil: starr
-:::
-::: {.column width="50%"}
-Online-Scheduling
-- Entscheidung zur Laufzeit (Event-Triggered)
-- Flexibel bei unvorhersehbaren Events
-- Standard: FreeRTOS, Linux
-- Nachteil: Scheduler kostet CPU-Zeit
-:::
-::::
+| Achse | Ausprägungen |
+|-------|----------------|
+| Zeitpunkt der Planung | offline (Tabelle) / online (zur Laufzeit) |
+| Auslöser | zeitgesteuert / ereignisgesteuert |
+| CPU-Abgabe | kooperativ / präemptiv |
+| Auswahl | Fixed Priority / EDF / RR |
+
+- Die Achsen nicht gleichsetzen: online $\neq$ automatisch ereignisgesteuert
 
 ::: notes
-Offline: Flugzeugsteuerungen, Time-Triggered. Wir fokussieren Online: flexibel, aber Scheduler-Overhead.
+Eine offline Tabelle kann zeitgesteuert sein. Ein Fixed-Priority-RTOS kann auf Ereignisse reagieren, nicht nur auf den Tick.
 :::
 
 ## Klassifizierung: Kooperativ vs. Präemptiv
 
-- Wie bekommt das OS die CPU zurück?
-- Kooperativ (non-preemptive):
-  - Task gibt CPU freiwillig ab (`os_yield()`)
-- Präemptiv:
-  - Hardware-Timer entreißt der Task die CPU
-  - Task merkt den Wechsel nicht
+- Kooperativ: Task gibt die CPU frei (`yield` / Rückkehr)
+- Präemptiv: der Kern entzieht die CPU
+- Fixed Priority ist nicht automatisch RMS: Prioritäten muss die Anwendung passend setzen
+- Round-Robin ignoriert Fristen, kann sie aber unter nachgewiesenen Bedingungen erfüllen
 
 ::: notes
-Kooperativ braucht Disziplin. Präemptiv: SysTick (z. B. 1 ms) stoppt die Task und gibt dem Scheduler die Kontrolle.
+Prioritätswahl und Art der CPU-Abgabe sind verschiedene Entscheidungen.
 :::
 
 ## Kooperatives Scheduling (Non-preemptive)
 
-```c
-void Task_Motor(void) {
-    while (1) {
-        Calculate_PID(); /* ~2 ms */
-        os_yield();      /* andere dürfen */
-        Apply_PWM();
-    }
-}
-```
-
-- Vorteil: wenige Race Conditions während der Berechnung
-- Nachteil: vergessenes `yield()` oder Endlosschleife → System-Freeze
+- Ein Schritt, der nie zurückkehrt, hält den Dispatcher an
+- Aktive IRQs können weiterlaufen
+- `Calculate_PID` und `Apply_PWM` im Beispiel als **ein** begrenzter Schritt, wenn die Aktorfrist das verlangt
+- `yield` dazwischen nicht unkommentiert einbauen
 
 ::: notes
-Windows 3.x war kooperativ. Vorteil: ruhiges Schreiben globaler Daten. Nachteil: ein hängender Task friert alles ein — oft K.O. für sichere Echtzeit.
+Kooperativ kann Fristen erfüllen, wenn jeder Schritt ein nachgewiesenes Budget hat und zurückkehrt.
 :::
 
 ## Präemptives Scheduling
 
-- Standard moderner RTOS (FreeRTOS, VxWorks, Zephyr)
-- Hardware-Interrupt (z. B. SysTick) weckt den Scheduler
-- Höherpriore Ready-Task → sofortiger Wechsel
-- Gefahr Shared Data: Präemption mitten im Schreiben → korrupte Daten
-- Lösung später: Mutex/Semaphore (Ressourcen-Termin)
+- Eine ISR kann eine höherpriore Task Ready machen
+- PendSV kann **nach ISR-Ende** wechseln — nicht erst beim nächsten Tick
+- Präemption verhindert keinen Starvation, wenn High ständig Ready bleibt
+- Shared Data: später Mutex; Shared Memory ist nicht pauschal verboten, Abhängigkeiten müssen im Modell stehen
 
 ::: notes
-Präemption verhindert Freezes, erzwingt aber Synchronisation. Details zu Mutex und Priority Inversion: spätere Termine.
+„Alle Wechsel passieren am Tick“ ist falsch für ereignisgesteuerte Wechsel. Frage: Warum läuft Low nicht, wenn High nur `yield` macht, aber Ready bleibt?
 :::
 
 ## Prioritätsbasiertes Scheduling
 
-- Jede Task erhält eine Priorität
-- Die Ready-Task mit höchster Priorität gewinnt
-- Statisch: Priorität zur Erzeugung fest (Grundlage RMS)
-- Dynamisch: OS passt Priorität zur Laufzeit an (Grundlage EDF)
+- Fixed Priority: konfigurierte Priorität, statisch im RMS-Modell
+- EDF: unter bereiten Jobs die früheste **absolute** Job-Deadline
+- Eine Deadline wird nicht allein dadurch „höher“, dass Zeit verstreicht, während andere absolute Deadlines fest bleiben
+- NVIC-IRQ: kleinere Zahl = dringender; native FreeRTOS-Taskpriorität: größere Zahl = höher (CMSIS-RTOS2 separat prüfen)
 
 ::: notes
-Statisch: `prio = 5` bleibt. Dynamisch (EDF): Ranking nach absoluter Deadline — die Task mit der frühesten Deadline hat die höchste Priorität (kein „Ansteigen kurz vorher“).
+IRQ-Priorität und Task-Priorität nicht vermischen.
 :::
 
 ## Der Spezialfall: Round-Robin (RR)
 
-- Gleiche Priorität bei mehreren Ready-Tasks?
-- Round-Robin: Zeitscheiben (Time Slices, z. B. 1 ms)
-- A → B → C → A …
-- Fair, aber allein für harte Echtzeit ungeeignet (ignoriert Deadlines)
+- Gleiche Auswahlklasse, ringförmige Zeitscheiben **oder** kooperative Schritte
+- Timer-RR: gleiche Quanten; Labor-RR: keine erzwungenen 1-ms-Quanten
+- Fairness ersetzt keinen Fristnachweis
 
 ::: notes
-Laborziel heute: Round-Robin. Fairness-Karussell — ohne Deadline-Bewusstsein. In FreeRTOS optional auf gleicher Prioritätsstufe.
+Zwei Bilder im Laborteil: gleiche Scheiben vs. unterschiedlich lange Schritte.
 :::
 
 ## Visualisierung: Round Robin {.scrollable}
@@ -446,290 +477,290 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-
 robust "Task A" as TA
 robust "Task B" as TB
 robust "Task C" as TC
-
 @0
 TA is Running
 TB is Ready
 TC is Ready
-
 @2
 TA is Ready
 TB is Running
-
 @4
 TB is Ready
 TC is Running
-
 @6
 TC is Ready
 TA is Running
-
-@8
-TA is Ready
-TB is Running
 @enduml
 ```
 
-- Gleiche Zeitscheibe, ringförmiger Wechsel
+- Genau eine Running-Spur; idealisierte gleiche Scheiben
 
 ::: notes
-PlantUML-Timing: gleiche Priorität, Timer erzwingt Wechsel. Ideal für den Labor-Einstieg als C-Array/Ringpuffer.
+Das ist timerpräemptives RR, nicht der Labor-Dispatcher.
 :::
 
 ## Das Problem des Aushungerns (Starvation)
 
-- Strikt prioritätsbasiert und präemptiv
-- Task A: HIGH, Task B: LOW
-- Task A in `while (1)` ohne Delay/Block
-- Ergebnis: Task B verhungert (Starvation)
-- RTOS garantiert keine Fairness bei ungleichen Prioritäten
+- Strikte Priorität, High bleibt Ready (auch nach `yield`): Low kommt nicht dran
+- `yield` behebt das nicht, solange High sofort wieder gewählt wird
+- Abhilfe: Blockieren, periodische Freigabe, geprüfte Budgets
+- Kooperativ zusätzlich: ein Schritt ohne Rückkehr stoppt die anderen Callbacks
 
 ::: notes
-Bei strikter Priorität mischt sich das OS nicht „fair“ ein. Hochpriore Tasks müssen sich schlafen legen, sonst atmet der Rest nie.
+Präemption garantiert weder Fairness noch Jitterfreiheit.
 :::
 
 ## Wann ist ein System schedulbar?
 
-- Ein Task-Set ist schedulbar, wenn ein Algorithmus existiert, der allen Jobs ihre Deadlines einhält
-- Schedulability-Test: Vorab-Beweis (Formel / Analyse)
-- Ziel: Garantie vor dem Ausliefern, nicht Hoffnung nach dem Flashen
+- **Feasibility:** es existiert irgendein zulässiger Plan
+- **Schedulability:** ein **gewählter** Algorithmus hält die Fristen
+- Ein RMS-Test kann RMS verwerfen, obwohl EDF funktioniert (97-%-Beispiel)
+- Tests gelten unter ihren Annahmen, nicht für jedes STM32-Programm
 
 ::: notes
-Schedulability = Planbarkeit. Wir wollen vor Kundenauslieferung wissen, ob Deadlines halten — mathematisch, nicht nur empirisch.
+Die 40-%-Gegenprobe ist infeasible, nicht nur „RMS-ungeeignet“.
 :::
 
 ## Schedulability-Tests
 
-:::: {.columns}
-::: {.column width="50%"}
-Exakter Test (hinreichend und notwendig)
-- Bestanden: sicher
-- Durchgefallen: sicher nicht schedulbar
-- Nachteil: oft teuer (NP-schwer)
-:::
-::: {.column width="50%"}
-Konservativer Test (nur hinreichend)
-- Bestanden: Garantie
-- Durchgefallen: unklar (pessimistisch)
-- Vorteil: einfache Formel
-:::
-::::
+- Hinreichend: bestanden $\Rightarrow$ nachgewiesen; nicht bestanden $\Rightarrow$ **keine Entscheidung**
+- Exakt im benannten Modell: bestanden oder widerlegt
+- Die einfache RTA ist dieser Fixpunkt-Test, nicht pauschal „NP-schwer“
+- Allgemeine Scheduling-Probleme können schwer sein — das hier benannte Verfahren nicht damit abtun
 
 ::: notes
-Ingenieure nutzen oft hinreichende Tests: „Ja“ ist sicher, „Nein“ heißt nur „keine Garantie“. Merken Sie sich das für die RMS-Schranke.
+Liu-Layland ist hinreichend. Darüber RTA, nicht sofort „unschedulable“.
 :::
 
 ## Rate Monotonic Scheduling (RMS)
 
-- Industrie-Standard für periodische Echtzeitsysteme
-- Liu & Layland (1973)
-- Typ: statisch, präemptiv, prioritätsbasiert
-- Goldene Regel: je kürzer $T_i$, desto höher die Priorität
-  (höhere Rate = höhere Priorität)
+- Fixed Priority, präemptiv, Rate: kürzeres $T$ $\Rightarrow$ höhere Priorität
+- Liu & Layland (1973), für das ideale Ein-CPU-Modell
+- Ein FP-RTOS ist nicht automatisch RMS, solange die Prioritäten nicht so vergeben sind
 
 ::: notes
-RMS ist der Klassiker in Automotive und Industrie. Kurze Periode bekommt hohe Priorität. Als Nächstes: Annahmen von Liu & Layland, Utilization Bound und Response-Time Analysis.
+Keine Branchenzuordnung „Bremse = RMS“. RMS ist eine Prioritätsregel plus Analyse.
 :::
 
 ## RMS: Die mathematischen Annahmen
 
-- Um RMS mathematisch zu beweisen, trafen Liu & Layland (1973) strikte Annahmen:
-  1. Alle Tasks sind strikt periodisch
-  2. Deadline = Periode ($D_i = T_i$)
-  3. Tasks sind völlig unabhängig (keine Mutexes, kein Shared Memory)
-  4. Laufzeit des Schedulers (Context Switch) ist 0
-- In der Realität ist keine dieser Annahmen zu 100 % erfüllt — trotzdem ist RMS die Basis fast aller realen Systeme
+Für die Kernbeispiele, sofern nicht anders gesagt:
+
+1. Ein Prozessor, vollständig präemptierbar, unabhängig
+2. Beschränkte $C_i$, kein Blocking, kein Release-Jitter, keine Selbstsuspendierung
+3. Zunächst Overhead/ISRs = 0 (sonst in $C$ oder als Interferenz modellieren)
+4. Liu-Layland und einfacher EDF-Test: $D_i = T_i$
+5. Einfache RTA: Fixed Priority mit $D_i \le T_i$
+
+- Shared Memory ist erlaubt, wenn Abhängigkeiten und Interferenz im Modell stehen
+- H755-Businterferenz: im WCET oder außerhalb dieses Idealmodells
 
 ::: notes
-Bevor wir die berühmte Schranke ansehen: Liu und Layland gingen 1973 von einem idealen System aus — periodisch, $D_i = T_i$, keine Ressourcenkonflikte, Context Switch = 0. Realitätsfern, aber fast jedes AUTOSAR-Steuergerät basiert darauf. Die Kunst: Annahmen später kontrolliert aufweichen, ohne Deadlines zu verlieren.
+„Kein Shared Memory“ wäre zu hart. Entscheidend ist, ob die Störung in der Analyse vorkommt.
 :::
 
 ## Beispiel 1: RMS-Prioritäten vergeben
 
-- Gegebenes Task-Set:
-  - $\tau_1$: $C_1 = 1$, $T_1 = 4$
-  - $\tau_2$: $C_2 = 2$, $T_2 = 6$
-  - $\tau_3$: $C_3 = 2$, $T_3 = 12$
-- Auslastung: $U = \frac{1}{4} + \frac{2}{6} + \frac{2}{12} = 0{,}25 + 0{,}33\overline{3} + 0{,}16\overline{6} = 75\,\%$
-- Regel: kürzere Periode $\rightarrow$ höhere Priorität
-- Ergebnis: $\tau_1$ (höchste Prio), $\tau_2$ (mittel), $\tau_3$ (niedrigste)
+75-%-Set (ms), $D = T$, Release aller ersten Jobs bei $t = 0$:
+
+- $\tau_1=(1,4)$, $\tau_2=(2,6)$, $\tau_3=(2,12)$
+- $U = \tfrac{1}{4}+\tfrac{2}{6}+\tfrac{2}{12} = 0{,}75$
+- Priorität $\tau_1 > \tau_2 > \tau_3$
 
 ::: notes
-Drei Tasks, Summe $75\,\%$. Nach Rate Monotonic bekommt $\tau_1$ ($T=4$) die höchste Priorität, $\tau_3$ ($T=12$) die niedrigste. Mit $C_3=2$ wird $\tau_3$ bei $t=4$ mitten in ihrer Ausführung von $\tau_1$ präemptiert — genau das wollen wir zeigen.
+Dieses Set zeigt Präemption von $\tau_3$ bei $t = 4$.
 :::
 
 ## Visualisierung: Präemptives RMS {.scrollable}
 
+Intervalle halboffen $[Start, Ende)$. CPU: $0$–$1$ $\tau_1$, $1$–$3$ $\tau_2$, $3$–$4$ $\tau_3$, $4$–$5$ $\tau_1$, $5$–$6$ $\tau_3$, $6$–$8$ $\tau_2$, $8$–$9$ $\tau_1$, $9$–$12$ Idle.
+
+- $\tau_3$: $C = 2$, $R = 6 \le 12$; Completion bei $t = 6$ hält
+- Neues $\tau_2$ startet bei seinem Release $t = 6$
+
 ```{.plantuml}
 @startuml
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-
-robust "Tau 1 (T=4, C=1)" as T1
-robust "Tau 2 (T=6, C=2)" as T2
-robust "Tau 3 (T=12, C=2)" as T3
-
+concise "CPU" as CPU
 @0
-T1 is Running
-T2 is Ready
-T3 is Ready
-
+CPU is tau1
 @1
-T1 is Idle
-T2 is Running
-T3 is Ready
-
+CPU is tau2
 @3
-T2 is Idle
-T3 is Running
-
+CPU is tau3
 @4
-T1 is Running
-T3 is Ready
-
+CPU is tau1
 @5
-T1 is Idle
-T3 is Running
-
+CPU is tau3
 @6
-T3 is Idle
+CPU is tau2
+@8
+CPU is tau1
+@9
+CPU is Idle
 @enduml
 ```
 
-- Bei $t=4$ unterbricht $\tau_1$ die laufende $\tau_3$ präemptiv ($C_3=2$: erste Zeiteinheit $t=3$–$4$, Rest nach Präemption)
-
 ::: notes
-Bei $t=0$ erwachen alle drei gleichzeitig; $\tau_1$ nimmt die CPU. Nach 1 ms folgt $\tau_2$, ab $t=3$ darf $\tau_3$ starten. Bei $t=4$ feuert die Periode von $\tau_1$ erneut — das OS entzieht $\tau_3$ die CPU mitten in $C_3=2$. Das ist Präemption in Reinkultur; $\tau_3$ setzt ab $t=5$ fort und ist bei $t=6$ fertig.
+Bei $t = 4$ unterbricht $\tau_1$ den noch offenen ersten Job von $\tau_3$. Critical Instant ist der gemeinsame **Release**, nicht ein gemeinsamer CPU-Start — auf einer CPU starten sie nicht gleichzeitig.
 :::
 
 ## Der kritische Moment (Critical Instant)
 
-- Schlimmster Fall für jede Task: Start exakt zeitgleich mit allen höherprioren Tasks
-- Dieser Zeitpunkt heißt Critical Instant
-- Beweis-Logik: Hält die Task unter diesen Bedingungen die Deadline ein, hält sie sie immer ein
+- Für dieses FP-Modell: Release zusammen mit allen höherprioren Aufgaben
+- „Hält hier, hält im Modell“ — nicht für Jitter, Blocking oder Selbstsuspendierung
+- Angepasste Analysen, wenn die Annahmen fallen
 
 ::: notes
-Alle Tasks bei $t=0$ zu starten war Absicht. Liu und Layland: Worst Case, wenn eine Task zusammen mit allen höherprioren aufwacht — längste Wartezeit. Schedulability-Analyse muss diesen Instant prüfen; überlebt $\tau_3$ ihn, überlebt sie den Rest.
+RTA für 75 %: $R_1 = 1$, $R_2 = 3$, $R_3 = 6$.
 :::
 
 ## Die RMS-Schranke (Liu & Layland, 1973)
 
-- Hinreichender, konservativer Schedulability-Test
-- Ein Task-Set aus $n$ Tasks ist unter RMS garantiert schedulbar, wenn:
+$$U \le U_{LL}(n) = n\bigl(2^{1/n}-1\bigr)$$
 
-$$U = \sum_{i=1}^{n} \frac{C_i}{T_i} \le n\bigl(2^{1/n}-1\bigr)$$
+| $n$ | $U_{LL}$ |
+|----:|----------|
+| 1 | 100 % |
+| 2 | 82,84 % |
+| 3 | 77,98 % |
+| 4 | 75,68 % |
+| $\infty$ | $\ln 2 \approx 69{,}31\,\%$ |
 
-- $U$: Systemauslastung; $n$: Anzahl der Tasks
+- Hinreichend unter den LL-Annahmen, nicht notwendig
+- 69,3 % ist **keine** allgemeine RMS-Obergrenze
 
 ::: notes
-Eine der berühmtesten Formeln der Echtzeitinformatik. Unter der Schranke: Garantie — keine Deadline verpasst. Darüber: genauer hinsehen (Grauzone).
+Harmonische Gegenprobe (Anhang in den Notizen): $(C=2,T=D=4)$ und $(C=4,T=D=8)$, $U = 100\,\%$. Ablauf $0$–$2$ $\tau_1$, $2$–$4$ $\tau_2$, $4$–$6$ $\tau_1$, $6$–$8$ $\tau_2$ hält unter RMS.
 :::
 
 ## Werte der RMS-Schranke
 
-- Einsetzen von $n$ in $n(2^{1/n}-1)$:
+Für $n = 3$:
 
-| $n$ | Schranke |
-|----:|:---------|
-| 1 | $100\,\%$ |
-| 2 | $\approx 82{,}8\,\%$ |
-| 3 | $\approx 78{,}0\,\%$ |
-| 4 | $\approx 75{,}7\,\%$ |
-| $\infty$ | $\ln 2 \approx 69{,}3\,\%$ |
+- bis 77,98 %: unter den Modellannahmen durch die Schranke nachgewiesen
+- darüber bis 100 %: genauer testen (RTA)
+- über 100 %: dauerhafte Pflichtlast auf einer CPU nicht erfüllbar
+- 75-%-Set liegt im ersten Bereich; 85-%-Set braucht RTA
+- „Schranke nicht erfüllt“ $\neq$ „nicht schedulbar“
 
 ::: notes
-Bei $n=1$ gilt 100 %. Mit mehr Tasks sinkt die Schranke; Grenzwert $\ln 2 \approx 69{,}3\,\%$ — die magische Zahl der Automatisierungstechnik.
+Tabelle und Aussage bleiben auf einer Folie. Faustregel $\ln 2$ ist der Grenzwert, kein Verbot höherer Auslastung.
 :::
 
 ## Interpretation der RMS-Schranke
 
-- Zone 1: $U \le n(2^{1/n}-1)$ — hinreichend schedulbar (Liu und Layland)
-- Faustregel: $U \le \ln 2 \approx 69{,}3\,\%$ ist für jedes $n$ sicher
-- Zone 2: Schranke $< U \le 100\,\%$ — Grauzone; hinreichender Test sagt „Nein“, System kann trotzdem laufen
-  - Lösung: exakter Test (Response-Time Analysis)
-- Zone 3: $U > 100\,\%$ — physikalisch unmöglich
+- Die Schranke ist eine Entscheidungshilfe, kein vollständiger RMS-Test
+- FP-Prioritäten im RTOS müssen zur Rate passen, sonst ist es nicht RMS
+- Overhead nicht stillschweigend ignorieren, wenn er die Annahmen verletzt
 
 ::: notes
-Die Tabelle liefert die $n$-abhängige Schranke; $\ln 2$ ist der Grenzwert. Unter der Schranke: Garantie. Darüber: Grauzone — weder blind ausliefern noch Chip verwerfen, sondern RTA. Über 100 % ist ausgeschlossen.
+Frage: Liegt $U = 85\,\%$ bei drei Tasks unter oder über $U_{LL}(3)$? Darüber — deshalb RTA, nicht automatisch Fail.
 :::
 
 ## Response-Time Analysis (RTA)
 
-- Exakter Test für die Grauzone
-- Worst-Case-Antwortzeit $R_i$ iterativ:
+Einfaches FP-Modell, $D_i \le T_i$, $hp(i)$ = höherpriore Tasks:
 
-$$R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
+$$R_i^{(0)} = C_i, \qquad R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
 
-- $hp(i)$: Menge aller Tasks mit höherer Priorität als $i$
-- Abbruch: $R_i^{(k+1)} = R_i^{(k)}$ (gefunden) oder $R_i > D_i$ (Deadline verpasst)
+- Aufrundung: Anzahl störender Jobs im Fenster
+- Stopp bei Fixpunkt oder bei $R > D$; $R = D$ besteht
+- Exakt nur in diesem Modell; kein stiller Blocking-/Jitter-Term
+
+85-%-Set, RMS-Prioritäten:
+
+- $\tau_1$: $1 \to 1$, $R_1 = 1 \le 4$
+- $\tau_2$: $2 \to 3 \to 3$, $R_2 = 3 \le 5$
 
 ::: notes
-$R_i$ = eigene WCET plus Unterbrechungen durch höherpriore Tasks. Da $R$ auf beiden Seiten steht: Iteration bis Konvergenz oder Deadline-Bruch.
+$hp(\tau_2)=\{\tau_1\}$. $2+\lceil 2/4\rceil\cdot 1 = 3$, dann stabil.
+:::
+
+## RTA für das 85-%-Set
+
+$\tau_3$, $C_3 = 2$, $hp = \{\tau_1,\tau_2\}$:
+
+| Schritt | Rechnung | Wert |
+|--------:|----------|-----:|
+| 0 | $C_3$ | 2 |
+| 1 | $2+\lceil 2/4\rceil\cdot 1+\lceil 2/5\rceil\cdot 2$ | 5 |
+| 2 | $2+\lceil 5/4\rceil\cdot 1+\lceil 5/5\rceil\cdot 2$ | 6 |
+| 3 | $2+\lceil 6/4\rceil\cdot 1+\lceil 6/5\rceil\cdot 2$ | 8 |
+| 4 | $2+\lceil 8/4\rceil\cdot 1+\lceil 8/5\rceil\cdot 2$ | 8 |
+
+- Fixpunkt $R_3 = 8 \le 10$
+- Kritischer Ablauf: $0$–$1$ $\tau_1$, $1$–$3$ $\tau_2$, $3$–$4$ $\tau_3$, $4$–$5$ $\tau_1$, $5$–$7$ $\tau_2$, $7$–$8$ $\tau_3$
+- 85 % liegen über $U_{LL}(3)$, dieses Set ist unter RMS dennoch nachgewiesen
+- Daraus folgt nicht „85 % ist immer sicher“
+
+::: notes
+Bei Fenster 5: $2+2+2 = 6$. Bei Fenster 6: $2+2+4 = 8$. Releases bei $t = 4$ und $t = 5$. Quellen: Liu/Layland 1973; Audsley u. a. zur statischen Prioritätsanalyse.
 :::
 
 ## Fazit: RMS in der Praxis
 
-- Vorteile:
-  - Simpler Algorithmus, minimaler OS-Overhead
-  - Stabil bei Überlast: nur niedrigpriore Tasks verpassen Deadlines
-- Nachteil:
-  - Bei harten Garantien oft keine volle 100 %-Auslastung möglich
+- Feste Prioritäten: geringer Laufzeitaufwand, Analyse vorab
+- Überlast: eine für sich nachgewiesene höherpriore Teilmenge wird im unabhängigen präemptiven Modell nicht durch zusätzliche Low-Prio-CPU-Arbeit verdrängt
+- Das ist keine Garantie „nur Low-Prio verpasst Fristen“
+- Höchstpriore kann die eigene Frist verfehlen (Budget, Maskierung, Sperren)
 
 ::: notes
-Industrie liebt RMS: feste Prioritäten einmal setzen, kein Mathe in der ISR. Bei Überlast sterben deterministisch die langen Perioden — die kritische Motorregelung läuft weiter.
+Gegenbeispiel gleich bei der Überlastfolie: $C = 5$, $T = D = 4$ scheitert allein.
 :::
 
 ## Earliest Deadline First (EDF)
 
-- RMS ist statisch — EDF berechnet Prioritäten dynamisch
-- Regel: die Task mit der nächsten absoluten Deadline erhält die höchste Priorität
-- Scheduler muss bei jedem OS-Tick Prioritäten neu sortieren
-- Einsatz: Forschung, Soft Real-Time (z. B. Linux `SCHED_DEADLINE`)
+- Unter den bereiten Jobs: früheste absolute Deadline
+- Ereignisgesteuert; geeignete Datenstruktur, nicht „jede ms komplett neu sortieren“ als Definition
+- Nicht auf Soft Real-Time beschränkt
+- Linux `SCHED_DEADLINE`: EDF **mit** CBS und Zulassungskontrolle — nicht ungeschütztes Lehrbuch-EDF
 
 ::: notes
-EDF holt mehr aus der Hardware: absolute Frist entscheidet. Prioritäten ändern sich laufend — mehr OS-Overhead, dafür höhere theoretische Auslastung.
+Gleichstand heute: die **laufende** Aufgabe behält die CPU.
 :::
 
 ## Die mathematische Eleganz von EDF
 
-- Für unabhängige, präemptive Tasks mit Implicit Deadlines:
+Für unabhängige, präemptive Tasks auf **einer** CPU mit $D_i = T_i$, ohne Overhead:
 
-$$U = \sum_{i=1}^{n} \frac{C_i}{T_i} \le 1$$
+$$U \le 1 \quad \text{genau dann schedulbar unter EDF}$$
 
-- Exakt schedulbar genau dann, wenn $U \le 1$
-- Bedeutung: CPU bis 100 % auslastbar, ohne Deadlines zu verpassen
+- Gilt nicht für $D < T$ (40-%-Gegenprobe)
+- Gilt nicht automatisch auf dem H755 mit zweitem Kern oder unmodellierter Interferenz
 
 ::: notes
-Keine 69-Prozent-Schranke, keine Grauzone: $U \le 1$ ist hinreichend und notwendig. Theoretisch ideal, wenn jeder Taktzyklus zählt.
+Notwendig und hinreichend nur in diesem Idealmodell.
 :::
 
 ## Visualisierung: Dynamisches EDF {.scrollable}
 
-- $\tau_1$: $C_1=2$, $T_1=5$; $\tau_2$: $C_2=4$, $T_2=7$
-- Auslastung $U \approx 97\,\%$ — Liu-und-Layland-Schranke und exakter RMS-Test scheitern
-- Mit EDF ändern sich die relativen Prioritäten dynamisch
+97-%-Set: $\tau_1=(2,5,5)$, $\tau_2=(4,7,7)$, synchron bei 0. $U = 2/5+4/7 = 34/35 \approx 97{,}14\,\%$.
+
+RMS scheitert: $0$–$2$ $\tau_1$, $2$–$5$ $\tau_2$, $5$–$7$ $\tau_1$; bei $t = 7$ fehlt $\tau_2$ noch $1\,\mathrm{ms}$, $D_2$ verletzt. RTA: $4 \to 6 \to 8 > 7$.
+
+EDF (Gleichstand: laufende Task bleibt):
+
+- $0$–$2$ $\tau_1/J_1$, $2$–$6$ $\tau_2/J_1$, $6$–$8$ $\tau_1/J_2$, $8$–$12$ $\tau_2/J_2$, $12$–$14$ $\tau_1/J_3$
+- Bei $t = 5$: Deadline 7 schlägt Deadline 10, $\tau_2$ läuft weiter
 
 ```{.plantuml}
 @startuml
@@ -737,158 +768,193 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-
-robust "Tau 1 (T=5, C=2)" as T1
-robust "Tau 2 (T=7, C=4)" as T2
-
+concise "EDF-CPU" as CPU
 @0
-T1 is Running
-T2 is Ready
-
+CPU is tau1
 @2
-T1 is Idle
-T2 is Running
-
-@5
-T1 is Ready
-T2 is Running
-
+CPU is tau2
 @6
-T1 is Running
-T2 is Idle
+CPU is tau1
+@8
+CPU is tau2
+@12
+CPU is tau1
+@14
+CPU is Idle
 @enduml
 ```
 
 ::: notes
-Bei $t=5$: $\tau_1$ released mit Deadline $t=10$; $\tau_2$ hat Deadline $t=7$. Da 7 näher liegt, rechnet $\tau_2$ weiter — unter RMS hätte $\tau_1$ präemptiert. EDF dreht Prioritäten um und bewältigt die 97 %.
+$\tau_1/J_2$ ist $5$–$6$ Ready und $6$–$8$ Running. Frage: Warum unterbricht $\tau_1$ bei $t = 5$ nicht?
 :::
 
-## Der Haken an EDF: Der Domino-Effekt
+## EDF: Entscheidungen bis $t = 12$
 
-- Warum nutzt die Automobilindustrie kaum EDF?
-- Verhalten bei Überlast ($U > 100\,\%$):
-  - Eine Task überschreitet ungeplant ihre WCET
-  - Ihre Deadline rückt nah $\rightarrow$ EDF gibt ihr höchste Priorität
-  - Folge: sie blockiert andere Tasks — diese verpassen ebenfalls Deadlines
-- Domino-Effekt: eine Überlast lässt das System kaskadierend abstürzen
+| $t$ | Bereit, Regel |
+|----:|----------------|
+| 0 | $d(\tau_1)=5 < d(\tau_2)=7$ → $\tau_1$ |
+| 2 | $\tau_1$ fertig → $\tau_2$ ($d=7$) |
+| 5 | $\tau_2$ läuft, $d=7 < 10$ → bleibt |
+| 6 | $\tau_2/J_1$ fertig → $\tau_1/J_2$ ($d=10$) |
+| 7 | $\tau_2/J_2$ kommt, $d=14 > 10$ → $\tau_1$ bleibt |
+| 8 | $\tau_1$ fertig → $\tau_2/J_2$ |
+| 10 | $\tau_1/J_3$, $d=15 > 14$ → $\tau_2$ bleibt |
+| 12 | $\tau_2$ fertig → $\tau_1/J_3$ bis 14 |
+
+Hyperperiode 35 (Notizen): $14$–$15$ $\tau_2/J_3$, $15$–$17$ $\tau_1/J_4$, $17$–$20$ $\tau_2/J_3$, $20$–$22$ $\tau_1/J_5$, $22$–$26$ $\tau_2/J_4$, $26$–$28$ $\tau_1/J_6$, $28$–$32$ $\tau_2/J_5$, $32$–$34$ $\tau_1/J_7$, $34$–$35$ Idle.
 
 ::: notes
-Bei leichter Überlast können unter EDF plötzlich alle Tasks scheitern — auch die sicherheitskritische Motorsteuerung. In Systemen mit Menschenleben ist dieses Ausfallmuster inakzeptabel; deshalb FreeRTOS/AUTOSAR mit statischen Prioritäten.
+Bei gleicher absoluter Deadline bleibt die laufende Aufgabe (so bei $t = 30$ in der Hyperperiode). Simulation illustriert; der Nachweis für implizite Deadlines ist $U \le 1$.
+:::
+
+## Der Haken an EDF: Überlast
+
+- EDF ist deterministisch unter festen Regeln, nicht „chaotisch“
+- Überlast kann weitere Misses verursachen — abhängig von Set und Miss-Behandlung
+- Höchstpriore $H$: tatsächlicher Bedarf $5\,\mathrm{ms}$, $T = D = 4\,\mathrm{ms}$ verfehlt die Frist **allein**
+- Geplanten $C$ und überschrittenen Bedarf getrennt benennen
+- Strategien: verspäteten Job beenden, verwerfen oder Budget begrenzen — jede ändert das Verhalten
+- Feste absolute Deadline-Marker bleiben; ein überfälliger Job wird nicht automatisch „wichtiger“ nur weil die Uhr läuft, solange seine absolute Deadline fest ist und die Regel „früheste $d$“ gilt
+
+::: notes
+Keine Empfehlung „Airbag = RMS“. Linux SCHED_DEADLINE schützt per CBS/Admission; das ist keine Garantie bei unzulässiger Gesamtlast. Einen Überlast-Gantt nur mit vollständigen Kosten zeichnen — hier reicht das Einzeljob-Gegenbeispiel.
 :::
 
 ## Zusammenfassung: RMS vs. EDF
 
-| Eigenschaft | RMS | EDF |
-|:------------|:----|:----|
-| Priorität | Statisch (nach $T_i$) | Dynamisch (nach absoluter $D_i$) |
-| Max. $U$ | Hinreichende Faustregel $\ln 2\approx 69{,}3\,\%$ ($n$-abhängig; bei $n=3\approx 78\,\%$); exakt bis $100\,\%$ möglich (RTA) | $100\,\%$ garantiert |
-| Überlast | Deterministisch (Low-Prio stirbt) | Chaotisch (Domino-Effekt) |
-| OS-Overhead | Sehr niedrig | Hoch (Listen-Sortierung) |
-| Einsatz | AUTOSAR, FreeRTOS, Industrie | Forschung, Multimedia, Soft-RT |
+| | RMS (FP nach Rate) | EDF |
+|--|--------------------|-----|
+| Auswahl | feste Priorität aus $T$ | früheste absolute $d$ |
+| Test hier | LL hinreichend; RTA im FP-Modell | $U \le 1$ bei $D = T$, eine CPU |
+| 75 % / 85 % / 97 % | 75 % und 85 % halten; 97 % scheitert | 97 % hält im Idealmodell |
+| Überlast | Low-CPU verdrängt High nicht; eigene Budgets können trotzdem reißen | weitere Misses möglich; Strategie festlegen |
+| Aufwand | Priorität konfigurieren | Deadline-Ereignisse verwalten |
 
 ::: notes
-RMS: berechenbar, geringer Overhead, klares Fehlerverhalten. EDF: volle Auslastung, aber Domino bei Überlast. Für Bremssattel und Airbag lautet die Antwort RMS.
+Keine universelle Branchenzuordnung. Beide brauchen das passende Fehlermodell.
 :::
 
 ## Unter der Haube: Wie baut man einen Scheduler?
 
-- Wechsel von Mathematik zurück zur Hardware-Praxis
-- Präemptiver Scheduler (wie FreeRTOS) auf dem STM32H755 braucht zwei ARM-Komponenten:
-  - SysTick-Timer (Herzschlag)
-  - PendSV-Exception (heimlicher Kontextwechsel)
+- Präemptiver RTOS-Port (Referenz FreeRTOS CM4F): SysTick und PendSV
+- Labor heute: **kein** selbstgeschriebener Registerwechsel
+- PendSV ist nicht „von Natur aus“ niedrigprior; der Port setzt die Priorität
 
 ::: notes
-Ein RTOS ist auch nur C — braucht aber Hardware-Unterstützung. Auf Cortex-M: SysTick und PendSV, von ARM ins Silizium gebrannt.
+Öffentliche Referenz: FreeRTOS-Kernel `portable/GCC/ARM_CM4F/port.c`. Die lokal eingesetzte Version kann abweichen; `main` allein belegt sie nicht. Keine .ioc im Kursrepo.
 :::
 
 ## Der Herzschlag: SysTick-Timer
 
-- 24-Bit Down-Counter, fest in jedem ARM Cortex-M
-- Typisch: Überlauf jede Millisekunde (1 kHz)
-- Bei Überlauf: SysTick-Interrupt
-- Taktgeber des OS: jede ms prüfen, ob ein Task-Wechsel nötig ist
+- 24-Bit-Downcounter, Reload $\mathrm{LOAD} = f_{\mathrm{Quelle}}/f_{\mathrm{Tick}} - 1$ (Wertebereich prüfen)
+- Typische Tickquelle, nicht die einzige (anderer Timer, Tickless Idle möglich)
+- Im üblichen CM4F-Port: SysTick **und** PendSV auf niedrigste IRQ-Priorität
+- Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit; nicht mit der Taskpriorität verwechseln
 
 ::: notes
-Im Gegensatz zu ST-Timern ist SysTick Kernbestandteil von ARM — auf jedem Cortex-M gleich. 1000 Interrupts/s: Scheduler aktualisiert Wartezeiten und prüft RMS/RR-Regeln.
+Keine unbelegte Behauptung „SysTick ist High-Prio“. Taktquelle am Projekt ablesen.
 :::
 
 ## Code: Die SysTick-ISR
 
-:::: {.columns}
-::: {.column width="45%"}
-- Was passiert jede Millisekunde?
-  - Tick-Count (Systemuhr) erhöhen
-  - Ready-Listen prüfen
-  - Bei wichtigerer Task: Context Switch anfordern
-:::
-::: {.column width="55%"}
+Konsistentes Muster: Zeit und Timeouts; Wechsel **anfordern**, Auswahl im PendSV ausführen. Eine lokale Variable `next` gilt nicht als übergebene Entscheidung, solange sie nicht gespeichert wird.
+
 ```c
 void SysTick_Handler(void) {
     os_tick_count++;
-    Task* next = Scheduler_Run();
-    if (next != current_task) {
-        Trigger_PendSV();
-    }
+    os_update_timeouts();
+    /* Wechsel nur vormerken, nicht die Register hier tauschen */
+    os_request_switch(); /* setzt PendSV pending */
 }
 ```
-:::
-::::
 
 ::: notes
-Drei Schritte: Zeit hochzählen, Scheduler_Run(), bei Wechsel PendSV triggern — den Registertausch nicht direkt im SysTick. Warum der Umweg? Nächste Folie.
+Entweder nur Ready-Zustände hier aktualisieren oder die Auswahl zuverlässig hinterlegen. Kein unvollständiger Assembler als „der FreeRTOS-Port“.
 :::
 
 ## Warum der Umweg über PendSV?
 
-- Context Switch direkt im SysTick steckt in einer High-Prio-ISR
-- Problem: UART-ISR läuft → SysTick unterbricht und wechselt Task → UART-Daten verloren
-- Lösung: PendSV (Pendable Service Call)
-  - Ausnahme mit niedrigster Priorität (bei 4 Priority-Bits: Stufe 15)
-  - SysTick merkt den Wechsel nur vor (`pend`)
-  - Context Switch erst, wenn alle anderen Interrupts fertig sind
+- Aufgeschobener Task-Wechsel: ISR setzt Pending, PendSV läuft wenn die Priorität drankommt
+- Pending $\neq$ Running
+- Eine UART-ISR verliert nicht automatisch Daten, weil SysTick eintritt
+- Datenverlust: zu späte Bedienung, FIFO, zu lange Maskierung
+- Höherpriore ISR kann eine Task wecken; PendSV danach, vor dem nächsten Tick
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+robust "Task" as T
+robust "IRQ" as I
+robust "PendSV" as P
+@0
+T is "A Running"
+I is idle
+P is idle
+@2
+T is preempted
+I is "UART Running"
+P is idle
+@3
+I is idle
+P is pending
+T is preempted
+@4
+P is Running
+I is idle
+@5
+T is "B Running"
+P is idle
+@enduml
+```
 
 ::: notes
-SysTick markiert: „wechseln“. Hardware wartet, bis UART & Co. fertig sind, dann PendSV als Letztes — Registertausch ohne abgebrochene Hardware-ISRs.
+Verschachtelte Exceptions: höhere IRQ-Priorität vor PendSV. Maskierung verschiebt den Wechsel zusätzlich.
 :::
 
 ## Der Task Control Block (TCB)
 
-- Woher kennt das OS den Program Counter der unterbrochenen Task?
-- Alle Infos in einem C-Struct — dem TCB; jede Task hat einen eigenen
-
-```c
-typedef struct {
-    uint32_t* stack_pointer; /* geretteter Kontext */
-    uint8_t   priority;      /* RMS-Priorität */
-    uint8_t   state;         /* READY / RUNNING / BLOCKED */
-    uint32_t  sleep_ticks;   /* Rest-Delay */
-} TCB_t;
-```
+- RTOS-TCB: Stackpointer auf den gesicherten Kontext, Priorität, Zustand
+- PC liegt im Frame, nicht als einzelnes TCB-Feld „neben“ dem Stack
+- PSP: Taskkontext; MSP: Handlerkontext
+- Labor-TCB: Funktionszeiger, Zustand, `wake_at` — **kein** Stackpointer
 
 ::: notes
-Wichtigster Eintrag: Stack Pointer — Lesezeichen im RAM für R0–R15 dieser Task. Dazu Zustand, Priorität und Sleep-Ticks für `delay()`.
+Zwei TCBs nicht vermischen.
 :::
 
 ## Der Software-Context-Switch (PendSV) {.scrollable}
 
-- Was passiert in `PendSV_Handler` (Assembler, FreeRTOS-typisch)?
-  1. Aktuellen PSP lesen (Stack der alten Task)
-  2. Register R4–R11 auf diesen Stack pushen
-  3. Aktualisierten SP im TCB der alten Task speichern
-  4. SP der neuen Task aus deren TCB laden
-  5. R4–R11 der neuen Task poppen
-  6. Kontext wiederherstellen / Rücksprung (`BX LR`) — neue Task läuft
+Basis-Hardwareframe: R0–R3, R12, LR, PC, xPSR (VL1).
+
+Software zusätzlich, portabhängig: R4–R11, EXC_RETURN; FPU nur bei aktivem FP-Kontext.
+
+Restore, vollständig gedacht:
+
+1. Kontextpointer der laufenden Task sichern
+2. Ziel-TCB wählen
+3. Ziel-SP laden, Software-Register zurück
+4. **PSP auf den neuen Task-Stack setzen**
+5. Exception Return über EXC_RETURN (`BX LR` nur mit diesem Wert)
+
+- Kein lauffähiger Minimal-Port in dieser Vorlesung; Referenz ist der eingesetzte FreeRTOS-Port
 
 ::: notes
-Hardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Software. Lesezeichen tauschen, `BX LR` — und die CPU rechnet im Code einer anderen Task weiter.
+Bisher fehlte das Setzen des PSP. Ohne EXC_RETURN ist der Rücksprung kein Task-Wechsel. PM0214.
 :::
 
 ## Zusammenfassung: Die OS-Architektur {.scrollable}
@@ -897,138 +963,152 @@ Hardware sichert beim IRQ-Einsprung nicht alle Register; R4–R11 rettet Softwar
 %%| fig-width: 7
 %%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
 flowchart LR
-    A[SysTick Timer] -->|1 ms Interrupt| B[SysTick_Handler]
-    B -->|Tick erhöhen| C{Scheduler: Next Task?}
-    C -->|Ja, Wechsel| D[Trigger PendSV]
-    D -->|Wartet auf CPU| E[PendSV_Handler]
-    E -->|Push/Pop Register| F[Neue Task läuft]
-    style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style E fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  subgraph evt [Ereignis]
+    ST[SysTick niedrig]
+    UART[UART-ISR höher]
+  end
+  ST --> PEND[PendSV pending]
+  UART --> PEND
+  PEND --> RUN[PendSV Running]
+  RUN --> PSP[PSP setzen und EXC_RETURN]
+  PSP --> TB[Task B]
+  style PEND fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
 
+- Tick **oder** ISR kann den Wechsel vormerken
+
 ::: notes
-SysTick feuert → Handler entscheidet → PendSV wechselt Kontext. Das ist der Motor von FreeRTOS, Zephyr und vielen weiteren RTOS.
+Nicht mehr die schmale Kette „nur SysTick ist High und schaltet sofort“.
 :::
 
 ## Vorbereitung für das Labor heute
 
-- Präemptives RTOS inkl. PendSV-Assembler an einem Nachmittag: zu komplex
-- Stattdessen: eigener kooperativer Round-Robin-Scheduler
-- Vorteile:
-  - Kein Assembler nötig
-  - Kein Hardware-SysTick zwingend (`while(1)` + `yield`)
-  - Ideal, um TCB-Arrays zu verstehen
-- Am Start: Code-Gerüst für den STM32H755
+- Board: NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, Arbeit auf dem CM4
+- Kein PendSV-Assembler
+- Stacklos: `step()` kehrt zurück; Fortsetzung im TCB (`wake_at`, Zähler)
+- Zeitbasis: z. B. `HAL_GetTick()`; der Tick präemptiert die Steps nicht
 
 ::: notes
-Logik identisch zur Entscheidungsfindung im echten OS, aber alles in C. Vorbereitung, um nächste Woche FreeRTOS-API zu verstehen.
+Ohne eigenen Stack kann ein normaler Aufruf keine Endlosschleife mitten im `yield` fortsetzen. Keine .ioc im Repo — Takt im Cube-Projekt ablesen.
 :::
 
 ## Labor-Schritt 1: Die TCB-Liste
 
-- Array aus Funktionszeigern und Zuständen
-
 ```c
-typedef void (*TaskFunction_t)(void);
-
+#define N 3
+typedef enum { ST_READY, ST_BLOCKED } TaskState;
 typedef struct {
-    TaskFunction_t task_func; /* welcher C-Code? */
-    uint8_t state;            /* READY oder BLOCKED */
-    uint32_t sleep_time;      /* für os_delay() */
+    void (*step)(void); /* endliche Arbeit, kehrt zurück */
+    TaskState state;
+    uint32_t wake_at;   /* Tick; Wrap: (int32_t)(now-wake) >= 0 */
 } MyTCB_t;
-
-MyTCB_t task_list[3];
-uint8_t current_task_idx = 0;
+MyTCB_t task_list[N];
+uint8_t rr_cursor;
+uint8_t running_idx;    /* nur während step() gültig */
 ```
 
 ::: notes
-Ohne Registertausch kein Stack-Pointer — wir speichern den Funktionszeiger. Maximal drei Tasks und ein Index für die aktuelle Position.
+Zustand nicht auf einem vermeintlich pausierten Stack.
 :::
 
 ## Labor-Schritt 2: Die Scheduler-Logik
 
-:::: {.columns}
-::: {.column width="55%"}
-- Funktion `os_yield()`
-- Ringförmig nächste READY-Task (Round-Robin)
-- Logik:
-  - Aktuelle Task pausieren
-  - Index: $(idx + 1) \bmod 3$
-  - READY? Dann Funktionszeiger aufrufen
-- Warnung: `task_func()` aus `os_yield` ist didaktisch — Stack wächst; Produktion: Dispatcher
-:::
-::: {.column width="45%"}
+Zentraler Dispatcher, **kein** `step()` aus `step()`:
+
 ```c
-void os_yield(void) {
-    do {
-        current_task_idx =
-          (current_task_idx + 1) % 3;
-    } while (task_list[current_task_idx]
-               .state != READY);
-    /* Didaktische Vereinfachung: ruft Task rekursiv auf
-       (Stack wächst). Produktion: Rückkehr zum Dispatcher. */
-    task_list[current_task_idx]
-        .task_func();
+void dispatcher(void) {
+  for (;;) {
+    uint32_t now = HAL_GetTick();
+    for (uint8_t i = 0; i < N; i++)
+      if (task_list[i].state == ST_BLOCKED &&
+          (int32_t)(now - task_list[i].wake_at) >= 0)
+        task_list[i].state = ST_READY;
+    int sel = -1;
+    for (uint8_t k = 0; k < N; k++) {
+      uint8_t i = (uint8_t)((rr_cursor + k) % N);
+      if (task_list[i].state == ST_READY) { sel = i; break; }
+    }
+    if (sel < 0) { __WFI(); continue; } /* Wake-Quelle nötig */
+    rr_cursor = (uint8_t)((sel + 1) % N);
+    running_idx = (uint8_t)sel;
+    task_list[sel].step(); /* kehrt zurück */
+  }
 }
 ```
-:::
-::::
+
+- Höchstens $N$ Kandidaten, dann Idle — keine Endlossuche
+- `__WFI` nur mit aktiver Wake-Quelle (Tick)
+- `os_delay`: `wake_at` setzen, Zustand Blocked, **sofort return** — kein stackhaltendes `os_delay` mitten in der Funktion
 
 ::: notes
-`os_yield()` heißt: CPU freiwillig abgeben. Modulo hält den Ring. Achtung: Der direkte Aufruf von `task_func()` ist eine didaktische Vereinfachung — bei `while(1)` + Yield wächst der Stack. Ein echtes kooperatives OS kehrt zum Dispatcher zurück und startet die nächste Task ohne geschachtelte Aufrufe.
+Geschachtelt wäre A→yield→B→yield→C und der Stack wächst. Hier bleibt die Tiefe begrenzt.
 :::
 
 ## Labor-Schritt 3: Hardware-Messung (Oszilloskop)
 
-- Drei Tasks (z. B. drei LEDs umschalten)
-- Test: Jitter am Oszilloskop messen
-- GPIO am Anfang von Task 1 auf High, am Ende auf Low
+Pulsbreite $w_k = f_k - s_k$ (verstrichen, inkl. möglicher IRQs) und Startabstand $P_k = s_{k+1}-s_k$ unterscheiden.
+
+Idealisierte Lehre, keine Boardmessung:
+
+- $C_1=C_2=C_3=1\,\mathrm{ms}$: Task-1-Starts $0/3/6/9$, Abstände konstant
+- konstantes $C_2=3\,\mathrm{ms}$: Abstände konstant $5\,\mathrm{ms}$ — noch kein Jitter
+- $C_2=1/3/1/3$, $C_1=C_3=1$: Starts $0/3/8/11/16$, Abstände $3/5/3/5$, Spanne $2\,\mathrm{ms}$; Pulsbreite von Task 1 bleibt $1\,\mathrm{ms}$
 
 ```{.wavedrom}
 { "signal": [
-  { "name": "Ideales OS (präemptiv)", "wave": "010....010....01" },
-  { "name": "Unser OS (kooperativ)", "wave": "010.....10...0.1" }
+  { "name": "Task1 Puls w", "wave": "hl.hl.hl.hl" },
+  { "name": "Startabstand", "wave": "P..P..P..P.", "data": ["P","P","P","P"] }
 ]}
 ```
 
-- Erwartung: Schwankungen — Timing hängt vom C-Code der anderen Tasks ab
+- Gleiche Compiler-/Taktbedingungen, bekannter Pin, hohe Abtastrate, Marker für Task und ggf. ISR
+- Zahlen erst nach Messung; Pin (z. B. PA0) nach Belegung prüfen
 
 ::: notes
-Hypothese: präemptiv starr, kooperativ mit Jitter. Rechnet Task 2 länger, verschiebt sich Task 1 — genau das wollen wir sehen.
+„Präemptiv starr, kooperativ mit Jitter“ ersetzen: Jitter nur bei schwankender Last. Konstante Verlängerung ist ein Bias.
 :::
 
 ## Labor-Schritt 4: Den Scheduler crashen
 
-- Schwachpunkt kooperativer Systeme spüren:
-  - In Task 2 lange Zählschleife ohne `os_yield()`
-  - Oszilloskop beobachten
-- Ergebnis: Task 1 aus dem Tritt oder eingefroren
-- Erkenntnis für Woche 3: deshalb ab nächster Woche präemptives FreeRTOS
+- Schritt ohne Rückkehr: weitere Callbacks bleiben aus; IRQs können weiterlaufen
+- Separat, präemptiv: High ständig Ready $\Rightarrow$ Low verhungert; `yield` reicht nicht
+- Deshalb Budgets, Blockieren und — ab Termin 3 — präemptives FreeRTOS mit Nachweis, nicht als Automatik
 
 ::: notes
-Mutwillig crashen: Theorie wird greifbar. Harte Echtzeit darf dem Anwendungscode nicht vertrauen — Hardware muss die Kontrolle übernehmen.
+Zwei Fehlerbilder nicht zu einem „Crash“ vermischen.
 :::
 
 ## Zusammenfassung des Tages
 
-- Task-Modell: WCET $C$, Periode $T$, Frist $D$; Auslastung $U$ als Analyse-Fundament
-- RMS: Priorität statisch nach Rate; Liu-Layland hinreichend ($n$-abhängig, Grenzwert $\approx 69{,}3\,\%$), exakt via RTA; deterministisch bei Überlast
-- EDF: nächste Frist, $U \le 1$; bei Fehler Domino-Effekt
-- Cortex-M: SysTick + PendSV ermöglichen präemptives Multitasking
-- Labor: kooperativer Round-Robin — und warum er scheitern kann
+- Ein Prozessor: $C$, $T$, $D$, $R \le D$; 75 % / 85 % / 97 % durchgerechnet
+- LL-Schranke hinreichend; 85 % via RTA ($R_3 = 8$); 97 % RMS fail, EDF hält im Idealmodell
+- $U = 40\,\%$ mit $D = 3\,\mathrm{ms}$ kann unmöglich sein
+- SysTick/PendSV: beide im CM4F-Port niedrig; PSP setzen
+- Labor: Dispatcher und endliche Steps
 
 ::: notes
-Sie können Software in $C$, $T$, $D$ abstrahieren, RMS und EDF einordnen und das Tandem SysTick/PendSV erklären. Liu-Layland ist hinreichend ($n$-abhängig); exakte Schedulability liefert die Response-Time Analysis.
+Kontrollwerte: $U_{75}=0{,}75$, $U_{85}=0{,}85$, $U_{97}=34/35$. RTA 75 %: $1,3,6$. RTA 85 %: $1,3,8$.
 :::
 
 ## Ausblick auf Termin 3
 
-- Nach dem Spiel-Scheduler: Wechsel in die Profiliga
-- Nächste Woche: FreeRTOS auf dem Cortex-M4
-- Kooperative Architektur weg, harte Präemption aktiv
-- FreeRTOS-API (CMSIS_V2 im Labor): `osThreadNew()`, `osDelay()`
-- Vorbereitung: Zeiger (Pointer) in C auffrischen
+- FreeRTOS auf dem Cortex-M4, präemptive Threads
+- API: `osThreadNew`, `osDelay` — anderer Kontext als `step()`
+- Prioritäten konfigurieren ist noch kein RMS-Beweis
+- Vorbereitung: Funktions- und Strukturzeiger
 
 ::: notes
-Nächste Woche FreeRTOS — PendSV und echte Präemption. API mit unserem Eigenbau vergleichen. Hausaufgabe: Funktions- und Strukturzeiger. Vielen Dank und bis gleich im Labor!
+Mutex und Priority Inheritance folgen später, nicht heute.
+:::
+
+## Quellen
+
+- Liu & Layland (1973), Scheduling Algorithms for Multiprogramming
+- Audsley u. a., Response-Time Analysis für statische Prioritäten
+- FreeRTOS-Kernel, Port GCC/ARM_CM4F (Version am Projekt prüfen)
+- Linux-Doku `SCHED_DEADLINE` (EDF, CBS, Admission)
+- ST PM0214, Cortex-M4 Exceptions / PSP / EXC_RETURN
+
+::: notes
+Keine Branchenstatistiken. Keine Messwerte ohne Oszilloskop-Protokoll.
 :::

@@ -11,21 +11,21 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Zielsetzung
 
-In dieser Übung verknüpfen Sie die mathematische Scheduling-Theorie mit der praktischen Software-Entwicklung. Zunächst analysieren Sie ein Task-Set auf seine Planbarkeit mittels Rate Monotonic Scheduling (RMS). Anschließend implementieren Sie auf dem STM32H755 (Cortex-M4) Ihren eigenen kleinen kooperativen Round-Robin-Scheduler in C, um das Konzept des Task Control Blocks (TCB) und des Kontextwechsels zu verstehen. Abschließend messen Sie die Schwächen dieses Systems am Oszilloskop und provozieren einen System-Crash.
+Sie prüfen ein Task-Set mit der Liu-und-Layland-Schranke und implementieren auf dem **NUCLEO-H755ZI-Q** (MCU STM32H755ZIT6, Cortex-M4) einen kooperativen Round-Robin-**Dispatcher**. Tasks sind endliche Schritte und kehren zurück. Es gibt keinen Assembler-Kontextwechsel und keine rekursiven Task-Aufrufe. Eine Messung am Oszilloskop ist optional und wird erst mit Protokoll als Messwert gewertet.
 
 ---
 
 ## Aufgabe 1: Scheduling-Theorie (RMS-Schranke)
 
-Ein Steuergerät soll drei periodische Tasks verarbeiten. Für die Tasks wurden folgende Worst-Case Execution Times ($C_i$) und Perioden ($T_i$) ermittelt (Implicit Deadlines, $D_i = T_i$):
+Ein Steuergerät soll drei periodische Tasks auf **einer** CPU verarbeiten (implicit deadlines $D_i = T_i$, Annahmen wie in der Vorlesung: unabhängig, voll präemptierbar, kein Overhead):
 
 - $\tau_1$: $C_1 = 1\text{ ms}$, $T_1 = 4\text{ ms}$
 - $\tau_2$: $C_2 = 2\text{ ms}$, $T_2 = 6\text{ ms}$
 - $\tau_3$: $C_3 = 1\text{ ms}$, $T_3 = 12\text{ ms}$
 
-1. Berechnen Sie die Gesamt-CPU-Auslastung $U$.
-2. Vergeben Sie die Prioritäten der Tasks nach den Regeln des Rate Monotonic Scheduling (RMS).
-3. Prüfen Sie mit der Liu-und-Layland-Schranke $U \le n(2^{1/n}-1)$, ob dieses System garantiert (hinreichend) schedulbar ist.
+1. Berechnen Sie $U$.
+2. Vergeben Sie RMS-Prioritäten.
+3. Prüfen Sie $U \le n(2^{1/n}-1)$. Was folgt, wenn die Schranke **nicht** erfüllt wäre?
 
 ### Ihre Lösung {.unnumbered}
 
@@ -34,40 +34,24 @@ Ein Steuergerät soll drei periodische Tasks verarbeiten. Für die Tasks wurden 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-**1. Berechnung der Auslastung $U$:**
-
 $$
-U = \sum_{i=1}^{3}\frac{C_i}{T_i}
-  = \frac{1}{4}+\frac{2}{6}+\frac{1}{12}
-  = \frac{3}{12}+\frac{4}{12}+\frac{1}{12}
-  = \frac{8}{12}
-  = \frac{2}{3}
-  \approx 0{,}667\ (66{,}7\,\%)
+U = \frac{1}{4}+\frac{2}{6}+\frac{1}{12} = \frac{3}{12}+\frac{4}{12}+\frac{1}{12} = \frac{2}{3} \approx 66{,}7\,\%.
 $$
 
-**2. Prioritäten nach RMS:**  
-Regel: Je kürzer die Periode $T_i$, desto höher die Priorität.
+Priorität: $\tau_1$ ($T=4$) $>$ $\tau_2$ ($T=6$) $>$ $\tau_3$ ($T=12$).
 
-- Höchste Priorität: $\tau_1$ ($T_1 = 4\text{ ms}$)
-- Mittlere Priorität: $\tau_2$ ($T_2 = 6\text{ ms}$)
-- Niedrigste Priorität: $\tau_3$ ($T_3 = 12\text{ ms}$)
-
-**3. Test der Liu-und-Layland-Schranke:**  
-Bei $n=3$ Tasks gilt
-$n(2^{1/n}-1) = 3(2^{1/3}-1) \approx 0{,}780$ ($78{,}0\,\%$).  
-Da $U=\frac{2}{3}\approx 66{,}7\,\%$ kleiner ist als diese Schranke, liegt das System sicher in Zone 1 und ist **garantiert schedulbar** (hinreichendes Kriterium erfüllt).
+Für $n=3$ ist $U_{LL} \approx 77{,}98\,\%$. Da $U < U_{LL}$, ist das Set unter den Liu-Layland-Annahmen hinreichend schedulbar. Wäre $U$ größer als die Schranke, aber $\le 1$, wäre das **keine** Widerlegung — dann Response-Time Analysis. $U>1$ schließt dauerhafte Pflichtlast auf einer CPU aus.
 :::
 
 ---
 
-## Aufgabe 2: Die TCB-Datenstruktur anlegen
+## Aufgabe 2: TCB für endliche Schritte
 
-Wir bauen nun in der CubeIDE (Projekt auf dem Cortex-M4) einen simplen C-Scheduler.  
-Definieren Sie in Ihrer `main.c` (im Bereich `USER CODE`) einen Task Control Block (TCB). Da wir noch keinen echten Assembler-Registertausch durchführen, benötigen wir keinen Stack-Pointer. Wir nutzen einen Funktionszeiger.
+Definieren Sie im CM4-Projekt (`USER CODE`) einen TCB **ohne** Stackpointer: Funktionszeiger auf einen Step, Zustand, `wake_at`.
 
-1. Erstellen Sie den `typedef` für einen Funktionszeiger `TaskFunction_t`.
-2. Erstellen Sie das `struct MyTCB_t` mit den Variablen für den Funktionszeiger, den Zustand (`state`) und einer Schlaf-Zeit (`sleep_time`).
-3. Legen Sie ein globales Array `task_list[3]` vom Typ `MyTCB_t` und einen Index `current_task_idx` an.
+1. `TaskStep_t` als Zeiger auf `void (*)(void)`.
+2. `struct MyTCB_t` mit `step`, `state`, `wake_at`.
+3. `task_list[3]`, `rr_cursor`, `running_idx`.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -78,30 +62,30 @@ Definieren Sie in Ihrer `main.c` (im Bereich `USER CODE`) einen Task Control Blo
 
 ```c
 /* USER CODE BEGIN 0 */
-#define READY 1
-#define BLOCKED 0
-
-typedef void (*TaskFunction_t)(void);
+#define N 3
+typedef enum { ST_READY = 1, ST_BLOCKED = 0 } TaskState;
+typedef void (*TaskStep_t)(void);
 
 typedef struct {
-    TaskFunction_t task_func; /* welcher C-Code? */
-    uint8_t state;            /* READY oder BLOCKED */
-    uint32_t sleep_time;      /* für os_delay() */
+    TaskStep_t step;
+    TaskState state;
+    uint32_t wake_at;
 } MyTCB_t;
 
-MyTCB_t task_list[3];
-uint8_t current_task_idx = 0;
+MyTCB_t task_list[N];
+uint8_t rr_cursor = 0;
+uint8_t running_idx = 0;
 /* USER CODE END 0 */
 ```
 :::
 
 ---
 
-## Aufgabe 3: Die Scheduler-Logik (`os_yield`)
+## Aufgabe 3: Dispatcher statt Rekursion
 
-Implementieren Sie die Funktion `os_yield()`. Diese Funktion wird später von den Tasks freiwillig aufgerufen, um die CPU abzugeben (kooperatives Scheduling). Die Funktion soll ringförmig (Round-Robin) zum nächsten Index springen (modulo 3), prüfen, ob der Zustand der dort liegenden Task `READY` ist, und anschließend den Funktionszeiger der neuen Task ausführen.
+Implementieren Sie `dispatcher()` und `os_delay_ms()`. Der Dispatcher aktualisiert Timeouts, prüft höchstens $N$ Einträge, ruft **einen** bereiten Step auf und bekommt die Kontrolle zurück. Danach wandert der Ringcursor. Ist niemand Ready: Idle (z. B. `__WFI()`), aber nur wenn eine Wake-Quelle läuft (HAL-Tick). Keine `do/while`-Suche ohne Abbruch.
 
-> **Hinweis (Didaktik):** Der direkte Aufruf von `task_func()` aus `os_yield()` ist eine bewusste Vereinfachung. Bei `while(1)` + Yield wächst der Call-Stack (kein echter Context Switch). In einem Produktions-OS kehrt man zum Dispatcher zurück.
+`os_delay_ms` setzt `wake_at` und `ST_BLOCKED` und verlangt, dass der Step **sofort zurückkehrt**. Vergleich mit Wrap: `(int32_t)(now - wake_at) >= 0` für Abstände unter $2^{31}$ Ticks.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -112,31 +96,60 @@ Implementieren Sie die Funktion `os_yield()`. Diese Funktion wird später von de
 
 ```c
 /* USER CODE BEGIN 4 */
-void os_yield(void)
+static void wake_ready(uint32_t now)
 {
-    do {
-        /* Index ringförmig hochzählen */
-        current_task_idx = (current_task_idx + 1) % 3;
-    } while (task_list[current_task_idx].state != READY);
+    for (uint8_t i = 0; i < N; i++) {
+        if (task_list[i].state == ST_BLOCKED &&
+            (int32_t)(now - task_list[i].wake_at) >= 0) {
+            task_list[i].state = ST_READY;
+        }
+    }
+}
 
-    /* Nächste bereite Task ausführen (didaktisch: Stack wächst!) */
-    task_list[current_task_idx].task_func();
+void os_delay_ms(uint32_t ms)
+{
+    task_list[running_idx].wake_at = HAL_GetTick() + ms;
+    task_list[running_idx].state = ST_BLOCKED;
+    /* Step muss danach returnen — kein Warten hier. */
+}
+
+void dispatcher(void)
+{
+    for (;;) {
+        uint32_t now = HAL_GetTick();
+        wake_ready(now);
+        int sel = -1;
+        for (uint8_t k = 0; k < N; k++) {
+            uint8_t i = (uint8_t)((rr_cursor + k) % N);
+            if (task_list[i].state == ST_READY) {
+                sel = (int)i;
+                break;
+            }
+        }
+        if (sel < 0) {
+            __WFI(); /* SysTick/HAL muss aufwecken können */
+            continue;
+        }
+        rr_cursor = (uint8_t)((sel + 1) % N);
+        running_idx = (uint8_t)sel;
+        task_list[sel].step();
+    }
 }
 /* USER CODE END 4 */
 ```
 
-Hinweis: In Produktion würde `os_yield` nicht die Task-Funktion aufrufen, sondern zum Dispatcher zurückkehren — sonst wächst der Stack mit jedem Kontextwechsel.
+`HAL_GetTick()` braucht eine laufende HAL-Zeitbasis. Der Tick wechselt die Steps nicht präemptiv.
 :::
 
 ---
 
-## Aufgabe 4: Tasks ausführen & Jitter messen (Praxis)
+## Aufgabe 4: Steps und zwei Messgrößen
 
-Schreiben Sie drei kurze Funktionen `Task1()`, `Task2()` und `Task3()`.
+Schreiben Sie `Task1_step`, `Task2_step`, `Task3_step`. Jeder Step arbeitet endlich und kehrt zurück (am Ende `os_delay_ms` nur mit sofortigem `return`).
 
-1. Lassen Sie in `Task1()` einen GPIO-Pin auf HIGH und direkt vor dem Aufruf von `os_yield()` wieder auf LOW wechseln, um einen Messpunkt zu generieren. Die anderen Tasks können leere Schleifen-Durchläufe oder LED-Toggles beinhalten. Am Ende jeder Task muss `os_yield()` aufgerufen werden!
-2. Füllen Sie das `task_list`-Array in der `main()` mit Ihren Funktionen, setzen Sie den Status auf `READY` und rufen Sie den ersten Funktionszeiger manuell auf, um das System zu starten.
-3. Messen Sie den GPIO-Pin von `Task1()` am Oszilloskop. Was fällt Ihnen beim Timing auf?
+1. `Task1_step`: Pin High, kurze Arbeit, Pin Low. Pin erst nach Belegung wählen (z. B. PA0).
+2. In `main` die drei TCBs auf `ST_READY` setzen und `dispatcher()` aufrufen — nicht den Step aus einem anderen Step.
+3. Am Oszilloskop **Pulsbreite** $w$ und **Startabstand** $P$ getrennt notieren. Eine konstante Verlängerung von Task 2 ändert $P$ konstant und ist noch kein Jitter. Jitter entsteht bei **wechselnder** Last. Lehrwerte aus der Vorlesung nicht als Ihre Messung eintragen.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -145,53 +158,31 @@ Schreiben Sie drei kurze Funktionen `Task1()`, `Task2()` und `Task3()`.
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4**
 
-Beispielhafter Code für Tasks und Initialisierung:
-
 ```c
-void Task1(void)
+void Task1_step(void)
 {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-    /* ... etwas Arbeit ... */
+    /* endliche Arbeit */
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
-    os_yield(); /* CPU freiwillig abgeben */
+    /* READY lassen und return; os_delay_ms nur bei echtem Schlaf */
 }
 
-void Task2(void)
-{
-    /* ... andere Arbeit ... */
-    os_yield();
-}
-
-void Task3(void)
-{
-    os_yield();
-}
-
-/* In main(): */
-task_list[0].task_func = Task1;
-task_list[0].state = READY;
-task_list[1].task_func = Task2;
-task_list[1].state = READY;
-task_list[2].task_func = Task3;
-task_list[2].state = READY;
-
-/* Startschuss: */
-task_list[0].task_func();
+void Task2_step(void) { /* endliche Arbeit */ }
+void Task3_step(void) { /* endliche Arbeit */ }
 ```
 
-**Erwartetes Messergebnis am Oszilloskop:**  
-Sie werden feststellen, dass der Startzeitpunkt von `Task1()` schwankt. Dieses System hat einen hohen Jitter. Der Aufruf von `Task1()` hängt exakt davon ab, wie viel C-Code `Task2()` und `Task3()` abarbeiten, bevor sie wieder `os_yield()` aufrufen.
+Für periodisches Schlafen: `os_delay_ms(10); return;` — der Dispatcher ruft den Step erst nach `wake_at` wieder auf.
+
+**Messhypothese (kein Ersatz für eine Kurve):** Pulsbreite $\approx$ Dauer von Task 1 inklusive zufälliger IRQs. Startabstand hängt von den anderen Step-Dauern ab. Konstante Last $\Rightarrow$ konstanter Abstand; variable Last $\Rightarrow$ Peak-to-Peak der Abstände. Hardwareergebnisse nur mit Zeitbasis, Samplezahl und Pin dokumentieren.
 :::
 
 ---
 
-## Aufgabe 5: Den Scheduler crashen
+## Aufgabe 5: Zwei verschiedene Fehler
 
-Wir zeigen nun die größte Schwachstelle von kooperativen Systemen auf.
-
-1. Fügen Sie in `Task2()` eine lange Verzögerung ein (z. B. `HAL_Delay(1000)` oder eine endlose `while(1)`-Schleife). Verändern Sie nicht den Code in `Task1()` oder `Task3()`.
-2. Flashen Sie das Programm und beobachten Sie das Oszilloskop und die LEDs.
-3. Erklären Sie das beobachtete Verhalten und warum dies in echten Echtzeitsystemen inakzeptabel ist.
+1. **Kooperativ:** In `Task2_step` eine Endlosschleife ohne `return`. Beobachten Sie Task 1. Aktive Interrupts können weiterlaufen.
+2. **Gedankenmodell präemptiv:** High bleibt dauerhaft Ready. Erklären Sie, warum ein `yield` von High, das High sofort wieder Ready lässt, Low nicht aus der Starvation holt.
+3. Warum behebt „einfach FreeRTOS“ das nicht automatisch?
 
 ### Ihre Lösung {.unnumbered}
 
@@ -200,8 +191,7 @@ Wir zeigen nun die größte Schwachstelle von kooperativen Systemen auf.
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 5**
 
-**Erklärung des System-Crashs / der Starvation:**  
-Auf dem Oszilloskop ist `Task1()` sofort eingefroren oder stottert massiv, da das Puls-Signal ausbleibt. In einem kooperativen System gibt die laufende Task die CPU nur durch Aufruf von `os_yield()` ab. Wenn `Task2()` in einer Endlosschleife hängt oder ein langes Delay aufruft, ohne `os_yield()` zu feuern, erhält der Scheduler nie wieder die Kontrolle zurück. Alle anderen Tasks *verhungern* (Starvation).
+Ohne Rückkehr aus Task 2 ruft der Dispatcher Task 1 und Task 3 nicht mehr auf. IRQs (z. B. SysTick) können trotzdem laufen, weil sie den Step präemptieren können — die **Tasks** aber nicht.
 
-Dieses Verhalten ist für harte Echtzeitsysteme absolut inakzeptabel: Ein Fehler in einer unwichtigen Hintergrund-Task darf niemals eine kritische Task stoppen. Deshalb verwenden moderne Systeme wie FreeRTOS präemptives Scheduling, bei dem ein Hardware-Timer (SysTick) der Task gewaltsam die CPU entzieht.
+Im strikt priorisierten präemptiven Modell wählt der Scheduler nach dem `yield` erneut High, solange High Ready ist. Low braucht, dass High blockiert, ein Budget erschöpft ist oder die Prioritäten anders belegt sind. Präemption garantiert weder Fairness noch eine Frist. FreeRTOS liefert Zustände und Prioritäten; $R \le D$ bleibt eine Analyse unter Annahmen.
 :::
