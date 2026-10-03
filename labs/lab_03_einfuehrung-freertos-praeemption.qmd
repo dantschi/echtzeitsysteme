@@ -1,6 +1,8 @@
 ---
 title: "Übungsblatt 3: Einführung FreeRTOS und Präemption"
 author: "Prof. Dr.-Ing. Daniel Klünder"
+# Studierende:  quarto render lab_03_einfuehrung-freertos-praeemption.qmd --to pdf
+# Musterlösung: quarto render lab_03_einfuehrung-freertos-praeemption.qmd --to pdf --profile solution
 ---
 
 ::: {.content-visible when-profile="solution"}
@@ -9,18 +11,16 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Zielsetzung
 
-In dieser Übung vollziehen wir den Wechsel vom Bare-Metal-C-Code zu einem professionellen Echtzeitbetriebssystem (FreeRTOS) auf dem STM32H755 (Cortex-M4). Sie konfigurieren die Toolchain, legen Tasks mit unterschiedlichen Prioritäten an und verifizieren die Konzepte der **Präemption** und der **Starvation** (Verhungern von Tasks) live auf der Hardware.
+Ein FreeRTOS-Kernel läuft auf dem Cortex-M4 des Boards **NUCLEO-H755ZI-Q** (MCU STM32H755ZIT6). Der CM7 bleibt bei der vom Cube-Projekt vorgesehenen Startaufgabe und erhält keinen zweiten Scheduler. Sie legen drei CMSIS-RTOS2-Threads an, trennen die Zeitbasen in dieser Laborvariante und prüfen Präemption sowie Starvation. Es liegt kein fertiges `.ioc`-Projekt im Kursrepository; Menüs gelten für die bei Ihnen installierte Cube-Version.
 
 ---
 
-## Aufgabe 1: Toolchain-Setup für FreeRTOS
+## Aufgabe 1: Toolchain
 
-Bevor wir Code schreiben, müssen wir das Betriebssystem und die Zeitbasis in der STM32CubeIDE konfigurieren.
-
-1. Legen Sie ein neues Projekt für das Board **STM32H755ZI-Q** an.
-2. Aktivieren Sie unter *Middleware and Software Packs* FreeRTOS für den Cortex-M4. Nutzen Sie das Interface **CMSIS_V2**.
-3. Stellen Sie die `TOTAL_HEAP_SIZE` in den FreeRTOS-Einstellungen auf mindestens $16384$ Bytes ($16\,\mathrm{KB}$), um Speicherprobleme beim Anlegen mehrerer Tasks zu vermeiden.
-4. Das CubeMX-Tool wird eine Warnung bezüglich der Timebase ausgeben. Ändern Sie unter *System Core* $\rightarrow$ *SYS* $\rightarrow$ *Timebase Source* den Timer von **SysTick** auf **TIM6**. Erklären Sie kurz, warum dieser Schritt für die Stabilität des RTOS zwingend notwendig ist.
+1. Projekt für das Board **NUCLEO-H755ZI-Q**, FreeRTOS nur auf dem CM4, Interface **CMSIS_V2**. Ab CubeIDE 2.0 oft: STM32CubeMX separat, danach Import. Ältere IDE: integriertes Device-Configuration-Tool. Die tatsächlichen Menünamen an der Version prüfen.
+2. `configTOTAL_HEAP_SIZE` so setzen, dass die drei Threads, Idle und gegebenenfalls der Timer-Thread in die Map passen. $16\,\mathrm{KB}$ ist ein Startwert, kein Nachweis.
+3. Für **dieses** Labor die HAL-Zeitbasis auf einen freien Timer legen, üblicherweise **TIM6**, und SysTick dem Kernel lassen. Ein gemeinsamer SysTick ist bei korrekter Integration möglich; die Trennung ist die gewählte Konfiguration, kein universelles Absturzgesetz. Handler, Priorität und Frequenz prüfen.
+4. Lesen Sie in `cmsis_os2.c` nach, wie `osPriority_t` auf native Prioritäten abgebildet wird, und ob `configMAX_PRIORITIES` dafür reicht.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -29,23 +29,24 @@ Bevor wir Code schreiben, müssen wir das Betriebssystem und die Zeitbasis in de
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-**Erklärung des Timebase-Wechsels:**  
-In einem STM32-Projekt nutzt die Hardware-Abstraktionsschicht (HAL) standardmäßig den **SysTick**-Timer für Funktionen wie `HAL_Delay()`. Gleichzeitig benötigt FreeRTOS den SysTick **exklusiv** als Herzschlag für den Scheduler, um die $1\,\mathrm{ms}$-Ticks zu generieren. Greifen beide auf denselben Timer zu, überschreiben sich die Handler bzw. Tick-Konfigurationen — zur Laufzeit kommt es unweigerlich zu Timing-Fehlern oder Abstürzen.
+SysTick bedient `configTICK_RATE_HZ`. TIM6 bedient `HAL_IncTick`, sofern die SYS-Timebase so generiert wurde. Beide IRQs liegen auf dem CM4. Stehen beide auf demselben Vektor ohne abgestimmte Kette, überschreiben sich die Handler. Das ist ein Integrationsfehler, keine Eigenschaft „SysTick darf nie die HAL sehen“.
 
-Durch die Umstellung der HAL-Timebase auf **TIM6** nutzt die HAL fortan einen separaten Hardware-Timer; der SysTick steht ausschließlich FreeRTOS zur Verfügung (Scheduler, `osDelay`, Tickless Idle).
+Notieren Sie Kernelversion, `configTICK_RATE_HZ`, `configMAX_PRIORITIES` und die Bibliotheksschwelle `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`. Die verschobene `configMAX_SYSCALL_INTERRUPT_PRIORITY` ist der Registerwert, nicht die logische Stufe.
 :::
 
 ---
 
-## Aufgabe 2: Task-Design und Generierung
+## Aufgabe 2: Drei Threads
 
-Legen Sie im Configurator (Reiter *Tasks and Queues*) die folgenden drei Tasks an und generieren Sie anschließend den Code:
+Legen Sie an, generieren Sie, und prüfen Sie Handles:
 
-1. **HeartbeatTask**: Priorität `osPriorityNormal`
-2. **HeavyMathTask**: Priorität `osPriorityBelowNormal`
-3. **EmergencyTask**: Priorität `osPriorityHigh` (bleibt in dieser Übung blockiert — siehe Aufgabe 3)
+| Thread | CMSIS-Priorität | Stack |
+|--------|-----------------|------:|
+| Emergency | `osPriorityHigh` | 1024 Byte, Feld gegen generierten Wert prüfen |
+| Heartbeat | `osPriorityNormal` | 512 Byte |
+| HeavyMath | `osPriorityBelowNormal` | 1024 Byte |
 
-Prüfen Sie nach der Code-Generierung, in welcher Dateistruktur die Tasks in der `main.c` angelegt wurden.
+`osKernelInitialize` vor `osThreadNew`. `osKernelStart` bei Erfolg kehrt normalerweise nicht zurück; der Zweig dahinter bleibt für den Fehlerfall. Funktionen nicht in `USER CODE BEGIN Header_…` schreiben.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -54,28 +55,19 @@ Prüfen Sie nach der Code-Generierung, in welcher Dateistruktur die Tasks in der
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 2**
 
-Nach der Generierung finden sich in der `main.c` die CMSIS-Aufrufe `osThreadNew()`, welche intern die TCBs und Stacks für die drei Tasks auf dem FreeRTOS-Heap allozieren. Am Ende der Datei liegen die leeren C-Skelette für die Task-Funktionen (typischerweise `StartHeartbeatTask`, `StartHeavyMathTask`, `StartEmergencyTask` — die genauen Namen hängen von der CubeMX-Benennung ab).
-
-Die Prioritätsreihenfolge für den späteren Präemptions-Beweis lautet:
-
-$$
-\texttt{Emergency (High)} > \texttt{Heartbeat (Normal)} > \texttt{HeavyMath (BelowNormal)}
-$$
-
-Die `EmergencyTask` ist Platzhalter für spätere Laborteile. Wichtig: Eine leere High-Prio-Endlosschleife würde Heartbeat und HeavyMath aushungern. Deshalb muss Emergency in Aufgabe 3 bewusst *Blocked* bleiben (z.\,B. `osDelay(osWaitForever)`). Entscheidend für den Präemptions-Beweis ist die Relation Heartbeat $>$ HeavyMath.
+Die generierten Namen können `StartHeartbeatTask` heißen und in `main.c` oder `freertos.c` liegen. Reihenfolge der Dringlichkeit: Emergency, Heartbeat, HeavyMath, Idle. Eine leere High-Ready-Schleife in Emergency würde die anderen aushungern. Emergency wartet auf ein Thread-Flag (Aufgabe 3).
 :::
 
 ---
 
-## Aufgabe 3: Präemption beweisen
+## Aufgabe 3: Heartbeat, HeavyMath, Emergency
 
-Füllen Sie nun die generierten Task-Skelette mit Leben, um das präemptive Verhalten von FreeRTOS zu testen.
+LED **LD2 / PE1** (MB1363) dem CM4 zuweisen. Taster und EXTI am Board prüfen; den IRQ erst freigeben, wenn das Emergency-Handle existiert und der Kernel läuft. Vorhandenen HAL-Callback nutzen, keine zweite Handler-Definition.
 
-1. Konfigurieren Sie eine LED (z. B. Pin **PE1**) als `GPIO_Output` und weisen Sie sie dem Cortex-M4 zu, falls noch nicht geschehen.
-2. Lassen Sie in der `HeartbeatTask` die LED alle $500\,\mathrm{ms}$ umschalten. Verwenden Sie **zwingend** `osDelay(500)` und **nicht** `HAL_Delay()`.
-3. Programmieren Sie in der `HeavyMathTask` eine reine Endlosschleife, die eine Variable hochzählt (z. B. `volatile uint32_t counter = 0; while(1){ counter++; }`). Verwenden Sie hier **kein** Delay!
-4. In der `EmergencyTask` rufen Sie lediglich `osDelay(osWaitForever);` auf (Task bleibt *Blocked* und verbraucht keine CPU). Ohne diesen Schritt würde die High-Prio-Emergency den Präemptions-Beweis zerstören.
-5. Flashen Sie den Code und beobachten Sie die LED. Erklären Sie, warum das System nicht einfriert, obwohl die `HeavyMathTask` $100\,\%$ CPU-Last fordert und die CPU niemals freiwillig abgibt.
+1. Heartbeat: Toggle alle $500\,\mathrm{ms}$ **Sollraster** mit `osDelayUntil`. Ein voller On-Off-Zyklus dauert damit etwa $1\,\mathrm{s}$. Nicht `HAL_Delay`.
+2. HeavyMath: dauerhaft Ready, kein Delay, IRQs nicht sperren. Das Rechenergebnis einer `volatile`-Variablen zuweisen, damit der Compiler die Schleife behält.
+3. Emergency: `osThreadFlagsWait` auf Bit 0, kurze Reaktion (eigener Messpin, nicht die Heartbeat-LED), wieder warten. ISR: `osThreadFlagsSet`. Rückgabewert über die Fehlerbits prüfen, nicht mit `osOK` vergleichen.
+4. Erklären Sie, warum HeavyMath die CPU fordern kann und die LED trotzdem umschaltet.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -84,55 +76,58 @@ Füllen Sie nun die generierten Task-Skelette mit Leben, um das präemptive Verh
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 3**
 
-**Code-Implementierung** (in den vorgesehenen `USER CODE`-Blöcken):
-
 ```c
-/* USER CODE BEGIN Header_StartHeartbeatTask */
-void StartHeartbeatTask(void *argument)
+static uint32_t ms_to_ticks_ceil(uint32_t ms)
 {
-  for (;;) {
+    uint32_t f = osKernelGetTickFreq();
+    if (ms == 0u || f == 0u) return 0u;
+    return (uint32_t)(((uint64_t)ms * f + 999u) / 1000u);
+}
+
+/* USER CODE BEGIN StartHeartbeatTask */
+uint32_t next = osKernelGetTickCount();
+uint32_t period = ms_to_ticks_ceil(500);
+for (;;) {
     HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    osDelay(500); /* Ticks; bei configTICK_RATE_HZ = 1000 → 500 ms */
-  }
+    next += period;
+    if (osDelayUntil(next) == osErrorParameter)
+        next = osKernelGetTickCount();
 }
-/* USER CODE END Header_StartHeartbeatTask */
+/* USER CODE END StartHeartbeatTask */
 
-/* USER CODE BEGIN Header_StartHeavyMathTask */
-void StartHeavyMathTask(void *argument)
-{
-  volatile uint32_t counter = 0;
-  for (;;) {
-    counter++; /* 100 % CPU-Last, kein osDelay() */
-  }
+/* USER CODE BEGIN StartHeavyMathTask */
+static volatile uint32_t acc;
+for (;;) {
+    acc = acc * 1664525u + 1013904223u;
 }
-/* USER CODE END Header_StartHeavyMathTask */
+/* USER CODE END StartHeavyMathTask */
 
-/* USER CODE BEGIN Header_StartEmergencyTask */
-void StartEmergencyTask(void *argument)
-{
-  for (;;) {
-    osDelay(osWaitForever); /* Blocked: keine CPU-Last */
-  }
+/* USER CODE BEGIN StartEmergencyTask */
+for (;;) {
+    uint32_t fl = osThreadFlagsWait(0x1u, osFlagsWaitAny, osWaitForever);
+    if ((fl & osFlagsError) != 0u) continue;
+    /* kurze Reaktion, dann wieder warten */
 }
-/* USER CODE END Header_StartEmergencyTask */
+/* USER CODE END StartEmergencyTask */
+
+/* im bestehenden EXTI-Callback, nach laufendem Kernel */
+osThreadFlagsSet(EmergencyHandle, 0x1u);
 ```
 
-**Warum `osDelay` statt HAL-Busy-Wait?**  
-`HAL_Delay()` ist eine Busy-Wait-Schleife: die Task bleibt im Zustand *Running* und blockiert die CPU. Dagegen setzt `osDelay()` die Task in den Zustand *Blocked*; die CPU-Auslastung dieser Task ist dabei praktisch $0\,\%$, und andere Ready-Tasks (hier HeavyMath) dürfen rechnen.
+`EmergencyHandle` durch den generierten Namen ersetzen. Die IRQ-Priorität muss auf der erlaubten Seite der Syscall-Schwelle liegen.
 
-**Erklärung des Präemptions-Beweises:**  
-Das System friert nicht ein, weil FreeRTOS ein **präemptives** Betriebssystem ist. Die `HeartbeatTask` hat eine höhere Priorität (`osPriorityNormal`) als die `HeavyMathTask` (`osPriorityBelowNormal`). Nach $500\,\mathrm{ms}$ weckt der SysTick-Timer die Heartbeat-Task. Der Scheduler erkennt die höhere Priorität und verdrängt (präemptiert) die rechnende HeavyMath-Task über den **PendSV**-Handler von der CPU. Nach dem Toggle und dem anschließenden `osDelay()` geht Heartbeat wieder nach *Blocked*, und HeavyMath darf im Hintergrund weiterrechnen.
+**Präemption:** HeavyMath ist Ready und rechnet. Heartbeat hat die höhere Priorität, wird zum Sollpunkt Ready und verdrängt HeavyMath über PendSV. Danach blockiert Heartbeat wieder. Das ist kein Fristbeweis und kein „Jitter ≈ 0“. Dieselbe Flag-Flanke kann mehrere Tasterereignisse zusammenfassen.
+
+`HAL_Delay` wäre Busy-Wait im Zustand Running und trotzdem von Emergency präemptierbar. Für diese Wartezeiten ist er hier falsch, weil Heartbeat die CPU nicht freigeben würde.
 :::
 
 ---
 
-## Aufgabe 4: Starvation (Verhungern) durch Prioritäten
+## Aufgabe 4: Starvation
 
-Wir sabotieren nun das System, um die Gefahr falsch gesetzter Prioritäten (RMS-Regelverletzung) zu demonstrieren.
-
-1. Öffnen Sie den CubeMX-Configurator und ändern Sie die Priorität der `HeavyMathTask` auf `osPriorityHigh` (höher als `HeartbeatTask` mit `osPriorityNormal`). Die `EmergencyTask` bleibt blockiert (`osDelay(osWaitForever)`).
-2. Generieren und flashen Sie den Code erneut.
-3. Beobachten Sie die LED und erklären Sie das Phänomen. Handelt es sich hierbei um eine **Priority Inversion**? Begründen Sie Ihre Antwort.
+1. Setzen Sie HeavyMath auf `osPriorityAboveNormal` (über Heartbeat, unter Emergency). Nicht beide auf `osPriorityHigh`, sonst entsteht ein Gleichstand; den nur untersuchen, wenn `configUSE_TIME_SLICING` bekannt ist.
+2. Beobachten Sie PE1. Eine bereits leuchtende LED muss nicht dunkel werden; sie kann einfach an bleiben.
+3. Ist das Priority Inversion? Hilft `osThreadYield` in HeavyMath?
 
 ### Ihre Lösung {.unnumbered}
 
@@ -141,11 +136,7 @@ Wir sabotieren nun das System, um die Gefahr falsch gesetzter Prioritäten (RMS-
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4**
 
-**Beobachtung:**  
-Die LED bleibt dunkel und blinkt nicht mehr. Das System wirkt für den Anwender völlig blockiert.
+Heartbeat wird Ready und bleibt unausgeführt, solange HeavyMath dauerhaft Ready und höher ist. Das ist Starvation. Priority Inversion bräuchte eine Ressource, die eine niedrige Aufgabe hält und auf die eine hohe wartet. `osThreadYield` wählt bei strikter Priorität wieder HeavyMath. Anschließend die Prioritäten zurücksetzen: HeavyMath `BelowNormal`, Heartbeat `Normal`, Emergency `High`.
 
-**Erklärung (Starvation vs. Priority Inversion):**  
-Dieses Phänomen nennt man **Starvation** (Verhungern). Die `HeartbeatTask` wacht zwar alle $500\,\mathrm{ms}$ auf und wechselt in die Ready-Liste, aber der Scheduler entscheidet, dass die unendliche Schleife der `HeavyMathTask` eine höhere Priorität (`High`) besitzt. Da HeavyMath niemals ein blockierendes Ereignis aufruft (kein `osDelay`), gibt sie die CPU niemals ab. Heartbeat bekommt schlichtweg keine Rechenzeit zugewiesen.
-
-Dies ist **keine Priority Inversion**. Bei einer Priority Inversion hält eine Task mit *niedriger* Priorität eine Ressource (Mutex/Schloss) besetzt, auf die eine *hochpriore* Task wartet — eine mittelpriore Task kann die niedrigpriore dann „verdrängen“ und die Hochpriore indirekt ausbremsen. Hier blockiert hingegen eine wirklich höherpriore Task eine niedriger priorisierte Task rein durch Rechenlast: ein logischer Fehler im Systemdesign (falsche Prioritäten), kein Ressourcenkonflikt.
+Diagnose, wenn nichts blinkt: Handle/`osKernelStart`, Takt und EXTI, Verdrängung, Assert, Overflow-Hook, Watermark, Heap und Map. Ein Stacküberlauf faultet nicht zuverlässig. Die Stackgröße nicht pauschal verdoppeln.
 :::
