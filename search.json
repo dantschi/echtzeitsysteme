@@ -501,315 +501,336 @@
     "href": "vorlesungen/05_inter-task-kommunikation.html#willkommen-zurück-zu-echtzeitsysteme",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Willkommen zurück zu Echtzeitsysteme!",
-    "text": "Willkommen zurück zu Echtzeitsysteme!\n\nHerzlich willkommen zum 5. Termin unserer Vorlesung\nHalbzeit! Sie kennen nun die Grundlagen von Scheduling und Ressourcenverwaltung\nLetzte Woche: Die dunkle Seite der Präemption (Race Conditions, Priority Inversion)\nHeute: Wie transportieren wir Daten sicher von A nach B?\nAußerdem: Wie binden wir Hardware-Interrupts professionell an ein RTOS an?\n\n\nGuten Morgen und herzlich willkommen zur fünften Vorlesung! Wir haben Bergfest, die Hälfte des Semesters ist geschafft. Sie haben bis hierhin ein tiefes Verständnis dafür entwickelt, wie der Scheduler funktioniert und welche Gefahren lauern, wenn wir Variablen einfach wild zwischen Tasks teilen. Letzte Woche: Mutexe zum Schutz geteilter Daten. Heute: Daten aktiv und sicher transportieren. Im zweiten Teil: Hardware-Interrupts fehlerfrei in FreeRTOS integrieren."
+    "text": "Willkommen zurück zu Echtzeitsysteme!\n\nFünfter Termin: Daten transportieren, nicht nur sperren\nEin FreeRTOS-Kernel auf dem CM4, wie in VL3/VL4, sofern das Projekt das bestätigt\nEine lokale Queue ist kein Kanal zwischen zwei getrennten Kerneln\nDMA und der zweite Kern bleiben ein kurzer Anhang\n\n\nKeine .ioc im Kursrepo. UART, EXTI-Zielkern, Tick und NVIC-Gruppierung am Cube-Projekt lesen. CMSIS-Spezifikation, ST-Adapter und native API nicht vermischen."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#agenda-für-heute",
     "href": "vorlesungen/05_inter-task-kommunikation.html#agenda-für-heute",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Agenda für heute",
-    "text": "Agenda für heute\n\nRecap: Mutexe und Priority Inversion\nDas Problem: Transport kontinuierlicher Datenströme\nInter-Task Communication (ITC): Queues\nCMSIS-API für Queues und Value vs. Reference\nDer Spezialfall: Mailboxes (Status vs. Events)\n[Nach der Pause] Interrupts im RTOS: Top-Half und Bottom-Half\nAusblick Labor: Deferred Interrupt Processing am STM32H755\n\n\nZuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann Inter-Task Communication (ITC) und Warteschlangen (Queues) — FreeRTOS kennt Tasks, keine Prozesse. C-API, Pointer vs. Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster."
+    "text": "Agenda für heute\n\nHistorie gegen aktuellen Wert\nQueue: Ring, Warten, Überlauf\nKopie, Pointer, Pufferkreislauf\nMailbox und mehrere Leser\nTop-Half, zulässige ISR-API, EXTI-Labor\n\n\nAgendanotiz bleibt auf dieser Folie: Put am Tail, Get am Head. Nachrichtenvorrang ist nicht die Taskpriorität."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#recap-die-lehren-aus-termin-4",
     "href": "vorlesungen/05_inter-task-kommunikation.html#recap-die-lehren-aus-termin-4",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Recap: Die Lehren aus Termin 4",
-    "text": "Recap: Die Lehren aus Termin 4\n\nRace Conditions: asynchrone Präemption in geteilten Variablen (Read-Modify-Write zerreißt)\nMutex: exklusives Schloss mit Besitzrecht (Ownership) für Critical Sections\nPriority Inversion: Low-Task blockiert High-Task\nRettung (Priority Inheritance): OS boostet die Low-Task temporär auf die Priorität der wartenden High-Task\n\n\nKurzer Rückblick: counter++ sind drei Assembler-Befehle — SysTick dazwischen → Race Condition. Mutexe schützen. Prioritätsinversion (Pathfinder). CMSIS-Mutex löst das über Priority Inheritance in FreeRTOS."
+    "text": "Recap: Die Lehren aus Termin 4\n\ncounter++ ist ein Read-Modify-Write, nicht universell drei Befehle\nPräemption auch durch Ereignisse, Wechsel im Port über PendSV\nPIP kürzt die Extra-Zeit durch Medium, nicht jede Verzögerung\nEin Mutex kann einen konsistenten Snapshot schützen\nEr liefert keine Historie und keine Ereignisschlange\n\n\nVerlorenes Update endete bei 6 statt 7. Das bleibt wahr, auch wenn der Compiler mehr als drei Befehle erzeugt."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#mutexe-schützen-aber-transportieren-nicht",
     "href": "vorlesungen/05_inter-task-kommunikation.html#mutexe-schützen-aber-transportieren-nicht",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Mutexe schützen, aber transportieren nicht!",
-    "text": "Mutexe schützen, aber transportieren nicht!\n\nEin Mutex eignet sich perfekt für:\n\nDen UART-Port (eine Task schreibt, die andere wartet)\nEin Setup-Struct (einmal schreiben, oft lesen)\n\nProblem: kontinuierlicher Datenstrom (Audio-Samples, Sensordaten)\n\nTask A produziert jede Millisekunde einen neuen Wert\nTask B liest und filtert\nGlobale Variable + Mutex → mehr Zeit am Schloss als beim Rechnen\n\n\n\nMutexe sind Zugangskontrolle, nicht Transport. Bei 44.000 Samples/s wäre jedes Sample sperren/entsperren ein Flaschenhals: CPU rechnet Mutex-Logik statt Audiofilter. Wir brauchen einen besseren Weg."
+    "text": "Mutexe schützen, aber transportieren nicht!\n\nViele Samples hintereinander: der letzte Wert überschreibt die früheren\n„Mehr Zeit am Schloss als beim Rechnen“ nur mit Messung oder als Hypothese\nEine Queue kopiert und weckt; auch das kostet\nHohe Raten oft als Block, nicht jedes Sample als eigene Nachricht\n44000 Samples/s nicht als belegte Laborzahl verwenden\n\n\nBackpressure kann eine Softwarequelle bremsen. ADC, UART-Empfang oder DMA laufen unter Umständen weiter."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#motivation-producer-consumer",
     "href": "vorlesungen/05_inter-task-kommunikation.html#motivation-producer-consumer",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Motivation: Producer & Consumer",
-    "text": "Motivation: Producer & Consumer\n\nDas häufigste Software-Muster in eingebetteten Systemen\nProducer (Erzeuger): liest Sensoren, empfängt Pakete, generiert schnell Rohdaten\nConsumer (Verbraucher): filtert, rechnet, Display — oft langsamer oder in Blöcken\nLeitfrage: Wie überbrücken wir unterschiedliche Geschwindigkeiten sicher?\n\n\n\n\n\n\ngraph TD\n    P[Task A: Producer]\n    C[Task B: Consumer]\n    P --&gt;|Schreibt Daten| C\n    style P fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style C fill:#F5F5F7,stroke:#1D1D1F,stroke-width:2px !important\n\n\n\n\n\n\n\nProducer-Consumer-Pattern: schneller Erzeuger (z. B. ADC) und langsamerer Verbraucher (FFT, Display). Geschwindigkeitsgefälle → zeitliche Entkopplung nötig."
+    "text": "Motivation: Producer & Consumer\nFünf Samples bei \\(t = 1,2,3,4,5\\,\\mathrm{ms}\\). Der Leser kommt nach dem fünften.\n\n\n\nSpeicher\nInhalt\n\n\n\n\neine globale Variable\nnur Sample 5\n\n\nFIFO mit Platz\nFolge 1 bis 5, wenn nichts verworfen wurde\n\n\n\n\n„Alle Ereignisse in Reihenfolge“: Überschreiben ist Verlust\n„Aktueller Zustand“: Überschreiben kann gewollt sein\nSequenznummer und Zeitstempel machen Lücken und Alter sichtbar\nDie Zeitquelle muss zur Einheit passen\n\n\nFrage: Braucht ein Display jeden Zwischenwert? Oft den letzten gültigen. Braucht ein Tasterzähler jeden Druck? Ja, sonst fehlt ein Ereignis. Die Anforderung entscheidet, nicht die Queue an sich."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-falle-der-globalen-variable",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-falle-der-globalen-variable",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Falle der globalen Variable",
-    "text": "Die Falle der globalen Variable\n\nAnnahme: globale Variable adc_value\nProducer überschreibt jede \\(1\\,\\mathrm{ms}\\)\nConsumer kommt nur alle \\(5\\,\\mathrm{ms}\\) dazu\n\n// Producer (jede 1 ms)\nvoid Task_ADC() {\n    adc_value = Hardware_Read();\n}\n\n// Consumer (alle 5 ms)\nvoid Task_Filter() {\n    // Nur EIN Wert da — die 4 vorherigen sind überschrieben!\n}\n\nErgebnis: Datenverlust, obwohl das OS fehlerfrei läuft\n\n\nProducer feuert jede ms, Consumer alle 5 ms (niedrige Prio oder FFT). Consumer sieht nur den letzten Wert; vier Werte davor sind verloren — massiver Datenverlust bei korrektem OS."
+    "text": "Die Falle der globalen Variable\n\nGeschützt: ein konsistenter Stand\nUngeschützt: zerrissene Felder, wie in VL4\nKein Warten auf „neue Daten“, kein Rückstau, keine Reihenfolge\nEin Puffer gleicht Bursts aus\nEr macht einen dauerhaft langsameren Consumer nicht schneller\n\n\nDurchsatz \\(\\mu\\) unter der Ankunft \\(\\lambda\\) füllt jeden endlichen Puffer."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-lösung-inter-task-communication-itc",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-lösung-inter-task-communication-itc",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Lösung: Inter-Task Communication (ITC)",
-    "text": "Die Lösung: Inter-Task Communication (ITC)\n\nWir brauchen Inter-Task Communication (ITC) — in FreeRTOS: Task-zu-Task, keine Prozesse\n(In der Literatur oft „IPC“ genannt; hier meinen wir dasselbe Muster auf Task-Ebene.)\nDas Betriebssystem muss die Datenverwaltung übernehmen\nLösung: ein Puffer (Buffer)\n\nSpeicherbereich für mehrere Werte\nProducer legt Daten vorne hinein\nConsumer holt Daten hinten heraus\n\nIn RTOS-Systemen: Queue (Warteschlange)\n\n\nPuffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der Inter-Task-Kommunikation."
+    "text": "Die Lösung: Inter-Task Communication (ITC)\nBegrenzter Puffer, nicht nur zwei Kästen:\nProducer → Slot → Slot → Slot → Consumer\n\nPut reiht eine Kopie des Elements ein\nGet entnimmt ein Element\nMehrere Consumer teilen sich die Arbeit\nSie bekommen nicht alle dieselbe Nachricht\n\n\nGetCount und GetSpace sind Momentaufnahmen, keine Reservierung für den nächsten Aufruf."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#lernziele-des-heutigen-tages",
     "href": "vorlesungen/05_inter-task-kommunikation.html#lernziele-des-heutigen-tages",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Lernziele des heutigen Tages",
-    "text": "Lernziele des heutigen Tages\n\nDas Producer-Consumer-Pattern verstehen\nQueues in CMSIS-RTOS anlegen, beschreiben und lesen\nVor- und Nachteile von Copy by Value vs. Copy by Reference kennen\nSemantischen Unterschied Queue vs. Mailbox erklären\n[Nach der Pause] Hardware-Interrupts über Deferred Interrupt Processing anbinden\n\n\nBlock 1: Queues, API, Value vs. Reference, Mailbox. Nach der Pause: Deferred Interrupt Processing — ISR-Latenz minimieren."
+    "text": "Lernziele des heutigen Tages\n\nHistorie und Latest-Value auseinanderhalten\nEinen Ring mit Head, Tail und Count lesen\nWertkopie, Pointerkopie und Pufferbesitz trennen\nPut mit Timeout 0 nicht mit Overwrite verwechseln\nEXTI nur mit zulässiger NVIC-Priorität an den Kernel hängen\n\n\nReady nach einem Put ist noch nicht Running."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-queue-warteschlange",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-queue-warteschlange",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Queue (Warteschlange)",
-    "text": "Die Queue (Warteschlange)\n\nQueue = Array im RAM, exklusiv vom OS verwaltet\nFIFO-Prinzip (First-In, First-Out)\n\nWas zuerst hineinlegt wird, kommt zuerst heraus (Supermarktkasse)\n\nThreadsicher: FreeRTOS schützt intern mit Interrupt-Sperren\nKeine eigenen Mutexe nötig beim Schreiben in eine Queue\n\n\nTechnisch ein Array, verwaltet von FreeRTOS. FIFO erhält die Reihenfolge. Thread-safe: kein osMutexAcquire vor dem Schreiben — das OS sichert Zugriffe ab."
+    "text": "Die Queue (Warteschlange)\n\nIm Adapter mit msg_prio = 0: normales Put/Get ist FIFO\nDie CMSIS-Spezifikation sortiert nach msg_prio\nDer dokumentierte CMSIS-FreeRTOS-Adapter ignoriert den Parameter\nDas ist keine Taskpriorität\n„Immer 0, historisch“ reicht als Erklärung nicht\n\n\nVersion im Projekt prüfen. Öffentliches main ist nicht die Laborfassung. Quelle: CMSIS Message Queue und CMSIS-FreeRTOS Technical Data."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#der-lebenszyklus-einer-queue",
     "href": "vorlesungen/05_inter-task-kommunikation.html#der-lebenszyklus-einer-queue",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Der Lebenszyklus einer Queue",
-    "text": "Der Lebenszyklus einer Queue\n\n\n\n\n\ngraph LR\n    A[Create] --&gt; B(Put / Write)\n    B --&gt; C(Get / Read)\n    C --&gt; B\n    C --&gt; D[Delete]\n    style A fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important\n    style B fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important\n    style C fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important\n    style D fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important\n\n\n\n\n\n\n\nCreate: OS reserviert RAM für \\(N\\) Elemente der Größe \\(X\\) Bytes\nPut (Schreiben): Kopie der Daten hinten in die Queue\nGet (Lesen): vorderstes Element herausnehmen (wird entfernt!)\nDelete: RAM freigeben (auf MCUs oft ungenutzt — Queues leben ewig)\n\n\nCreate einmal, dann Put/Get im Kreis. Get entfernt das Element — Platz wird frei. Delete gibt es, wird auf Mikrocontrollern kaum genutzt."
+    "text": "Der Lebenszyklus einer Queue\nRing \\(N = 3\\). Put 10, Put 20, Get liefert 10, Put 30, Put 40.\nLogische Restfolge: 20, 30, 40.\nPhysisch danach: Slots \\([40,\\,20,\\,30]\\), Head = Tail = 1, Count = 3.\nGleiche Indizes können leer oder voll sein. Count entscheidet.\n\n\nPut am Tail, Get am Head. Wrap ist Absicht. Synthetisches Bild, kein Boardtrace."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#speichermanagement-einer-queue",
     "href": "vorlesungen/05_inter-task-kommunikation.html#speichermanagement-einer-queue",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Speichermanagement einer Queue",
-    "text": "Speichermanagement einer Queue\n\nVor der Nutzung dem OS zwei Dinge mitteilen:\n\nLänge: maximal wie viele Elemente? (z. B. 10)\nElementgröße: Bytes pro Element? (z. B. sizeof(uint32_t) \\(= 4\\))\n\nRAM-Bedarf: FreeRTOS reserviert sofort \\(10 \\times 4 = 40\\) Bytes aus dem Heap\n\nplus OS-Overhead für die Queue-Verwaltung\n\nDieser RAM ist reserviert, auch wenn die Queue leer ist\n\n\nLänge und Elementgröße festlegen. 10 \\(\\times\\) 4 Bytes = mindestens 40 Bytes Heap, auch bei leerer Queue."
+    "text": "Speichermanagement einer Queue\n\nNutzdaten, Kontrollblock, Alignment, Allokator getrennt zeichnen\n\\(N = 10\\) und uint32_t: 40 Byte Nutzdaten, plus Verwaltung\nosMessageQueueNew mit Attribut NULL: dynamisch, kann NULL liefern\nNULL ist nicht nur „Heap voll“: auch Parameter, Kontext, Konfiguration\nStatische Puffer: Größe aus Header, Adapter und Linker-Map\nDelete erst, wenn niemand mehr nutzt\nEin gespeicherter Pointer gibt das Bildarray nicht frei\n\n\nCMSIS-New und xQueueCreateStatic nicht gleichsetzen. Keine universelle Gesamtgröße neben den 40 Byte behaupten."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-magie-blockieren-bei-leerlauf",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-magie-blockieren-bei-leerlauf",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Magie: Blockieren bei Leerlauf",
-    "text": "Die Magie: Blockieren bei Leerlauf\n\nWas passiert, wenn der Consumer Get() aufruft und die Queue leer ist?\nBare-Metal: leere Variable lesen oder in while festsitzen\nRTOS: Consumer sofort in den Blocked-Zustand\nTask verbraucht \\(0\\%\\) CPU, bis der Producer ein Put() ausführt\nSobald ein Wert eintrifft: Consumer wird (bei ausreichender Prio) sofort aufgeweckt\n\n\nBeste Task-Zustand aus VL3: Blocked. Timeout osWaitForever → leere Queue schickt Consumer schlafen (\\(0\\%\\) CPU). Put weckt sofort auf — kein Polling."
+    "text": "Die Magie: Blockieren bei Leerlauf\n\nConsumer, Timeout warten, Queue leer → Blocked\nPut macht ihn Ready\nEr läuft, wenn der Scheduler ihn wählt\ntimeout = 0: sofortiger Status, Zielwert nicht als neue Nachricht behandeln\nEndliche Wartezeit kann mit Timeout enden\nosWaitForever macht einen ungültigen Handle nicht gültig\n\n\nBlocked: keine eigenen Befehle. Tick und IRQs kosten weiter. Nicht „CPU 0 %“."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-magie-blockieren-bei-überlast",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-magie-blockieren-bei-überlast",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Magie: Blockieren bei Überlast",
-    "text": "Die Magie: Blockieren bei Überlast\n\nWas passiert, wenn der Producer Put() aufruft und die Queue voll ist?\nOption A (Timeout \\(= 0\\)): Fehler osErrorResource, Wert verwerfen (Datenverlust)\nOption B (Timeout \\(&gt; 0\\)): Producer geht in den Blocked-Zustand\n\nWartet, bis der Consumer Platz schafft\n\nEleganter Mechanismus zur Drosselung (Throttling)\n\n\nVolle Queue: Timeout 0 = sofort Fehler/Datenverlust. Timeout \\(&gt; 0\\) = Producer schläft, bis Consumer liest. OS drosselt Überlast von allein."
+    "text": "Die Magie: Blockieren bei Überlast\n\nProducer, Queue voll, Timeout &gt; 0 → Blocked, bis ein Platz frei wird\nTry-Put: nichts eingereiht, Nachricht bleibt beim Sender\nNicht jeden Fehler „Queue voll“ nennen\nNur bei osOK weiterverarbeiten\n\nosStatus_t st = osMessageQueuePut(q, &msg, 0, 0);\nif (st != osOK) {\n    drop_count++; /* nicht eingereiht */\n}\n\nHält der Producer dabei einen Mutex, den der Consumer vor dem Get braucht, entsteht der Zyklus aus VL4. Queue-Threadsicherheit verhindert den Deadlock nicht."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-itc-vorteile",
     "href": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-itc-vorteile",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Zusammenfassung: ITC-Vorteile",
-    "text": "Zusammenfassung: ITC-Vorteile\n\nDatentransfer: Werte sicher von Task A nach Task B\nSynchronisation: automatisches Blockieren und Wecken (keine leeren while-Schleifen)\nPufferung: Geschwindigkeitsunterschiede (Bursts) ausgleichen\nThread-Safe: keine eigenen Mutexe nötig — das OS regelt den Zugriff\n\n\nQueues: Transfer, Synchronisation, Pufferung und Thread-Safety in einem Mechanismus — Schweizer Taschenmesser der RTOS-Entwicklung."
+    "text": "Zusammenfassung: ITC-Vorteile\n\nReihenfolge, solange Platz und Verträge passen\nWarten ohne Polling\nKopie entkoppelt die Stackvariable\nKeine Priority Inheritance für das Paar Producer/Consumer\nKein unendlicher Puffer bei \\(\\lambda &gt; \\mu\\)\n\n\nVorteil ist Struktur und ein klarer Überlauf, nicht automatische Frist."
+  },
+  {
+    "objectID": "vorlesungen/05_inter-task-kommunikation.html#überlauf-burst-und-dauerlast",
+    "href": "vorlesungen/05_inter-task-kommunikation.html#überlauf-burst-und-dauerlast",
+    "title": "05 · Inter-Task-Kommunikation und Interrupts",
+    "section": "Überlauf: Burst und Dauerlast",
+    "text": "Überlauf: Burst und Dauerlast\nLehrannahmen: \\(N = 10\\), anfangs leer, API-Zeit 0. Put bei \\(1,2,3,\\ldots\\,\\mathrm{ms}\\). Get bei \\(5,10,15,\\ldots\\,\\mathrm{ms}\\). Zur selben Zeit zuerst Put, dann Get. Voller Try-Put verwirft den neuen Wert.\n\n\n\nZeitpunkt\nStand\n\n\n\n\nnach \\(5\\,\\mathrm{ms}\\)\nCount 4\n\n\nnach \\(10\\,\\mathrm{ms}\\)\nCount 8\n\n\nbei \\(12\\,\\mathrm{ms}\\)\nCount 10\n\n\nerster Fehl-Put\n\\(13\\,\\mathrm{ms}\\)\n\n\n\nÜber \\(1\\)–\\(20\\,\\mathrm{ms}\\): 20 Versuche, 13 erfolgreiche Puts, 7 verworfen, 4 Gets, 9 bleiben.\n\\(\\lambda = 1000/\\mathrm{s}\\), \\(\\mu = 200/\\mathrm{s}\\): kein endlicher Puffer hält das verlustfrei, wenn jede Entnahme nur eine Nachricht ist. Ein Consumer, der danach einen ganzen Stapel leert, ist ein anderes Modell.\n\nBilanz: \\(20 = 13 + 7\\) und \\(13 = 4 + 9\\). Der Erfolg bei \\(t = 16\\,\\mathrm{ms}\\) kommt, weil das Get bei 15 einen Platz gemacht hat und der Put bei 15 selbst noch scheiterte. Synthetisch."
+  },
+  {
+    "objectID": "vorlesungen/05_inter-task-kommunikation.html#kapazität-planen",
+    "href": "vorlesungen/05_inter-task-kommunikation.html#kapazität-planen",
+    "title": "05 · Inter-Task-Kommunikation und Interrupts",
+    "section": "Kapazität planen",
+    "text": "Kapazität planen\nUnter einem begrenzten verlustfreien Modell:\n\\[N \\ge \\max_t \\bigl(A(t) - D(t)\\bigr)\\]\n\n\\(A\\): angebotene Nachrichten, \\(D\\): Entnahmen\nNicht erst die Puts zählen, die nach Drops noch klappen\nFünf Nachrichten ohne zwischenzeitliches Get brauchen fünf Plätze\nEin schon verarbeiteter Satz liegt außerhalb der Queue\nPayload-Pool extra zählen\n\n\n\n\nEntscheidung\nWirkung\n\n\n\n\nQuelle drosseln\nnur wenn die Quelle warten kann\n\n\nneuen Wert verwerfen\nLücke in der Historie\n\n\nalten ersetzen\nLatest-Value, andere API\n\n\nFehler melden\njemand muss ihn sehen\n\n\n\nISR wartet nicht. Ein ADC hält nicht automatisch an.\n\nZeitgleiche Ereignisse und die Belegung vor dem folgenden Get gehören in die Rechnung. Durchschnittsraten allein genügen nicht."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-queue-anlegen",
     "href": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-queue-anlegen",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "CMSIS-API: Queue anlegen",
-    "text": "CMSIS-API: Queue anlegen\n\nCMSIS-RTOS v2 Abstraktion:\n\n// Globale Variable (Handle) für die Queue\nosMessageQueueId_t sensorQueue;\n\nvoid System_Init() {\n    // Parameter 1: Anzahl der Elemente (z. B. 10)\n    // Parameter 2: Größe eines Elements (z. B. sizeof(uint32_t))\n    // Parameter 3: Optionale Attribute (meist NULL)\n    sensorQueue = osMessageQueueNew(10, sizeof(uint32_t), NULL);\n\n    if (sensorQueue == NULL) {\n        // Fehler! Heap ist voll, kein RAM mehr.\n    }\n}\n\nHandle global, osMessageQueueNew vor Scheduler-Start. sizeof für plattformunabhängige Elementgröße. Rückgabe NULL prüfen: Heap voll."
+    "text": "CMSIS-API: Queue anlegen\ntypedef struct {\n    uint32_t sample;\n    uint32_t seq;\n    uint32_t tick;\n} SensorMessage;\n\nosMessageQueueId_t q;\n\nvoid app_init(void) {\n    if (osKernelInitialize() != osOK) Error_Handler();\n    q = osMessageQueueNew(8, sizeof(SensorMessage), NULL);\n    if (q == NULL || osThreadNew(Producer, NULL, NULL) == NULL)\n        Error_Handler();\n    if (osKernelStart() != osOK) Error_Handler();\n}\n\nsizeof und Alignment am Build prüfen\nuint32_t-Übung darf bleiben; das Struct ist der Datensatz\n1-ms-Modell und osDelay(10) sind verschiedene Versuche\n\n\nosDelay zählt Ticks. Der Thread läuft danach, wenn er dran ist. Periodisch: absolutes Soll und Überlastregel aus VL3."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-daten-schreiben-put",
     "href": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-daten-schreiben-put",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "CMSIS-API: Daten schreiben (Put)",
-    "text": "CMSIS-API: Daten schreiben (Put)\n\nDer Producer legt Daten in die Queue:\n\nvoid Task_ADC_Producer() {\n    uint32_t value = 0;\n    for(;;) {\n        value = Read_ADC_Hardware();\n\n        // Handle, Pointer auf Daten, Prio (immer 0), Timeout\n        osStatus_t status = osMessageQueuePut(\n            sensorQueue,\n            &value,\n            0,\n            0  // Timeout = 0 (nicht warten!)\n        );\n\n        if (status != osOK) {\n            // Queue ist voll, Wert verworfen!\n        }\n        osDelay(10);  // Ticks; bei 1000 Hz = 10 ms\n    }\n}\n\nAdresse der Variable (&value): FreeRTOS kopiert die Bytes. Prio-Parameter historisch, in FreeRTOS immer 0. Timeout 0: bei voller Queue sofort Fehler, Wert verloren."
+    "text": "CMSIS-API: Daten schreiben (Put)\nvoid Producer(void *argument) {\n    SensorMessage m;\n    (void)argument;\n    m.seq = 0;\n    for (;;) {\n        m.sample = next_sample(); /* oder synthetische Folge */\n        m.seq++;\n        m.tick = osKernelGetTickCount();\n        if (osMessageQueuePut(q, &m, 0, 0) != osOK)\n            drops++;\n        osDelayUntil(next_deadline());\n    }\n}\n\n\n\nStatus\nBedeutung\n\n\n\n\nosOK\nKopie ist in der Queue\n\n\nvoll, Timeout 0\nnichts eingereiht\n\n\nTimeout\nWartezeit um, nichts eingereiht\n\n\nParameter, ISR, Handle\nkein „einfach voll“\n\n\n\nmsg_prio = 0 im Labor: FIFO-Entscheidung, vom FreeRTOS-Adapter ignoriert.\n\nHardware nur anbinden, wenn ADC und Takt schon stimmen. Sonst eine benannte Sequenzquelle."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-daten-lesen-get",
     "href": "vorlesungen/05_inter-task-kommunikation.html#cmsis-api-daten-lesen-get",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "CMSIS-API: Daten lesen (Get)",
-    "text": "CMSIS-API: Daten lesen (Get)\n\nDer Consumer wartet auf Daten:\n\nvoid Task_Filter_Consumer() {\n    uint32_t received_value = 0;\n    for(;;) {\n        // Warte ewig (osWaitForever) auf neue Daten!\n        osMessageQueueGet(\n            sensorQueue,\n            &received_value,\n            NULL,  // Prio-Pointer ignorieren\n            osWaitForever\n        );\n\n        // Hier: ganz sicher ein gültiger Wert\n        Filter_Data(received_value);\n    }\n}\n\nosWaitForever: leere Queue → Blocked an dieser Zeile. Erreicht der Code Filter_Data, liegt ein gültiges Paket vor — sauberer, deterministischer Flow."
+    "text": "CMSIS-API: Daten lesen (Get)\nvoid Consumer(void *argument) {\n    SensorMessage m;\n    (void)argument;\n    for (;;) {\n        if (osMessageQueueGet(q, &m, NULL, 20) != osOK)\n            continue; /* alten Wert nicht als neu werten */\n        use(m.sample, m.seq);\n    }\n}\n\nSignatur void Task(void *argument)\nGetCount nur zur Diagnose\n\n\nFrage: Darf Put blockieren, während ein Mutex gehalten wird, den der Consumer braucht? Nur wenn die Reihenfolge aus VL4 das erlaubt."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#unter-der-haube-copy-by-value",
     "href": "vorlesungen/05_inter-task-kommunikation.html#unter-der-haube-copy-by-value",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Unter der Haube: Copy by Value",
-    "text": "Unter der Haube: Copy by Value\n\nFreeRTOS-Queues nutzen standardmäßig Copy by Value\nPut: OS kopiert den Wert byteweise in den eigenen Queue-RAM\nGet: OS kopiert den Wert zurück in die lokale Variable des Consumers\nVorteil: Original-Variable des Producers ist danach völlig entkoppelt\n\n\n\n\n\n\ngraph LR\n    A[Var Producer] -- \"Kopie 1\" --&gt; B[(OS Queue)]\n    B -- \"Kopie 2\" --&gt; C[Var Consumer]\n    style A fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style B fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important\n    style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nZwei physikalische Kopien. Nach Put darf die Producer-Variable überschrieben, gelöscht oder der Scope verlassen werden — der Wert liegt sicher in der Queue."
+    "text": "Unter der Haube: Copy by Value\n\n\n\n\nValue-Queue\nPointer-Queue\n\n\n\n\nElement\nSample oder Struct\nAdresse oder Deskriptor\n\n\nRAM der Queue\n\\(N\\) mal Elementgröße\n\\(N\\) mal Zeigergröße\n\n\nNutzdaten\nliegen in der Queue\nliegen woanders, gemeinsam\n\n\n\n\nAuch der Pointer wird by value kopiert\nDas Bild wird nicht kopiert\nEs entsteht kein Eigentumsvertrag\nsizeof(uint8_t *) im CM4-Build: 4 Byte, keine Sprachgarantie für jede ABI\nNach erfolgreichem Put darf die Pointervariable woanders hinzeigen\nDas Array darf erst nach vereinbarter Freigabe neu beschrieben werden\n\n\nosMessageQueuePut(q, &image_ptr, 0, 0) übergibt die Adresse der Pointervariable. Nicht die Bildbytes als Elementspeicher."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#der-feind-der-queue-große-daten",
     "href": "vorlesungen/05_inter-task-kommunikation.html#der-feind-der-queue-große-daten",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Der Feind der Queue: Große Daten!",
-    "text": "Der Feind der Queue: Große Daten!\n\nCopy by Value ist ideal für kleine Daten (z. B. uint32_t, 4 Bytes)\nGroße Daten? Kamerabild \\(320 \\times 240\\) Pixel, Graustufen (uint8_t) \\(= 76\\,800\\) Bytes\nProbleme:\n\nQueue wäre gigantisch (RAM-Verschwendung)\nZweimaliges Kopieren von \\(\\approx 76\\,\\mathrm{KB}\\) blockiert die CPU\nmemcpy zerstört Latenzgarantien\n\nFür große Daten ist Copy by Value streng verboten\n\n\n76 KB per Value: Heap reicht oft nicht; doppeltes Kopieren vernichtet Echtzeit. CPU nur noch Speicherschieben."
+    "text": "Der Feind der Queue: Große Daten!\n\\(320 \\times 240\\) Byte:\n\nein Bild: 76800 Byte = 76,8 kB = 75 KiB\nzwei Puffer: 150 KiB\nzehn Bilder als Value-Queue: 750 KiB Nutzdaten, plus Verwaltung\nzehn Pointer-Slots: 40 Byte, die Bilder bleiben extra\n\nGroße Kopien sind teuer, nicht pauschal verboten. Es zählen Größe, Rate, RAM und maskierte Kernelpfade.\n\nKeine erfundenen Millionen Zyklen. Kopierzeit messen, wenn ein Build da ist."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-lösung-copy-by-reference-pointer",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-lösung-copy-by-reference-pointer",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Lösung: Copy by Reference (Pointer)",
-    "text": "Die Lösung: Copy by Reference (Pointer)\n\nStatt 76 KB: nur die Speicheradresse (Pointer) in die Queue\nPointer auf Cortex-M4: immer exakt 4 Bytes\n\n// Queue für POINTER (Elementgröße = 4 Bytes!)\nptrQueue = osMessageQueueNew(10, sizeof(uint8_t*), NULL);\n\nvoid Task_Camera() {\n    uint8_t* image_buffer = Get_Image_From_Hardware();\n\n    // Nicht das Bild, sondern die Adresse (4 Bytes)\n    osMessageQueuePut(ptrQueue, &image_buffer, 0, 0);\n}\n\nConsumer liest 4 Bytes, hat die Adresse und liest das Bild direkt aus dem RAM\n\n\nBild bleibt im RAM. Queue speichert nur Pointer. Consumer folgt der Adresse — wenige Zyklen statt Millionen."
+    "text": "Die Lösung: Copy by Reference (Pointer)\nuint8_t *slot;\n/* Elementtyp der Queue: uint8_t * */\nosMessageQueuePut(q, &slot, 0, 0);\n\nDie Adresse wird kopiert, slot darf danach umgebogen werden\nZwei Arrays A und B allein verhindern das Überschreiben nicht\nFehlgeschlagenes Put: Puffer bleibt beim Producer\nZu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern\n\n\nEin Deskriptor mit Länge und Sequenz ist größer als 4 Byte. Das auf der Folie sagen, nicht stillschweigend „vier Byte“ für den Deskriptor."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#gefahren-von-copy-by-reference",
     "href": "vorlesungen/05_inter-task-kommunikation.html#gefahren-von-copy-by-reference",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Gefahren von Copy by Reference",
-    "text": "Gefahren von Copy by Reference\n\nLebensgefahr: Producer darf image_buffer nicht mehr überschreiben, sobald der Pointer in der Queue liegt\nSonst: Race Condition — Consumer liest korrupte Pixel\nLösung: Buffer-Ping-Pong (Double Buffering)\n\nZwei getrennte Arrays\nProducer beschreibt Array 1, sendet Pointer 1\nWährend Consumer Array 1 liest, beschreibt Producer Array 2\n\n\n\nOhne schützende Kopie: Überschreiben vor Fertigstellung des Consumers = Race Condition. Double Buffering / Ping-Pong: zwei Puffer abwechselnd."
+    "text": "Gefahren von Copy by Reference\nLebenszyklus, genau ein Verantwortlicher:\nFREE → FILLING → QUEUED → PROCESSING → FREE\n\nReady-Queue und Free-Pool sind zwei Richtungen\nPut ok: Verantwortung geht weiter\nPut scheitert: keine zweite Einreihung, keine Doppelrückgabe\nQueue für zehn Pointer erzeugt keine zehn Bilder, wenn nur A und B existieren\n\nFehler in den Notizen: Stack der beendeten Funktion, freigegebener Heap, DMA schreibt weiter.\n\nH7-DMA und D-Cache nur, wenn der Puffer wirklich im CM7-Cache liegt. Auf dem CM4 keine pauschalen Cache-Aufrufe. AN4839 nur für diesen Fall."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#der-spezialfall-die-mailbox",
     "href": "vorlesungen/05_inter-task-kommunikation.html#der-spezialfall-die-mailbox",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Der Spezialfall: Die Mailbox",
-    "text": "Der Spezialfall: Die Mailbox\n\nOft verwechselt: Unterschied Queue vs. Mailbox?\nCMSIS/FreeRTOS: keine separate Mailbox-API — Spezialfall der Queue\nMailbox = Queue der Länge 1\nSpeichert exakt ein einziges Element\nWichtigster Verhaltensunterschied: Überschreiben (Overwrite) ist ausdrücklich erwünscht\n\n\nMailbox = Queue Länge 1. Semantik: bei Statusdaten ist absichtliches Überschreiben oft das Feature, nicht der Bug."
+    "text": "Der Spezialfall: Die Mailbox\nDrei Abläufe, Start leer, dann 10, 20, 30:\n\n\n\nMuster\nErgebnis\n\n\n\n\nFIFO mit Platz\n10, dann 20, dann 30\n\n\nLänge 1, Put Timeout 0\n10 bleibt, 20 und 30 werden abgelehnt\n\n\nOverwrite\nzuletzt 30\n\n\n\nLänge 1 ist keine Overwrite-Semantik.\n„Timeout 0 als Näherung“ ist falsch: der alte Wert bleibt.\n\nFrage: Ist Put mit Timeout 0 ein Overwrite? Nein. Das Gegenbeispiel ist genau 10 gegen 20."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#wann-queue-wann-mailbox",
     "href": "vorlesungen/05_inter-task-kommunikation.html#wann-queue-wann-mailbox",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Wann Queue, wann Mailbox?",
-    "text": "Wann Queue, wann Mailbox?\n\n\nQueue (Events & Ströme)\n\nTastendrücke (A, B, C abarbeiten)\nAudio-Daten\nPhilosophie: kein Element darf verloren gehen\nVerhalten: blockiert, wenn voll\n\n\nMailbox (Zustand / Status)\n\nAktuelle Temperatur, GPS-Position\nPhilosophie: nur der neueste Wert zählt\nVerhalten: überschreibt alten Wert, blockiert nicht beim Schreiben\n\n\n\nFreeRTOS-Sonderfunktion: xQueueOverwrite()\nAchtung: CMSIS-RTOS v2 hat kein Overwrite/Peek — dafür native FreeRTOS-API nötig\n\n\nQueue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: xQueueOverwrite. CMSIS bietet das nicht — im Labor bei CMSIS-only also Queue Länge 1 + Put mit Timeout 0 als Näherung."
+    "text": "Wann Queue, wann Mailbox?\n„Mailbox“ hier: Latest-Value, Begriff je RTOS anders.\nNative FreeRTOS, eigenes Modul, kein Cast auf osMessageQueueId_t:\n\nxQueueCreate(1, ...)\nxQueueOverwrite\nxQueuePeek\nin der ISR die FromISR-Variante und die Yield-Regel\n\nCMSIS-only: kurzer geschützter Snapshot mit Version und Zeit, Benachrichtigung nach dem Veröffentlichen. Die ISR nimmt keinen Mutex. Nutzdaten kommen über einen erlaubten kurzen Kanal in den Thread.\n\nPeek garantiert keinen neuen Wert und weckt nicht alle Leser. Eine Peek-Schleife ist kein Eventwarten."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#das-broadcast-konzept-mailbox",
     "href": "vorlesungen/05_inter-task-kommunikation.html#das-broadcast-konzept-mailbox",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Das Broadcast-Konzept (Mailbox)",
-    "text": "Das Broadcast-Konzept (Mailbox)\n\nQueue-Get entnimmt das Element — danach ist die Queue leer\nStatus-Mailboxen: oft ein Producer, viele Consumer (Broadcast)\n\nSensor schreibt Drehzahl\nMotor-, Display- und Logging-Task wollen lesen\n\nPeek (Spicken): Wert lesen, ohne ihn zu entfernen\n\nosMessageQueueGet() entfernt\nNative FreeRTOS: xQueuePeek()\n\n\n\nBei Broadcast darf Get den Wert nicht vernichten. Peek kopiert und lässt den Wert in der Mailbox — sauberes State-Management."
+    "text": "Das Broadcast-Konzept (Mailbox)\n\nGet: ein Element, ein Consumer\nPeek oder Snapshot: mehrere Leser, zu verschiedenen Zeiten verschiedene Versionen\nJeder Pflichtempfänger braucht einen eigenen Zustellvertrag\nZusammenfassen von Zuständen kann gewollt sein\nEreignisse brauchen die FIFO oder eine Zählung\n\n\nVersion beantwortet „noch derselbe Wert?“. Sie ersetzt keine Queue."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-halbzeit",
     "href": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-halbzeit",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Zusammenfassung Halbzeit",
-    "text": "Zusammenfassung Halbzeit\n\nProducer-Consumer: entkoppelt langsame Verarbeitung von schnellen Rohdaten\nQueues: Puffer im RAM, vom OS verwaltet\nVolle Queue blockiert beim Schreiben, leere Queue beim Lesen (\\(0\\%\\) CPU)\nValue vs. Reference: kleine Werte kopieren; große Daten (Bilder) als Pointer + Ping-Pong\nMailbox: 1er-Queue für Zustände, die alte Daten überschreibt\n\n\nErste Hälfte: Entkopplung durch Queues, Value vs. Reference, Mailboxen für aktuellen Sensorwert. Fragen zum Datenaustausch? Nach der Pause: Anbindung an echte Hardware-Interrupts."
+    "text": "Zusammenfassung Halbzeit\n\nHistorie: FIFO, Überlauf explizit\nZustand: Overwrite oder Snapshot, nicht die 1er-Queue mit Try-Put\nPointer: 40 Byte Slots sind nicht 750 KiB Bilder\nWarten und Fehlerstatus gehören zum Pfad\n\n\nZweiter Teil: die ISR liefert nur, was sie rechtzeitig retten und erlaubt signalisieren kann."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#block-4-interrupts-im-rtos",
     "href": "vorlesungen/05_inter-task-kommunikation.html#block-4-interrupts-im-rtos",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Block 4: Interrupts im RTOS",
-    "text": "Block 4: Interrupts im RTOS\n\nWir wissen jetzt, wie Tasks untereinander reden\nAber wie kommuniziert die Hardware (Außenwelt) mit unseren Tasks?\nDie Herausforderung:\n\nEin Hardware-Interrupt (ISR) reißt die CPU aus dem RTOS-Kontext heraus\nDie ISR ist mächtiger als der Scheduler\nWie bringen wir Hardware-Events und Software-Scheduling sicher zusammen?\n\n\n\nWillkommen zurück nach der Pause! Bisher: Tasks, Queues, Mutexe unter Kontrolle des Schedulers. Ein MCU ohne Außenwelt ist wertlos. Tasten, Sensoren und Netzwerke laufen über Hardware-Interrupts (ISRs). ISRs kennen FreeRTOS nicht: sie grätschen in laufende Berechnungen, ignorieren Task-Prioritäten und können sogar den SysTick blockieren. Wie wir beide Welten verheiraten, ohne Echtzeit-Timing zu sprengen, ist das Thema dieses Blocks."
+    "text": "Block 4: Interrupts im RTOS\n\nDie ISR unterbricht Threads dieses Kerns\nHöhere IRQs können sich schachteln, je nach Maske\nDer andere Kern und DMA können weiterlaufen\n„Die CPU steht“ ist falsch\nEine lange ISR verzögert Threads und kann den Tick verschieben\nVerpasste Ticks sind nicht beliebig tief gespeichert\nOb Fristen reißen, sagt das Budget, nicht der Satz „alle Deadlines wandern“\n\n\n99 % Blocked und „ISR unter 1 µs“ ohne Messaufbau streichen."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#rückblick-die-goldene-regel-der-isr",
     "href": "vorlesungen/05_inter-task-kommunikation.html#rückblick-die-goldene-regel-der-isr",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Rückblick: Die goldene Regel der ISR",
-    "text": "Rückblick: Die goldene Regel der ISR\n\nErinnern Sie sich an Termin 1?\nEine ISR muss extrem kurz sein!\nWarum ist das im RTOS noch wichtiger?\n\nSolange die ISR läuft, ist die CPU komplett blockiert\nBei höherer HW-Priorität als SysTick: der RTOS-Herzschlag kann nicht feuern\nDas Betriebssystem friert in der Zeit ein\nAlle Deadlines aller Tasks verschieben sich nach hinten\n\n\n\nVL1-Regel: ISR kurz → kein printf, keine Zählschleife, kein Warten. Im RTOS überlebenswichtig: Timing über SysTick. Lange UART-ISR mit höherer HW-Priorität als SysTick → SysTick wird verzögert, OS verpasst Herzschläge, Zeit friert ein. Nach 10 ms ISR denkt das OS, es sei keine Millisekunde vergangen → Deadlines gescheitert."
+    "text": "Rückblick: Die goldene Regel der ISR\n\nKurz, keine blockierende API, kein printf, kein Mutex\nTimeout 0 macht eine verbotene CMSIS-Funktion nicht erlaubt\nNicht jede native Funktion hat FromISR\nFalsche Nutzung: Status, Assert, Lockup oder Inkonsistenz, nicht zwingend HardFault\n\n\nIPSR-Prüfung im Wrapper ist ein Implementierungsdetail, keine Garantie für jede API."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#das-architektur-muster-deferred-interrupt-processing",
     "href": "vorlesungen/05_inter-task-kommunikation.html#das-architektur-muster-deferred-interrupt-processing",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Das Architektur-Muster: Deferred Interrupt Processing",
-    "text": "Das Architektur-Muster: Deferred Interrupt Processing\n\nVertiefung VL4: Semaphor-Signalisierung ISR \\(\\rightarrow\\) Task kennen Sie schon — hier der Architektur-Rahmen\nWie lesen wir komplexe Sensordaten (z. B. 10 KB Bilddaten per SPI) ein, wenn die ISR kurz sein muss?\nLösung der Industrie: Deferred Interrupt Processing (verzögerte Interrupt-Verarbeitung)\nArbeit in zwei Hälften:\n\nTop-Half (die ISR): reagiert blitzschnell auf die Hardware\nBottom-Half (die Task): übernimmt die zeitaufwändige Datenverarbeitung\n\n\n\nDilemma: SPI-Bild plus CRC dauert. Nicht in der ISR → wo dann? Deferred Interrupt Processing: Top-Half und Bottom-Half. Muster in jedem modernen OS, von FreeRTOS bis Linux-Kernel."
+    "text": "Das Architektur-Muster: Deferred Interrupt Processing\nTop-Half: das, was die Hardware sofort braucht.\nBottom-Half: der Thread, Priorität nach Frist und Last, nicht pauschal „sehr hoch“.\nRegister lesen und Flags löschen in der Reihenfolge des Geräts. „Erst Flag, dann Daten“ gilt nicht überall.\nIm HAL-EXTI-Pfad nicht ein zweites Mal quittieren.\n\nDer Worker wird Ready und läuft nach ISR und PendSV, wenn ihn niemand Höherer ausbremst. Die CPU war vorher nicht zwingend Idle."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-top-half-die-isr",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-top-half-die-isr",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Top-Half (Die ISR)",
-    "text": "Die Top-Half (Die ISR)\n\nLäuft im echten Hardware-Interrupt-Kontext (z. B. EXTI15_10_IRQHandler)\nUnterbricht alles im System\nAufgaben der Top-Half:\n\nHardware-Flag (Interrupt) löschen, damit er nicht endlos feuert\nKritische Rohdaten aus Hardwareregistern (z. B. UART RDR) in den RAM retten\nDas RTOS wecken (signalisieren)\nSofort beenden\n\n\n\nTop-Half = echte HW-ISR. Quittieren, Byte/Daten retten, Signal an RTOS, sofort Return. Dauer: oft unter einer Mikrosekunde."
+    "text": "Die Top-Half (Die ISR)\n\nQuittung und die Daten, die sonst verloren gehen\nEin Semaphor-Token enthält kein Bild\nDrei Releases vor dem nächsten Acquire, max count 1: höchstens ein Token, zwei Releases scheitern\n„Arbeit da“ passt; lückenloses Zählen braucht eine Queue mit Überlaufzähler\nPrellen, Zusammenfassen und Queue-Drop sind drei verschiedene Dinge\n\n\nLiest die Bottom-Half ein Register zu spät, ist das Sample schon weg. Dann muss der Top-Half kopieren oder DMA nutzen."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-bottom-half-die-task",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-bottom-half-die-task",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Bottom-Half (Die Task)",
-    "text": "Die Bottom-Half (Die Task)\n\nIst eine ganz normale C-Task in FreeRTOS\nBekommt meist eine sehr hohe RTOS-Priorität\nBefindet sich zu \\(99\\%\\) der Zeit im Zustand Blocked\nAufgaben der Bottom-Half:\n\nWartet auf das Signal der Top-Half (osWaitForever)\nWacht auf\nFührt die aufwändige Logik durch (Filter, CRC, Float-Mathe, Display)\nGeht wieder schlafen\n\n\n\nBottom-Half ist keine ISR, sondern eine FreeRTOS-Task mit for(;;). Hohe Prio, fast immer Blocked. Signal → Scheduler weckt Task. Im Task-Kontext läuft SysTick weiter → Millisekunden rechnen, Float, printf sind legal. Das System atmet."
+    "text": "Die Bottom-Half (Die Task)\n\nAcquire-Status prüfen, dann arbeiten, wieder warten\nMehrere gepufferte Sätze ohne neue Flanke sind erlaubt\nUART über den geschützten Pfad aus VL4\nNormal: kurze Arbeit und osDelay / Warten auf das nächste Signal\nHAL_Delay(100) nur als Vergleich: Busy-Wait, High kann Low verdrängen, höhere Tasks können trotzdem präemptieren\nEine weiterblinkende LED ist kein Fristbeweis\n\n\nDie Demo friert nicht den ganzen Chip ein."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#visualisierung-top-half-und-bottom-half",
     "href": "vorlesungen/05_inter-task-kommunikation.html#visualisierung-top-half-und-bottom-half",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Visualisierung: Top-Half und Bottom-Half",
-    "text": "Visualisierung: Top-Half und Bottom-Half\n\n\n\n\n\nsequenceDiagram\n    participant HW as Hardware (Sensor)\n    participant ISR as Top-Half (ISR)\n    participant OS as FreeRTOS\n    participant Task as Bottom-Half (Task)\n\n    Note over Task: Task schläft (Blocked)\n\n    HW-&gt;&gt;ISR: 1. Pin-Flanke (Interrupt)\n    Note over ISR: CPU blockiert\n    ISR-&gt;&gt;ISR: 2. Daten ins RAM kopieren\n    ISR-&gt;&gt;OS: 3. Sende Signal (z. B. Semaphore)\n    ISR--&gt;&gt;HW: 4. ISR beendet (Return)\n\n    Note over OS: Context Switch\n    OS-&gt;&gt;Task: 5. Weckt Task (Ready -&gt; Running)\n\n    Note over Task: 6. CPU im RTOS-Modus\n    Task-&gt;&gt;Task: 7. Führt CRC und Filterung aus\n    Task-&gt;&gt;OS: 8. Warte auf nächstes Event\n    Note over Task: Task schläft wieder\n\n\n\n\n\n\n\nFlow: Hardware alarmiert → Top-Half kopiert und signalisiert → ISR Return → OS weckt Bottom-Half → Task rechnet und blockiert erneut. Ping-Pong ISR/Task = Goldstandard der Embedded-Architektur."
+    "text": "Visualisierung: Top-Half und Bottom-Half\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%\nsequenceDiagram\n  participant HW as Hardware\n  participant ISR as Top-Half\n  participant K as Kernel\n  participant W as Worker\n  HW-&gt;&gt;ISR: Ereignis\n  ISR-&gt;&gt;ISR: quittieren, Daten retten\n  ISR-&gt;&gt;K: Signal oder kurze Queue\n  Note over W: Ready, noch nicht Running\n  ISR--&gt;&gt;K: ISR-Ende\n  K-&gt;&gt;W: PendSV, wenn Priorität passt\n  W-&gt;&gt;W: Verarbeitung, dann warten\n\n\n\n\n\n\n\nKein Thread-Code mitten in der ISR. Ein zweiter Release auf dem vollen binären Semaphor kann scheitern."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#wie-signalisiert-die-top-half",
     "href": "vorlesungen/05_inter-task-kommunikation.html#wie-signalisiert-die-top-half",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Wie signalisiert die Top-Half?",
-    "text": "Wie signalisiert die Top-Half?\n\nDie ISR muss der Bottom-Half eine Nachricht zukommen lassen\nWas eignet sich dafür perfekt? (Erinnerung an Termin 4)\nDer binäre Semaphor!\n\nBottom-Half: osSemaphoreAcquire(..., osWaitForever) und blockiert\nTop-Half: osSemaphoreRelease(...)\nErgebnis: Task wacht auf → keine CPU-Zeit verschwendet\n\nAlternative für Daten: Queue (ISR: osMessageQueuePut)\n\n\nSignal = binärer Semaphor aus VL4: kein Ownership. Task: Acquire und schlafen. ISR: Release. Für Messwerte dasselbe Muster mit Queue: Task Get, ISR Put."
+    "text": "Wie signalisiert die Top-Half?\n\n\n\nBedarf\nMittel\n\n\n\n\nArbeit vorhanden\nbinärer Semaphor, leer erzeugt\n\n\njedes Ereignis oder Nutzdaten\nQueue, Timeout 0, Drop zählen\n\n\nnur ein neuer Stand\nOverwrite oder Snapshot, nicht Try-Put\n\n\n\nDer Puffer muss gültig bleiben, bis der Vertrag ihn freigibt.\n\nToken ohne gültige Daten weckt den Worker ins Leere."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-große-hürde-os-aufrufe-in-der-isr",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-große-hürde-os-aufrufe-in-der-isr",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die große Hürde: OS-Aufrufe in der ISR",
-    "text": "Die große Hürde: OS-Aufrufe in der ISR\n\nMassives Problem: OS-Funktionen (Put, Release) in einer Hardware-ISR\nOS-Funktionen können blockierend sein\nWas, wenn die Queue voll ist und die ISR Put() aufruft?\n\nOS würde versuchen, die ISR in die Blocked-Liste zu schieben\nEine ISR kann man nicht schlafen legen\nDie CPU würde mit einem fatalen HardFault abstürzen\n\n\n\nOS-APIs sind für Tasks geschrieben. Volle Queue → Task schläft. ISR hat keinen TCB, keine RTOS-Prio → Blockieren einer ISR ist physikalisch unmöglich und führt zum HardFault."
+    "text": "Die große Hürde: OS-Aufrufe in der ISR\nDrei Fragen, alle ja:\n\nIst die Funktion in der ISR erlaubt?\nIst der Aufruf nicht blockierend?\nLiegt die IRQ-Priorität im Syscall-Bereich?\n\n\n\n\nCMSIS\naus ISR\n\n\n\n\nQueue Put/Get\nnur Timeout 0\n\n\nSemaphore Release\nja\n\n\nSemaphore Acquire\nnur Timeout 0\n\n\nMutex Acquire/Release\nnein\n\n\nNew, Reset, Delete\nnein\n\n\n\n\nNative Namen daneben nur, wenn das Labor sie wirklich ruft. CMSIS-Labor bleibt bei CMSIS."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#native-freertos-lösung-eigene-isr-funktionen",
     "href": "vorlesungen/05_inter-task-kommunikation.html#native-freertos-lösung-eigene-isr-funktionen",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Native FreeRTOS-Lösung: Eigene ISR-Funktionen",
-    "text": "Native FreeRTOS-Lösung: Eigene ISR-Funktionen\n\nFreeRTOS besitzt eine doppelte API\nFür jede Funktion: Variante mit Suffix ...FromISR\n\nTask: xSemaphoreGive(mySem)\nISR: xSemaphoreGiveFromISR(mySem, ...)\n\nUnterschied: FromISR-Funktionen sind abgespeckt\n\nBlockieren niemals (Queue: z. B. errQUEUE_FULL; Semaphor: pdFALSE)\nManipulieren Listen unterbrechungssicher\n\n\n\nRichard Barry: API verdoppelt. In nativer ISR niemals die normale API → immer FromISR. Kein Blockieren; Error-Code bei voller Queue. Ready-Listen ISR-sicher."
+    "text": "Native FreeRTOS-Lösung: Eigene ISR-Funktionen\n\nxQueueSendFromISR, xSemaphoreGiveFromISR\nxHigherPriorityTaskWoken beginnt bei pdFALSE\ndanach portYIELD_FROM_ISR\nFehlendes Yield: unter den Annahmen zuerst zurück zur unterbrochenen Task, bis ein späterer Anlass schedult\nDas ist ein Fehlerbild, nicht „der Kernel wartet immer auf den nächsten SysTick“\n\n\nFolie der alten Fassung, die den Tick als Standard nannte, gilt nur für dieses vergessene Yield."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-cmsis-rtos-v2-abstraktion",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-cmsis-rtos-v2-abstraktion",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die CMSIS-RTOS v2 Abstraktion",
-    "text": "Die CMSIS-RTOS v2 Abstraktion\n\nCMSIS: keine doppelten Funktionen (FromISR existiert in der API nicht)\nosSemaphoreRelease() ist intelligent\n\nLiest heimlich das ARM-Register IPSR (Interrupt Program Status Register)\nWenn \\(\\mathrm{IPSR} \\neq 0\\) (Handler Mode): wir sind in einer ISR → intern Umleitung auf ...FromISR\nWenn \\(\\mathrm{IPSR} = 0\\) (Thread Mode): wir sind in einer Task → normaler Aufruf\n\n\n\nCMSIS-V2: immer osSemaphoreRelease. Wrapper prüft IPSR (\\(\\neq 0\\) = Interrupt). Automatisches Routing auf FreeRTOS-FromISR bzw. normale API. Riesiger Portabilitätsvorteil."
+    "text": "Die CMSIS-RTOS v2 Abstraktion\n\nDer ST-Adapter prüft den Kontext und ruft bei erlaubten Funktionen die native FromISR-Variante\nDie Switch-Anforderung sitzt im Wrapper\nIm CMSIS-Labor kein zweites manuelles Yield\nDer Wrapper macht Mutex-Aufrufe dadurch nicht ISR-fähig\n\n\ncmsis_os2.c der verwendeten Version lesen, nicht nur die Spezifikation."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#die-eine-cmsis-regel-für-isrs",
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-eine-cmsis-regel-für-isrs",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die eine CMSIS-Regel für ISRs",
-    "text": "Die eine CMSIS-Regel für ISRs\n\nCMSIS nimmt uns fast alles ab → aber: eine ISR darf niemals warten!\nGoldene Regel: in einer ISR (Top-Half) muss timeout immer \\(0\\) sein\nosWaitForever in einer ISR → Aufruf schlägt fehl (osErrorParameter)\n\n\nPhysik bleibt: ISR darf nicht warten. Timeout osWaitForever oder \\(&gt; 0\\) in ISR → CMSIS bricht mit osErrorParameter ab (kein Absturz). Merke: in der ISR ist der Timeout ausnahmslos \\(0\\)."
+    "text": "Die eine CMSIS-Regel für ISRs\nKleine NVIC-Zahl = höhere IRQ-Dringlichkeit.\nTaskpriorität High repariert eine falsche EXTI-Priorität nicht.\nBeispiel, nur bei bestätigten 4 Priority-Bits und Grenze 5: logisch 0–4 keine Kernel-API, 5–15 bei passender Gruppierung erlaubt.\nconfigMAX_SYSCALL_INTERRUPT_PRIORITY ist der geschobene Registerwert.\n\n__NVIC_PRIO_BITS, Shift und Grouping aus dem Projekt. „Priorität 5“ nicht universell hinschreiben."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#der-context-switch-aus-der-isr-yielding",
     "href": "vorlesungen/05_inter-task-kommunikation.html#der-context-switch-aus-der-isr-yielding",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Der Context-Switch aus der ISR (Yielding)",
-    "text": "Der Context-Switch aus der ISR (Yielding)\n\nSzenario:\n\nTask A (Prio Low) läuft\nISR unterbricht Task A\nISR ruft Release() und weckt Task B (Prio High, Bottom-Half)\nISR beendet sich\n\nWas sollte passieren? Task B (High) sollte sofort rechnen\nAber: OS schaltet standardmäßig erst beim nächsten SysTick (bis zu \\(1\\,\\mathrm{ms}\\))\nFolge: bis zu \\(1\\,\\mathrm{ms}\\) Reaktionslatenz verschenkt\n\n\nNach ISR-Return springt die CPU oft zurück in die Low-Prio-Task. High-Prio ist Ready, aber Scheduler wartet auf SysTick. Bis zu 1 ms Latenz verschenkt."
+    "text": "Der Context-Switch aus der ISR (Yielding)\nSynthetische Spur, keine H755-Messung:\n\n\n\nEreignis\nZeit\n\n\n\n\nFlanke\n0 µs\n\n\nISR-Eintritt\n3 µs\n\n\nWorker Ready\n8 µs\n\n\nISR-Ende\n12 µs\n\n\nWorkerstart nach PendSV\n16 µs\n\n\n\nStartlatenz in diesem Modell: 16 µs.\nDazu kommen Maskierung, fremde ISRs und die Worker-Laufzeit bis Completion.\n\nReady vor ISR-Ende ist möglich. Running als Thread davor nicht. PendSV wartet auf höher dringliche Handler."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#wie-löst-freertos-das-yielding",
     "href": "vorlesungen/05_inter-task-kommunikation.html#wie-löst-freertos-das-yielding",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Wie löst FreeRTOS das Yielding?",
-    "text": "Wie löst FreeRTOS das Yielding?\n\nDie ISR muss dem OS sagen: wichtige Task geweckt → wechsle sofort nach ISR-Ende\nNative FreeRTOS über Parameter:\n\nBaseType_t xHigherPriorityTaskWoken = pdFALSE;\n\n// true, wenn Task B wichtiger ist als Task A\nxSemaphoreGiveFromISR(mySem, &xHigherPriorityTaskWoken);\n\n// Fordert sofortigen Context-Switch (PendSV) an\nportYIELD_FROM_ISR(xHigherPriorityTaskWoken);\n\nDadurch triggert die ISR den PendSV-Interrupt manuell\n\n\nNative API: Pointer xHigherPriorityTaskWoken, danach portYIELD_FROM_ISR. Makro setzt PendSV-Bit. Nach ISR-Ende: PendSV-Handler statt Rückkehr zur alten Task."
+    "text": "Wie löst FreeRTOS das Yielding?\n\nHardware-Unterbrechung macht Task A nicht im selben Sinn Ready wie ein Scheduler-Wechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat.\n\nDieselben Zeitpunkte wie in der Tabelle. Nicht aus t = 1 bis t = 3 auf „minimale Latenz“ schließen."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#cmsis-ist-unser-freund",
     "href": "vorlesungen/05_inter-task-kommunikation.html#cmsis-ist-unser-freund",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "CMSIS ist unser Freund!",
-    "text": "CMSIS ist unser Freund!\n\nMüssen wir portYIELD_FROM_ISR in CMSIS schreiben?\nNein!\nWrapper osSemaphoreRelease() macht Yielding intern automatisch\nHöhere Prio der geweckten Task → CMSIS triggert PendSV von allein\nSie schreiben nur: osSemaphoreRelease(mySem);\n\n\nCMSIS-V2: FromISR-Umleitung und Yield-Handling automatisch. Eine saubere Zeile in der HW-ISR: osSemaphoreRelease."
+    "text": "CMSIS ist unser Freund!\n\nErlaubte CMSIS-ISR-Funktionen nehmen das Yield mit\nUnerlaubte bleiben unerlaubt\nDiagnose: Rückgabewert, Assert, Zähler — kein printf in der ISR\nEine IRQ oberhalb der Grenze darf Daten ablegen und eine niedrigere, erlaubte IRQ anstoßen\nSie darf den RTOS-Aufruf nicht selbst erzwingen\nDas ist Anhang, nicht der Tasterversuch\n\n\nQuelle: FreeRTOS-Kernel-Book Kap. 7 und der CM4F-Port port.c."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#visualisierung-präemption-aus-der-isr",
     "href": "vorlesungen/05_inter-task-kommunikation.html#visualisierung-präemption-aus-der-isr",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Visualisierung: Präemption aus der ISR",
-    "text": "Visualisierung: Präemption aus der ISR\n\n\nLatenz zwischen Hardware-Event (\\(t=1\\)) und Start der Bottom-Half (\\(t=3\\)) ist minimal\n\n\n\\(t=1\\): HW-Interrupt. \\(t=2\\): Release stellt Task B Ready (noch nicht Running). \\(t=3\\): ISR-Return + PendSV → CPU an Task B. Task B fertig, bevor Task A es merkt → präemptives Interrupt-Handling."
+    "text": "Visualisierung: Präemption aus der ISR\nEreignis → ISR → Ready → ISR-Ende → PendSV → Worker.\nNicht: Ereignis → sofortiger Thread.\nDie alte kleine Kurve ohne Einheit ersetzt dieses Bild nicht.\n\nCompletion ist Start plus Arbeit plus weitere Unterbrechungen."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#laborvorbereitung-deferred-interrupts",
     "href": "vorlesungen/05_inter-task-kommunikation.html#laborvorbereitung-deferred-interrupts",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Laborvorbereitung: Deferred Interrupts",
-    "text": "Laborvorbereitung: Deferred Interrupts\n\nZiel: Hardware-Taster via EXTI-Interrupt und Semaphor an FreeRTOS-Task anbinden\nHardware: blauer User-Button (B1) auf dem STM32H755 Nucleo, meist Pin PC13\nSetup in CubeMX:\n\nPin PC13 als GPIO_EXTI13 (External Interrupt)\nNVIC: Haken bei EXTI line[15:10] interrupts (sonst feuert die ISR nicht)\nFreeRTOS: binären Semaphor ButtonSem anlegen\nTask ButtonTask (Bottom-Half) mit Priorität High\n\n\n\nLabor: blauer Button an PC13. CubeMX: EXTI13, NVIC-Haken setzen! Binary Semaphore + ButtonTask mit hoher Priorität."
+    "text": "Laborvorbereitung: Deferred Interrupts\nTeil A: Queue mit uint32_t oder SensorMessage, Sequenz, definierte Drops.\nTeil B: User-Button. UM2408 für NUCLEO-H755ZI-Q / MB1363: Standard PC13, Alternative PA0. Gelbe LD2 an PE1, wenn die Brücken so stehen.\nGPIO-Takt, Ausgangsmodus und EXTI-Zielkern prüfen. Der RTOS-aufrufende Handler muss im CM4-Kontext liegen.\n\nNur den NVIC-Haken zu setzen, reicht nicht. Priorität muss die Syscall-Grenze einhalten."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#schritt-1-die-top-half-isr-in-c",
     "href": "vorlesungen/05_inter-task-kommunikation.html#schritt-1-die-top-half-isr-in-c",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Schritt 1: Die Top-Half (ISR) in C",
-    "text": "Schritt 1: Die Top-Half (ISR) in C\n\nCubeIDE generiert die ISR; wir nutzen den sicheren HAL-Callback\nIn main.c den leeren HAL_GPIO_EXTI_Callback füllen:\n\n/* USER CODE BEGIN 4 */\nvoid HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)\n{\n    if (GPIO_Pin == USER_Btn_Pin) {  // War es unser Taster?\n        // 1. Wecke die Bottom-Half auf\n        osSemaphoreRelease(ButtonSemHandle);\n\n        // 2. ISR sofort beenden\n        // (CMSIS fordert intern PendSV an)\n    }\n}\n/* USER CODE END 4 */\n\nHAL fängt den Assembler-Interrupt ab, löscht das Flag, ruft den Callback. Nur prüfen und osSemaphoreRelease → keine printf, keine Berechnung. Perfekte kurze Top-Half."
+    "text": "Schritt 1: Die Top-Half (ISR) in C\nReihenfolge:\n\nTakt und GPIO\nosKernelInitialize\nButtonSem = osSemaphoreNew(1, 0, NULL)\nThreads prüfen, osKernelStart\nEXTI erst im laufenden Kernel freigeben\n\nAusstehende Flags nach diesem Vertrag löschen, nicht im frühen MX_GPIO_Init einen Callback ins Leere schicken.\nPfad: EXTI15_10_IRQHandler → HAL_GPIO_EXTI_IRQHandler → Callback → osSemaphoreRelease.\nHAL quittiert. Der Callback prüft die Leitung und kehrt zurück.\n\nosOK, voller Semaphor und anderer Fehler getrennt zählen. Kein Heap, keine lange Schleife. Diagnosezähler nicht aus zwei Kontexten unsynchronisiert erhöhen, wenn beide schreiben."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#schritt-2-die-bottom-half-task-in-c",
     "href": "vorlesungen/05_inter-task-kommunikation.html#schritt-2-die-bottom-half-task-in-c",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Schritt 2: Die Bottom-Half (Task) in C",
-    "text": "Schritt 2: Die Bottom-Half (Task) in C\n\nIn der Endlosschleife der Task auf das Signal warten:\n\nvoid StartButtonTask(void *argument)\n{\n    for (;;) {\n        // 1. Schlafe (0% CPU), bis ISR signalisiert\n        osSemaphoreAcquire(ButtonSemHandle, osWaitForever);\n\n        // 2. WACH — hier die aufwändige Arbeit\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n        printf(\"BUTTON PRESSED!\\n\");\n\n        // NUR DEMO: busy-wait, Task bleibt Running!\n        HAL_Delay(100);\n        // Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms\n    }\n}\n\nAcquire mit osWaitForever → Blocked. Nach Knopfdruck: LED, printf, Demo-Last. HAL_Delay busy-waitet und hält die Task im Running-Zustand → nur zur Demo. In Produktion osDelay (Ticks!), damit die Task Blocked geht und andere Tasks rechnen können. In der ISR hätte jedes Delay den Chip gekillt; im Task-Kontext überlebt das OS."
+    "text": "Schritt 2: Die Bottom-Half (Task) in C\nvoid ButtonTask(void *argument) {\n    (void)argument;\n    for (;;) {\n        if (osSemaphoreAcquire(ButtonSem, osWaitForever) != osOK)\n            continue;\n        /* kurze Arbeit; UART nur über VL4-Schutz */\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    }\n}\nVergleichsvariante, ausdrücklich: HAL_Delay(100) als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.\nEntprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.\n\nPE1 nur, wenn LD2 dort wirklich anliegt. Burst: mehrere Releases vor dem Acquire zeigen das Zusammenfassen. Eine Event-Queue mit Timeout 0 ist die Zählvariante, ebenfalls endlich."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#was-werden-wir-im-labor-beobachten",
     "href": "vorlesungen/05_inter-task-kommunikation.html#was-werden-wir-im-labor-beobachten",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Was werden wir im Labor beobachten?",
-    "text": "Was werden wir im Labor beobachten?\n\nButton drücken → LED und Console verzögerungsfrei (für das Auge)\nBeweis der RTOS-Architektur:\n\nTrotz printf und Delay stürzen parallel laufende Tasks (z. B. blinkende LED) nicht ab\nEine noch wichtigere Task könnte unser printf präemptieren\n\nHardware-Interrupts und Software-Scheduling sind sicher vereint\n\n\nKeine Polling-Latenz, ISR-Regeln eingehalten, Scheduler bleibt Herr der Lage. Demo-Delay auf Prio High; Realtime-Task mit höherer Prio könnte präemptieren. Finale der Woche: Hardware-Welt und FreeRTOS vereint."
+    "text": "Was werden wir im Labor beobachten?\n\n\n\nFeld\nNotiz\n\n\n\n\nSemaphor anfangs 0\n\n\n\nNVIC-Zahl und Grouping\n\n\n\nTickfrequenz\n\n\n\nWorkerpriorität\n\n\n\nDrop- und Fehlerzähler\n\n\n\nISR-Dauer, Start, Completion\n\n\n\nHeartbeat-Verzögerung\n\n\n\nverarbeitete Ereignisse\n\n\n\n\nAugenmaß an der LED ist keine quantitative Frist.\nMessung: GPIO oder vorhandenes Trace, printf danach. Pins nur aus dem Projekt.\n\nOhne Board bleiben die Sollbeobachtungen offen. Ein Build beweist keine Latenz."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-des-tages",
     "href": "vorlesungen/05_inter-task-kommunikation.html#zusammenfassung-des-tages",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Zusammenfassung des Tages",
-    "text": "Zusammenfassung des Tages\n\nQueues: transportieren Daten (Values oder Pointer) threadsicher zwischen Tasks; blockieren bei Über-/Unterlast\nMailboxes: Zustandskommunikation (Overwrite erlaubt)\nISRs müssen extrem kurz sein, damit der RTOS-SysTick nicht blockiert\nDeferred Interrupt Processing: Top-Half-ISR löst nur ein Event (Semaphor) aus; Bottom-Half-Task erledigt die Arbeit\nCMSIS-RTOS v2: FromISR-Logik und Context-Yielding automatisch\n\n\nHeute: Queues (Value/Pointer), Mailboxes, Top-/Bottom-Half über binären Semaphor in CMSIS. Ins Labor → EXTI-Interrupt ausprobieren. Viel Erfolg!"
+    "text": "Zusammenfassung des Tages\n\nVariable: letzter Wert; FIFO: Folge, bis der Puffer voll ist\nRingbeispiel endet bei 20, 30, 40; Head = Tail und Count = 3 heißt voll\nDauerlast: erster Fehl-Put bei 13 ms, Bilanz 13 und 7\nPointer-Queue kopiert 4 Byte und nicht das Bild\nTry-Put auf voller 1er-Queue behält 10\nStartlatenz im Lehrbeispiel 16 µs, nicht gemessen\nEXTI-Priorität und leerer Semaphor gehören zur Init\n\n\nQuellen: CMSIS Message Queue und Semaphore, CMSIS-FreeRTOS Tech Data der Projektversion, FreeRTOS-Buch Kap. 5 und 7, CM4F-Port, UM2408."
+  },
+  {
+    "objectID": "vorlesungen/05_inter-task-kommunikation.html#ausblick",
+    "href": "vorlesungen/05_inter-task-kommunikation.html#ausblick",
+    "title": "05 · Inter-Task-Kommunikation und Interrupts",
+    "section": "Ausblick",
+    "text": "Ausblick\n\nNächster Termin: mehrere Kerne, gemeinsamer Speicher, kein gemeinsamer Heap\nDie Queue von heute bleibt lokal auf ihrem Kernel\nCache und DMA nur mit dem Kern, der den Puffer cached\n\n\nHSEM und MPU sind nicht diese Vorlesung."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#willkommen-in-der-profiliga",

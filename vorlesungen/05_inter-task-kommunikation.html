@@ -222,14 +222,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-zurück-zu-echtzeitsysteme" class="slide level2">
 <h2>Willkommen zurück zu Echtzeitsysteme!</h2>
 <ul>
-<li>Herzlich willkommen zum 5. Termin unserer Vorlesung</li>
-<li>Halbzeit! Sie kennen nun die Grundlagen von Scheduling und Ressourcenverwaltung</li>
-<li>Letzte Woche: Die dunkle Seite der Präemption (Race Conditions, Priority Inversion)</li>
-<li>Heute: Wie transportieren wir Daten sicher von A nach B?</li>
-<li>Außerdem: Wie binden wir Hardware-Interrupts professionell an ein RTOS an?</li>
+<li>Fünfter Termin: Daten transportieren, nicht nur sperren</li>
+<li>Ein FreeRTOS-Kernel auf dem CM4, wie in VL3/VL4, sofern das Projekt das bestätigt</li>
+<li>Eine lokale Queue ist kein Kanal zwischen zwei getrennten Kerneln</li>
+<li>DMA und der zweite Kern bleiben ein kurzer Anhang</li>
 </ul>
 <aside class="notes">
-<p>Guten Morgen und herzlich willkommen zur fünften Vorlesung! Wir haben Bergfest, die Hälfte des Semesters ist geschafft. Sie haben bis hierhin ein tiefes Verständnis dafür entwickelt, wie der Scheduler funktioniert und welche Gefahren lauern, wenn wir Variablen einfach wild zwischen Tasks teilen. Letzte Woche: Mutexe zum Schutz geteilter Daten. Heute: Daten aktiv und sicher transportieren. Im zweiten Teil: Hardware-Interrupts fehlerfrei in FreeRTOS integrieren.</p>
+<p>Keine .ioc im Kursrepo. UART, EXTI-Zielkern, Tick und NVIC-Gruppierung am Cube-Projekt lesen. CMSIS-Spezifikation, ST-Adapter und native API nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -245,16 +244,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
 <ol type="1">
-<li>Recap: Mutexe und Priority Inversion</li>
-<li>Das Problem: Transport kontinuierlicher Datenströme</li>
-<li>Inter-Task Communication (ITC): Queues</li>
-<li>CMSIS-API für Queues und Value vs.&nbsp;Reference</li>
-<li>Der Spezialfall: Mailboxes (Status vs.&nbsp;Events)</li>
-<li><em>[Nach der Pause]</em> Interrupts im RTOS: Top-Half und Bottom-Half</li>
-<li>Ausblick Labor: Deferred Interrupt Processing am STM32H755</li>
+<li>Historie gegen aktuellen Wert</li>
+<li>Queue: Ring, Warten, Überlauf</li>
+<li>Kopie, Pointer, Pufferkreislauf</li>
+<li>Mailbox und mehrere Leser</li>
+<li>Top-Half, zulässige ISR-API, EXTI-Labor</li>
 </ol>
 <aside class="notes">
-<p>Zuerst: Warum ein Mutex für Datenströme ungeeignet ist. Dann Inter-Task Communication (ITC) und Warteschlangen (Queues) — FreeRTOS kennt Tasks, keine Prozesse. C-API, Pointer vs.&nbsp;Kopie, Mailbox. Nach der Pause: ISRs kurz halten und Deferred-Interrupt-Muster.</p>
+<p>Agendanotiz bleibt auf dieser Folie: Put am Tail, Get am Head. Nachrichtenvorrang ist nicht die Taskpriorität.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -270,13 +267,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="recap-die-lehren-aus-termin-4" class="slide level2">
 <h2>Recap: Die Lehren aus Termin 4</h2>
 <ul>
-<li>Race Conditions: asynchrone Präemption in geteilten Variablen (Read-Modify-Write zerreißt)</li>
-<li>Mutex: exklusives Schloss mit Besitzrecht (Ownership) für Critical Sections</li>
-<li>Priority Inversion: Low-Task blockiert High-Task</li>
-<li>Rettung (Priority Inheritance): OS boostet die Low-Task temporär auf die Priorität der wartenden High-Task</li>
+<li><code>counter++</code> ist ein Read-Modify-Write, nicht universell drei Befehle</li>
+<li>Präemption auch durch Ereignisse, Wechsel im Port über PendSV</li>
+<li>PIP kürzt die Extra-Zeit durch Medium, nicht jede Verzögerung</li>
+<li>Ein Mutex kann einen konsistenten Snapshot schützen</li>
+<li>Er liefert keine Historie und keine Ereignisschlange</li>
 </ul>
 <aside class="notes">
-<p>Kurzer Rückblick: <code>counter++</code> sind drei Assembler-Befehle — SysTick dazwischen → Race Condition. Mutexe schützen. Prioritätsinversion (Pathfinder). CMSIS-Mutex löst das über Priority Inheritance in FreeRTOS.</p>
+<p>Verlorenes Update endete bei 6 statt 7. Das bleibt wahr, auch wenn der Compiler mehr als drei Befehle erzeugt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -292,20 +290,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="mutexe-schützen-aber-transportieren-nicht" class="slide level2">
 <h2>Mutexe schützen, aber transportieren nicht!</h2>
 <ul>
-<li>Ein Mutex eignet sich perfekt für:
-<ul>
-<li>Den UART-Port (eine Task schreibt, die andere wartet)</li>
-<li>Ein Setup-Struct (einmal schreiben, oft lesen)</li>
-</ul></li>
-<li>Problem: kontinuierlicher Datenstrom (Audio-Samples, Sensordaten)
-<ul>
-<li>Task A produziert jede Millisekunde einen neuen Wert</li>
-<li>Task B liest und filtert</li>
-<li>Globale Variable + Mutex → mehr Zeit am Schloss als beim Rechnen</li>
-</ul></li>
+<li>Viele Samples hintereinander: der letzte Wert überschreibt die früheren</li>
+<li>„Mehr Zeit am Schloss als beim Rechnen“ nur mit Messung oder als Hypothese</li>
+<li>Eine Queue kopiert und weckt; auch das kostet</li>
+<li>Hohe Raten oft als Block, nicht jedes Sample als eigene Nachricht</li>
+<li>44000 Samples/s nicht als belegte Laborzahl verwenden</li>
 </ul>
 <aside class="notes">
-<p>Mutexe sind Zugangskontrolle, nicht Transport. Bei 44.000 Samples/s wäre jedes Sample sperren/entsperren ein Flaschenhals: CPU rechnet Mutex-Logik statt Audiofilter. Wir brauchen einen besseren Weg.</p>
+<p>Backpressure kann eine Softwarequelle bremsen. ADC, UART-Empfang oder DMA laufen unter Umständen weiter.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -320,31 +312,33 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="motivation-producer-consumer" class="slide level2">
 <h2>Motivation: Producer &amp; Consumer</h2>
+<p>Fünf Samples bei <span class="math inline">\(t = 1,2,3,4,5\,\mathrm{ms}\)</span>. Der Leser kommt nach dem fünften.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Speicher</th>
+<th>Inhalt</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>eine globale Variable</td>
+<td>nur Sample 5</td>
+</tr>
+<tr class="even">
+<td>FIFO mit Platz</td>
+<td>Folge 1 bis 5, wenn nichts verworfen wurde</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Das häufigste Software-Muster in eingebetteten Systemen</li>
-<li>Producer (Erzeuger): liest Sensoren, empfängt Pakete, generiert schnell Rohdaten</li>
-<li>Consumer (Verbraucher): filtert, rechnet, Display — oft langsamer oder in Blöcken</li>
-<li>Leitfrage: Wie überbrücken wir unterschiedliche Geschwindigkeiten sicher?</li>
+<li>„Alle Ereignisse in Reihenfolge“: Überschreiben ist Verlust</li>
+<li>„Aktueller Zustand“: Überschreiben kann gewollt sein</li>
+<li>Sequenznummer und Zeitstempel machen Lücken und Alter sichtbar</li>
+<li>Die Zeitquelle muss zur Einheit passen</li>
 </ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph TD
-    P[Task A: Producer]
-    C[Task B: Consumer]
-    P --&gt;|Schreibt Daten| C
-    style P fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style C fill:#F5F5F7,stroke:#1D1D1F,stroke-width:2px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
 <aside class="notes">
-<p>Producer-Consumer-Pattern: schneller Erzeuger (z. B. ADC) und langsamerer Verbraucher (FFT, Display). Geschwindigkeitsgefälle → zeitliche Entkopplung nötig.</p>
+<p>Frage: Braucht ein Display jeden Zwischenwert? Oft den letzten gültigen. Braucht ein Tasterzähler jeden Druck? Ja, sonst fehlt ein Ereignis. Die Anforderung entscheidet, nicht die Queue an sich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -360,24 +354,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-falle-der-globalen-variable" class="slide level2">
 <h2>Die Falle der globalen Variable</h2>
 <ul>
-<li>Annahme: globale Variable <code>adc_value</code></li>
-<li>Producer überschreibt jede <span class="math inline">\(1\,\mathrm{ms}\)</span></li>
-<li>Consumer kommt nur alle <span class="math inline">\(5\,\mathrm{ms}\)</span> dazu</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">// Producer (jede 1 ms)</span></span>
-<span id="cb1-2"><a aria-label="2"></a><span class="dt">void</span> Task_ADC<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb1-3"><a aria-label="3"></a>    adc_value <span class="op">=</span> Hardware_Read<span class="op">();</span></span>
-<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span>
-<span id="cb1-5"><a aria-label="5"></a></span>
-<span id="cb1-6"><a aria-label="6"></a><span class="co">// Consumer (alle 5 ms)</span></span>
-<span id="cb1-7"><a aria-label="7"></a><span class="dt">void</span> Task_Filter<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb1-8"><a aria-label="8"></a>    <span class="co">// Nur EIN Wert da — die 4 vorherigen sind überschrieben!</span></span>
-<span id="cb1-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Ergebnis: Datenverlust, obwohl das OS fehlerfrei läuft</li>
+<li>Geschützt: ein konsistenter Stand</li>
+<li>Ungeschützt: zerrissene Felder, wie in VL4</li>
+<li>Kein Warten auf „neue Daten“, kein Rückstau, keine Reihenfolge</li>
+<li>Ein Puffer gleicht Bursts aus</li>
+<li>Er macht einen dauerhaft langsameren Consumer nicht schneller</li>
 </ul>
 <aside class="notes">
-<p>Producer feuert jede ms, Consumer alle 5 ms (niedrige Prio oder FFT). Consumer sieht nur den letzten Wert; vier Werte davor sind verloren — massiver Datenverlust bei korrektem OS.</p>
+<p>Durchsatz <span class="math inline">\(\mu\)</span> unter der Ankunft <span class="math inline">\(\lambda\)</span> füllt jeden endlichen Puffer.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -392,20 +376,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-lösung-inter-task-communication-itc" class="slide level2">
 <h2>Die Lösung: Inter-Task Communication (ITC)</h2>
+<p>Begrenzter Puffer, nicht nur zwei Kästen:</p>
+<p>Producer → Slot → Slot → Slot → Consumer</p>
 <ul>
-<li>Wir brauchen Inter-Task Communication (ITC) — in FreeRTOS: Task-zu-Task, keine Prozesse</li>
-<li>(In der Literatur oft „IPC“ genannt; hier meinen wir dasselbe Muster auf Task-Ebene.)</li>
-<li>Das Betriebssystem muss die Datenverwaltung übernehmen</li>
-<li>Lösung: ein Puffer (Buffer)
-<ul>
-<li>Speicherbereich für mehrere Werte</li>
-<li>Producer legt Daten vorne hinein</li>
-<li>Consumer holt Daten hinten heraus</li>
-</ul></li>
-<li>In RTOS-Systemen: Queue (Warteschlange)</li>
+<li>Put reiht eine <strong>Kopie</strong> des Elements ein</li>
+<li>Get entnimmt ein Element</li>
+<li>Mehrere Consumer teilen sich die Arbeit</li>
+<li>Sie bekommen nicht alle dieselbe Nachricht</li>
 </ul>
 <aside class="notes">
-<p>Puffer entkoppelt Geschwindigkeiten. Producer legt ab, OS stapelt, Consumer holt in Ruhe. In FreeRTOS heißt dieser Puffer Queue — Rückgrat der Inter-Task-Kommunikation.</p>
+<p>GetCount und GetSpace sind Momentaufnahmen, keine Reservierung für den nächsten Aufruf.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -421,14 +401,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="lernziele-des-heutigen-tages" class="slide level2">
 <h2>Lernziele des heutigen Tages</h2>
 <ol type="1">
-<li>Das Producer-Consumer-Pattern verstehen</li>
-<li>Queues in CMSIS-RTOS anlegen, beschreiben und lesen</li>
-<li>Vor- und Nachteile von Copy by Value vs.&nbsp;Copy by Reference kennen</li>
-<li>Semantischen Unterschied Queue vs.&nbsp;Mailbox erklären</li>
-<li><em>[Nach der Pause]</em> Hardware-Interrupts über Deferred Interrupt Processing anbinden</li>
+<li>Historie und Latest-Value auseinanderhalten</li>
+<li>Einen Ring mit Head, Tail und Count lesen</li>
+<li>Wertkopie, Pointerkopie und Pufferbesitz trennen</li>
+<li>Put mit Timeout 0 nicht mit Overwrite verwechseln</li>
+<li>EXTI nur mit zulässiger NVIC-Priorität an den Kernel hängen</li>
 </ol>
 <aside class="notes">
-<p>Block 1: Queues, API, Value vs.&nbsp;Reference, Mailbox. Nach der Pause: Deferred Interrupt Processing — ISR-Latenz minimieren.</p>
+<p>Ready nach einem Put ist noch nicht Running.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -444,16 +424,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-queue-warteschlange" class="slide level2">
 <h2>Die Queue (Warteschlange)</h2>
 <ul>
-<li>Queue = Array im RAM, exklusiv vom OS verwaltet</li>
-<li>FIFO-Prinzip (First-In, First-Out)
-<ul>
-<li>Was zuerst hineinlegt wird, kommt zuerst heraus (Supermarktkasse)</li>
-</ul></li>
-<li>Threadsicher: FreeRTOS schützt intern mit Interrupt-Sperren</li>
-<li>Keine eigenen Mutexe nötig beim Schreiben in eine Queue</li>
+<li>Im Adapter mit <code>msg_prio = 0</code>: normales Put/Get ist FIFO</li>
+<li>Die CMSIS-Spezifikation sortiert nach <code>msg_prio</code></li>
+<li>Der dokumentierte CMSIS-FreeRTOS-Adapter <strong>ignoriert</strong> den Parameter</li>
+<li>Das ist keine Taskpriorität</li>
+<li>„Immer 0, historisch“ reicht als Erklärung nicht</li>
 </ul>
 <aside class="notes">
-<p>Technisch ein Array, verwaltet von FreeRTOS. FIFO erhält die Reihenfolge. Thread-safe: kein <code>osMutexAcquire</code> vor dem Schreiben — das OS sichert Zugriffe ab.</p>
+<p>Version im Projekt prüfen. Öffentliches <code>main</code> ist nicht die Laborfassung. Quelle: CMSIS Message Queue und CMSIS-FreeRTOS Technical Data.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -468,34 +446,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-lebenszyklus-einer-queue" class="slide level2">
 <h2>Der Lebenszyklus einer Queue</h2>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph LR
-    A[Create] --&gt; B(Put / Write)
-    B --&gt; C(Get / Read)
-    C --&gt; B
-    C --&gt; D[Delete]
-    style A fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important
-    style B fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style C fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style D fill:#FFFFFF,stroke:#86868B,stroke-width:2px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
-<ul>
-<li>Create: OS reserviert RAM für <span class="math inline">\(N\)</span> Elemente der Größe <span class="math inline">\(X\)</span> Bytes</li>
-<li>Put (Schreiben): Kopie der Daten hinten in die Queue</li>
-<li>Get (Lesen): vorderstes Element herausnehmen (wird entfernt!)</li>
-<li>Delete: RAM freigeben (auf MCUs oft ungenutzt — Queues leben ewig)</li>
-</ul>
+<p>Ring <span class="math inline">\(N = 3\)</span>. Put 10, Put 20, Get liefert 10, Put 30, Put 40.</p>
+<p>Logische Restfolge: <strong>20, 30, 40</strong>.</p>
+<p>Physisch danach: Slots <span class="math inline">\([40,\,20,\,30]\)</span>, Head = Tail = 1, Count = 3.</p>
+<p>Gleiche Indizes können leer oder voll sein. Count entscheidet.</p>
+<p><img data-src="../_livefigures/inline-plantuml-ed4b77f5.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Create einmal, dann Put/Get im Kreis. Get entfernt das Element — Platz wird frei. Delete gibt es, wird auf Mikrocontrollern kaum genutzt.</p>
+<p>Put am Tail, Get am Head. Wrap ist Absicht. Synthetisches Bild, kein Boardtrace.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -511,19 +468,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="speichermanagement-einer-queue" class="slide level2">
 <h2>Speichermanagement einer Queue</h2>
 <ul>
-<li>Vor der Nutzung dem OS zwei Dinge mitteilen:
-<ul>
-<li>Länge: maximal wie viele Elemente? (z. B. 10)</li>
-<li>Elementgröße: Bytes pro Element? (z. B. <code>sizeof(uint32_t)</code> <span class="math inline">\(= 4\)</span>)</li>
-</ul></li>
-<li>RAM-Bedarf: FreeRTOS reserviert sofort <span class="math inline">\(10 \times 4 = 40\)</span> Bytes aus dem Heap
-<ul>
-<li>plus OS-Overhead für die Queue-Verwaltung</li>
-</ul></li>
-<li>Dieser RAM ist reserviert, auch wenn die Queue leer ist</li>
+<li>Nutzdaten, Kontrollblock, Alignment, Allokator getrennt zeichnen</li>
+<li><span class="math inline">\(N = 10\)</span> und <code>uint32_t</code>: <strong>40 Byte</strong> Nutzdaten, plus Verwaltung</li>
+<li><code>osMessageQueueNew</code> mit Attribut <code>NULL</code>: dynamisch, kann <code>NULL</code> liefern</li>
+<li><code>NULL</code> ist nicht nur „Heap voll“: auch Parameter, Kontext, Konfiguration</li>
+<li>Statische Puffer: Größe aus Header, Adapter und Linker-Map</li>
+<li>Delete erst, wenn niemand mehr nutzt</li>
+<li>Ein gespeicherter Pointer gibt das Bildarray nicht frei</li>
 </ul>
 <aside class="notes">
-<p>Länge und Elementgröße festlegen. 10 <span class="math inline">\(\times\)</span> 4 Bytes = mindestens 40 Bytes Heap, auch bei leerer Queue.</p>
+<p>CMSIS-New und <code>xQueueCreateStatic</code> nicht gleichsetzen. Keine universelle Gesamtgröße neben den 40 Byte behaupten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -539,14 +493,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-magie-blockieren-bei-leerlauf" class="slide level2">
 <h2>Die Magie: Blockieren bei Leerlauf</h2>
 <ul>
-<li>Was passiert, wenn der Consumer <code>Get()</code> aufruft und die Queue leer ist?</li>
-<li>Bare-Metal: leere Variable lesen oder in <code>while</code> festsitzen</li>
-<li>RTOS: Consumer sofort in den Blocked-Zustand</li>
-<li>Task verbraucht <span class="math inline">\(0\%\)</span> CPU, bis der Producer ein <code>Put()</code> ausführt</li>
-<li>Sobald ein Wert eintrifft: Consumer wird (bei ausreichender Prio) sofort aufgeweckt</li>
+<li>Consumer, Timeout warten, Queue leer → Blocked</li>
+<li>Put macht ihn Ready</li>
+<li>Er läuft, wenn der Scheduler ihn wählt</li>
+<li><code>timeout = 0</code>: sofortiger Status, Zielwert nicht als neue Nachricht behandeln</li>
+<li>Endliche Wartezeit kann mit Timeout enden</li>
+<li><code>osWaitForever</code> macht einen ungültigen Handle nicht gültig</li>
 </ul>
 <aside class="notes">
-<p>Beste Task-Zustand aus VL3: Blocked. Timeout <code>osWaitForever</code> → leere Queue schickt Consumer schlafen (<span class="math inline">\(0\%\)</span> CPU). Put weckt sofort auf — kein Polling.</p>
+<p>Blocked: keine eigenen Befehle. Tick und IRQs kosten weiter. Nicht „CPU 0 %“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -562,16 +517,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-magie-blockieren-bei-überlast" class="slide level2">
 <h2>Die Magie: Blockieren bei Überlast</h2>
 <ul>
-<li>Was passiert, wenn der Producer <code>Put()</code> aufruft und die Queue voll ist?</li>
-<li>Option A (Timeout <span class="math inline">\(= 0\)</span>): Fehler <code>osErrorResource</code>, Wert verwerfen (Datenverlust)</li>
-<li>Option B (Timeout <span class="math inline">\(&gt; 0\)</span>): Producer geht in den Blocked-Zustand
-<ul>
-<li>Wartet, bis der Consumer Platz schafft</li>
-</ul></li>
-<li>Eleganter Mechanismus zur Drosselung (Throttling)</li>
+<li>Producer, Queue voll, Timeout &gt; 0 → Blocked, bis ein Platz frei wird</li>
+<li>Try-Put: nichts eingereiht, Nachricht bleibt beim Sender</li>
+<li>Nicht jeden Fehler „Queue voll“ nennen</li>
+<li>Nur bei <code>osOK</code> weiterverarbeiten</li>
 </ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a>osStatus_t st <span class="op">=</span> osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>msg<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb1-2"><a aria-label="2"></a><span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a aria-label="3"></a>    drop_count<span class="op">++;</span> <span class="co">/* nicht eingereiht */</span></span>
+<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Volle Queue: Timeout 0 = sofort Fehler/Datenverlust. Timeout <span class="math inline">\(&gt; 0\)</span> = Producer schläft, bis Consumer liest. OS drosselt Überlast von allein.</p>
+<p>Hält der Producer dabei einen Mutex, den der Consumer vor dem Get braucht, entsteht der Zyklus aus VL4. Queue-Threadsicherheit verhindert den Deadlock nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -587,13 +543,111 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-itc-vorteile" class="slide level2">
 <h2>Zusammenfassung: ITC-Vorteile</h2>
 <ul>
-<li>Datentransfer: Werte sicher von Task A nach Task B</li>
-<li>Synchronisation: automatisches Blockieren und Wecken (keine leeren <code>while</code>-Schleifen)</li>
-<li>Pufferung: Geschwindigkeitsunterschiede (Bursts) ausgleichen</li>
-<li>Thread-Safe: keine eigenen Mutexe nötig — das OS regelt den Zugriff</li>
+<li>Reihenfolge, solange Platz und Verträge passen</li>
+<li>Warten ohne Polling</li>
+<li>Kopie entkoppelt die Stackvariable</li>
+<li>Keine Priority Inheritance für das Paar Producer/Consumer</li>
+<li>Kein unendlicher Puffer bei <span class="math inline">\(\lambda &gt; \mu\)</span></li>
 </ul>
 <aside class="notes">
-<p>Queues: Transfer, Synchronisation, Pufferung und Thread-Safety in einem Mechanismus — Schweizer Taschenmesser der RTOS-Entwicklung.</p>
+<p>Vorteil ist Struktur und ein klarer Überlauf, nicht automatische Frist.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="überlauf-burst-und-dauerlast" class="slide level2">
+<h2>Überlauf: Burst und Dauerlast</h2>
+<p>Lehrannahmen: <span class="math inline">\(N = 10\)</span>, anfangs leer, API-Zeit 0. Put bei <span class="math inline">\(1,2,3,\ldots\,\mathrm{ms}\)</span>. Get bei <span class="math inline">\(5,10,15,\ldots\,\mathrm{ms}\)</span>. Zur selben Zeit zuerst Put, dann Get. Voller Try-Put verwirft den <strong>neuen</strong> Wert.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Zeitpunkt</th>
+<th>Stand</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>nach <span class="math inline">\(5\,\mathrm{ms}\)</span></td>
+<td>Count 4</td>
+</tr>
+<tr class="even">
+<td>nach <span class="math inline">\(10\,\mathrm{ms}\)</span></td>
+<td>Count 8</td>
+</tr>
+<tr class="odd">
+<td>bei <span class="math inline">\(12\,\mathrm{ms}\)</span></td>
+<td>Count 10</td>
+</tr>
+<tr class="even">
+<td>erster Fehl-Put</td>
+<td><span class="math inline">\(13\,\mathrm{ms}\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>Über <span class="math inline">\(1\)</span>–<span class="math inline">\(20\,\mathrm{ms}\)</span>: 20 Versuche, <strong>13</strong> erfolgreiche Puts, <strong>7</strong> verworfen, <strong>4</strong> Gets, <strong>9</strong> bleiben.</p>
+<p><span class="math inline">\(\lambda = 1000/\mathrm{s}\)</span>, <span class="math inline">\(\mu = 200/\mathrm{s}\)</span>: kein endlicher Puffer hält das verlustfrei, wenn jede Entnahme nur eine Nachricht ist. Ein Consumer, der danach einen ganzen Stapel leert, ist ein anderes Modell.</p>
+<aside class="notes">
+<p>Bilanz: <span class="math inline">\(20 = 13 + 7\)</span> und <span class="math inline">\(13 = 4 + 9\)</span>. Der Erfolg bei <span class="math inline">\(t = 16\,\mathrm{ms}\)</span> kommt, weil das Get bei 15 einen Platz gemacht hat und der Put bei 15 selbst noch scheiterte. Synthetisch.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="kapazität-planen" class="slide level2">
+<h2>Kapazität planen</h2>
+<p>Unter einem <strong>begrenzten</strong> verlustfreien Modell:</p>
+<p><span class="math display">\[N \ge \max_t \bigl(A(t) - D(t)\bigr)\]</span></p>
+<ul>
+<li><span class="math inline">\(A\)</span>: angebotene Nachrichten, <span class="math inline">\(D\)</span>: Entnahmen</li>
+<li>Nicht erst die Puts zählen, die nach Drops noch klappen</li>
+<li>Fünf Nachrichten ohne zwischenzeitliches Get brauchen fünf Plätze</li>
+<li>Ein schon verarbeiteter Satz liegt außerhalb der Queue</li>
+<li>Payload-Pool extra zählen</li>
+</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Entscheidung</th>
+<th>Wirkung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Quelle drosseln</td>
+<td>nur wenn die Quelle warten kann</td>
+</tr>
+<tr class="even">
+<td>neuen Wert verwerfen</td>
+<td>Lücke in der Historie</td>
+</tr>
+<tr class="odd">
+<td>alten ersetzen</td>
+<td>Latest-Value, andere API</td>
+</tr>
+<tr class="even">
+<td>Fehler melden</td>
+<td>jemand muss ihn sehen</td>
+</tr>
+</tbody>
+</table>
+<p>ISR wartet nicht. Ein ADC hält nicht automatisch an.</p>
+<aside class="notes">
+<p>Zeitgleiche Ereignisse und die Belegung vor dem folgenden Get gehören in die Rechnung. Durchschnittsraten allein genügen nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -608,24 +662,28 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="cmsis-api-queue-anlegen" class="slide level2">
 <h2>CMSIS-API: Queue anlegen</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb2-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> sample<span class="op">;</span></span>
+<span id="cb2-3"><a aria-label="3"></a>    <span class="dt">uint32_t</span> seq<span class="op">;</span></span>
+<span id="cb2-4"><a aria-label="4"></a>    <span class="dt">uint32_t</span> tick<span class="op">;</span></span>
+<span id="cb2-5"><a aria-label="5"></a><span class="op">}</span> SensorMessage<span class="op">;</span></span>
+<span id="cb2-6"><a aria-label="6"></a></span>
+<span id="cb2-7"><a aria-label="7"></a>osMessageQueueId_t q<span class="op">;</span></span>
+<span id="cb2-8"><a aria-label="8"></a></span>
+<span id="cb2-9"><a aria-label="9"></a><span class="dt">void</span> app_init<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-10"><a aria-label="10"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelInitialize<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-11"><a aria-label="11"></a>    q <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">8</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>SensorMessage<span class="op">),</span> NULL<span class="op">);</span></span>
+<span id="cb2-12"><a aria-label="12"></a>    <span class="cf">if</span> <span class="op">(</span>q <span class="op">==</span> NULL <span class="op">||</span> osThreadNew<span class="op">(</span>Producer<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">)</span> <span class="op">==</span> NULL<span class="op">)</span></span>
+<span id="cb2-13"><a aria-label="13"></a>        Error_Handler<span class="op">();</span></span>
+<span id="cb2-14"><a aria-label="14"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelStart<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>CMSIS-RTOS v2 Abstraktion:</li>
+<li><code>sizeof</code> und Alignment am Build prüfen</li>
+<li><code>uint32_t</code>-Übung darf bleiben; das Struct ist der Datensatz</li>
+<li>1-ms-Modell und <code>osDelay(10)</code> sind verschiedene Versuche</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="co">// Globale Variable (Handle) für die Queue</span></span>
-<span id="cb2-2"><a aria-label="2"></a>osMessageQueueId_t sensorQueue<span class="op">;</span></span>
-<span id="cb2-3"><a aria-label="3"></a></span>
-<span id="cb2-4"><a aria-label="4"></a><span class="dt">void</span> System_Init<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb2-5"><a aria-label="5"></a>    <span class="co">// Parameter 1: Anzahl der Elemente (z. B. 10)</span></span>
-<span id="cb2-6"><a aria-label="6"></a>    <span class="co">// Parameter 2: Größe eines Elements (z. B. sizeof(uint32_t))</span></span>
-<span id="cb2-7"><a aria-label="7"></a>    <span class="co">// Parameter 3: Optionale Attribute (meist NULL)</span></span>
-<span id="cb2-8"><a aria-label="8"></a>    sensorQueue <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">10</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint32_t</span><span class="op">),</span> NULL<span class="op">);</span></span>
-<span id="cb2-9"><a aria-label="9"></a></span>
-<span id="cb2-10"><a aria-label="10"></a>    <span class="cf">if</span> <span class="op">(</span>sensorQueue <span class="op">==</span> NULL<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb2-11"><a aria-label="11"></a>        <span class="co">// Fehler! Heap ist voll, kein RAM mehr.</span></span>
-<span id="cb2-12"><a aria-label="12"></a>    <span class="op">}</span></span>
-<span id="cb2-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Handle global, <code>osMessageQueueNew</code> vor Scheduler-Start. <code>sizeof</code> für plattformunabhängige Elementgröße. Rückgabe <code>NULL</code> prüfen: Heap voll.</p>
+<p><code>osDelay</code> zählt Ticks. Der Thread läuft danach, wenn er dran ist. Periodisch: absolutes Soll und Überlastregel aus VL3.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -640,30 +698,48 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="cmsis-api-daten-schreiben-put" class="slide level2">
 <h2>CMSIS-API: Daten schreiben (Put)</h2>
-<ul>
-<li>Der Producer legt Daten in die Queue:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> Task_ADC_Producer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> value <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-3"><a aria-label="3"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb3-4"><a aria-label="4"></a>        value <span class="op">=</span> Read_ADC_Hardware<span class="op">();</span></span>
-<span id="cb3-5"><a aria-label="5"></a></span>
-<span id="cb3-6"><a aria-label="6"></a>        <span class="co">// Handle, Pointer auf Daten, Prio (immer 0), Timeout</span></span>
-<span id="cb3-7"><a aria-label="7"></a>        osStatus_t status <span class="op">=</span> osMessageQueuePut<span class="op">(</span></span>
-<span id="cb3-8"><a aria-label="8"></a>            sensorQueue<span class="op">,</span></span>
-<span id="cb3-9"><a aria-label="9"></a>            <span class="op">&amp;</span>value<span class="op">,</span></span>
-<span id="cb3-10"><a aria-label="10"></a>            <span class="dv">0</span><span class="op">,</span></span>
-<span id="cb3-11"><a aria-label="11"></a>            <span class="dv">0</span>  <span class="co">// Timeout = 0 (nicht warten!)</span></span>
-<span id="cb3-12"><a aria-label="12"></a>        <span class="op">);</span></span>
-<span id="cb3-13"><a aria-label="13"></a></span>
-<span id="cb3-14"><a aria-label="14"></a>        <span class="cf">if</span> <span class="op">(</span>status <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb3-15"><a aria-label="15"></a>            <span class="co">// Queue ist voll, Wert verworfen!</span></span>
-<span id="cb3-16"><a aria-label="16"></a>        <span class="op">}</span></span>
-<span id="cb3-17"><a aria-label="17"></a>        osDelay<span class="op">(</span><span class="dv">10</span><span class="op">);</span>  <span class="co">// Ticks; bei 1000 Hz = 10 ms</span></span>
-<span id="cb3-18"><a aria-label="18"></a>    <span class="op">}</span></span>
-<span id="cb3-19"><a aria-label="19"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> Producer<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    SensorMessage m<span class="op">;</span></span>
+<span id="cb3-3"><a aria-label="3"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb3-4"><a aria-label="4"></a>    m<span class="op">.</span>seq <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-5"><a aria-label="5"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb3-6"><a aria-label="6"></a>        m<span class="op">.</span>sample <span class="op">=</span> next_sample<span class="op">();</span> <span class="co">/* oder synthetische Folge */</span></span>
+<span id="cb3-7"><a aria-label="7"></a>        m<span class="op">.</span>seq<span class="op">++;</span></span>
+<span id="cb3-8"><a aria-label="8"></a>        m<span class="op">.</span>tick <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb3-9"><a aria-label="9"></a>        <span class="cf">if</span> <span class="op">(</span>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>m<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
+<span id="cb3-10"><a aria-label="10"></a>            drops<span class="op">++;</span></span>
+<span id="cb3-11"><a aria-label="11"></a>        osDelayUntil<span class="op">(</span>next_deadline<span class="op">());</span></span>
+<span id="cb3-12"><a aria-label="12"></a>    <span class="op">}</span></span>
+<span id="cb3-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Status</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>osOK</code></td>
+<td>Kopie ist in der Queue</td>
+</tr>
+<tr class="even">
+<td>voll, Timeout 0</td>
+<td>nichts eingereiht</td>
+</tr>
+<tr class="odd">
+<td>Timeout</td>
+<td>Wartezeit um, nichts eingereiht</td>
+</tr>
+<tr class="even">
+<td>Parameter, ISR, Handle</td>
+<td>kein „einfach voll“</td>
+</tr>
+</tbody>
+</table>
+<p><code>msg_prio = 0</code> im Labor: FIFO-Entscheidung, vom FreeRTOS-Adapter ignoriert.</p>
 <aside class="notes">
-<p>Adresse der Variable (<code>&amp;value</code>): FreeRTOS kopiert die Bytes. Prio-Parameter historisch, in FreeRTOS immer 0. Timeout 0: bei voller Queue sofort Fehler, Wert verloren.</p>
+<p>Hardware nur anbinden, wenn ADC und Takt schon stimmen. Sonst eine benannte Sequenzquelle.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -678,26 +754,21 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="cmsis-api-daten-lesen-get" class="slide level2">
 <h2>CMSIS-API: Daten lesen (Get)</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> Consumer<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-2"><a aria-label="2"></a>    SensorMessage m<span class="op">;</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb4-4"><a aria-label="4"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb4-5"><a aria-label="5"></a>        <span class="cf">if</span> <span class="op">(</span>osMessageQueueGet<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>m<span class="op">,</span> NULL<span class="op">,</span> <span class="dv">20</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
+<span id="cb4-6"><a aria-label="6"></a>            <span class="cf">continue</span><span class="op">;</span> <span class="co">/* alten Wert nicht als neu werten */</span></span>
+<span id="cb4-7"><a aria-label="7"></a>        use<span class="op">(</span>m<span class="op">.</span>sample<span class="op">,</span> m<span class="op">.</span>seq<span class="op">);</span></span>
+<span id="cb4-8"><a aria-label="8"></a>    <span class="op">}</span></span>
+<span id="cb4-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Der Consumer wartet auf Daten:</li>
+<li>Signatur <code>void Task(void *argument)</code></li>
+<li>GetCount nur zur Diagnose</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> Task_Filter_Consumer<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> received_value <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb4-3"><a aria-label="3"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb4-4"><a aria-label="4"></a>        <span class="co">// Warte ewig (osWaitForever) auf neue Daten!</span></span>
-<span id="cb4-5"><a aria-label="5"></a>        osMessageQueueGet<span class="op">(</span></span>
-<span id="cb4-6"><a aria-label="6"></a>            sensorQueue<span class="op">,</span></span>
-<span id="cb4-7"><a aria-label="7"></a>            <span class="op">&amp;</span>received_value<span class="op">,</span></span>
-<span id="cb4-8"><a aria-label="8"></a>            NULL<span class="op">,</span>  <span class="co">// Prio-Pointer ignorieren</span></span>
-<span id="cb4-9"><a aria-label="9"></a>            osWaitForever</span>
-<span id="cb4-10"><a aria-label="10"></a>        <span class="op">);</span></span>
-<span id="cb4-11"><a aria-label="11"></a></span>
-<span id="cb4-12"><a aria-label="12"></a>        <span class="co">// Hier: ganz sicher ein gültiger Wert</span></span>
-<span id="cb4-13"><a aria-label="13"></a>        Filter_Data<span class="op">(</span>received_value<span class="op">);</span></span>
-<span id="cb4-14"><a aria-label="14"></a>    <span class="op">}</span></span>
-<span id="cb4-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p><code>osWaitForever</code>: leere Queue → Blocked an dieser Zeile. Erreicht der Code <code>Filter_Data</code>, liegt ein gültiges Paket vor — sauberer, deterministischer Flow.</p>
+<p>Frage: Darf Put blockieren, während ein Mutex gehalten wird, den der Consumer braucht? Nur wenn die Reihenfolge aus VL4 das erlaubt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -712,31 +783,42 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="unter-der-haube-copy-by-value" class="slide level2">
 <h2>Unter der Haube: Copy by Value</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th></th>
+<th>Value-Queue</th>
+<th>Pointer-Queue</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Element</td>
+<td>Sample oder Struct</td>
+<td>Adresse oder Deskriptor</td>
+</tr>
+<tr class="even">
+<td>RAM der Queue</td>
+<td><span class="math inline">\(N\)</span> mal Elementgröße</td>
+<td><span class="math inline">\(N\)</span> mal Zeigergröße</td>
+</tr>
+<tr class="odd">
+<td>Nutzdaten</td>
+<td>liegen in der Queue</td>
+<td>liegen woanders, gemeinsam</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>FreeRTOS-Queues nutzen standardmäßig Copy by Value</li>
-<li>Put: OS kopiert den Wert byteweise in den eigenen Queue-RAM</li>
-<li>Get: OS kopiert den Wert zurück in die lokale Variable des Consumers</li>
-<li>Vorteil: Original-Variable des Producers ist danach völlig entkoppelt</li>
+<li>Auch der Pointer wird <strong>by value</strong> kopiert</li>
+<li>Das Bild wird nicht kopiert</li>
+<li>Es entsteht kein Eigentumsvertrag</li>
+<li><code>sizeof(uint8_t *)</code> im CM4-Build: 4 Byte, keine Sprachgarantie für jede ABI</li>
+<li>Nach erfolgreichem Put darf die Pointer<strong>variable</strong> woanders hinzeigen</li>
+<li>Das Array darf erst nach vereinbarter Freigabe neu beschrieben werden</li>
 </ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph LR
-    A[Var Producer] -- "Kopie 1" --&gt; B[(OS Queue)]
-    B -- "Kopie 2" --&gt; C[Var Consumer]
-    style A fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style B fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
-    style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
 <aside class="notes">
-<p>Zwei physikalische Kopien. Nach Put darf die Producer-Variable überschrieben, gelöscht oder der Scope verlassen werden — der Wert liegt sicher in der Queue.</p>
+<p><code>osMessageQueuePut(q, &amp;image_ptr, 0, 0)</code> übergibt die Adresse der Pointervariable. Nicht die Bildbytes als Elementspeicher.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -751,19 +833,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-feind-der-queue-große-daten" class="slide level2">
 <h2>Der Feind der Queue: Große Daten!</h2>
+<p><span class="math inline">\(320 \times 240\)</span> Byte:</p>
 <ul>
-<li>Copy by Value ist ideal für kleine Daten (z. B. <code>uint32_t</code>, 4 Bytes)</li>
-<li>Große Daten? Kamerabild <span class="math inline">\(320 \times 240\)</span> Pixel, Graustufen (<code>uint8_t</code>) <span class="math inline">\(= 76\,800\)</span> Bytes</li>
-<li>Probleme:
-<ul>
-<li>Queue wäre gigantisch (RAM-Verschwendung)</li>
-<li>Zweimaliges Kopieren von <span class="math inline">\(\approx 76\,\mathrm{KB}\)</span> blockiert die CPU</li>
-<li><code>memcpy</code> zerstört Latenzgarantien</li>
-</ul></li>
-<li>Für große Daten ist Copy by Value streng verboten</li>
+<li>ein Bild: 76800 Byte = 76,8 kB = <strong>75 KiB</strong></li>
+<li>zwei Puffer: 150 KiB</li>
+<li>zehn Bilder als Value-Queue: <strong>750 KiB</strong> Nutzdaten, plus Verwaltung</li>
+<li>zehn Pointer-Slots: <strong>40 Byte</strong>, die Bilder bleiben extra</li>
 </ul>
+<p>Große Kopien sind teuer, nicht pauschal verboten. Es zählen Größe, Rate, RAM und maskierte Kernelpfade.</p>
 <aside class="notes">
-<p>76 KB per Value: Heap reicht oft nicht; doppeltes Kopieren vernichtet Echtzeit. CPU nur noch Speicherschieben.</p>
+<p>Keine erfundenen Millionen Zyklen. Kopierzeit messen, wenn ein Build da ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -778,24 +857,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-lösung-copy-by-reference-pointer" class="slide level2">
 <h2>Die Lösung: Copy by Reference (Pointer)</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">uint8_t</span> <span class="op">*</span>slot<span class="op">;</span></span>
+<span id="cb5-2"><a aria-label="2"></a><span class="co">/* Elementtyp der Queue: uint8_t * */</span></span>
+<span id="cb5-3"><a aria-label="3"></a>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>slot<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Statt 76 KB: nur die Speicheradresse (Pointer) in die Queue</li>
-<li>Pointer auf Cortex-M4: immer exakt 4 Bytes</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="co">// Queue für POINTER (Elementgröße = 4 Bytes!)</span></span>
-<span id="cb5-2"><a aria-label="2"></a>ptrQueue <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">10</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">uint8_t</span><span class="op">*),</span> NULL<span class="op">);</span></span>
-<span id="cb5-3"><a aria-label="3"></a></span>
-<span id="cb5-4"><a aria-label="4"></a><span class="dt">void</span> Task_Camera<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb5-5"><a aria-label="5"></a>    <span class="dt">uint8_t</span><span class="op">*</span> image_buffer <span class="op">=</span> Get_Image_From_Hardware<span class="op">();</span></span>
-<span id="cb5-6"><a aria-label="6"></a></span>
-<span id="cb5-7"><a aria-label="7"></a>    <span class="co">// Nicht das Bild, sondern die Adresse (4 Bytes)</span></span>
-<span id="cb5-8"><a aria-label="8"></a>    osMessageQueuePut<span class="op">(</span>ptrQueue<span class="op">,</span> <span class="op">&amp;</span>image_buffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
-<span id="cb5-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Consumer liest 4 Bytes, hat die Adresse und liest das Bild direkt aus dem RAM</li>
+<li>Die Adresse wird kopiert, <code>slot</code> darf danach umgebogen werden</li>
+<li>Zwei Arrays A und B allein verhindern das Überschreiben nicht</li>
+<li>Fehlgeschlagenes Put: Puffer bleibt beim Producer</li>
+<li>Zu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern</li>
 </ul>
 <aside class="notes">
-<p>Bild bleibt im RAM. Queue speichert nur Pointer. Consumer folgt der Adresse — wenige Zyklen statt Millionen.</p>
+<p>Ein Deskriptor mit Länge und Sequenz ist größer als 4 Byte. Das auf der Folie sagen, nicht stillschweigend „vier Byte“ für den Deskriptor.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -810,18 +882,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="gefahren-von-copy-by-reference" class="slide level2">
 <h2>Gefahren von Copy by Reference</h2>
+<p>Lebenszyklus, genau ein Verantwortlicher:</p>
+<p>FREE → FILLING → QUEUED → PROCESSING → FREE</p>
 <ul>
-<li>Lebensgefahr: Producer darf <code>image_buffer</code> nicht mehr überschreiben, sobald der Pointer in der Queue liegt</li>
-<li>Sonst: Race Condition — Consumer liest korrupte Pixel</li>
-<li>Lösung: Buffer-Ping-Pong (Double Buffering)
-<ul>
-<li>Zwei getrennte Arrays</li>
-<li>Producer beschreibt Array 1, sendet Pointer 1</li>
-<li>Während Consumer Array 1 liest, beschreibt Producer Array 2</li>
-</ul></li>
+<li>Ready-Queue und Free-Pool sind zwei Richtungen</li>
+<li>Put ok: Verantwortung geht weiter</li>
+<li>Put scheitert: keine zweite Einreihung, keine Doppelrückgabe</li>
+<li>Queue für zehn Pointer erzeugt keine zehn Bilder, wenn nur A und B existieren</li>
 </ul>
+<p>Fehler in den Notizen: Stack der beendeten Funktion, freigegebener Heap, DMA schreibt weiter.</p>
 <aside class="notes">
-<p>Ohne schützende Kopie: Überschreiben vor Fertigstellung des Consumers = Race Condition. Double Buffering / Ping-Pong: zwei Puffer abwechselnd.</p>
+<p>H7-DMA und D-Cache nur, wenn der Puffer wirklich im CM7-Cache liegt. Auf dem CM4 keine pauschalen Cache-Aufrufe. AN4839 nur für diesen Fall.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -836,15 +907,33 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-spezialfall-die-mailbox" class="slide level2">
 <h2>Der Spezialfall: Die Mailbox</h2>
-<ul>
-<li>Oft verwechselt: Unterschied Queue vs.&nbsp;Mailbox?</li>
-<li>CMSIS/FreeRTOS: keine separate Mailbox-API — Spezialfall der Queue</li>
-<li>Mailbox = Queue der Länge 1</li>
-<li>Speichert exakt ein einziges Element</li>
-<li>Wichtigster Verhaltensunterschied: Überschreiben (Overwrite) ist ausdrücklich erwünscht</li>
-</ul>
+<p>Drei Abläufe, Start leer, dann 10, 20, 30:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Muster</th>
+<th>Ergebnis</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FIFO mit Platz</td>
+<td>10, dann 20, dann 30</td>
+</tr>
+<tr class="even">
+<td>Länge 1, Put Timeout 0</td>
+<td>10 bleibt, 20 und 30 werden abgelehnt</td>
+</tr>
+<tr class="odd">
+<td>Overwrite</td>
+<td>zuletzt 30</td>
+</tr>
+</tbody>
+</table>
+<p>Länge 1 ist <strong>keine</strong> Overwrite-Semantik.</p>
+<p>„Timeout 0 als Näherung“ ist falsch: der alte Wert bleibt.</p>
 <aside class="notes">
-<p>Mailbox = Queue Länge 1. Semantik: bei Statusdaten ist absichtliches Überschreiben oft das Feature, nicht der Bug.</p>
+<p>Frage: Ist Put mit Timeout 0 ein Overwrite? Nein. Das Gegenbeispiel ist genau 10 gegen 20.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -859,29 +948,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wann-queue-wann-mailbox" class="slide level2">
 <h2>Wann Queue, wann Mailbox?</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Queue (Events &amp; Ströme)</p>
+<p>„Mailbox“ hier: Latest-Value, Begriff je RTOS anders.</p>
+<p>Native FreeRTOS, eigenes Modul, kein Cast auf <code>osMessageQueueId_t</code>:</p>
 <ul>
-<li>Tastendrücke (A, B, C abarbeiten)</li>
-<li>Audio-Daten</li>
-<li>Philosophie: kein Element darf verloren gehen</li>
-<li>Verhalten: blockiert, wenn voll</li>
+<li><code>xQueueCreate(1, ...)</code></li>
+<li><code>xQueueOverwrite</code></li>
+<li><code>xQueuePeek</code></li>
+<li>in der ISR die FromISR-Variante und die Yield-Regel</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>Mailbox (Zustand / Status)</p>
-<ul>
-<li>Aktuelle Temperatur, GPS-Position</li>
-<li>Philosophie: nur der neueste Wert zählt</li>
-<li>Verhalten: überschreibt alten Wert, blockiert nicht beim Schreiben</li>
-</ul>
-</div></div>
-<ul>
-<li>FreeRTOS-Sonderfunktion: <code>xQueueOverwrite()</code></li>
-<li><strong>Achtung:</strong> CMSIS-RTOS v2 hat kein Overwrite/Peek — dafür native FreeRTOS-API nötig</li>
-</ul>
+<p>CMSIS-only: kurzer geschützter Snapshot mit Version und Zeit, Benachrichtigung <strong>nach</strong> dem Veröffentlichen. Die ISR nimmt keinen Mutex. Nutzdaten kommen über einen erlaubten kurzen Kanal in den Thread.</p>
 <aside class="notes">
-<p>Queue: Events/Ströme ohne Verlust. Mailbox: Zustand (Kühlwasser) — Historie egal, nur aktueller Wert. Native FreeRTOS: <code>xQueueOverwrite</code>. CMSIS bietet das nicht — im Labor bei CMSIS-only also Queue Länge 1 + Put mit Timeout 0 als Näherung.</p>
+<p>Peek garantiert keinen neuen Wert und weckt nicht alle Leser. Eine Peek-Schleife ist kein Eventwarten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -897,20 +974,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-broadcast-konzept-mailbox" class="slide level2">
 <h2>Das Broadcast-Konzept (Mailbox)</h2>
 <ul>
-<li>Queue-<code>Get</code> entnimmt das Element — danach ist die Queue leer</li>
-<li>Status-Mailboxen: oft ein Producer, viele Consumer (Broadcast)
-<ul>
-<li>Sensor schreibt Drehzahl</li>
-<li>Motor-, Display- und Logging-Task wollen lesen</li>
-</ul></li>
-<li>Peek (Spicken): Wert lesen, ohne ihn zu entfernen
-<ul>
-<li><code>osMessageQueueGet()</code> entfernt</li>
-<li>Native FreeRTOS: <code>xQueuePeek()</code></li>
-</ul></li>
+<li>Get: ein Element, <strong>ein</strong> Consumer</li>
+<li>Peek oder Snapshot: mehrere Leser, zu verschiedenen Zeiten verschiedene Versionen</li>
+<li>Jeder Pflichtempfänger braucht einen eigenen Zustellvertrag</li>
+<li>Zusammenfassen von Zuständen kann gewollt sein</li>
+<li>Ereignisse brauchen die FIFO oder eine Zählung</li>
 </ul>
 <aside class="notes">
-<p>Bei Broadcast darf Get den Wert nicht vernichten. Peek kopiert und lässt den Wert in der Mailbox — sauberes State-Management.</p>
+<p>Version beantwortet „noch derselbe Wert?“. Sie ersetzt keine Queue.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -926,14 +997,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-halbzeit" class="slide level2">
 <h2>Zusammenfassung Halbzeit</h2>
 <ul>
-<li>Producer-Consumer: entkoppelt langsame Verarbeitung von schnellen Rohdaten</li>
-<li>Queues: Puffer im RAM, vom OS verwaltet</li>
-<li>Volle Queue blockiert beim Schreiben, leere Queue beim Lesen (<span class="math inline">\(0\%\)</span> CPU)</li>
-<li>Value vs.&nbsp;Reference: kleine Werte kopieren; große Daten (Bilder) als Pointer + Ping-Pong</li>
-<li>Mailbox: 1er-Queue für Zustände, die alte Daten überschreibt</li>
+<li>Historie: FIFO, Überlauf explizit</li>
+<li>Zustand: Overwrite oder Snapshot, nicht die 1er-Queue mit Try-Put</li>
+<li>Pointer: 40 Byte Slots sind nicht 750 KiB Bilder</li>
+<li>Warten und Fehlerstatus gehören zum Pfad</li>
 </ul>
 <aside class="notes">
-<p>Erste Hälfte: Entkopplung durch Queues, Value vs.&nbsp;Reference, Mailboxen für aktuellen Sensorwert. Fragen zum Datenaustausch? Nach der Pause: Anbindung an echte Hardware-Interrupts.</p>
+<p>Zweiter Teil: die ISR liefert nur, was sie rechtzeitig retten und erlaubt signalisieren kann.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -949,17 +1019,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="block-4-interrupts-im-rtos" class="slide level2">
 <h2>Block 4: Interrupts im RTOS</h2>
 <ul>
-<li>Wir wissen jetzt, wie Tasks untereinander reden</li>
-<li>Aber wie kommuniziert die Hardware (Außenwelt) mit unseren Tasks?</li>
-<li>Die Herausforderung:
-<ul>
-<li>Ein Hardware-Interrupt (ISR) reißt die CPU aus dem RTOS-Kontext heraus</li>
-<li>Die ISR ist mächtiger als der Scheduler</li>
-<li>Wie bringen wir Hardware-Events und Software-Scheduling sicher zusammen?</li>
-</ul></li>
+<li>Die ISR unterbricht Threads <strong>dieses</strong> Kerns</li>
+<li>Höhere IRQs können sich schachteln, je nach Maske</li>
+<li>Der andere Kern und DMA können weiterlaufen</li>
+<li>„Die CPU steht“ ist falsch</li>
+<li>Eine lange ISR verzögert Threads und kann den Tick verschieben</li>
+<li>Verpasste Ticks sind nicht beliebig tief gespeichert</li>
+<li>Ob Fristen reißen, sagt das Budget, nicht der Satz „alle Deadlines wandern“</li>
 </ul>
 <aside class="notes">
-<p>Willkommen zurück nach der Pause! Bisher: Tasks, Queues, Mutexe unter Kontrolle des Schedulers. Ein MCU ohne Außenwelt ist wertlos. Tasten, Sensoren und Netzwerke laufen über Hardware-Interrupts (ISRs). ISRs kennen FreeRTOS nicht: sie grätschen in laufende Berechnungen, ignorieren Task-Prioritäten und können sogar den SysTick blockieren. Wie wir beide Welten verheiraten, ohne Echtzeit-Timing zu sprengen, ist das Thema dieses Blocks.</p>
+<p>99 % Blocked und „ISR unter 1 µs“ ohne Messaufbau streichen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -975,18 +1044,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="rückblick-die-goldene-regel-der-isr" class="slide level2">
 <h2>Rückblick: Die goldene Regel der ISR</h2>
 <ul>
-<li>Erinnern Sie sich an Termin 1?</li>
-<li>Eine ISR muss extrem kurz sein!</li>
-<li>Warum ist das im RTOS noch wichtiger?
-<ul>
-<li>Solange die ISR läuft, ist die CPU komplett blockiert</li>
-<li>Bei höherer HW-Priorität als SysTick: der RTOS-Herzschlag kann nicht feuern</li>
-<li>Das Betriebssystem friert in der Zeit ein</li>
-<li>Alle Deadlines aller Tasks verschieben sich nach hinten</li>
-</ul></li>
+<li>Kurz, keine blockierende API, kein <code>printf</code>, kein Mutex</li>
+<li>Timeout 0 macht eine verbotene CMSIS-Funktion nicht erlaubt</li>
+<li>Nicht jede native Funktion hat FromISR</li>
+<li>Falsche Nutzung: Status, Assert, Lockup oder Inkonsistenz, nicht zwingend HardFault</li>
 </ul>
 <aside class="notes">
-<p>VL1-Regel: ISR kurz → kein <code>printf</code>, keine Zählschleife, kein Warten. Im RTOS überlebenswichtig: Timing über SysTick. Lange UART-ISR mit höherer HW-Priorität als SysTick → SysTick wird verzögert, OS verpasst Herzschläge, Zeit friert ein. Nach 10 ms ISR denkt das OS, es sei keine Millisekunde vergangen → Deadlines gescheitert.</p>
+<p>IPSR-Prüfung im Wrapper ist ein Implementierungsdetail, keine Garantie für jede API.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1001,18 +1065,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-architektur-muster-deferred-interrupt-processing" class="slide level2">
 <h2>Das Architektur-Muster: Deferred Interrupt Processing</h2>
-<ul>
-<li><strong>Vertiefung VL4:</strong> Semaphor-Signalisierung ISR <span class="math inline">\(\rightarrow\)</span> Task kennen Sie schon — hier der Architektur-Rahmen</li>
-<li>Wie lesen wir komplexe Sensordaten (z. B. 10 KB Bilddaten per SPI) ein, wenn die ISR kurz sein muss?</li>
-<li>Lösung der Industrie: Deferred Interrupt Processing (verzögerte Interrupt-Verarbeitung)</li>
-<li>Arbeit in zwei Hälften:
-<ol type="1">
-<li>Top-Half (die ISR): reagiert blitzschnell auf die Hardware</li>
-<li>Bottom-Half (die Task): übernimmt die zeitaufwändige Datenverarbeitung</li>
-</ol></li>
-</ul>
+<p>Top-Half: das, was die Hardware sofort braucht.</p>
+<p>Bottom-Half: der Thread, Priorität nach <strong>Frist und Last</strong>, nicht pauschal „sehr hoch“.</p>
+<p>Register lesen und Flags löschen in der Reihenfolge des Geräts. „Erst Flag, dann Daten“ gilt nicht überall.</p>
+<p>Im HAL-EXTI-Pfad nicht ein zweites Mal quittieren.</p>
 <aside class="notes">
-<p>Dilemma: SPI-Bild plus CRC dauert. Nicht in der ISR → wo dann? Deferred Interrupt Processing: Top-Half und Bottom-Half. Muster in jedem modernen OS, von FreeRTOS bis Linux-Kernel.</p>
+<p>Der Worker wird Ready und läuft nach ISR und PendSV, wenn ihn niemand Höherer ausbremst. Die CPU war vorher nicht zwingend Idle.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1028,18 +1086,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-top-half-die-isr" class="slide level2">
 <h2>Die Top-Half (Die ISR)</h2>
 <ul>
-<li>Läuft im echten Hardware-Interrupt-Kontext (z. B. <code>EXTI15_10_IRQHandler</code>)</li>
-<li>Unterbricht alles im System</li>
-<li>Aufgaben der Top-Half:
-<ol type="1">
-<li>Hardware-Flag (Interrupt) löschen, damit er nicht endlos feuert</li>
-<li>Kritische Rohdaten aus Hardwareregistern (z. B. UART <code>RDR</code>) in den RAM retten</li>
-<li>Das RTOS wecken (signalisieren)</li>
-<li>Sofort beenden</li>
-</ol></li>
+<li>Quittung und die Daten, die sonst verloren gehen</li>
+<li>Ein Semaphor-Token enthält kein Bild</li>
+<li>Drei Releases vor dem nächsten Acquire, max count 1: höchstens ein Token, zwei Releases scheitern</li>
+<li>„Arbeit da“ passt; lückenloses Zählen braucht eine Queue mit Überlaufzähler</li>
+<li>Prellen, Zusammenfassen und Queue-Drop sind drei verschiedene Dinge</li>
 </ul>
 <aside class="notes">
-<p>Top-Half = echte HW-ISR. Quittieren, Byte/Daten retten, Signal an RTOS, sofort Return. Dauer: oft unter einer Mikrosekunde.</p>
+<p>Liest die Bottom-Half ein Register zu spät, ist das Sample schon weg. Dann muss der Top-Half kopieren oder DMA nutzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1055,19 +1109,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-bottom-half-die-task" class="slide level2">
 <h2>Die Bottom-Half (Die Task)</h2>
 <ul>
-<li>Ist eine ganz normale C-Task in FreeRTOS</li>
-<li>Bekommt meist eine sehr hohe RTOS-Priorität</li>
-<li>Befindet sich zu <span class="math inline">\(99\%\)</span> der Zeit im Zustand Blocked</li>
-<li>Aufgaben der Bottom-Half:
-<ol type="1">
-<li>Wartet auf das Signal der Top-Half (<code>osWaitForever</code>)</li>
-<li>Wacht auf</li>
-<li>Führt die aufwändige Logik durch (Filter, CRC, Float-Mathe, Display)</li>
-<li>Geht wieder schlafen</li>
-</ol></li>
+<li>Acquire-Status prüfen, dann arbeiten, wieder warten</li>
+<li>Mehrere gepufferte Sätze ohne neue Flanke sind erlaubt</li>
+<li>UART über den geschützten Pfad aus VL4</li>
+<li>Normal: kurze Arbeit und <code>osDelay</code> / Warten auf das nächste Signal</li>
+<li><code>HAL_Delay(100)</code> nur als Vergleich: Busy-Wait, High kann Low verdrängen, höhere Tasks können trotzdem präemptieren</li>
+<li>Eine weiterblinkende LED ist kein Fristbeweis</li>
 </ul>
 <aside class="notes">
-<p>Bottom-Half ist keine ISR, sondern eine FreeRTOS-Task mit <code>for(;;)</code>. Hohe Prio, fast immer Blocked. Signal → Scheduler weckt Task. Im Task-Kontext läuft SysTick weiter → Millisekunden rechnen, Float, <code>printf</code> sind legal. Das System atmet.</p>
+<p>Die Demo friert nicht den ganzen Chip ein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1082,32 +1132,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-top-half-und-bottom-half" class="slide level2">
 <h2>Visualisierung: Top-Half und Bottom-Half</h2>
-<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell" data-reveal="true" data-fig-width="6.2" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class=""><p></p>
 <div>
-<pre class="mermaid mermaid-js">sequenceDiagram
-    participant HW as Hardware (Sensor)
-    participant ISR as Top-Half (ISR)
-    participant OS as FreeRTOS
-    participant Task as Bottom-Half (Task)
-
-    Note over Task: Task schläft (Blocked)
-
-    HW-&gt;&gt;ISR: 1. Pin-Flanke (Interrupt)
-    Note over ISR: CPU blockiert
-    ISR-&gt;&gt;ISR: 2. Daten ins RAM kopieren
-    ISR-&gt;&gt;OS: 3. Sende Signal (z. B. Semaphore)
-    ISR--&gt;&gt;HW: 4. ISR beendet (Return)
-
-    Note over OS: Context Switch
-    OS-&gt;&gt;Task: 5. Weckt Task (Ready -&gt; Running)
-
-    Note over Task: 6. CPU im RTOS-Modus
-    Task-&gt;&gt;Task: 7. Führt CRC und Filterung aus
-    Task-&gt;&gt;OS: 8. Warte auf nächstes Event
-    Note over Task: Task schläft wieder
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+sequenceDiagram
+  participant HW as Hardware
+  participant ISR as Top-Half
+  participant K as Kernel
+  participant W as Worker
+  HW-&gt;&gt;ISR: Ereignis
+  ISR-&gt;&gt;ISR: quittieren, Daten retten
+  ISR-&gt;&gt;K: Signal oder kurze Queue
+  Note over W: Ready, noch nicht Running
+  ISR--&gt;&gt;K: ISR-Ende
+  K-&gt;&gt;W: PendSV, wenn Priorität passt
+  W-&gt;&gt;W: Verarbeitung, dann warten
 </pre>
 </div>
 <p></p></figure><p></p>
@@ -1115,7 +1157,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </div>
 </div>
 <aside class="notes">
-<p>Flow: Hardware alarmiert → Top-Half kopiert und signalisiert → ISR Return → OS weckt Bottom-Half → Task rechnet und blockiert erneut. Ping-Pong ISR/Task = Goldstandard der Embedded-Architektur.</p>
+<p>Kein Thread-Code mitten in der ISR. Ein zweiter Release auf dem vollen binären Semaphor kann scheitern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1130,19 +1172,31 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wie-signalisiert-die-top-half" class="slide level2">
 <h2>Wie signalisiert die Top-Half?</h2>
-<ul>
-<li>Die ISR muss der Bottom-Half eine Nachricht zukommen lassen</li>
-<li>Was eignet sich dafür perfekt? (Erinnerung an Termin 4)</li>
-<li>Der binäre Semaphor!
-<ul>
-<li>Bottom-Half: <code>osSemaphoreAcquire(..., osWaitForever)</code> und blockiert</li>
-<li>Top-Half: <code>osSemaphoreRelease(...)</code></li>
-<li>Ergebnis: Task wacht auf → keine CPU-Zeit verschwendet</li>
-</ul></li>
-<li>Alternative für Daten: Queue (ISR: <code>osMessageQueuePut</code>)</li>
-</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Bedarf</th>
+<th>Mittel</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Arbeit vorhanden</td>
+<td>binärer Semaphor, leer erzeugt</td>
+</tr>
+<tr class="even">
+<td>jedes Ereignis oder Nutzdaten</td>
+<td>Queue, Timeout 0, Drop zählen</td>
+</tr>
+<tr class="odd">
+<td>nur ein neuer Stand</td>
+<td>Overwrite oder Snapshot, nicht Try-Put</td>
+</tr>
+</tbody>
+</table>
+<p>Der Puffer muss gültig bleiben, bis der Vertrag ihn freigibt.</p>
 <aside class="notes">
-<p>Signal = binärer Semaphor aus VL4: kein Ownership. Task: Acquire und schlafen. ISR: Release. Für Messwerte dasselbe Muster mit Queue: Task Get, ISR Put.</p>
+<p>Token ohne gültige Daten weckt den Worker ins Leere.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1157,18 +1211,44 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-große-hürde-os-aufrufe-in-der-isr" class="slide level2">
 <h2>Die große Hürde: OS-Aufrufe in der ISR</h2>
-<ul>
-<li>Massives Problem: OS-Funktionen (Put, Release) in einer Hardware-ISR</li>
-<li>OS-Funktionen können blockierend sein</li>
-<li>Was, wenn die Queue voll ist und die ISR <code>Put()</code> aufruft?
-<ul>
-<li>OS würde versuchen, die ISR in die Blocked-Liste zu schieben</li>
-<li>Eine ISR kann man nicht schlafen legen</li>
-<li>Die CPU würde mit einem fatalen HardFault abstürzen</li>
-</ul></li>
-</ul>
+<p>Drei Fragen, alle ja:</p>
+<ol type="1">
+<li>Ist die Funktion in der ISR erlaubt?</li>
+<li>Ist der Aufruf nicht blockierend?</li>
+<li>Liegt die IRQ-Priorität im Syscall-Bereich?</li>
+</ol>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>CMSIS</th>
+<th>aus ISR</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Queue Put/Get</td>
+<td>nur Timeout 0</td>
+</tr>
+<tr class="even">
+<td>Semaphore Release</td>
+<td>ja</td>
+</tr>
+<tr class="odd">
+<td>Semaphore Acquire</td>
+<td>nur Timeout 0</td>
+</tr>
+<tr class="even">
+<td>Mutex Acquire/Release</td>
+<td>nein</td>
+</tr>
+<tr class="odd">
+<td>New, Reset, Delete</td>
+<td>nein</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>OS-APIs sind für Tasks geschrieben. Volle Queue → Task schläft. ISR hat keinen TCB, keine RTOS-Prio → Blockieren einer ISR ist physikalisch unmöglich und führt zum HardFault.</p>
+<p>Native Namen daneben nur, wenn das Labor sie wirklich ruft. CMSIS-Labor bleibt bei CMSIS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1184,20 +1264,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="native-freertos-lösung-eigene-isr-funktionen" class="slide level2">
 <h2>Native FreeRTOS-Lösung: Eigene ISR-Funktionen</h2>
 <ul>
-<li>FreeRTOS besitzt eine doppelte API</li>
-<li>Für jede Funktion: Variante mit Suffix <code>...FromISR</code>
-<ul>
-<li>Task: <code>xSemaphoreGive(mySem)</code></li>
-<li>ISR: <code>xSemaphoreGiveFromISR(mySem, ...)</code></li>
-</ul></li>
-<li>Unterschied: FromISR-Funktionen sind abgespeckt
-<ul>
-<li>Blockieren niemals (Queue: z. B. <code>errQUEUE_FULL</code>; Semaphor: <code>pdFALSE</code>)</li>
-<li>Manipulieren Listen unterbrechungssicher</li>
-</ul></li>
+<li><code>xQueueSendFromISR</code>, <code>xSemaphoreGiveFromISR</code></li>
+<li><code>xHigherPriorityTaskWoken</code> beginnt bei <code>pdFALSE</code></li>
+<li>danach <code>portYIELD_FROM_ISR</code></li>
+<li>Fehlendes Yield: unter den Annahmen zuerst zurück zur unterbrochenen Task, bis ein späterer Anlass schedult</li>
+<li>Das ist ein Fehlerbild, nicht „der Kernel wartet immer auf den nächsten SysTick“</li>
 </ul>
 <aside class="notes">
-<p>Richard Barry: API verdoppelt. In nativer ISR niemals die normale API → immer <code>FromISR</code>. Kein Blockieren; Error-Code bei voller Queue. Ready-Listen ISR-sicher.</p>
+<p>Folie der alten Fassung, die den Tick als Standard nannte, gilt nur für dieses vergessene Yield.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1213,16 +1287,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-cmsis-rtos-v2-abstraktion" class="slide level2">
 <h2>Die CMSIS-RTOS v2 Abstraktion</h2>
 <ul>
-<li>CMSIS: keine doppelten Funktionen (<code>FromISR</code> existiert in der API nicht)</li>
-<li><code>osSemaphoreRelease()</code> ist intelligent
-<ul>
-<li>Liest heimlich das ARM-Register IPSR (Interrupt Program Status Register)</li>
-<li>Wenn <span class="math inline">\(\mathrm{IPSR} \neq 0\)</span> (Handler Mode): wir sind in einer ISR → intern Umleitung auf <code>...FromISR</code></li>
-<li>Wenn <span class="math inline">\(\mathrm{IPSR} = 0\)</span> (Thread Mode): wir sind in einer Task → normaler Aufruf</li>
-</ul></li>
+<li>Der ST-Adapter prüft den Kontext und ruft bei erlaubten Funktionen die native FromISR-Variante</li>
+<li>Die Switch-Anforderung sitzt im Wrapper</li>
+<li>Im CMSIS-Labor kein zweites manuelles Yield</li>
+<li>Der Wrapper macht Mutex-Aufrufe dadurch nicht ISR-fähig</li>
 </ul>
 <aside class="notes">
-<p>CMSIS-V2: immer <code>osSemaphoreRelease</code>. Wrapper prüft IPSR (<span class="math inline">\(\neq 0\)</span> = Interrupt). Automatisches Routing auf FreeRTOS-FromISR bzw. normale API. Riesiger Portabilitätsvorteil.</p>
+<p><code>cmsis_os2.c</code> der verwendeten Version lesen, nicht nur die Spezifikation.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1237,13 +1308,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-eine-cmsis-regel-für-isrs" class="slide level2">
 <h2>Die eine CMSIS-Regel für ISRs</h2>
-<ul>
-<li>CMSIS nimmt uns fast alles ab → aber: eine ISR darf niemals warten!</li>
-<li>Goldene Regel: in einer ISR (Top-Half) muss <code>timeout</code> immer <span class="math inline">\(0\)</span> sein</li>
-<li><code>osWaitForever</code> in einer ISR → Aufruf schlägt fehl (<code>osErrorParameter</code>)</li>
-</ul>
+<p>Kleine NVIC-Zahl = höhere IRQ-Dringlichkeit.</p>
+<p>Taskpriorität High repariert eine falsche EXTI-Priorität nicht.</p>
+<p>Beispiel, nur bei bestätigten 4 Priority-Bits und Grenze 5: logisch 0–4 keine Kernel-API, 5–15 bei passender Gruppierung erlaubt.</p>
+<p><code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code> ist der <strong>geschobene</strong> Registerwert.</p>
 <aside class="notes">
-<p>Physik bleibt: ISR darf nicht warten. Timeout <code>osWaitForever</code> oder <span class="math inline">\(&gt; 0\)</span> in ISR → CMSIS bricht mit <code>osErrorParameter</code> ab (kein Absturz). Merke: in der ISR ist der Timeout ausnahmslos <span class="math inline">\(0\)</span>.</p>
+<p><code>__NVIC_PRIO_BITS</code>, Shift und Grouping aus dem Projekt. „Priorität 5“ nicht universell hinschreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1258,20 +1328,41 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-context-switch-aus-der-isr-yielding" class="slide level2">
 <h2>Der Context-Switch aus der ISR (Yielding)</h2>
-<ul>
-<li>Szenario:
-<ul>
-<li>Task A (Prio Low) läuft</li>
-<li>ISR unterbricht Task A</li>
-<li>ISR ruft <code>Release()</code> und weckt Task B (Prio High, Bottom-Half)</li>
-<li>ISR beendet sich</li>
-</ul></li>
-<li>Was sollte passieren? Task B (High) sollte sofort rechnen</li>
-<li>Aber: OS schaltet standardmäßig erst beim nächsten SysTick (bis zu <span class="math inline">\(1\,\mathrm{ms}\)</span>)</li>
-<li>Folge: bis zu <span class="math inline">\(1\,\mathrm{ms}\)</span> Reaktionslatenz verschenkt</li>
-</ul>
+<p>Synthetische Spur, keine H755-Messung:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Ereignis</th>
+<th style="text-align: right;">Zeit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flanke</td>
+<td style="text-align: right;">0 µs</td>
+</tr>
+<tr class="even">
+<td>ISR-Eintritt</td>
+<td style="text-align: right;">3 µs</td>
+</tr>
+<tr class="odd">
+<td>Worker Ready</td>
+<td style="text-align: right;">8 µs</td>
+</tr>
+<tr class="even">
+<td>ISR-Ende</td>
+<td style="text-align: right;">12 µs</td>
+</tr>
+<tr class="odd">
+<td>Workerstart nach PendSV</td>
+<td style="text-align: right;">16 µs</td>
+</tr>
+</tbody>
+</table>
+<p>Startlatenz in diesem Modell: <strong>16 µs</strong>.</p>
+<p>Dazu kommen Maskierung, fremde ISRs und die Worker-Laufzeit bis Completion.</p>
 <aside class="notes">
-<p>Nach ISR-Return springt die CPU oft zurück in die Low-Prio-Task. High-Prio ist Ready, aber Scheduler wartet auf SysTick. Bis zu 1 ms Latenz verschenkt.</p>
+<p>Ready vor ISR-Ende ist möglich. Running als Thread davor nicht. PendSV wartet auf höher dringliche Handler.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1286,22 +1377,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wie-löst-freertos-das-yielding" class="slide level2">
 <h2>Wie löst FreeRTOS das Yielding?</h2>
-<ul>
-<li>Die ISR muss dem OS sagen: wichtige Task geweckt → wechsle sofort nach ISR-Ende</li>
-<li>Native FreeRTOS über Parameter:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a>BaseType_t xHigherPriorityTaskWoken <span class="op">=</span> pdFALSE<span class="op">;</span></span>
-<span id="cb6-2"><a aria-label="2"></a></span>
-<span id="cb6-3"><a aria-label="3"></a><span class="co">// true, wenn Task B wichtiger ist als Task A</span></span>
-<span id="cb6-4"><a aria-label="4"></a>xSemaphoreGiveFromISR<span class="op">(</span>mySem<span class="op">,</span> <span class="op">&amp;</span>xHigherPriorityTaskWoken<span class="op">);</span></span>
-<span id="cb6-5"><a aria-label="5"></a></span>
-<span id="cb6-6"><a aria-label="6"></a><span class="co">// Fordert sofortigen Context-Switch (PendSV) an</span></span>
-<span id="cb6-7"><a aria-label="7"></a>portYIELD_FROM_ISR<span class="op">(</span>xHigherPriorityTaskWoken<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Dadurch triggert die ISR den PendSV-Interrupt manuell</li>
-</ul>
+<p><img data-src="../_livefigures/inline-plantuml-5ca5ffc0.svg" class="livefigure"></p>
+<p>Hardware-Unterbrechung macht Task A nicht im selben Sinn Ready wie ein Scheduler-Wechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat.</p>
 <aside class="notes">
-<p>Native API: Pointer <code>xHigherPriorityTaskWoken</code>, danach <code>portYIELD_FROM_ISR</code>. Makro setzt PendSV-Bit. Nach ISR-Ende: PendSV-Handler statt Rückkehr zur alten Task.</p>
+<p>Dieselben Zeitpunkte wie in der Tabelle. Nicht aus t = 1 bis t = 3 auf „minimale Latenz“ schließen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1317,14 +1396,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="cmsis-ist-unser-freund" class="slide level2">
 <h2>CMSIS ist unser Freund!</h2>
 <ul>
-<li>Müssen wir <code>portYIELD_FROM_ISR</code> in CMSIS schreiben?</li>
-<li>Nein!</li>
-<li>Wrapper <code>osSemaphoreRelease()</code> macht Yielding intern automatisch</li>
-<li>Höhere Prio der geweckten Task → CMSIS triggert PendSV von allein</li>
-<li>Sie schreiben nur: <code>osSemaphoreRelease(mySem);</code></li>
+<li>Erlaubte CMSIS-ISR-Funktionen nehmen das Yield mit</li>
+<li>Unerlaubte bleiben unerlaubt</li>
+<li>Diagnose: Rückgabewert, Assert, Zähler — kein <code>printf</code> in der ISR</li>
+<li>Eine IRQ oberhalb der Grenze darf Daten ablegen und eine niedrigere, erlaubte IRQ anstoßen</li>
+<li>Sie darf den RTOS-Aufruf nicht selbst erzwingen</li>
+<li>Das ist Anhang, nicht der Tasterversuch</li>
 </ul>
 <aside class="notes">
-<p>CMSIS-V2: FromISR-Umleitung und Yield-Handling automatisch. Eine saubere Zeile in der HW-ISR: <code>osSemaphoreRelease</code>.</p>
+<p>Quelle: FreeRTOS-Kernel-Book Kap. 7 und der CM4F-Port <code>port.c</code>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1339,12 +1419,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-präemption-aus-der-isr" class="slide level2">
 <h2>Visualisierung: Präemption aus der ISR</h2>
-<p><img data-src="../_livefigures/inline-plantuml-bf20b878.svg" class="livefigure"></p>
-<ul>
-<li>Latenz zwischen Hardware-Event (<span class="math inline">\(t=1\)</span>) und Start der Bottom-Half (<span class="math inline">\(t=3\)</span>) ist minimal</li>
-</ul>
+<p>Ereignis → ISR → Ready → ISR-Ende → PendSV → Worker.</p>
+<p>Nicht: Ereignis → sofortiger Thread.</p>
+<p>Die alte kleine Kurve ohne Einheit ersetzt dieses Bild nicht.</p>
 <aside class="notes">
-<p><span class="math inline">\(t=1\)</span>: HW-Interrupt. <span class="math inline">\(t=2\)</span>: Release stellt Task B Ready (noch nicht Running). <span class="math inline">\(t=3\)</span>: ISR-Return + PendSV → CPU an Task B. Task B fertig, bevor Task A es merkt → präemptives Interrupt-Handling.</p>
+<p>Completion ist Start plus Arbeit plus weitere Unterbrechungen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1359,19 +1438,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="laborvorbereitung-deferred-interrupts" class="slide level2">
 <h2>Laborvorbereitung: Deferred Interrupts</h2>
-<ul>
-<li>Ziel: Hardware-Taster via EXTI-Interrupt und Semaphor an FreeRTOS-Task anbinden</li>
-<li>Hardware: blauer User-Button (B1) auf dem STM32H755 Nucleo, meist Pin PC13</li>
-<li>Setup in CubeMX:
-<ul>
-<li>Pin PC13 als <code>GPIO_EXTI13</code> (External Interrupt)</li>
-<li>NVIC: Haken bei <code>EXTI line[15:10] interrupts</code> (sonst feuert die ISR nicht)</li>
-<li>FreeRTOS: binären Semaphor <code>ButtonSem</code> anlegen</li>
-<li>Task <code>ButtonTask</code> (Bottom-Half) mit Priorität High</li>
-</ul></li>
-</ul>
+<p>Teil A: Queue mit <code>uint32_t</code> oder <code>SensorMessage</code>, Sequenz, definierte Drops.</p>
+<p>Teil B: User-Button. UM2408 für NUCLEO-H755ZI-Q / MB1363: Standard PC13, Alternative PA0. Gelbe LD2 an PE1, wenn die Brücken so stehen.</p>
+<p>GPIO-Takt, Ausgangsmodus und EXTI-Zielkern prüfen. Der RTOS-aufrufende Handler muss im CM4-Kontext liegen.</p>
 <aside class="notes">
-<p>Labor: blauer Button an PC13. CubeMX: EXTI13, NVIC-Haken setzen! Binary Semaphore + ButtonTask mit hoher Priorität.</p>
+<p>Nur den NVIC-Haken zu setzen, reicht nicht. Priorität muss die Syscall-Grenze einhalten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1386,24 +1457,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-1-die-top-half-isr-in-c" class="slide level2">
 <h2>Schritt 1: Die Top-Half (ISR) in C</h2>
-<ul>
-<li>CubeIDE generiert die ISR; wir nutzen den sicheren HAL-Callback</li>
-<li>In <code>main.c</code> den leeren <code>HAL_GPIO_EXTI_Callback</code> füllen:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> 4 */</span></span>
-<span id="cb7-2"><a aria-label="2"></a><span class="dt">void</span> HAL_GPIO_EXTI_Callback<span class="op">(</span><span class="dt">uint16_t</span> GPIO_Pin<span class="op">)</span></span>
-<span id="cb7-3"><a aria-label="3"></a><span class="op">{</span></span>
-<span id="cb7-4"><a aria-label="4"></a>    <span class="cf">if</span> <span class="op">(</span>GPIO_Pin <span class="op">==</span> USER_Btn_Pin<span class="op">)</span> <span class="op">{</span>  <span class="co">// War es unser Taster?</span></span>
-<span id="cb7-5"><a aria-label="5"></a>        <span class="co">// 1. Wecke die Bottom-Half auf</span></span>
-<span id="cb7-6"><a aria-label="6"></a>        osSemaphoreRelease<span class="op">(</span>ButtonSemHandle<span class="op">);</span></span>
-<span id="cb7-7"><a aria-label="7"></a></span>
-<span id="cb7-8"><a aria-label="8"></a>        <span class="co">// 2. ISR sofort beenden</span></span>
-<span id="cb7-9"><a aria-label="9"></a>        <span class="co">// (CMSIS fordert intern PendSV an)</span></span>
-<span id="cb7-10"><a aria-label="10"></a>    <span class="op">}</span></span>
-<span id="cb7-11"><a aria-label="11"></a><span class="op">}</span></span>
-<span id="cb7-12"><a aria-label="12"></a><span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> 4 */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Reihenfolge:</p>
+<ol type="1">
+<li>Takt und GPIO</li>
+<li><code>osKernelInitialize</code></li>
+<li><code>ButtonSem = osSemaphoreNew(1, 0, NULL)</code></li>
+<li>Threads prüfen, <code>osKernelStart</code></li>
+<li>EXTI erst im laufenden Kernel freigeben</li>
+</ol>
+<p>Ausstehende Flags nach diesem Vertrag löschen, nicht im frühen <code>MX_GPIO_Init</code> einen Callback ins Leere schicken.</p>
+<p>Pfad: <code>EXTI15_10_IRQHandler</code> → <code>HAL_GPIO_EXTI_IRQHandler</code> → Callback → <code>osSemaphoreRelease</code>.</p>
+<p>HAL quittiert. Der Callback prüft die Leitung und kehrt zurück.</p>
 <aside class="notes">
-<p>HAL fängt den Assembler-Interrupt ab, löscht das Flag, ruft den Callback. Nur prüfen und <code>osSemaphoreRelease</code> → keine <code>printf</code>, keine Berechnung. Perfekte kurze Top-Half.</p>
+<p><code>osOK</code>, voller Semaphor und anderer Fehler getrennt zählen. Kein Heap, keine lange Schleife. Diagnosezähler nicht aus zwei Kontexten unsynchronisiert erhöhen, wenn beide schreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1418,26 +1484,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-2-die-bottom-half-task-in-c" class="slide level2">
 <h2>Schritt 2: Die Bottom-Half (Task) in C</h2>
-<ul>
-<li>In der Endlosschleife der Task auf das Signal warten:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="dt">void</span> StartButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span></span>
-<span id="cb8-2"><a aria-label="2"></a><span class="op">{</span></span>
-<span id="cb8-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb8-4"><a aria-label="4"></a>        <span class="co">// 1. Schlafe (0% CPU), bis ISR signalisiert</span></span>
-<span id="cb8-5"><a aria-label="5"></a>        osSemaphoreAcquire<span class="op">(</span>ButtonSemHandle<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb8-6"><a aria-label="6"></a></span>
-<span id="cb8-7"><a aria-label="7"></a>        <span class="co">// 2. WACH — hier die aufwändige Arbeit</span></span>
-<span id="cb8-8"><a aria-label="8"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
-<span id="cb8-9"><a aria-label="9"></a>        printf<span class="op">(</span><span class="st">"BUTTON PRESSED!</span><span class="sc">\n</span><span class="st">"</span><span class="op">);</span></span>
-<span id="cb8-10"><a aria-label="10"></a></span>
-<span id="cb8-11"><a aria-label="11"></a>        <span class="co">// NUR DEMO: busy-wait, Task bleibt Running!</span></span>
-<span id="cb8-12"><a aria-label="12"></a>        HAL_Delay<span class="op">(</span><span class="dv">100</span><span class="op">);</span></span>
-<span id="cb8-13"><a aria-label="13"></a>        <span class="co">// Produktion: osDelay(100); // Ticks; bei 1000 Hz = 100 ms</span></span>
-<span id="cb8-14"><a aria-label="14"></a>    <span class="op">}</span></span>
-<span id="cb8-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">void</span> ButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb6-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-4"><a aria-label="4"></a>        <span class="cf">if</span> <span class="op">(</span>osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> osWaitForever<span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
+<span id="cb6-5"><a aria-label="5"></a>            <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb6-6"><a aria-label="6"></a>        <span class="co">/* kurze Arbeit; UART nur über VL4-Schutz */</span></span>
+<span id="cb6-7"><a aria-label="7"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
+<span id="cb6-8"><a aria-label="8"></a>    <span class="op">}</span></span>
+<span id="cb6-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Vergleichsvariante, ausdrücklich: <code>HAL_Delay(100)</code> als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.</p>
+<p>Entprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.</p>
 <aside class="notes">
-<p>Acquire mit <code>osWaitForever</code> → Blocked. Nach Knopfdruck: LED, <code>printf</code>, Demo-Last. <code>HAL_Delay</code> busy-waitet und hält die Task im Running-Zustand → nur zur Demo. In Produktion <code>osDelay</code> (Ticks!), damit die Task Blocked geht und andere Tasks rechnen können. In der ISR hätte jedes Delay den Chip gekillt; im Task-Kontext überlebt das OS.</p>
+<p>PE1 nur, wenn LD2 dort wirklich anliegt. Burst: mehrere Releases vor dem Acquire zeigen das Zusammenfassen. Eine Event-Queue mit Timeout 0 ist die Zählvariante, ebenfalls endlich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1452,17 +1511,52 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="was-werden-wir-im-labor-beobachten" class="slide level2">
 <h2>Was werden wir im Labor beobachten?</h2>
-<ul>
-<li>Button drücken → LED und Console verzögerungsfrei (für das Auge)</li>
-<li>Beweis der RTOS-Architektur:
-<ul>
-<li>Trotz <code>printf</code> und Delay stürzen parallel laufende Tasks (z. B. blinkende LED) nicht ab</li>
-<li>Eine noch wichtigere Task könnte unser <code>printf</code> präemptieren</li>
-</ul></li>
-<li>Hardware-Interrupts und Software-Scheduling sind sicher vereint</li>
-</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Feld</th>
+<th>Notiz</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Semaphor anfangs 0</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>NVIC-Zahl und Grouping</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Tickfrequenz</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Workerpriorität</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Drop- und Fehlerzähler</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>ISR-Dauer, Start, Completion</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Heartbeat-Verzögerung</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>verarbeitete Ereignisse</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Augenmaß an der LED ist keine quantitative Frist.</p>
+<p>Messung: GPIO oder vorhandenes Trace, <code>printf</code> danach. Pins nur aus dem Projekt.</p>
 <aside class="notes">
-<p>Keine Polling-Latenz, ISR-Regeln eingehalten, Scheduler bleibt Herr der Lage. Demo-Delay auf Prio High; Realtime-Task mit höherer Prio könnte präemptieren. Finale der Woche: Hardware-Welt und FreeRTOS vereint.</p>
+<p>Ohne Board bleiben die Sollbeobachtungen offen. Ein Build beweist keine Latenz.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1478,14 +1572,37 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-des-tages" class="slide level2">
 <h2>Zusammenfassung des Tages</h2>
 <ul>
-<li>Queues: transportieren Daten (Values oder Pointer) threadsicher zwischen Tasks; blockieren bei Über-/Unterlast</li>
-<li>Mailboxes: Zustandskommunikation (Overwrite erlaubt)</li>
-<li>ISRs müssen extrem kurz sein, damit der RTOS-SysTick nicht blockiert</li>
-<li>Deferred Interrupt Processing: Top-Half-ISR löst nur ein Event (Semaphor) aus; Bottom-Half-Task erledigt die Arbeit</li>
-<li>CMSIS-RTOS v2: FromISR-Logik und Context-Yielding automatisch</li>
+<li>Variable: letzter Wert; FIFO: Folge, bis der Puffer voll ist</li>
+<li>Ringbeispiel endet bei 20, 30, 40; Head = Tail und Count = 3 heißt voll</li>
+<li>Dauerlast: erster Fehl-Put bei 13 ms, Bilanz 13 und 7</li>
+<li>Pointer-Queue kopiert 4 Byte und nicht das Bild</li>
+<li>Try-Put auf voller 1er-Queue behält 10</li>
+<li>Startlatenz im Lehrbeispiel 16 µs, nicht gemessen</li>
+<li>EXTI-Priorität und leerer Semaphor gehören zur Init</li>
 </ul>
 <aside class="notes">
-<p>Heute: Queues (Value/Pointer), Mailboxes, Top-/Bottom-Half über binären Semaphor in CMSIS. Ins Labor → EXTI-Interrupt ausprobieren. Viel Erfolg!</p>
+<p>Quellen: CMSIS Message Queue und Semaphore, CMSIS-FreeRTOS Tech Data der Projektversion, FreeRTOS-Buch Kap. 5 und 7, CM4F-Port, UM2408.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="ausblick" class="slide level2">
+<h2>Ausblick</h2>
+<ul>
+<li>Nächster Termin: mehrere Kerne, gemeinsamer Speicher, kein gemeinsamer Heap</li>
+<li>Die Queue von heute bleibt lokal auf ihrem Kernel</li>
+<li>Cache und DMA nur mit dem Kern, der den Puffer cached</li>
+</ul>
+<aside class="notes">
+<p>HSEM und MPU sind nicht diese Vorlesung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
