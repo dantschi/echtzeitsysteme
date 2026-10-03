@@ -816,357 +816,378 @@
     "href": "vorlesungen/03_einfuehrung-rtos.html#willkommen-in-der-profiliga",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Willkommen in der Profiliga!",
-    "text": "Willkommen in der Profiliga!\n\nHerzlich willkommen zum 3. Termin unserer Vorlesung\nLetzte Woche: Die Mathematik (RMS, EDF) und unser eigener kleiner Scheduler\nHeute: Wir werfen unseren Eigenbau weg und wechseln in die Industrie-Praxis\nWir führen FreeRTOS ein — das am weitesten verbreitete RTOS für Mikrocontroller\nZiel: Verstehen, wie das OS unter der Haube Speicher und CPU verwaltet\n\n\nGuten Morgen und herzlich willkommen zurück! Letzte Woche: Scheduling-Schranken und kooperativer Round-Robin-Scheduler. Heute werfen wir den Eigenbau weg — didaktisch wertvoll, für die Industrie nicht ausreichend. FreeRTOS: wie Tasks verwaltet werden, was Hardware-Ressourcen kostet, und wie wir es auf dem STM32H755 einsetzen."
+    "text": "Willkommen in der Profiliga!\n\nDritter Termin: vom Dispatcher der Vorlesung 2 zu einem Kernel\nHeute: ein FreeRTOS auf dem Cortex-M4 des STM32H755\nDer CM7 übernimmt die im Projekt dokumentierte Startfunktion, keinen zweiten Scheduler\nEin RTOS strukturiert Tasks; Fristen bleiben nachzuweisen\n\n\nBegriffe aus VL1/VL2: Release, Start, Completion, Deadline, Jitter. Kein SMP über M4 und M7. Keine .ioc im Kursrepo — Versionen am gestellten Cube-Projekt prüfen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#agenda-für-heute",
     "href": "vorlesungen/03_einfuehrung-rtos.html#agenda-für-heute",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Agenda für heute",
-    "text": "Agenda für heute\n\nRecap: Warum unser Eigenbau-Scheduler letzte Woche gescheitert ist\nVom Bare-Metal zum RTOS (Latenz vs. Determinismus)\nDie Architektur von FreeRTOS\nTask-Management: TCB und Speicherbedarf\nDie State-Machine (Ready, Running, Blocked, Suspended)\nTick-Rate, Delays und Context Switch\nCMSIS-RTOS v2 API und Labor am STM32H755\n\n\nKurz Labor-Rückblick, dann Trade-off Latenz vs. Determinismus. Danach FreeRTOS: Task-Modell, RAM-Bedarf, Zustandsmaschine, Timing und CMSIS — bevor wir im Labor flashen."
+    "text": "Agenda für heute\n\nRecap: Dispatcher, nicht der rekursive Eigenbau\nWas ein Kernel leistet — und was nicht\nKontext, RAM, Zustände, Prioritäten\nTicks, Delays, CMSIS-RTOS2\nLabor: Heartbeat, HeavyMath, Emergency\n\n\nEmergency ist heute eine kleine Thread-Flag-Übergabe, keine Queue-Theorie."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#recap-unser-round-robin-eigenbau",
     "href": "vorlesungen/03_einfuehrung-rtos.html#recap-unser-round-robin-eigenbau",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Recap: Unser Round-Robin Eigenbau",
-    "text": "Recap: Unser Round-Robin Eigenbau\n\n\n\nLetzte Woche: Array aus Funktionszeigern (TCBs)\nScheduler lief ringförmig durch alle Tasks (Round-Robin)\nKontextwechsel als einfacher C-Aufruf: task_list[idx].task_func();\nVoraussetzung: System war kooperativ\n\n\n// Die Task MUSS das OS rufen!\nvoid Task_1() {\n    while(1) {\n        LED_On();\n        os_yield(); // Freiwillig!\n    }\n}\n\n\nKleines OS in C: Array speichert Task-Funktionen. os_yield() erhöht den Index und ruft die nächste Funktion. Elegant ohne Assembler — aber kooperativ: jede Task musste brav os_yield() aufrufen."
+    "text": "Recap: Unser Round-Robin Eigenbau\nVL2-Zielbild: zentraler Dispatcher, endliche step()-Funktionen, Zustand im TCB.\n\n\nEin Step, der nicht zurückkehrt, blockiert weitere kooperative Schritte\nAktive Interrupts können weiterlaufen\nEin normaler Funktionsaufruf sichert keine Fortsetzung mitten in einer Endlosschleife\n\n\nFehlbeispiel der ersten Laborfassung: os_yield() ruft die nächste Task-Funktion auf. Der Stack wächst A→B→C. Das ist kein eigener Task-Stack. Frage: Warum hilft ein privater Stack hier noch nicht, solange wir nur C-Aufrufe haben?"
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#recap-der-crash-im-labor",
     "href": "vorlesungen/03_einfuehrung-rtos.html#recap-der-crash-im-labor",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Recap: Der Crash im Labor",
-    "text": "Recap: Der Crash im Labor\n\nIn der Labor-Aufgabe haben wir die Kooperation sabotiert\nTask 2: gigantische, blockierende Zählschleife ohne os_yield()\nErgebnis:\n\nTask 1 (LED) ist eingefroren\nDer Scheduler wurde nie wieder aufgerufen\nDas System war tot (Starvation)\n\nFazit: Für harte Echtzeit dürfen wir der Anwendungssoftware niemals vertrauen — wir brauchen Präemption\n\n\nMutwillige Sabotage: Zählschleife ohne os_yield(). LED stand still, MCU schien eingefroren — Main-Loop in Task 2 gefangen. Harte Echtzeit braucht Präemption durch Hardware-Interrupts."
+    "text": "Recap: Der Crash im Labor\n\nKooperativ: Heavy-Schritt ohne return — Heartbeat-Callback kommt nicht dran\nPräemptiv, analog: High bleibt dauerhaft Ready — Low verhungert trotzdem\nPräemption löst das erste Problem und kann das zweite erzeugen\nHarte Fristen brauchen Grenzen der Arbeit, nicht nur einen Kernel\n\n/* Fehlbeispiel, historisch: nicht der VL2-Dispatcher */\nvoid Task_1(void) {\n    while (1) { LED_On(); os_yield(); /* ruft andere Task */ }\n}\n\n„Harte Echtzeit braucht immer Präemption“ ist zu pauschal. Begrenzte kooperative Schritte können Fristen erfüllen. Bare-Metal kann per IRQ schlafen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-notwendigkeit-eines-echten-rtos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#die-notwendigkeit-eines-echten-rtos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Die Notwendigkeit eines echten RTOS",
-    "text": "Die Notwendigkeit eines echten RTOS\n\nEin modernes System (z. B. Dual-Core STM32H755) hat komplexe Anforderungen:\n\nHarte Timing-Garantien (Präemption)\nSichere Kommunikation zwischen Tasks (Queues)\nAbsicherung gemeinsamer Ressourcen (Mutexes)\nSpeichermanagement\n\nDas baut man nicht an einem Nachmittag\nWir greifen auf bewährte, zertifizierbare Software zurück\n\n\nBastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere Inter-Task Communication, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS."
+    "text": "Die Notwendigkeit eines echten RTOS\n\nViele Aufgaben, Fristen und Wartepunkte werden sonst zur Flag-Suppe\nDer Kernel bietet Scheduling, Objektallokation, Kommunikation, Synchronisation, Port\nMutex ist keine allgemeine ISR-Lösung; aus der ISR nur dafür vorgesehene Übergaben\nZertifizierung und Speicherschutz entstehen nicht durch „FreeRTOS einschalten“\n\n\nQueues und Mutex vertiefen wir später. Heute reicht die Einordnung."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#was-leistet-ein-rtos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#was-leistet-ein-rtos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Was leistet ein RTOS?",
-    "text": "Was leistet ein RTOS?\n\nMultitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. Fixed Priority / RMS)\nInter-Task Communication: Queues und Mailboxes\nSynchronisation: Mutexes und Semaphore für Interrupt-Sicherheit\nMemory Management: RAM-Stacks für jede Task\nPort-Layer: ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber (nicht mit dem STM32-HAL verwechseln)\n\n\nFünf Kernaufgaben: Scheduling, Inter-Task Communication, Synchronisation, Speichermanagement, Port-Layer. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren."
+    "text": "Was leistet ein RTOS?\n\n\n\nBaustein\nRolle\n\n\n\n\ntasks.c\nZustände, Ready-Listen, Delays\n\n\nlist.c\nListen für diese Objekte\n\n\nqueue.c\nQueues (später)\n\n\nheap_x.c\neine mögliche Allokation\n\n\nCM4F-Port\nC und Assembler: PendSV, SVC, Tick\n\n\n\n\nPlattformunabhängig ist die API-Idee, nicht Prioritätszahl, Takt oder Treiber\n\n\nDer Port ist nicht „alles Assembler“. HAL-Treiber sind eine Nachbarschicht, nicht der Port."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-markt-für-echtzeitbetriebssysteme",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-markt-für-echtzeitbetriebssysteme",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der Markt für Echtzeitbetriebssysteme",
-    "text": "Der Markt für Echtzeitbetriebssysteme\n\n\nKommerziell (oft Safety-zertifiziert):\n\nVxWorks: Luft- und Raumfahrt (Mars Rover)\nQNX: Auto-Infotainment\nAUTOSAR OS: Steuergeräte (meist OSEK-basiert)\n\n\nOpen Source / industrie-nah:\n\nZephyr: Linux Foundation (z. B. Nordic)\nFreeRTOS: Marktführer bei kleineren Mikrocontrollern\n\n\n\nKommerziell: VxWorks (NASA), QNX, AUTOSAR OS. Open Source: Zephyr stark im Kommen. Unangefochtener Platzhirsch für Mikrocontroller — und unser System: FreeRTOS."
+    "text": "Der Markt für Echtzeitbetriebssysteme\n\nKommerziell u. a. VxWorks, QNX; im Auto oft AUTOSAR-OS\nOffen u. a. Zephyr und FreeRTOS\n„Marktführer“ oder „safety-zertifiziert“ nur mit benannter Quelle und Konfiguration\nWir nutzen FreeRTOS, weil Cube es für den STM32 anbindet — nicht als Beweis einer Frist\n\n\nFootprint-Werbeahlen (wenige KB) hängen von Optionen ab. Für unser Projekt zählt die Map-Datei, nicht ein Datenblatt-Slogan."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#lernziele-des-heutigen-tages",
     "href": "vorlesungen/03_einfuehrung-rtos.html#lernziele-des-heutigen-tages",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Lernziele des heutigen Tages",
-    "text": "Lernziele des heutigen Tages\n\nTrade-off Latenz vs. Determinismus verstehen\nTask-Modell von FreeRTOS implementieren können\nVerstehen, warum eine Task im Zustand Blocked exakt \\(0\\%\\) CPU benötigt\nRAM-Bedarf eines Task-Sets und Tick-Auflösung berechnen\nCMSIS-RTOS v2 statt nativer FreeRTOS-API nutzen\nFreeRTOS in der STM32CubeIDE konfigurieren und Präemption im Labor prüfen\n\n\nRTOS macht den MCU zunächst „langsam“, schenkt aber Vorhersagbarkeit. Architektur, Zustände, Timing/CMSIS und Prioritäten — dann Labor auf dem Cortex-M4."
+    "text": "Lernziele des heutigen Tages\n\nDispatcher-Callback und RTOS-Thread unterscheiden\nStack, TCB und übriges RAM grob bilanzieren\nReady, Running und Blocked an einer CPU-Spur erklären\nTickphase, osDelay und osDelayUntil auseinanderhalten\nEmergency per Thread-Flag aus einer erlaubten ISR wecken\n\n\nAm Ende keine Behauptung „Jitter ungefähr null“."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#architektur-bare-metal-vs.-rtos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#architektur-bare-metal-vs.-rtos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Architektur: Bare-Metal vs. RTOS",
-    "text": "Architektur: Bare-Metal vs. RTOS\n\n\nBare-Metal (Super-Loop)\n\nHardware → Ihr C-Code\nSehr flache Architektur\nEin einziger Call-Stack im RAM\nCPU rechnet oft dauerhaft (Polling, \\(\\approx 100\\%\\) Auslastung)\n\n\nRTOS-Architektur\n\nHardware → RTOS → Ihre Tasks\nOS als Zwischenschicht\nJede Task hat einen eigenen Call-Stack\nCPU kann schlafen (Idle-Task), wenn nichts zu tun ist\n\n\n\nBare-Metal: C direkt auf Hardware, ein Stack, oft 100% Polling-Last. RTOS: Schicht dazwischen, eigener Stack pro Task, Schlafmodus wenn alle warten."
+    "text": "Architektur: Bare-Metal vs. RTOS\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%\nflowchart TB\n  APP[Anwendungsthreads] --&gt; CMSIS[CMSIS-RTOS2]\n  CMSIS --&gt; K[FreeRTOS-Kernel]\n  K --&gt; P[CM4F-Port]\n  P --&gt; M4[Cortex-M4]\n  HAL[HAL / Peripherie] --- M4\n  M7[CM7: Start laut Projekt] --- BUS[gemeinsame Busse / SRAM]\n  M4 --- BUS\n  style K fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n\n\n\n\n\n\n\nEin Kernel auf dem CM4; Tasklisten wandern nicht zum M7\nZwei Kernel später wären eine eigene AMP-Entscheidung\nOhne MPU-Port isoliert der Stack nur organisatorisch\n\n\nEigener NVIC und eigene Vector Table je Kern, wie in VL1. Gemeinsamer Speicher bleibt Interferenz."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-kernparadigma-latenz-vs.-determinismus",
     "href": "vorlesungen/03_einfuehrung-rtos.html#das-kernparadigma-latenz-vs.-determinismus",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Das Kernparadigma: Latenz vs. Determinismus",
-    "text": "Das Kernparadigma: Latenz vs. Determinismus\n\nVorurteil: „Wir können kein RTOS nutzen, das ist zu langsam!“\nFakt: Ein RTOS kostet Rechenzeit (Overhead)\n\nSysTick-Interrupt typisch alle \\(1\\,\\mathrm{ms}\\)\nScheduler muss Listen sortieren (Taktzyklen)\nContext Switch (PendSV) kostet ca. \\(100\\)–\\(300\\) Takte\n\nAber: Wir tauschen maximale Geschwindigkeit gegen garantierte Pünktlichkeit (Determinismus)\n\n\nTechnisch richtig, konzeptionell gefährlich: RTOS kostet Takte (SysTick, Scheduler, PendSV). Absolute Latenz wird etwas länger — dafür Determinismus: ausrechenbare Pünktlichkeit statt wackeliger Höchstgeschwindigkeit."
+    "text": "Das Kernparadigma: Latenz vs. Determinismus\nSynthetische Antwortzeiten, Deadline \\(D = 10\\,\\mathrm{ms}\\):\n\nFolge \\(2/4/6/8\\,\\mathrm{ms}\\): Schwankung, aber kein Miss\nEin Lauf mit \\(R = 12\\,\\mathrm{ms}\\): Miss\nHohe Priorität ist keine Obergrenze\nKonstante Zusatzlatenz ist kein Jitter\n\nBestandteile von \\(R\\), ohne hier die RTA zu wiederholen: eigener CPU-Bedarf, höherpriore Arbeit, IRQs, Blocking, Dispatcher.\n\nFrage: Welche Annahmen fehlen für eine harte Garantie? Antwort: beschränkte \\(C\\), Prioritäten, modellierte IRQ- und Sperrzeiten, kein unbegrenztes Blocking, gültiger Test. Wenige Kurven beweisen das nicht."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-jitter-vergleich",
     "href": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-jitter-vergleich",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Visualisierung: Jitter-Vergleich",
-    "text": "Visualisierung: Jitter-Vergleich\n\nHardware-Event triggert eine Reaktion\n\n\n\nBare-Metal (Super-Loop ohne IRQ): oft schneller, aber unregelmäßig (hoher Jitter)\nRTOS: etwas später (OS-Overhead), bei hoher Priorität nahezu konstant (Jitter \\(\\approx 0\\))\n\n\nOben: externes Ereignis zweimal. Bare-Metal als Super-Loop ohne IRQ: schnell wenn die Schleife gerade pollt, sonst ewig — gewaltiger Jitter. (Mit ISR wäre das Bild anders.) RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert."
+    "text": "Visualisierung: Jitter-Vergleich\n\n\nDie Skizze zeigt einen gehaltenen Job mit \\(R = 8\\,\\mathrm{ms}\\)\nEine Bare-Metal-ISR kann dieselbe Frist mit weniger Dispatcheranteil halten\nDer Vergleich ist nicht „Super-Loop schlecht, RTOS gut“\n\n\nLehrwerte, keine Boardmessung. Startlatenz, Antwortzeit und deren Schwankung getrennt nennen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#einführung-in-freertos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#einführung-in-freertos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Einführung in FreeRTOS",
-    "text": "Einführung in FreeRTOS\n\nUrsprünglich von Richard Barry (2003) entwickelt\nOpen Source (MIT-Lizenz — auch in kommerziellen, geschlossenen Produkten nutzbar)\n2017 von Amazon (AWS) übernommen\nEigenschaften:\n\nWinziger Footprint (Scheduler ab \\(\\approx 4\\,\\mathrm{KB}\\) ROM, \\(&lt; 1\\,\\mathrm{KB}\\) RAM)\nSehr portabel (8-Bit AVR bis 32-Bit ARM Cortex-A)\nQuasi-Standard in Maker- und Industrie-Welt (ESP32, STM32)\n\n\n\nMIT-Lizenz: ändern und kommerziell nutzen ohne Veröffentlichungspflicht. Amazon übernahm 2017 für AWS-IoT. Kernstärke: Footprint und Portabilität — beherrschen Sie FreeRTOS, beherrschen Sie einen Großteil des Embedded-OS-Marktes."
+    "text": "Einführung in FreeRTOS\n\nRichard Barry, später Amazon/AWS; Lizenz MIT\nPortierbar, deshalb der STM32-Cube-Standard in diesem Kurs\nKonkrete ROM-/RAM-Größe: Linker-Map der verwendeten FreeRTOSConfig.h\nVersion von Kernel, CMSIS-Wrapper und CubeH7 am Projekt ablesen\n\n\nÖffentliches GitHub-main ist nicht die Version im Labor."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-freertos-architektur",
     "href": "vorlesungen/03_einfuehrung-rtos.html#die-freertos-architektur",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Die FreeRTOS Architektur",
-    "text": "Die FreeRTOS Architektur\n\nDas gesamte Betriebssystem besteht aus nur wenigen C-Dateien\nKern-Dateien (OS-Logik, chip-unabhängig):\n\ntasks.c: Scheduler, TCB-Verwaltung, Ready-Listen\nlist.c: Optimierte doppelt verkettete Listen\nqueue.c: Inter-Task-Kommunikation\n\nPort-Layer (hardware-spezifisch):\n\nport.c / portmacro.h: Assembler für SysTick und PendSV (Cortex-M4)\n\n\n\nKein Blackbox-Kernel wie Linux: Kern in Standard-C (tasks.c, list.c, queue.c). Hardware-Brücke im Port-Layer (ARM_CM4F/port.c) mit PendSV-Assembler."
+    "text": "Die FreeRTOS Architektur\n\nAnwendung → CMSIS-RTOS2 → Kernel → Port → Cortex-M4\ntasks.c, list.c, queue.c, heap_4.c o. ä. nach Rolle\nPendSV/SVC im Port; SysTick ist eine übliche Tickquelle, keine Pflicht\nCMSIS macht nicht jeden Backendwechsel ohne Anpassungen möglich\n\n\nPrioritätsabbildung, Heap und Timer bleiben plattformabhängig."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-warum-ein-rtos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-warum-ein-rtos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Zusammenfassung: Warum ein RTOS?",
-    "text": "Zusammenfassung: Warum ein RTOS?\n\n\nVorteile:\n\nVorhersagbares Verhalten (Determinismus) durch hardwarenahe Präemption\nSaubere Software-Struktur (unabhängige Tasks statt Spaghetticode)\nFertige, getestete Module für Kommunikation und Speicherschutz\n\n\nNachteile:\n\nVerlust absoluter CPU-Rohleistung (Scheduler-Overhead)\nHöherer RAM-Verbrauch (eigener Stack pro Task)\nKomplexere Fehlersuche (Race Conditions)\n\n\n\nDeterminismus und Struktur gegen Overhead, RAM und Race Conditions. Als Nächstes: wie FreeRTOS Tasks und RAM verwaltet. Fragen zum Architektur-Teil?"
+    "text": "Zusammenfassung: Warum ein RTOS?\n\nStruktur: Threads statt einer Flag-Suppe\nKosten: Ticks, Wechsel, Stacks, Fehlersuche\nKeine automatische Pünktlichkeit und kein automatischer Speicherschutz\nPräemption ersetzt kooperative Rückkehrpflicht, nicht die Analyse\n\n\n„Geschwindigkeit gegen garantierte Pünktlichkeit“ ist die falsche Tauschformel."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-task-modell",
     "href": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-task-modell",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Das FreeRTOS Task-Modell",
-    "text": "Das FreeRTOS Task-Modell\n\nEine Task in FreeRTOS ist eine C-Funktion\nWichtigste Regel: Die Funktion darf niemals ans Ende gelangen (return ist verboten)\nAls unendliche Schleife for(;;) oder while(1) schreiben\n\nvoid vMyFirstTask(void *pvParameters) {\n    // 1. Initialisierung (läuft nur einmal)\n    Init_Sensor();\n\n    // 2. Die Endlosschleife (der Task-Körper)\n    for(;;) {\n        Read_Sensor();\n        vTaskDelay(pdMS_TO_TICKS(100)); // OS: schlafe 100 ms\n    }\n    // HIER DARF DER CODE NIEMALS ANKOMMEN!\n}\n\nGewöhnliche C-Funktion mit void *-Parameter. Niemals return oder Ende der Funktion — sonst Hard Fault. Setup einmal, dann ewige for(;;) mit Arbeit und Schlafen."
+    "text": "Das FreeRTOS Task-Modell\n\nNative Task-Funktion kehrt nicht normal zurück\nEnde über vTaskDelete(NULL); CMSIS: osThreadExit()\nEin bloßes return führt portabhängig oft in eine Assert- oder Fehlerschleife, nicht zwingend in den HardFault\nLabor-Threads: for (;;) und RTOS-Warten\n\nvoid Heartbeat(void *arg) {\n    (void)arg;\n    for (;;) {\n        /* Arbeit, dann osDelay / osDelayUntil */\n    }\n}\n\nDer gespeicherte Kontext liegt auf dem Task-Stack. Der TCB hält insbesondere den Stackpointer, nicht den PC als loses Feld."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-task-control-block-tcb-in-freertos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-task-control-block-tcb-in-freertos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der Task Control Block (TCB) in FreeRTOS",
-    "text": "Der Task Control Block (TCB) in FreeRTOS\n\nFreeRTOS legt für jede Task ein Struct im RAM an\nWichtige Felder in tskTCB:\n\npxTopOfStack: Wo liegen die CPU-Register dieser Task?\nxStateListItem: Knoten für Ready/Blocked-Listen\nuxPriority: Aktuelle Priorität\npcTaskName: String für Debugging (z. B. \"MotorTask\")\n\nDer TCB wird vom OS verwaltet — wir fassen ihn niemals direkt an\n\n\nBei xTaskCreate alloziert FreeRTOS den TCB: Stack-Pointer für PendSV, Listen-Knoten, Name für Debugger. Nur über die FreeRTOS-API manipulieren."
+    "text": "Der Task Control Block (TCB) in FreeRTOS\n\npxTopOfStack: Oberkante des gesicherten Kontexts\nListenelemente: Ready, Delayed, …\nuxPriority: nativ UBaseType_t, nicht pauschal uint8_t\nCMSIS sieht osPriority_t; der Wrapper bildet ab und kann Werte ablehnen\n\n\nDrei TCBs, drei Stacks. PSP für den laufenden Thread, MSP für Handler. IRQ-Stack extra bilanzieren."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#speichermanagement-der-stack",
     "href": "vorlesungen/03_einfuehrung-rtos.html#speichermanagement-der-stack",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Speichermanagement: Der Stack",
-    "text": "Speichermanagement: Der Stack\n\nIn Bare-Metal: ein globaler Stack für das ganze Programm\nIn FreeRTOS: jede Task hat einen eigenen, isolierten Stack im RAM\nLokale Variablen und Funktionsaufrufe nutzen nur diesen privaten Stack\nVorsicht: Stack zu klein → Stack Overflow in den RAM anderer Tasks\n\n\nZehn Tasks = zehn separate RAM-Blöcke. Lokale Variable landet nur im eigenen Block. Zu große lokale Arrays: Stack Overflow — Absturzursache Nummer 1 in der Praxis."
+    "text": "Speichermanagement: Der Stack\n\nLokale Variablen und Aufrufe liegen auf dem Task-Stack\nHardware-Frame: R0–R3, R12, LR, PC, xPSR; Software zusätzlich R4–R11, portabhängig FPU\n128 Einträge StackType_t × 4 Byte = 512 Byte\nCMSIS stack_size = 512 bedeutet 512 Byte, nicht 512 Wörter\nCube-Feld gegen den generierten Wert prüfen\n\n\nStatischer Puffer reserviert früh, beweist aber keine ausreichende Tiefe."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#berechnung-des-ram-bedarfs",
     "href": "vorlesungen/03_einfuehrung-rtos.html#berechnung-des-ram-bedarfs",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Berechnung des RAM-Bedarfs",
-    "text": "Berechnung des RAM-Bedarfs\n\nRAM ist auf Mikrocontrollern kostbar (STM32H755: \\(1\\,\\mathrm{MB}\\); kleinere Cortex-M oft nur \\(16\\,\\mathrm{KB}\\))\nRAM-Kosten einer neuen Task: \\[\\mathrm{RAM} = \\text{TCB}~(\\approx 80\\,\\mathrm{Byte}) + (\\text{Stack-Wörter} \\times 4\\,\\mathrm{Byte})\\]\nBeispiel: Stack von \\(128\\) Wörtern auf 32-Bit-ARM \\(= 512\\,\\mathrm{Byte}\\)\n\nGesamt: \\(\\approx 512 + 80 = 592\\,\\mathrm{Byte}\\) pro Task\n\nLektion: Keine großen Arrays als lokale Variablen — Heap oder globale Variablen nutzen\n\n\nFreeRTOS-API: Stackgröße 128 meint 128 Wörter à 4 Byte = 512 Byte. Zehn Tasks: fast 6 KB ohne sinnvolle Arbeit. Große Puffer nie lokal in der Task."
+    "text": "Berechnung des RAM-Bedarfs\nAnnahme, ausdrücklich nicht die Map-Datei: TCB ≈ 80 Byte.\n\n\n\nPosition\nByte\n\n\n\n\nStack 512 + TCB 80\n592\n\n\nDrei Threads 512 / 1024 / 1024 + 3×80\n2800\n\n\n\nDazu, oft andere Pools: Idle, Timer-Task, Queues, Heap-Metadaten, Alignment, MSP.\n\nDas gesamte H755-SRAM ist kein frei zusammenhängender CM4-Heap\nDynamische Anlage kann scheitern; statische Reservierung verlagert die Planung nach vorn\n\n\n2800 Byte decken nur diese drei Beispieltasks unter der 80-Byte-Annahme. Linker-Map und configTOTAL_HEAP_SIZE liefern den Projektwert."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#speicherallokation-statisch-vs.-dynamisch",
     "href": "vorlesungen/03_einfuehrung-rtos.html#speicherallokation-statisch-vs.-dynamisch",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Speicherallokation: Statisch vs. Dynamisch",
-    "text": "Speicherallokation: Statisch vs. Dynamisch\n\n\nDynamisch (xTaskCreate):\n\nOS ruft intern pvPortMalloc() (RTOS-Heap)\nProblem: Kann fehlschlagen, wenn der Heap voll ist (Laufzeitfehler)\n\n\nStatisch (xTaskCreateStatic):\n\nGlobale C-Arrays für den Stack übergeben\nVorteil: RAM-Mangel fällt schon beim Kompilieren auf (Automotive-Standard)\n\n\n\nDynamisch bequem, aber gefährlich bei vollem Heap. Safety/Automotive oft nur statisch: Linker bricht ab, bevor das Auto startet. Im Labor zunächst der dynamische Weg."
+    "text": "Speicherallokation: Statisch vs. Dynamisch\n\nDynamisch: osThreadNew kann NULL liefern\nStatisch: Speicher ist vorher da, Stacktiefe bleibt eine Messfrage\nGroße Puffer brauchen Eigentümer und Lebensdauer\nEine globale Variable ist keine automatische Safety-Lösung\nMPU-Isolation nur mit dem dafür gebauten Port und passender Konfiguration\n\n\nHeap voll ≠ HardFault. Zuerst Handle prüfen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-zustandsmodell",
     "href": "vorlesungen/03_einfuehrung-rtos.html#das-freertos-zustandsmodell",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Das FreeRTOS Zustandsmodell",
-    "text": "Das FreeRTOS Zustandsmodell\n\nDas Verständnis dieses Modells entscheidet, ob Ihr System echtzeitfähig ist\nEine Task befindet sich immer in exakt einem von vier Zuständen\n\n\n\nHerzstück: State-Diagramm. Blocked ist kriegsentscheidend. Nie Blocked → Running direkt — immer erst Ready. Suspended: künstliches Koma bis vTaskResume()."
+    "text": "Das FreeRTOS Zustandsmodell\n\n\nSuspend ist administrativ, nicht dasselbe wie Warten auf ein Ereignis\nCMSIS osThreadState_t hat kein eigenes Suspended; die Abfrage zeigt das oft als Blocked\nBlocked: der Task führt keine eigenen Befehle aus; Tick und Wakeup kosten trotzdem Zeit\n\n\nFrage: Ist Ready schon Running? Nein. Es darf höchstens ein Thread rechnen; IRQ/Kernel extra."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-running-zustand",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-running-zustand",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der „Running“-Zustand",
-    "text": "Der „Running“-Zustand\n\nDie Task besitzt die Kontrolle über die CPU-Hardware (Register, ALU)\nAuf einem Single-Core kann immer nur genau eine Task Running sein\nAuf dem STM32H755 (Dual-Core):\n\nEin Kernel auf Cortex-M7 (eine Task Running)\nEin Kernel auf Cortex-M4 (eine Task Running)\n\nDie Task bleibt Running, bis sie:\n\netwas Blockierendes aufruft (Delay, Mutex)\nvon einer wichtigeren Task unterbrochen wird (Präemption)\n\n\n\nRunning = König der CPU. Heute Nachmittag FreeRTOS nur auf dem M4. Illusion der Gleichzeitigkeit durch schnelles Umschalten. Thronverlust: freiwillig (Delay) oder gewaltsam (SysTick/höhere Prio)."
+    "text": "Der „Running“-Zustand\n\nGenau ein Thread hat die CPU\nIdle rechnet, wenn niemand sonst Ready ist\nHAL_Delay ist in der üblichen HAL ein Busy-Wait: Zustand bleibt Running, höherpriore Threads können trotzdem präemptieren\nBusy-Wait ist Last, kein automatisches „Echtzeit zerstört“ — im Labor trotzdem osDelay\n\n\nNicht behaupten, HAL_Delay laufe ununterbrochen allein bis zum Ende."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-ready-zustand",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-ready-zustand",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der „Ready“-Zustand",
-    "text": "Der „Ready“-Zustand\n\nWarteschlange der arbeitswilligen Tasks\nLogisch und rechnerisch bereit, alle nötigen Daten vorhanden\nWarum läuft sie nicht?\n\nEine Task mit gleicher oder höherer Priorität blockiert aktuell Running\n\nFreeRTOS verwaltet pro Prioritäts-Level eine eigene Ready-Liste\n\n\nReady = kein Problem, nur gerade nicht ausgewählt. Array von Listen pro Priorität: Scheduler schaut nur auf die oberste nicht-leere Liste — immer gleich viele Takte (Determinismus)."
+    "text": "Der „Ready“-Zustand\n\nWill rechnen, wartet auf Zuteilung\nNach Timeout kann ein höherpriorer Thread nach IRQ-Ende und PendSV sofort laufen\nReady heißt nicht „noch einen ganzen Tick warten“\nMaskierung oder eine laufende höhere ISR verzögern den Wechsel\n\n\nDas Intervall zwischen Timeout und Lauf ist Dispatcherzeit, keine erfundene 1-ms-Wechseldauer."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-blocked-zustand-die-magie-des-rtos",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-blocked-zustand-die-magie-des-rtos",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der „Blocked“-Zustand (Die Magie des RTOS)",
-    "text": "Der „Blocked“-Zustand (Die Magie des RTOS)\n\nWichtigster Zustand für ein stabiles Echtzeitsystem\nTask wartet auf ein Ereignis:\n\nZeitlich: vTaskDelay(100) (schlafe exakt 100 Ticks)\nLogisch: Taste, UART-Daten, Queue\n\nClou: Blocked-Task wird vom Scheduler beim Suchen komplett ignoriert\nVerbrauch: \\(0{,}00\\%\\) CPU-Rechenzeit\nDeshalb niemals HAL_Delay() in einem RTOS (Busy-Wait auf uwTick: Task bleibt Running)\n\n\nWarten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. HAL_Delay busy-waitet auf uwTick und bleibt Running — immer RTOS-Blockade-Funktionen nutzen."
+    "text": "Der „Blocked“-Zustand (Die Magie des RTOS)\n\nEigene Auslastung des wartenden Threads: keine Instruktionen\nGesamt-CPU kann durch HeavyMath trotzdem voll sein\nosDelay / osThreadFlagsWait blockieren; HAL_Delay nicht\nAus der ISR kein osDelay und kein Mutex-Warten\n\n\n„0 % eigener Code“ und „0 % Kernel“ nicht vermischen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-task-zustände-im-zeitverlauf",
     "href": "vorlesungen/03_einfuehrung-rtos.html#visualisierung-task-zustände-im-zeitverlauf",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Visualisierung: Task-Zustände im Zeitverlauf",
-    "text": "Visualisierung: Task-Zustände im Zeitverlauf\n\n\nTask A schickt sich selbst in den Blocked-Zustand\nTask B darf endlich rechnen\nTimeout: A wird Ready (nie direkt Running), dann Dispatch — A verdrängt B\n\n\nt=0: A rechnet, B wartet. t=1: A ruft osDelay — B bekommt die CPU. t=3: Schlafzeit vorbei, A wird Ready (nie direkt Running). t=4: Dispatch — A Running, B Ready (Präemption)."
+    "text": "Visualisierung: Task-Zustände im Zeitverlauf\nA höher als B. A läuft, ruft Delay, B läuft, A wird Ready und läuft nach zulässigem Wechsel wieder.\n\n\nBei \\(t = 5\\) rechnet A, nicht „A wartet noch bis \\(t = 6\\)“\nKurze PendSV-Zeit im Detail denken, nicht als 1-ms-Balken messen\n\n\nWenn die Zeichnung A zwischen 5 und 6 nur Ready zeigte, wäre das ein Fehler ohne benannte Ursache."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#freertos-scheduler-konfiguration",
     "href": "vorlesungen/03_einfuehrung-rtos.html#freertos-scheduler-konfiguration",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "FreeRTOS Scheduler-Konfiguration",
-    "text": "FreeRTOS Scheduler-Konfiguration\n\nScheduler-Verhalten tiefgreifend anpassbar\nSteuerung über FreeRTOSConfig.h\nPräemption aktivieren:\n\nconfigUSE_PREEMPTION = 1: Scheduler darf Tasks unterbrechen (präemptiv / Fixed Priority)\nconfigUSE_PREEMPTION = 0: kooperatives Scheduling (wie unser Eigenbau)\n\nFür unsere Vorlesung: diesen Wert immer auf \\(1\\) setzen\n\n\nFreeRTOSConfig.h ist die Schaltzentrale. configUSE_PREEMPTION = 0 macht FreeRTOS kooperativ wie unser Eigenbau. Für ernsthafte Projekte und den Rest der Vorlesung strikt auf 1."
+    "text": "FreeRTOS Scheduler-Konfiguration\n\nHöchste nichtleere Ready-Priorität gewinnt\nSuche oder optimierte Bitmap: abhängig von configUSE_PORT_OPTIMISED_TASK_SELECTION\nDeshalb keine universelle Taktzahl für „den“ Scheduler\nconfigMAX_PRIORITIES und der CMSIS-Wrapper gemeinsam prüfen\n\n\nZu wenige Stufen: der Wrapper klemmt oder weist eine CMSIS-Priorität zurück."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#prioritäten-in-freertos-achtung-falle",
     "href": "vorlesungen/03_einfuehrung-rtos.html#prioritäten-in-freertos-achtung-falle",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Prioritäten in FreeRTOS (Achtung: Falle!)",
-    "text": "Prioritäten in FreeRTOS (Achtung: Falle!)\n\nJede Task bekommt beim Start eine Priorität als Integer (uint8_t)\nFreeRTOS-Regel:\n\nPrio \\(0\\) = niedrigste Priorität\nPrio configMAX_PRIORITIES - 1 = höchste Priorität\n\nFalle für Hardware-Entwickler:\n\nARM Cortex-M NVIC denkt genau andersherum (\\(0\\) = höchste Prio)\n\nMerken: OS-Level (hohe Zahl = wichtig), Hardware-Level (kleine Zahl = wichtig)\n\n\nFreeRTOS: 0 unwichtig, hohe Zahl wichtig. NVIC: 0 ist König. Strikt trennen: OS-C-Code vs. Hardware-Register — bringt Anfänger oft zur Verzweiflung."
+    "text": "Prioritäten in FreeRTOS (Achtung: Falle!)\n\n\n\nSkala\nRichtung\n\n\n\n\nNative FreeRTOS-Task\ngrößere Zahl = dringender\n\n\nCMSIS osPriority_t\nebenso, andere Symbole\n\n\nNVIC, logisch\nkleinere Zahl = dringendere IRQ\n\n\n\nLabor-Ordnung: Emergency \\(&gt;\\) Heartbeat \\(&gt;\\) HeavyMath \\(&gt;\\) Idle.\n\nKonkrete Abbildung steht in der verwendeten cmsis_os2.c\n„Oft 7 Stufen“ nicht mit einem Wrapper mischen, der mehr CMSIS-Stufen erwartet\nosThreadYield: hohe Priorität bleibt Ready und wird wieder gewählt\n\n\nFrage: Warum hilft Yield dem niedrigprioren Task nicht? Weil die hohe Aufgabe weiter bereit ist. Gleichstand plus configUSE_TIME_SLICING ist ein eigener Fall."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-idle-task-prio-0",
     "href": "vorlesungen/03_einfuehrung-rtos.html#die-idle-task-prio-0",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Die Idle-Task (Prio 0)",
-    "text": "Die Idle-Task (Prio 0)\n\nWas passiert, wenn alle eigenen Tasks Blocked sind?\nDie CPU muss Assembler ausführen — sie kann nicht „nichts“ tun\nFreeRTOS erstellt beim Start automatisch die Idle-Task\nImmer Priorität \\(0\\) (lässt jeden anderen ran)\nNutzen der Idle-Task:\n\nSpeicher gelöschter Tasks aufräumen\nCPU in Hardware-Tiefschlaf (WFI — Wait For Interrupt), starker Stromspar-Effekt (configUSE_TICKLESS_IDLE)\n\n\n\nDrei Tasks Blocked: CPU braucht trotzdem Befehle. Idle-Task mit Prio 0 läuft nur, wenn niemand sonst will. Modern: WFI schaltet den Kern ab bis zum nächsten Timer — Batteriesensoren über Jahre."
+    "text": "Die Idle-Task (Prio 0)\n\nIdle hat die niedrigste native Priorität, muss sie aber nicht allein besitzen\nDauerhaft bereites HeavyMath oberhalb Idle verhindert Idle-Lauf, Cleanup und Idle-Schlaf\nHooks und das Löschen beendeter Tasks sind konfigurationsabhängig\nWFI ist kein automatischer Standardpfad jeder FreeRTOSConfig.h\n\n\nFrage: Warum läuft Idle im normalen Labor nicht? Weil HeavyMath bereit bleibt und höher ist."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#strom-sparen-tickless-idle",
     "href": "vorlesungen/03_einfuehrung-rtos.html#strom-sparen-tickless-idle",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Strom sparen: Tickless Idle",
-    "text": "Strom sparen: Tickless Idle\n\nWas passiert, wenn alle Tasks für z. B. \\(500\\,\\mathrm{ms}\\) blockiert sind?\nNormalerweise wacht der SysTick trotzdem jede \\(1\\,\\mathrm{ms}\\) auf, prüft Listen und schläft wieder\nProblem: Die CPU wird 500-mal sinnlos geweckt (Stromverschwendung)\nLösung: configUSE_TICKLESS_IDLE = 1\n\nFreeRTOS berechnet die Zeit bis zum nächsten Event (z. B. \\(500\\,\\mathrm{ms}\\))\nSysTick aus, Low-Power-Timer auf diese Dauer programmieren\nCPU geht in echten Deep-Sleep\n\n\n\nIm Normalfall feuert der SysTick jede Millisekunde, auch wenn alle Tasks eine halbe Sekunde blockiert sind — 500 sinnlose Aufwachzyklen. Mit configUSE_TICKLESS_IDLE berechnet der Scheduler die Zeit bis zur nächsten Deadline, schaltet den 1-ms-SysTick ab, programmiert einen stromsparenden Hardware-Timer und schickt die CPU schlafen. Für batteriebetriebene Sensoren entscheidend."
+    "text": "Strom sparen: Tickless Idle\n\nTickless unterdrückt geeignete Kernel-Ticks\nDer übliche CM4F-Port verlängert SysTick; das ist kein eigener Low-Power-Timer\nLPTIM/RTC brauchen eine passende Portierung\n24-Bit-Zähler: bei \\(100\\,\\mathrm{MHz}\\) etwa \\(167{,}8\\,\\mathrm{ms}\\), bei \\(240\\,\\mathrm{MHz}\\) etwa \\(69{,}9\\,\\mathrm{ms}\\)\n„500 ms mit unverändertem SysTick“ nicht zeichnen\nEin weiterlaufender HAL-TIM6 kann trotzdem wecken\nDeep Sleep braucht PWR, Clock und beide Kerne — das HeavyMath-Labor ist kein Tickless-Versuch\n\n\nTickless erzeugt weder automatisch Deep Sleep noch einen korrigierten Betrieb ohne vTaskStepTick."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-rtos-herzschlag-die-tick-rate",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-rtos-herzschlag-die-tick-rate",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der RTOS-Herzschlag: Die Tick-Rate",
-    "text": "Der RTOS-Herzschlag: Die Tick-Rate\n\nDas Zeitgefühl von FreeRTOS basiert auf Ticks\nEin Tick entspricht einem Interrupt des SysTick-Timers\nGesteuert durch configTICK_RATE_HZ (meist \\(1000\\,\\mathrm{Hz}\\))\nBedeutung:\n\nBei \\(1000\\,\\mathrm{Hz}\\) dauert 1 Tick exakt \\(1\\,\\mathrm{ms}\\)\nDas OS löst Zeiten nur in ganzzahligen Vielfachen von Ticks auf\nEin Delay von \\(1{,}5\\,\\mathrm{ms}\\) ist nicht möglich (wird gerundet)\n\n\n\nconfigTICK_RATE_HZ steht fast immer auf 1000: SysTick jede Millisekunde. FreeRTOS hat keine Nanosekunden-Uhr — die kleinste Einheit ist der Tick. Für \\(1{,}5\\,\\mathrm{ms}\\) Delay geht das nicht; Mikrosekunden-präzises Timing braucht einen separaten Hardware-Timer, kein OS-Delay."
+    "text": "Der RTOS-Herzschlag: Die Tick-Rate\n\nconfigTICK_RATE_HZ setzt die Kernel-Tickperiode, nicht die Wanduhr allein\nosDelay(1) endet an einer Tickgrenze\nAufruf bei \\(0{,}1\\,\\mathrm{ms}\\): Ready bei \\(1\\,\\mathrm{ms}\\) (Dauer \\(0{,}9\\,\\mathrm{ms}\\))\nAufruf bei \\(0{,}9\\,\\mathrm{ms}\\): Ready bei \\(1\\,\\mathrm{ms}\\) (Dauer \\(0{,}1\\,\\mathrm{ms}\\))\nDanach kann höherpriore Arbeit den echten Start noch schieben\n\n\nFrage: Garantiert ein Tick mindestens 1 ms? Nein. Bei 1 kHz ist die Periode 1 ms, die Restzeit bis zur Grenze kann kürzer sein."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#zeit-umrechnung-die-goldene-regel",
     "href": "vorlesungen/03_einfuehrung-rtos.html#zeit-umrechnung-die-goldene-regel",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Zeit-Umrechnung (Die goldene Regel)",
-    "text": "Zeit-Umrechnung (Die goldene Regel)\n\n\n\nZeiten niemals als nackte Integer angeben\nvTaskDelay(100) bedeutet: schlafe 100 Ticks\nÄndert ein Kollege die Tick-Rate auf \\(100\\,\\mathrm{Hz}\\)?\n\nAus \\(100\\,\\mathrm{ms}\\) wird plötzlich \\(1\\,\\mathrm{s}\\)\n\n\n\nImmer das Makro nutzen:\n// FALSCH (Tick-abhängig):\nvTaskDelay(100);\n\n// RICHTIG (immer 100 ms):\nvTaskDelay(pdMS_TO_TICKS(100));\n\n\nDie FreeRTOS-API erwartet Ticks. Bei \\(1000\\,\\mathrm{Hz}\\) sind 100 Ticks zufällig \\(100\\,\\mathrm{ms}\\). Senkt jemand die Rate auf \\(100\\,\\mathrm{Hz}\\), blockiert dieselbe Zahl eine ganze Sekunde. Deshalb immer pdMS_TO_TICKS() — der Precompiler rechnet Millisekunden in Ticks um."
+    "text": "Zeit-Umrechnung (Die goldene Regel)\nAufrundender Helfer, nicht pdMS_TO_TICKS ungeprüft:\nuint32_t ms_to_ticks_ceil(uint32_t ms) {\n    uint32_t f = osKernelGetTickFreq();\n    if (ms == 0 || f == 0) return 0;\n    return (uint32_t)(((uint64_t)ms * f + 999u) / 1000u);\n}\n\n\n\nms\n1000 Hz\n100 Hz, ceil\n\n\n\n\n1\n1\n1\n\n\n5\n5\n1\n\n\n100\n100\n10\n\n\n500\n500\n50\n\n\n\n\nCeil vermeidet 0 Ticks für kleine positive ms, garantiert aber keine Mindest-Wandzeit\npdMS_TO_TICKS rundet je nach Makro ab: 1 ms oder 5 ms bei 100 Hz können 0 sein\nvTaskDelay(0) yieldet; osDelay(0) ist nicht dieselbe Warte-API\n\n\nNull, Überlauf der 32-Bit-Multiplikation und die Tickfrequenz prüfen. Lehrfrequenzen, nicht als gemessenen H755-Takt ausgeben."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#der-context-switch-overhead-analyse",
     "href": "vorlesungen/03_einfuehrung-rtos.html#der-context-switch-overhead-analyse",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Der Context Switch (Overhead-Analyse)",
-    "text": "Der Context Switch (Overhead-Analyse)\n\nDer Wechsel erfolgt via PendSV-Assembler-Code\nWas kostet das die CPU?\n\nHardware rettet 8 Kern-Register (\\(\\approx 12\\) Takte)\nPendSV-Handler rettet restliche Register (Push)\nScheduler-Logik (Listen umhängen)\nNeue Register laden (Pop)\n\nSumme: ca. \\(150\\)–\\(300\\) Taktzyklen (je nach Optimierung)\nBei \\(100\\,\\mathrm{MHz}\\) CPU-Takt: nur \\(\\approx 2\\)–\\(3\\,\\text{µs}\\)\n\n\nPendSV sichert Register, FreeRTOS-Assembler pusht den Rest, Listen werden umgehängt, neue Register geladen. Auf Cortex-M4 grob 150–300 Takte; bei \\(\\geq 100\\,\\mathrm{MHz}\\) am STM32H755 also 2–3 Mikrosekunden. Der Latenz-Overhead ist real, für die meisten Anwendungen vernachlässigbar."
+    "text": "Der Context Switch (Overhead-Analyse)\n\nLehrannahme 150–300 Zyklen, kein Messwert\nBei \\(100\\,\\mathrm{MHz}\\): \\(1{,}5\\)–\\(3\\,\\text{µs}\\)\n200 Zyklen, 500 Wechsel/s, \\(100\\,\\mathrm{MHz}\\): \\(0{,}1\\,\\%\\) CPU, Tick und ISRs extra\nHardware-Frame, Software-Register, PSP setzen, EXC_RETURN\nFPU nur wenn der Port den Kontext mitsichert\n\n\nKein eigener Assembler im Labor. Referenz bleibt der CM4F-Port der eingesetzten Version."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#wann-wechselt-der-scheduler",
     "href": "vorlesungen/03_einfuehrung-rtos.html#wann-wechselt-der-scheduler",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Wann wechselt der Scheduler?",
-    "text": "Wann wechselt der Scheduler?\n\nDer Context Switch passiert nicht nur beim 1-ms-SysTick\nDas OS wechselt sofort asynchron, wenn:\n\neine laufende Task vTaskDelay() aufruft (freiwillig abgeben)\nein Hardware-Interrupt (z. B. UART RX) Daten in eine Queue legt und dadurch eine blockierte Task mit höherer Prio aufweckt\n\nGenau das sorgt für minimale Latenzen in harten Echtzeitsystemen\n\n\nFehlannahme: Scheduler wechselt nur im 1-ms-Raster. Für harte Echtzeit zu langsam. vTaskDelay löst sofort PendSV aus. UART-ISR legt ein Byte in eine Queue: hochpriore wartende Task wird Ready; nach der ISR springt die CPU nicht zurück in die alte Task, sondern in die aufgeweckte."
+    "text": "Wann wechselt der Scheduler?\n\nTick, Yield, Blockieren, oder eine ISR, die einen höheren Thread bereit macht\nDer Wechsel läuft in PendSV, wenn die IRQ-Priorität das zulässt\nNicht jeder Wechsel wartet auf den nächsten Tick\nSysTick und PendSV im üblichen Port: niedrigste IRQ-Priorität (VL2)\n\n\nPending ist nicht Running."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#vtaskdelay-vs.-hal_delay",
     "href": "vorlesungen/03_einfuehrung-rtos.html#vtaskdelay-vs.-hal_delay",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "vTaskDelay vs. HAL_Delay",
-    "text": "vTaskDelay vs. HAL_Delay\n\nDas wichtigste Konzept für das Labor\n\n\n\n\n\n\n\n\n\nMetrik\nHAL_Delay(100)\nvTaskDelay(...)\n\n\n\n\nCPU-Zustand\nBusy-Wait auf uwTick\nWechsel zu anderer Task / Idle\n\n\nTask-Zustand\nBleibt Running\nWechselt nach Blocked\n\n\nAuslastung \\(U\\)\n\\(100\\%\\) CPU-Last\n\\(0\\%\\) CPU-Last\n\n\nFazit\nZerstört Echtzeit\nEchtes OS-Scheduling\n\n\n\n\nHAL_Delay ist Bare-Metal: Busy-Wait auf uwTick — die Task bleibt Running, die CPU kreist. Das OS denkt, die Task rechnet. vTaskDelay / osDelay sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals HAL_Delay in FreeRTOS-Tasks."
+    "text": "vTaskDelay vs. HAL_Delay\n\n\nBusy-Wait: eigene Last, Zustand Running, präemptierbar\nosDelay: Blocked, CPU für Ready oder Idle\nLaborregel für diese Threads: CMSIS-Warten\n\n\nHeartbeat unter HeavyMath bleibt lange Blocked, die CPU-Summe bleibt hoch. Das ist kein Widerspruch."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#drift-freies-timing-vtaskdelayuntil",
     "href": "vorlesungen/03_einfuehrung-rtos.html#drift-freies-timing-vtaskdelayuntil",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Drift-freies Timing: vTaskDelayUntil",
-    "text": "Drift-freies Timing: vTaskDelayUntil\n\n\n\nvTaskDelay blockiert relativ zur aktuellen Zeit\nProblem: Ausführungszeit verschiebt den nächsten Start (Drift)\nLösung: vTaskDelayUntil() merkt sich den absoluten Startzeitpunkt\nWichtig für präzise PID-Regler\n\n\nTickType_t lastWakeTime;\nlastWakeTime = xTaskGetTickCount();\n\nfor(;;) {\n    Rechne_PID(); // Dauer schwankt!\n\n    // Startet exakt alle 100 ms,\n    // ohne zeitlichen Drift:\n    vTaskDelayUntil(\n        &lastWakeTime,\n        pdMS_TO_TICKS(100)\n    );\n}\n\n\nvTaskDelay verzögert relativ zum Aufruf: 2 ms rechnen + 10 ms schlafen = Periode 12 ms; schwankt die Rechenzeit, driftet der Zyklus. PID braucht konstantes \\(\\Delta t\\). vTaskDelayUntil nimmt den letzten Aufwach-Zeitpunkt und schläft nur die Restzeit — kein Drift über Stunden."
+    "text": "Drift-freies Timing: vTaskDelayUntil\nIdeales Modell, Tick 1 ms, Störungen 0. Arbeit \\(2/4/1\\,\\mathrm{ms}\\), danach relatives Delay 10 Ticks:\n\nStarts \\(0/12/26/37\\,\\mathrm{ms}\\)\nAbsolutes Sollraster \\(0/10/20/30\\,\\mathrm{ms}\\); die Arbeiten passen hier vor den nächsten Punkt\nTatsächliche Starts können \\(0/10{,}4/20{,}2/30{,}6\\,\\mathrm{ms}\\) sein: Raster gleich, Zuteilung schwankt\n\nuint32_t next = osKernelGetTickCount();\nfor (;;) {\n    do_work();\n    next += period_ticks;          /* Wrap in uint32_t */\n    osStatus_t st = osDelayUntil(next);\n    if (st == osErrorParameter) { /* Ziel zu weit oder ungültig */ }\n}\n\nosDelayUntil erwartet den absoluten Tick; native xTaskDelayUntil hat eine andere Signatur\nÜberlast: Miss zählen und neu synchronisieren oder die Aktivierung verwerfen — keine stille Aufholschleife\nGrenze der Until-API: Abstand höchstens \\(2^{31}-1\\) Ticks; ein kleinerer Zähler kann nach Wrap in der Zukunft liegen\n\n\n„Startet exakt alle 100 ms“ ersetzen durch: nächstes Freigabeziel. Der CPU-Start hängt vom Scheduler ab."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#die-datei-freertosconfig.h",
     "href": "vorlesungen/03_einfuehrung-rtos.html#die-datei-freertosconfig.h",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Die Datei FreeRTOSConfig.h",
-    "text": "Die Datei FreeRTOSConfig.h\n\nJeder Port von FreeRTOS benötigt diese Konfigurationsdatei\nDefiniert das Verhalten des OS zur Kompilierzeit\nWichtige Makros:\n\nconfigUSE_PREEMPTION (\\(1\\) = an, \\(0\\) = aus)\nconfigMAX_PRIORITIES (Anzahl der Listen, oft 7)\nconfigMINIMAL_STACK_SIZE (Mindest-RAM für die Idle-Task)\nconfigTOTAL_HEAP_SIZE (RAM-Pool für dynamische Allokation)\n\n\n\nZuerst in FreeRTOSConfig.h schauen: präemptiv?, Prioritätsstufen?, Heap-Größe? configTOTAL_HEAP_SIZE entscheidet, ob Task-Erstellung zur Laufzeit fehlschlägt. In der STM32CubeIDE oft über das grafische Interface statt Handedit."
+    "text": "Die Datei FreeRTOSConfig.h\n\nTickrate, Heap, maximale Prioritäten, Assert, Stack-Overflow-Check\nconfigLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY: logische API-Schwelle\nconfigMAX_SYSCALL_INTERRUPT_PRIORITY: derselbe Wert in die Registerbits geschoben\nGrouping und __NVIC_PRIO_BITS am Projekt prüfen; 4 Bit und Schwelle 5 sind nur ein Beispiel\nDann dürfen logische Stufen 0–4 keine Kernel-API rufen; 5–15 nur die erlaubten FromISR-Operationen\n\n\nNicht die logische 5 in das NVIC-Register schreiben, als wäre sie schon verschoben."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-scheduler-und-timing",
     "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-scheduler-und-timing",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Zusammenfassung: Scheduler und Timing",
-    "text": "Zusammenfassung: Scheduler und Timing\n\nFreeRTOS ist primär präemptiv (SysTick, PendSV)\nDie Tick-Rate bestimmt die feinste zeitliche Auflösung (meist \\(1\\,\\mathrm{ms}\\))\nBlocked-Tasks entlasten die CPU massiv\nKonfiguration statisch über C-Makros\nPrioritäten: hohe Zahl = hohe Prio (Achtung Cortex-M NVIC)\n\n\nZusammenfassung Theorie: portables, präemptives OS; SysTick für Zeit, PendSV für Registertausch; blockierte Task kostet null Rechenzeit; Prioritäts-Fallstricke merken. Als Nächstes: Wie ruft man FreeRTOS im C-Code auf?"
+    "text": "Zusammenfassung: Scheduler und Timing\n\nAuswahl: höchste bereite Taskpriorität, Kosten konfigurationsabhängig\nTickphase erklärt kurze osDelay(1)-Reste\nUntil hält das Sollraster, nicht jeden Startzeitpunkt\nIdle arbeitet nur, wenn niemand darüber dauerhaft Ready ist\n\n\nFrage: Warum kann osKernelStart zurückkehren? Weil die Initialisierung fehlschlagen kann. Bei Erfolg kehrt der Aufruf normalerweise nicht zurück."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#freertos-api-vs.-cmsis-rtos-v2",
     "href": "vorlesungen/03_einfuehrung-rtos.html#freertos-api-vs.-cmsis-rtos-v2",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "FreeRTOS API vs. CMSIS-RTOS v2",
-    "text": "FreeRTOS API vs. CMSIS-RTOS v2\n\nNative FreeRTOS-API ist historisch gewachsen (z. B. xTaskCreate)\nProblem: Vendor Lock-in — Wechsel zu Zephyr oder ThreadX wird teuer\nLösung: CMSIS-RTOS v2 (ARM)\n\nStandardisierte Abstraktionsschicht (Wrapper)\nEinheitliche C-Funktionen (z. B. osThreadNew)\nDarunter kann ein beliebiges RTOS liegen\n\n\n\nFreeRTOS-Namen mit x/v/pc (ungarische Notation). Reine FreeRTOS-API kettet an den Vendor. CMSIS-RTOS ist ein Wörterbuch: osThreadNew wird intern zu xTaskCreate. OS wechseln = Kern tauschen, Applikationscode bleibt."
+    "text": "FreeRTOS API vs. CMSIS-RTOS v2\n\nCMSIS-RTOS2 ist der Adapter, den Cube für STM32 erzeugt\nWeniger direkte Abhängigkeit von vTask…, aber nicht jedes RTOS bietet dieselben Objekte\nThread-Flags: ein Bit signalisiert; wiederholtes Setzen zählt nicht verlustfrei\nRückgabe von osThreadFlagsWait sind Flag-Bits, Fehler über gesetzte Fehlerbits — nicht mit osOK vergleichen\n\n\nosThreadFlagsSet darf aus einer ISR, osThreadFlagsWait nicht."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#stmicroelectronics-und-cmsis",
     "href": "vorlesungen/03_einfuehrung-rtos.html#stmicroelectronics-und-cmsis",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "STMicroelectronics und CMSIS",
-    "text": "STMicroelectronics und CMSIS\n\nDie STM32CubeIDE generiert standardmäßig CMSIS-RTOS v2\nFreeRTOS dient uns als Backend\n\n\n\n\nAktion\nFreeRTOS nativ\nCMSIS-RTOS v2\n\n\n\n\nTask erstellen\nxTaskCreate()\nosThreadNew()\n\n\nTask blockieren\nvTaskDelay()\nosDelay()\n\n\nQueue anlegen\nxQueueCreate()\nosMessageQueueNew()\n\n\nZeit holen\nxTaskGetTickCount()\nosKernelGetTickCount()\n\n\n\n\nCubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Ab hier und im Labor: CMSIS (osDelay, osThreadNew). Native FreeRTOS-API (vTaskDelay + pdMS_TO_TICKS) nur als kurzer Vergleich — nicht mit Roh-Tick-osDelay vermischen ohne klare Tick-Rate."
+    "text": "STMicroelectronics und CMSIS\n\nHeute: Kernel auf dem CM4, CMSIS_V2\nAb CubeIDE 2.0 oft: CubeMX separat, Projekt importieren\nÄltere IDE: Device Configuration Tool innen\nMenüpunkte an der installierten Version prüfen, nicht auswendig\nGenerierte Thread-Funktionen können in main.c oder freertos.c liegen\n\n\nKeine .ioc im Repo, deshalb keine behauptete Cube-Version."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#ein-cmsis-thread-im-code",
     "href": "vorlesungen/03_einfuehrung-rtos.html#ein-cmsis-thread-im-code",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Ein CMSIS-Thread im Code",
-    "text": "Ein CMSIS-Thread im Code\n\n\n\nThread-Attribute: Name, Stack-Größe, Prio\nDanach Anmeldung beim OS\nFalle: CMSIS erwartet Stack-Größe in Bytes, nicht in Wörtern\n\n\nconst osThreadAttr_t myTaskAttr = {\n  .name = \"MyTask\",\n  .stack_size = 1024, // Bytes!\n  .priority = osPriorityNormal,\n};\n\nosThreadId_t myTaskHandle =\n    osThreadNew(\n        MyTask_Function,\n        NULL,\n        &myTaskAttr\n    );\n\n\nCMSIS nennt Tasks Threads. Struct mit Name, Stack und Prio. Falle: 1024 bedeutet 1 KB Bytes; nativ FreeRTOS hätte 256 Wörter verlangt. osThreadNew legt TCB an und setzt Ready."
+    "text": "Ein CMSIS-Thread im Code\nosThreadId_t hHb;\nconst osThreadAttr_t attrHb = {\n    .name = \"Heartbeat\",\n    .priority = osPriorityNormal,\n    .stack_size = 512   /* Byte, generierten Wert gegenprüfen */\n};\n\nvoid app_create(void) {\n    if (osKernelInitialize() != osOK) { Error_Handler(); }\n    hHb = osThreadNew(Heartbeat, NULL, &attrHb);\n    if (hHb == NULL) { Error_Handler(); }\n    if (osKernelStart() != osOK) { Error_Handler(); }\n    /* Erfolg: hier kommt man üblicherweise nicht an */\n}\n\nJedes Handle und jeder Status. Dieselbe Prüfung für HeavyMath und Emergency."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#starten-des-betriebssystems",
     "href": "vorlesungen/03_einfuehrung-rtos.html#starten-des-betriebssystems",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Starten des Betriebssystems",
-    "text": "Starten des Betriebssystems\n\nNach Hardware-Init und Task-Anlage: Kontrolle abgeben\n\nosKernelStart();\n\nWas passiert?\n\nSysTick wird auf \\(1\\,\\mathrm{ms}\\) programmiert\nScheduler durchsucht die Ready-Liste\nStack-Pointer springt in die Task mit höchster Prio\n\nWichtigste Regel: Code nach osKernelStart() wird niemals ausgeführt\n\n\nPoint of no Return: osKernelStart() (nativ: vTaskStartScheduler()). SysTick, Sprung in den ersten TCB, kein Return. Ein printf darunter erscheint nie — der lineare Bare-Metal-Pfad ist beendet."
+    "text": "Starten des Betriebssystems\n\nTakt, GPIO, EXTI — IRQ des Tasters noch aus\nosKernelInitialize erfolgreich\nThreads anlegen, Handles prüfen\nosKernelStart\nErst dann EXTI freigeben, wenn das Emergency-Handle gilt\n\nTickfrequenz kommt aus der Config, nicht automatisch aus „immer 1 ms“.\n\nFehlerzweige nicht löschen, nur weil der Erfolgspfad nicht zurückkehrt."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#fehlerbehandlung-wenn-ram-fehlt",
     "href": "vorlesungen/03_einfuehrung-rtos.html#fehlerbehandlung-wenn-ram-fehlt",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Fehlerbehandlung: Wenn RAM fehlt",
-    "text": "Fehlerbehandlung: Wenn RAM fehlt\n\nErschöpfter Heap: osThreadNew liefert NULL\nImmer prüfen, sonst Hard Fault zur Laufzeit\n\nif (myTaskHandle == NULL) {\n    // Kein RAM mehr für TCB oder Stack\n    Error_Handler();\n}\n\nLabor-Tipp: Task startet nicht? configTOTAL_HEAP_SIZE in CubeMX erhöhen\n\n\nZu viele Tasks: dynamische Allokation schlägt fehl, Handle ist NULL. Professionell abfangen (rote LED, Stop). Im Debugger springt eine Task nicht an? Meist voller Heap — Gesamtgröße erhöhen."
+    "text": "Fehlerbehandlung: Wenn RAM fehlt\n\nosThreadNew → NULL: Heap, Stackgröße oder Priorität\nAssert, Overflow-Hook, High-Water-Mark in der Einheit der API\nHeap-Reste und Linker-Map, nicht „Stack verdoppeln“\nHardFault hat viele Ursachen; Overflow beschädigt zuerst Speicher und faultet nicht zuverlässig\n\n\nKeine 90-%-Behauptung. Endliche Watermark-Tests sind Stichproben."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-1-stm32cubeide-setup",
     "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-1-stm32cubeide-setup",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Schritt 1: STM32CubeIDE-Setup",
-    "text": "Schritt 1: STM32CubeIDE-Setup\n\nZiel: FreeRTOS auf dem Cortex-M4, präemptives Prioritäts-Scheduling live beweisen (Prioritäten nach Kritikalität — das ist nicht Rate Monotonic, dafür bräuchten wir Perioden \\(\\rightarrow\\) Prioritäten)\nNeues Projekt STM32H755 (Cortex-M4 aktivieren)\nMiddleware: FREERTOS, Interface CMSIS_V2\nTOTAL_HEAP_SIZE mindestens \\(16384\\) Bytes (\\(16\\,\\mathrm{KB}\\))\n\n\nNicht mehr selbst basteln: echtes RTOS per CubeIDE. Middleware FreeRTOS, CMSIS_V2, Heap sofort auf 16 KB — sonst knallt es beim Anlegen mehrerer Tasks."
+    "text": "Schritt 1: STM32CubeIDE-Setup\n\nBoard NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, FreeRTOS nur für den CM4, Interface CMSIS_V2\nHeap so groß wählen, dass die drei Threads plus Idle/Timer laut Map passen — 16 KB ist ein Startwert, kein Beweis\nLED LD2 = PE1 (MB1363); Tasterpin und EXTI am Schaltplan prüfen\nPrioritäten anlegen und in cmsis_os2.c nachsehen, ob sie unverändert ankommen\n\n\nStarvation-Versuch später: HeavyMath auf osPriorityAboveNormal, weiter unter Emergency. Bleiben beide auf High, Zeitscheibe und Gleichstand extra betrachten."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-2-der-konflikt-der-timer",
     "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-2-der-konflikt-der-timer",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Schritt 2: Der Konflikt der Timer",
-    "text": "Schritt 2: Der Konflikt der Timer\n\nProblem:\n\nHAL nutzt SysTick für HAL_Delay()\nFreeRTOS braucht SysTick zwingend für den Scheduler\nBeide auf demselben Timer: Absturz zur Laufzeit\n\nLösung (CubeMX-Warnung!):\n\nSystem Core \\(\\rightarrow\\) SYS \\(\\rightarrow\\) Timebase Source\nVon SysTick auf TIM6 umstellen\nHAL nutzt TIM6; SysTick gehört FreeRTOS exklusiv\n\n\n\nCubeIDE warnt sofort: HAL und FreeRTOS kämpfen um SysTick. Lösung: HAL-Timebase auf TIM6. SysTick frei für den Scheduler."
+    "text": "Schritt 2: Der Konflikt der Timer\nGewählte Laborkonfiguration, kein Naturgesetz:\n\nSysTick: Kernel-Tick\nTIM6, falls frei: HAL uwTick\nBeide auf dem CM4, Priorität und Handlerkette prüfen\nEin gemeinsamer SysTick ist bei korrekter Integration möglich\nFreeRTOS kann auch einen anderen Tick-Timer nutzen\n\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%\nflowchart LR\n  ST[SysTick] --&gt; K[Kernel-Tick]\n  T6[TIM6] --&gt; H[HAL uwTick]\n  K --&gt; M4[CM4]\n  H --&gt; M4\n\n\n\n\n\n\n\n„Gleicher SysTick stürzt immer ab“ streichen. Getrennte Basen sind die konkrete Laborwahl, damit HAL-Delay und Kernel sich nicht dieselbe ISR teilen müssen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#schritt-3-task-design-für-das-labor",
     "href": "vorlesungen/03_einfuehrung-rtos.html#schritt-3-task-design-für-das-labor",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Schritt 3: Task-Design für das Labor",
-    "text": "Schritt 3: Task-Design für das Labor\n\nDrei Tasks, um Fixed-Priority-Präemption zu beweisen:\n\nHeartbeat (osPriorityNormal): LED alle \\(500\\,\\mathrm{ms}\\) via osDelay\nHeavyMath (osPriorityBelowNormal): Endlosschleife ohne Delay, \\(100\\%\\) CPU\nEmergency (osPriorityHigh): wartet auf Tastendruck (später per Queue)\n\n\n\nHeartbeat: normale Prio, blinkt alle 500 ms. HeavyMath: niedrigere Prio, reine while-Schleife ohne Delay. Emergency: höchste Prio, meist blockiert auf Taste. Drei Tasks im Configurator anlegen und Code generieren."
+    "text": "Schritt 3: Task-Design für das Labor\n\n\n\nThread\nPriorität\nVerhalten\n\n\n\n\nEmergency\nhoch\nwartet auf Flag, kurze Reaktion\n\n\nHeartbeat\nnormal\nSollraster 500 ms, Toggle PE1\n\n\nHeavyMath\ndarunter\ndauerhaft Ready, Ergebnis benutzen\n\n\nIdle\nnativ 0\nkommt im Normalversuch nicht dran\n\n\n\n\nVollständiger LED-Zyklus bei Toggle alle 500 ms: etwa 1 s\nEmergency keine Endlos-Ready-Schleife und kein printf als Messmarker\n\n\nÜberblick 0–1100 ms, Lehre: Heartbeat-Ziele 0/500/1000, Ereignis bei 750, HeavyMath in den Lücken. Kurze Kernelzeiten nur im Detail, nicht als gemessene Balken."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#code-struktur-nach-generierung",
     "href": "vorlesungen/03_einfuehrung-rtos.html#code-struktur-nach-generierung",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Code-Struktur nach Generierung",
-    "text": "Code-Struktur nach Generierung\n\nCubeIDE platziert CMSIS-Aufrufe (osThreadNew) in main.c\nUnten: leere Skelette für die Task-Funktionen\n\n/* USER CODE BEGIN Header_StartHeartbeat */\nvoid StartHeartbeat(void *argument)\n{\n  /* USER CODE BEGIN StartHeartbeat */\n  for(;;)\n  {\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    osDelay(500); // Ticks; bei 1000 Hz = 500 ms\n  }\n  /* USER CODE END StartHeartbeat */\n}\n\nIn main.c ganz unten: generierte Task-Skelette. Heartbeat: Toggle + osDelay(500). Bei configTICK_RATE_HZ = 1000 sind das \\(500\\,\\mathrm{ms}\\) — CMSIS-osDelay nimmt Ticks, nicht Millisekunden (anders als pdMS_TO_TICKS(...) in der nativen FreeRTOS-API). Im Labor: CMSIS (osDelay); native API nur zum Vergleich. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand."
+    "text": "Code-Struktur nach Generierung\nCode in den Funktions-USER CODE-Block, nicht in Header_…-Kommentare. Keine zweite Definition derselben Thread-Funktion.\n/* USER CODE BEGIN StartHeartbeatTask */\nuint32_t next = osKernelGetTickCount();\nuint32_t period = ms_to_ticks_ceil(500);\nfor (;;) {\n    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    next += period;\n    if (osDelayUntil(next) == osErrorParameter) {\n        next = osKernelGetTickCount(); /* bewusst neu aufsetzen */\n    }\n}\n/* USER CODE END StartHeartbeatTask */\n\nBei verpasstem Ziel nicht in einer Aufholschleife stecken bleiben. osError vom Kernelstart nicht mit einem gewöhnlichen Miss verwechseln."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#code-skelett-die-heavymath-task",
     "href": "vorlesungen/03_einfuehrung-rtos.html#code-skelett-die-heavymath-task",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Code-Skelett: Die HeavyMath-Task",
-    "text": "Code-Skelett: Die HeavyMath-Task\n\nDiese Task bricht die Blockade-Regel absichtlich\n\nvoid StartHeavyMath(void *argument)\n{\n  volatile uint32_t primes_found = 0;\n  for(;;)\n  {\n     // KEIN osDelay! 100% CPU.\n     // In Bare-Metal: System freezt.\n     Calculate_Primes(&primes_found);\n  }\n}\n\nPrimzahlen, Hashes oder Counter — Variable volatile, sonst optimiert der Compiler die Schleife weg. Kein osDelay: Running wird nie freiwillig verlassen. Beim kooperativen Scheduler von letzter Woche wäre hier alles eingefroren."
+    "text": "Code-Skelett: Die HeavyMath-Task\n/* USER CODE BEGIN StartHeavyMathTask */\nstatic volatile uint32_t acc;\nfor (;;) {\n    acc = acc * 1664525u + 1013904223u; /* benutztes Ergebnis */\n}\n/* USER CODE END StartHeavyMathTask */\n\nKein osDelay, keine IRQ-Sperre\nDer seltene GPIO-Schreibzugriff hält die Rechnung lebendig, ohne die LED-Messung zu dominieren\n\n\nEin ungenutzter Zähler wird bei Optimierung oft entfernt. Priorität unter Heartbeat, sonst Starvation."
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#vom-taster-zum-emergency-thread",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#vom-taster-zum-emergency-thread",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Vom Taster zum Emergency-Thread",
+    "text": "Vom Taster zum Emergency-Thread\n\n\nISR: osThreadFlagsSet(hEm, 0x1) — nur wenn Handle und Kernel leben und die IRQ-Priorität es darf\nThread: osThreadFlagsWait(0x1, osFlagsWaitAny, osWaitForever), dann kurze Reaktion, wieder warten\nDasselbe Bit kann mehrere Flanken zu einem Wake zusammenfassen\nEntprellung und erlaubte Rate festlegen; der Thread wartet nicht auf den nächsten Tick\n\n\nNative xTaskNotifyFromISR plus portYIELD_FROM_ISR nur als Vergleich. Vorhandenen HAL-Callback nutzen, keinen zweiten Handler erzeugen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-1-der-präemptions-beweis",
     "href": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-1-der-präemptions-beweis",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Beobachtung 1: Der Präemptions-Beweis",
-    "text": "Beobachtung 1: Der Präemptions-Beweis\n\nCode auf den STM32H755 flashen\nWas passiert?\n\nHeartbeat-LED blinkt stabil im \\(500\\,\\mathrm{ms}\\)-Takt\n\nWarum friert das System nicht ein?\n\nHeartbeat: Normal; HeavyMath: BelowNormal\nNach \\(500\\,\\mathrm{ms}\\) weckt SysTick Heartbeat\nHöhere Prio: OS reißt HeavyMath die CPU weg (Präemption)\n\n\n\nLED blinkt trotz 100%-Mathe-Schleife. Heartbeat schläft Blocked; HeavyMath nutzt Idle-Zeit. SysTick weckt Heartbeat; PendSV wirft Mathe von der CPU, Toggle, wieder Delay, zurück zur Mathematik."
+    "text": "Beobachtung 1: Der Präemptions-Beweis\n\nHeavyMath bleibt Ready und rechnet in den Lücken\nHeartbeat wird am Sollpunkt Ready und verdrängt HeavyMath, weil die Priorität höher ist\nDas zeigt Präemption, nicht eine harte Frist und nicht „Jitter ≈ 0“\nStabiles Blinken ist kein Deadline-Nachweis\n\n\nMessung, falls ein Oszi da ist: Pulsbreite und Startabstand getrennt. Lehrkurven synthetisch lassen. Ohne Board keine Messwerte eintragen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#visuelle-erklärung-präemption-im-labor",
     "href": "vorlesungen/03_einfuehrung-rtos.html#visuelle-erklärung-präemption-im-labor",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Visuelle Erklärung: Präemption im Labor",
-    "text": "Visuelle Erklärung: Präemption im Labor\n\n\nCPU dauerhaft bei \\(100\\%\\), Auslastung aber nach Prioritäten (Fixed Priority) aufgeteilt\n\n\nt=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. Fixed-Priority-Präemption auf Hardware-Ebene — nicht Rate Monotonic (Prioritäten hier nach Kritikalität, nicht nach Periode)."
+    "text": "Visuelle Erklärung: Präemption im Labor\nZiele Heartbeat: \\(0\\), \\(500\\), \\(1000\\,\\mathrm{ms}\\). Angenommenes Flag bei \\(750\\,\\mathrm{ms}\\).\n\nDazwischen HeavyMath, solange Emergency blockiert\nBei 750: EXTI, Flag, PendSV, kurze Emergency-Arbeit, wieder Blocked\nZwei Spuren denkbar: Stimulus und Emergency-GPIO\nEndpunkte der Latenz vorher festlegen (Flanke bis erste Thread-Anweisung oder bis GPIO)\n\n\nIRQ- und Kernelanteile nicht in die Task-Balken schummeln. 150–300 Zyklen bleiben Lehrannahme."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-2-starvation-durch-falsche-prioritäten",
     "href": "vorlesungen/03_einfuehrung-rtos.html#beobachtung-2-starvation-durch-falsche-prioritäten",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Beobachtung 2: Starvation durch falsche Prioritäten",
-    "text": "Beobachtung 2: Starvation durch falsche Prioritäten\n\nAbsichtlicher Fehler zum Verständnis von Prioritäts-Scheduling:\n\nHeavyMath-Prio \\(\\rightarrow\\) osPriorityHigh (höher als Heartbeat)\n\nFlashen und beobachten:\n\nLED bleibt dunkel / blinkt nie wieder\nHeartbeat verhungert in der Ready-Liste (Starvation)\nHochpriore Endlosschleife gibt die CPU nicht frei\n\n\n\nHeavyMath auf High: LED tot. Heartbeat wacht auf, Scheduler sagt: Prio Normal gegen High — warten. Mathe-Schleife endet nie → Starvation. Das ist kein Priority Inversion (dort hält niedrige Prio eine Sperre); hier reine Verhungerung durch falsche Prioritäten. Scharfes Schwert!"
+    "text": "Beobachtung 2: Starvation durch falsche Prioritäten\n\nHeavyMath auf osPriorityAboveNormal: über Heartbeat, unter Emergency\nHeartbeat wird Ready und bleibt es; die LED kann an oder aus stehen bleiben\nDas ist Starvation, keine Priority Inversion\nosThreadYield in HeavyMath ändert nichts, solange HeavyMath Ready bleibt\nDanach die normalen Prioritäten wiederherstellen\n\n\nPriority Inversion braucht eine gemeinsam gehaltene Ressource. Die kommt in einem späteren Termin."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#debugging-stack-overflow-erkennen",
     "href": "vorlesungen/03_einfuehrung-rtos.html#debugging-stack-overflow-erkennen",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Debugging: Stack Overflow erkennen",
-    "text": "Debugging: Stack Overflow erkennen\n\nBoard tut nichts (keine LED, kein sichtbarer Code)?\nOft: Stack der Task zu klein (Stack Overflow)\nHardware-Tipp:\n\nCortex-M4 löst HardFault aus\nDebugger pausieren: Ausführung steckt in HardFault_Handler()\n\nLösung: In CubeMX Stack Size der betroffenen Task verdoppeln\n\n\n90 % der „nichts tut“-Fälle: Stack Overflow durch lokale Variablen. Hardware wirft HardFault; Call-Stack zeigt HardFault_Handler. Cube-Configurator: Stack verdoppeln."
+    "text": "Debugging: Stack Overflow erkennen\n\nKernelstart oder Handle fehlgeschlagen?\nTakt, IRQ, Boot, EXTI-Priorität?\nTask Ready, aber verdrängt?\nAssert oder Overflow-Hook?\nWatermark, Heap, Map, Fehlerregister?\n\n\nHook und configASSERT einschalten, wenn das Projekt das vorsieht\nKeine CMSIS-Funktion erfinden, die es nicht gibt; Watermark ist backendbezogen (uxTaskGetStackHighWaterMark o. ä.)\nReserve aus Messung, nicht aus Verdopplung als einzigem Rezept\n\n\nFrage: Warum ist „90 % sind Stack Overflow“ falsch? Weil auch Priorität, Heap, IRQ-Schwelle und Boot dieselbe LED dunkel lassen."
   },
   {
     "objectID": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-des-tages",
     "href": "vorlesungen/03_einfuehrung-rtos.html#zusammenfassung-des-tages",
     "title": "03 · Einführung in Echtzeitbetriebssysteme",
     "section": "Zusammenfassung des Tages",
-    "text": "Zusammenfassung des Tages\n\nRTOS: maximale Geschwindigkeit (Latenz) gegen Garantie (Determinismus)\nJede Task braucht RAM-Budget (TCB + eigener Stack)\nBlockierte Task: \\(0\\%\\) Rechenzeit — niemals reine C-Delays\nCMSIS-RTOS v2 schützt vor Vendor Lock-in\nTimer-Interrupts und Prioritäten verhindern das Einfrieren wichtiger Teile\n\n\nSie verstehen den Latenz-Determinismus-Trade-off, das RAM-Modell und CMSIS als API. Im Labor: präemptives Scheduling live und die Gefahr falsch gesetzter Prioritäten. Vielen Dank — bis gleich im Labor!"
+    "text": "Zusammenfassung des Tages\n\nKernel auf dem CM4 strukturiert Threads; Analyse bleibt nötig\n512 Byte Stack ≠ 128 Byte; drei Beispielthreads unter der 80-Byte-TCB-Annahme: 2800 Byte\nBlocked spart eigene Befehle, nicht jeden Kernel-Tick\nosDelayUntil setzt das Raster; Starts können trotzdem zittern\nEmergency: Flag aus erlaubter ISR, dann kurze Arbeit\n\n\nKontrollen: \\(128 \\times 4 = 512\\); \\(512+80 = 592\\); \\(512+1024+1024+240 = 2800\\). Relative Starts \\(0/12/26/37\\). Absolut \\(0/10/20/30\\). \\(150\\)–\\(300\\) Zyklen bei \\(100\\,\\mathrm{MHz}\\) sind \\(1{,}5\\)–\\(3\\,\\text{µs}\\)."
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#ausblick-auf-termin-4",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#ausblick-auf-termin-4",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Ausblick auf Termin 4",
+    "text": "Ausblick auf Termin 4\n\nGemeinsame Daten, Mutex, Priority Inversion\nBis dahin: keine blockierenden API-Aufrufe in ISRs\nLaborprojekt mit den drei Threads mitbringen\n\n\nKommunikation nicht heute vorwegnehmen. Thread-Flags bleiben die kleine Ausnahme für Emergency."
+  },
+  {
+    "objectID": "vorlesungen/03_einfuehrung-rtos.html#quellen",
+    "href": "vorlesungen/03_einfuehrung-rtos.html#quellen",
+    "title": "03 · Einführung in Echtzeitbetriebssysteme",
+    "section": "Quellen",
+    "text": "Quellen\n\nArm CMSIS-RTOS2: Kernel, Threads, Wait, Thread Flags\nARM-software/CMSIS-FreeRTOS, Stand am Wrapper prüfen\nFreeRTOS-Kernel, Port GCC/ARM_CM4F; Dokument zu Delays, Stack, Tickless, Cortex-M-Prioritäten\nST AN5361, PM0214, UM2408, RM0399 — Revision am verwendeten PDF\n\n\nÖffentliche main-Zweige belegen nicht die Laborversion. Keine Oszi-Zahlen ohne Protokoll."
   },
   {
     "objectID": "vorlesungen/01_was-ist-echtzeit.html#willkommen-zur-vorlesung-echtzeitsysteme",

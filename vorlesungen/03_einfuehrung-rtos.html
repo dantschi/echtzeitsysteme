@@ -195,6 +195,9 @@
       margin-right: 0; 
     }
   </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
@@ -219,14 +222,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-in-der-profiliga" class="slide level2">
 <h2>Willkommen in der Profiliga!</h2>
 <ul>
-<li>Herzlich willkommen zum 3. Termin unserer Vorlesung</li>
-<li>Letzte Woche: Die Mathematik (RMS, EDF) und unser eigener kleiner Scheduler</li>
-<li>Heute: Wir werfen unseren Eigenbau weg und wechseln in die Industrie-Praxis</li>
-<li>Wir führen FreeRTOS ein — das am weitesten verbreitete RTOS für Mikrocontroller</li>
-<li>Ziel: Verstehen, wie das OS unter der Haube Speicher und CPU verwaltet</li>
+<li>Dritter Termin: vom Dispatcher der Vorlesung 2 zu einem Kernel</li>
+<li>Heute: <strong>ein</strong> FreeRTOS auf dem Cortex-M4 des STM32H755</li>
+<li>Der CM7 übernimmt die im Projekt dokumentierte Startfunktion, keinen zweiten Scheduler</li>
+<li>Ein RTOS strukturiert Tasks; Fristen bleiben nachzuweisen</li>
 </ul>
 <aside class="notes">
-<p>Guten Morgen und herzlich willkommen zurück! Letzte Woche: Scheduling-Schranken und kooperativer Round-Robin-Scheduler. Heute werfen wir den Eigenbau weg — didaktisch wertvoll, für die Industrie nicht ausreichend. FreeRTOS: wie Tasks verwaltet werden, was Hardware-Ressourcen kostet, und wie wir es auf dem STM32H755 einsetzen.</p>
+<p>Begriffe aus VL1/VL2: Release, Start, Completion, Deadline, Jitter. Kein SMP über M4 und M7. Keine .ioc im Kursrepo — Versionen am gestellten Cube-Projekt prüfen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -242,16 +244,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
 <ol type="1">
-<li>Recap: Warum unser Eigenbau-Scheduler letzte Woche gescheitert ist</li>
-<li>Vom Bare-Metal zum RTOS (Latenz vs.&nbsp;Determinismus)</li>
-<li>Die Architektur von FreeRTOS</li>
-<li>Task-Management: TCB und Speicherbedarf</li>
-<li>Die State-Machine (Ready, Running, Blocked, Suspended)</li>
-<li>Tick-Rate, Delays und Context Switch</li>
-<li>CMSIS-RTOS v2 API und Labor am STM32H755</li>
+<li>Recap: Dispatcher, nicht der rekursive Eigenbau</li>
+<li>Was ein Kernel leistet — und was nicht</li>
+<li>Kontext, RAM, Zustände, Prioritäten</li>
+<li>Ticks, Delays, CMSIS-RTOS2</li>
+<li>Labor: Heartbeat, HeavyMath, Emergency</li>
 </ol>
 <aside class="notes">
-<p>Kurz Labor-Rückblick, dann Trade-off Latenz vs.&nbsp;Determinismus. Danach FreeRTOS: Task-Modell, RAM-Bedarf, Zustandsmaschine, Timing und CMSIS — bevor wir im Labor flashen.</p>
+<p>Emergency ist heute eine kleine Thread-Flag-Übergabe, keine Queue-Theorie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -266,25 +266,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="recap-unser-round-robin-eigenbau" class="slide level2">
 <h2>Recap: Unser Round-Robin Eigenbau</h2>
-<div class="columns">
-<div class="column" style="width:60%;">
+<p>VL2-Zielbild: zentraler Dispatcher, endliche <code>step()</code>-Funktionen, Zustand im TCB.</p>
+<p><img data-src="../_livefigures/inline-plantuml-2d5c10a5.svg" class="livefigure"></p>
 <ul>
-<li>Letzte Woche: Array aus Funktionszeigern (TCBs)</li>
-<li>Scheduler lief ringförmig durch alle Tasks (Round-Robin)</li>
-<li>Kontextwechsel als einfacher C-Aufruf: <code>task_list[idx].task_func();</code></li>
-<li>Voraussetzung: System war kooperativ</li>
+<li>Ein Step, der nicht zurückkehrt, blockiert weitere <strong>kooperative</strong> Schritte</li>
+<li>Aktive Interrupts können weiterlaufen</li>
+<li>Ein normaler Funktionsaufruf sichert keine Fortsetzung mitten in einer Endlosschleife</li>
 </ul>
-</div><div class="column" style="width:40%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">// Die Task MUSS das OS rufen!</span></span>
-<span id="cb1-2"><a aria-label="2"></a><span class="dt">void</span> Task_1<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb1-3"><a aria-label="3"></a>    <span class="cf">while</span><span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb1-4"><a aria-label="4"></a>        LED_On<span class="op">();</span></span>
-<span id="cb1-5"><a aria-label="5"></a>        os_yield<span class="op">();</span> <span class="co">// Freiwillig!</span></span>
-<span id="cb1-6"><a aria-label="6"></a>    <span class="op">}</span></span>
-<span id="cb1-7"><a aria-label="7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Kleines OS in C: Array speichert Task-Funktionen. <code>os_yield()</code> erhöht den Index und ruft die nächste Funktion. Elegant ohne Assembler — aber kooperativ: jede Task musste brav <code>os_yield()</code> aufrufen.</p>
+<p>Fehlbeispiel der ersten Laborfassung: <code>os_yield()</code> ruft die nächste Task-Funktion auf. Der Stack wächst A→B→C. Das ist kein eigener Task-Stack. Frage: Warum hilft ein privater Stack hier noch nicht, solange wir nur C-Aufrufe haben?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -300,18 +290,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="recap-der-crash-im-labor" class="slide level2">
 <h2>Recap: Der Crash im Labor</h2>
 <ul>
-<li>In der Labor-Aufgabe haben wir die Kooperation sabotiert</li>
-<li>Task 2: gigantische, blockierende Zählschleife ohne <code>os_yield()</code></li>
-<li>Ergebnis:
-<ul>
-<li>Task 1 (LED) ist eingefroren</li>
-<li>Der Scheduler wurde nie wieder aufgerufen</li>
-<li>Das System war tot (Starvation)</li>
-</ul></li>
-<li>Fazit: Für harte Echtzeit dürfen wir der Anwendungssoftware niemals vertrauen — wir brauchen Präemption</li>
+<li>Kooperativ: Heavy-Schritt ohne <code>return</code> — Heartbeat-Callback kommt nicht dran</li>
+<li>Präemptiv, analog: High bleibt dauerhaft Ready — Low verhungert trotzdem</li>
+<li>Präemption löst das erste Problem und kann das zweite erzeugen</li>
+<li>Harte Fristen brauchen Grenzen der Arbeit, nicht nur einen Kernel</li>
 </ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">/* Fehlbeispiel, historisch: nicht der VL2-Dispatcher */</span></span>
+<span id="cb1-2"><a aria-label="2"></a><span class="dt">void</span> Task_1<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a aria-label="3"></a>    <span class="cf">while</span> <span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span> LED_On<span class="op">();</span> os_yield<span class="op">();</span> <span class="co">/* ruft andere Task */</span> <span class="op">}</span></span>
+<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Mutwillige Sabotage: Zählschleife ohne <code>os_yield()</code>. LED stand still, MCU schien eingefroren — Main-Loop in Task 2 gefangen. Harte Echtzeit braucht Präemption durch Hardware-Interrupts.</p>
+<p>„Harte Echtzeit braucht immer Präemption“ ist zu pauschal. Begrenzte kooperative Schritte können Fristen erfüllen. Bare-Metal kann per IRQ schlafen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -327,18 +316,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-notwendigkeit-eines-echten-rtos" class="slide level2">
 <h2>Die Notwendigkeit eines echten RTOS</h2>
 <ul>
-<li>Ein modernes System (z. B. Dual-Core STM32H755) hat komplexe Anforderungen:
-<ul>
-<li>Harte Timing-Garantien (Präemption)</li>
-<li>Sichere Kommunikation zwischen Tasks (Queues)</li>
-<li>Absicherung gemeinsamer Ressourcen (Mutexes)</li>
-<li>Speichermanagement</li>
-</ul></li>
-<li>Das baut man nicht an einem Nachmittag</li>
-<li>Wir greifen auf bewährte, zertifizierbare Software zurück</li>
+<li>Viele Aufgaben, Fristen und Wartepunkte werden sonst zur Flag-Suppe</li>
+<li>Der Kernel bietet Scheduling, Objektallokation, Kommunikation, Synchronisation, Port</li>
+<li>Mutex ist keine allgemeine ISR-Lösung; aus der ISR nur dafür vorgesehene Übergaben</li>
+<li>Zertifizierung und Speicherschutz entstehen nicht durch „FreeRTOS einschalten“</li>
 </ul>
 <aside class="notes">
-<p>Bastel-Scheduler reicht nicht: präemptives Scheduling (SysTick/PendSV), sichere Inter-Task Communication, Mutexes. In der Industrie nutzt man etablierte Open-Source- oder kommerzielle RTOS.</p>
+<p>Queues und Mutex vertiefen wir später. Heute reicht die Einordnung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -353,15 +337,41 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="was-leistet-ein-rtos" class="slide level2">
 <h2>Was leistet ein RTOS?</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Baustein</th>
+<th>Rolle</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>tasks.c</code></td>
+<td>Zustände, Ready-Listen, Delays</td>
+</tr>
+<tr class="even">
+<td><code>list.c</code></td>
+<td>Listen für diese Objekte</td>
+</tr>
+<tr class="odd">
+<td><code>queue.c</code></td>
+<td>Queues (später)</td>
+</tr>
+<tr class="even">
+<td><code>heap_x.c</code></td>
+<td>eine mögliche Allokation</td>
+</tr>
+<tr class="odd">
+<td>CM4F-Port</td>
+<td>C <strong>und</strong> Assembler: PendSV, SVC, Tick</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Multitasking (Scheduling): Orchestrierung nach strengen Regeln (z. B. Fixed Priority / RMS)</li>
-<li>Inter-Task Communication: Queues und Mailboxes</li>
-<li>Synchronisation: Mutexes und Semaphore für Interrupt-Sicherheit</li>
-<li>Memory Management: RAM-Stacks für jede Task</li>
-<li>Port-Layer: ARM-Spezifika (SysTick, PendSV) — generischer C-Code darüber (nicht mit dem STM32-HAL verwechseln)</li>
+<li>Plattformunabhängig ist die API-Idee, nicht Prioritätszahl, Takt oder Treiber</li>
 </ul>
 <aside class="notes">
-<p>Fünf Kernaufgaben: Scheduling, Inter-Task Communication, Synchronisation, Speichermanagement, Port-Layer. FreeRTOS-Code auf Cortex-M4 lässt sich oft auf ESP32 oder RISC-V portieren.</p>
+<p>Der Port ist nicht „alles Assembler“. HAL-Treiber sind eine Nachbarschicht, nicht der Port.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -376,23 +386,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-markt-für-echtzeitbetriebssysteme" class="slide level2">
 <h2>Der Markt für Echtzeitbetriebssysteme</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Kommerziell (oft Safety-zertifiziert):</p>
 <ul>
-<li>VxWorks: Luft- und Raumfahrt (Mars Rover)</li>
-<li>QNX: Auto-Infotainment</li>
-<li>AUTOSAR OS: Steuergeräte (meist OSEK-basiert)</li>
+<li>Kommerziell u. a. VxWorks, QNX; im Auto oft AUTOSAR-OS</li>
+<li>Offen u. a. Zephyr und FreeRTOS</li>
+<li>„Marktführer“ oder „safety-zertifiziert“ nur mit benannter Quelle und Konfiguration</li>
+<li>Wir nutzen FreeRTOS, weil Cube es für den STM32 anbindet — nicht als Beweis einer Frist</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>Open Source / industrie-nah:</p>
-<ul>
-<li>Zephyr: Linux Foundation (z. B. Nordic)</li>
-<li>FreeRTOS: Marktführer bei kleineren Mikrocontrollern</li>
-</ul>
-</div></div>
 <aside class="notes">
-<p>Kommerziell: VxWorks (NASA), QNX, AUTOSAR OS. Open Source: Zephyr stark im Kommen. Unangefochtener Platzhirsch für Mikrocontroller — und unser System: FreeRTOS.</p>
+<p>Footprint-Werbeahlen (wenige KB) hängen von Optionen ab. Für unser Projekt zählt die Map-Datei, nicht ein Datenblatt-Slogan.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -407,16 +408,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="lernziele-des-heutigen-tages" class="slide level2">
 <h2>Lernziele des heutigen Tages</h2>
-<ul>
-<li>Trade-off Latenz vs.&nbsp;Determinismus verstehen</li>
-<li>Task-Modell von FreeRTOS implementieren können</li>
-<li>Verstehen, warum eine Task im Zustand Blocked exakt <span class="math inline">\(0\%\)</span> CPU benötigt</li>
-<li>RAM-Bedarf eines Task-Sets und Tick-Auflösung berechnen</li>
-<li>CMSIS-RTOS v2 statt nativer FreeRTOS-API nutzen</li>
-<li>FreeRTOS in der STM32CubeIDE konfigurieren und Präemption im Labor prüfen</li>
-</ul>
+<ol type="1">
+<li>Dispatcher-Callback und RTOS-Thread unterscheiden</li>
+<li>Stack, TCB und übriges RAM grob bilanzieren</li>
+<li>Ready, Running und Blocked an einer CPU-Spur erklären</li>
+<li>Tickphase, <code>osDelay</code> und <code>osDelayUntil</code> auseinanderhalten</li>
+<li>Emergency per Thread-Flag aus einer erlaubten ISR wecken</li>
+</ol>
 <aside class="notes">
-<p>RTOS macht den MCU zunächst „langsam“, schenkt aber Vorhersagbarkeit. Architektur, Zustände, Timing/CMSIS und Prioritäten — dann Labor auf dem Cortex-M4.</p>
+<p>Am Ende keine Behauptung „Jitter ungefähr null“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -431,26 +431,34 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="architektur-bare-metal-vs.-rtos" class="slide level2">
 <h2>Architektur: Bare-Metal vs.&nbsp;RTOS</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Bare-Metal (Super-Loop)</p>
+<div class="cell" data-reveal="true" data-fig-width="6.2" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
+flowchart TB
+  APP[Anwendungsthreads] --&gt; CMSIS[CMSIS-RTOS2]
+  CMSIS --&gt; K[FreeRTOS-Kernel]
+  K --&gt; P[CM4F-Port]
+  P --&gt; M4[Cortex-M4]
+  HAL[HAL / Peripherie] --- M4
+  M7[CM7: Start laut Projekt] --- BUS[gemeinsame Busse / SRAM]
+  M4 --- BUS
+  style K fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <ul>
-<li>Hardware → Ihr C-Code</li>
-<li>Sehr flache Architektur</li>
-<li>Ein einziger Call-Stack im RAM</li>
-<li>CPU rechnet oft dauerhaft (Polling, <span class="math inline">\(\approx 100\%\)</span> Auslastung)</li>
+<li>Ein Kernel auf dem CM4; Tasklisten wandern nicht zum M7</li>
+<li>Zwei Kernel später wären eine eigene AMP-Entscheidung</li>
+<li>Ohne MPU-Port isoliert der Stack nur organisatorisch</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>RTOS-Architektur</p>
-<ul>
-<li>Hardware → RTOS → Ihre Tasks</li>
-<li>OS als Zwischenschicht</li>
-<li>Jede Task hat einen eigenen Call-Stack</li>
-<li>CPU kann schlafen (Idle-Task), wenn nichts zu tun ist</li>
-</ul>
-</div></div>
 <aside class="notes">
-<p>Bare-Metal: C direkt auf Hardware, ein Stack, oft 100% Polling-Last. RTOS: Schicht dazwischen, eigener Stack pro Task, Schlafmodus wenn alle warten.</p>
+<p>Eigener NVIC und eigene Vector Table je Kern, wie in VL1. Gemeinsamer Speicher bleibt Interferenz.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -465,18 +473,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-kernparadigma-latenz-vs.-determinismus" class="slide level2">
 <h2>Das Kernparadigma: Latenz vs.&nbsp;Determinismus</h2>
+<p>Synthetische Antwortzeiten, Deadline <span class="math inline">\(D = 10\,\mathrm{ms}\)</span>:</p>
 <ul>
-<li>Vorurteil: „Wir können kein RTOS nutzen, das ist zu langsam!“</li>
-<li>Fakt: Ein RTOS kostet Rechenzeit (Overhead)
-<ul>
-<li>SysTick-Interrupt typisch alle <span class="math inline">\(1\,\mathrm{ms}\)</span></li>
-<li>Scheduler muss Listen sortieren (Taktzyklen)</li>
-<li>Context Switch (PendSV) kostet ca. <span class="math inline">\(100\)</span>–<span class="math inline">\(300\)</span> Takte</li>
-</ul></li>
-<li>Aber: Wir tauschen maximale Geschwindigkeit gegen garantierte Pünktlichkeit (Determinismus)</li>
+<li>Folge <span class="math inline">\(2/4/6/8\,\mathrm{ms}\)</span>: Schwankung, aber kein Miss</li>
+<li>Ein Lauf mit <span class="math inline">\(R = 12\,\mathrm{ms}\)</span>: Miss</li>
+<li>Hohe Priorität ist keine Obergrenze</li>
+<li>Konstante Zusatzlatenz ist kein Jitter</li>
 </ul>
+<p>Bestandteile von <span class="math inline">\(R\)</span>, ohne hier die RTA zu wiederholen: eigener CPU-Bedarf, höherpriore Arbeit, IRQs, Blocking, Dispatcher.</p>
 <aside class="notes">
-<p>Technisch richtig, konzeptionell gefährlich: RTOS kostet Takte (SysTick, Scheduler, PendSV). Absolute Latenz wird etwas länger — dafür Determinismus: ausrechenbare Pünktlichkeit statt wackeliger Höchstgeschwindigkeit.</p>
+<p>Frage: Welche Annahmen fehlen für eine harte Garantie? Antwort: beschränkte <span class="math inline">\(C\)</span>, Prioritäten, modellierte IRQ- und Sperrzeiten, kein unbegrenztes Blocking, gültiger Test. Wenige Kurven beweisen das nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -491,16 +497,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-jitter-vergleich" class="slide level2">
 <h2>Visualisierung: Jitter-Vergleich</h2>
+<p><img data-src="../_livefigures/inline-plantuml-9436f846.svg" class="livefigure"></p>
 <ul>
-<li>Hardware-Event triggert eine Reaktion</li>
-</ul>
-<p><img data-src="../_livefigures/inline-wavedrom-d81c0dc5.svg" class="livefigure"></p>
-<ul>
-<li>Bare-Metal (Super-Loop ohne IRQ): oft schneller, aber unregelmäßig (hoher Jitter)</li>
-<li>RTOS: etwas später (OS-Overhead), bei hoher Priorität nahezu konstant (Jitter <span class="math inline">\(\approx 0\)</span>)</li>
+<li>Die Skizze zeigt einen gehaltenen Job mit <span class="math inline">\(R = 8\,\mathrm{ms}\)</span></li>
+<li>Eine Bare-Metal-ISR kann dieselbe Frist mit weniger Dispatcheranteil halten</li>
+<li>Der Vergleich ist nicht „Super-Loop schlecht, RTOS gut“</li>
 </ul>
 <aside class="notes">
-<p>Oben: externes Ereignis zweimal. Bare-Metal als Super-Loop ohne IRQ: schnell wenn die Schleife gerade pollt, sonst ewig — gewaltiger Jitter. (Mit ISR wäre das Bild anders.) RTOS: minimale Startlatenz, aber konstant durch Präemption. In der Regelungstechnik Gold wert.</p>
+<p>Lehrwerte, keine Boardmessung. Startlatenz, Antwortzeit und deren Schwankung getrennt nennen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -516,18 +520,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="einführung-in-freertos" class="slide level2">
 <h2>Einführung in FreeRTOS</h2>
 <ul>
-<li>Ursprünglich von Richard Barry (2003) entwickelt</li>
-<li>Open Source (MIT-Lizenz — auch in kommerziellen, geschlossenen Produkten nutzbar)</li>
-<li>2017 von Amazon (AWS) übernommen</li>
-<li>Eigenschaften:
-<ul>
-<li>Winziger Footprint (Scheduler ab <span class="math inline">\(\approx 4\,\mathrm{KB}\)</span> ROM, <span class="math inline">\(&lt; 1\,\mathrm{KB}\)</span> RAM)</li>
-<li>Sehr portabel (8-Bit AVR bis 32-Bit ARM Cortex-A)</li>
-<li>Quasi-Standard in Maker- und Industrie-Welt (ESP32, STM32)</li>
-</ul></li>
+<li>Richard Barry, später Amazon/AWS; Lizenz MIT</li>
+<li>Portierbar, deshalb der STM32-Cube-Standard in diesem Kurs</li>
+<li>Konkrete ROM-/RAM-Größe: Linker-Map der <strong>verwendeten</strong> <code>FreeRTOSConfig.h</code></li>
+<li>Version von Kernel, CMSIS-Wrapper und CubeH7 am Projekt ablesen</li>
 </ul>
 <aside class="notes">
-<p>MIT-Lizenz: ändern und kommerziell nutzen ohne Veröffentlichungspflicht. Amazon übernahm 2017 für AWS-IoT. Kernstärke: Footprint und Portabilität — beherrschen Sie FreeRTOS, beherrschen Sie einen Großteil des Embedded-OS-Marktes.</p>
+<p>Öffentliches GitHub-<code>main</code> ist nicht die Version im Labor.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -543,20 +542,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-freertos-architektur" class="slide level2">
 <h2>Die FreeRTOS Architektur</h2>
 <ul>
-<li>Das gesamte Betriebssystem besteht aus nur wenigen C-Dateien</li>
-<li>Kern-Dateien (OS-Logik, chip-unabhängig):
-<ul>
-<li><code>tasks.c</code>: Scheduler, TCB-Verwaltung, Ready-Listen</li>
-<li><code>list.c</code>: Optimierte doppelt verkettete Listen</li>
-<li><code>queue.c</code>: Inter-Task-Kommunikation</li>
-</ul></li>
-<li>Port-Layer (hardware-spezifisch):
-<ul>
-<li><code>port.c</code> / <code>portmacro.h</code>: Assembler für SysTick und PendSV (Cortex-M4)</li>
-</ul></li>
+<li>Anwendung → CMSIS-RTOS2 → Kernel → Port → Cortex-M4</li>
+<li><code>tasks.c</code>, <code>list.c</code>, <code>queue.c</code>, <code>heap_4.c</code> o. ä. nach Rolle</li>
+<li>PendSV/SVC im Port; SysTick ist eine übliche Tickquelle, keine Pflicht</li>
+<li>CMSIS macht nicht jeden Backendwechsel ohne Anpassungen möglich</li>
 </ul>
 <aside class="notes">
-<p>Kein Blackbox-Kernel wie Linux: Kern in Standard-C (<code>tasks.c</code>, <code>list.c</code>, <code>queue.c</code>). Hardware-Brücke im Port-Layer (<code>ARM_CM4F</code>/<code>port.c</code>) mit PendSV-Assembler.</p>
+<p>Prioritätsabbildung, Heap und Timer bleiben plattformabhängig.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -571,24 +563,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zusammenfassung-warum-ein-rtos" class="slide level2">
 <h2>Zusammenfassung: Warum ein RTOS?</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Vorteile:</p>
 <ul>
-<li>Vorhersagbares Verhalten (Determinismus) durch hardwarenahe Präemption</li>
-<li>Saubere Software-Struktur (unabhängige Tasks statt Spaghetticode)</li>
-<li>Fertige, getestete Module für Kommunikation und Speicherschutz</li>
+<li>Struktur: Threads statt einer Flag-Suppe</li>
+<li>Kosten: Ticks, Wechsel, Stacks, Fehlersuche</li>
+<li>Keine automatische Pünktlichkeit und kein automatischer Speicherschutz</li>
+<li>Präemption ersetzt kooperative Rückkehrpflicht, nicht die Analyse</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>Nachteile:</p>
-<ul>
-<li>Verlust absoluter CPU-Rohleistung (Scheduler-Overhead)</li>
-<li>Höherer RAM-Verbrauch (eigener Stack pro Task)</li>
-<li>Komplexere Fehlersuche (Race Conditions)</li>
-</ul>
-</div></div>
 <aside class="notes">
-<p>Determinismus und Struktur gegen Overhead, RAM und Race Conditions. Als Nächstes: wie FreeRTOS Tasks und RAM verwaltet. Fragen zum Architektur-Teil?</p>
+<p>„Geschwindigkeit gegen garantierte Pünktlichkeit“ ist die falsche Tauschformel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -604,23 +586,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-freertos-task-modell" class="slide level2">
 <h2>Das FreeRTOS Task-Modell</h2>
 <ul>
-<li>Eine Task in FreeRTOS ist eine C-Funktion</li>
-<li>Wichtigste Regel: Die Funktion darf niemals ans Ende gelangen (<code>return</code> ist verboten)</li>
-<li>Als unendliche Schleife <code>for(;;)</code> oder <code>while(1)</code> schreiben</li>
+<li>Native Task-Funktion kehrt nicht normal zurück</li>
+<li>Ende über <code>vTaskDelete(NULL)</code>; CMSIS: <code>osThreadExit()</code></li>
+<li>Ein bloßes <code>return</code> führt portabhängig oft in eine Assert- oder Fehlerschleife, nicht zwingend in den HardFault</li>
+<li>Labor-Threads: <code>for (;;)</code> und RTOS-Warten</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="dt">void</span> vMyFirstTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>pvParameters<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb2-2"><a aria-label="2"></a>    <span class="co">// 1. Initialisierung (läuft nur einmal)</span></span>
-<span id="cb2-3"><a aria-label="3"></a>    Init_Sensor<span class="op">();</span></span>
-<span id="cb2-4"><a aria-label="4"></a></span>
-<span id="cb2-5"><a aria-label="5"></a>    <span class="co">// 2. Die Endlosschleife (der Task-Körper)</span></span>
-<span id="cb2-6"><a aria-label="6"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb2-7"><a aria-label="7"></a>        Read_Sensor<span class="op">();</span></span>
-<span id="cb2-8"><a aria-label="8"></a>        vTaskDelay<span class="op">(</span>pdMS_TO_TICKS<span class="op">(</span><span class="dv">100</span><span class="op">));</span> <span class="co">// OS: schlafe 100 ms</span></span>
-<span id="cb2-9"><a aria-label="9"></a>    <span class="op">}</span></span>
-<span id="cb2-10"><a aria-label="10"></a>    <span class="co">// HIER DARF DER CODE NIEMALS ANKOMMEN!</span></span>
-<span id="cb2-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="dt">void</span> Heartbeat<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>arg<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>arg<span class="op">;</span></span>
+<span id="cb2-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb2-4"><a aria-label="4"></a>        <span class="co">/* Arbeit, dann osDelay / osDelayUntil */</span></span>
+<span id="cb2-5"><a aria-label="5"></a>    <span class="op">}</span></span>
+<span id="cb2-6"><a aria-label="6"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Gewöhnliche C-Funktion mit <code>void *</code>-Parameter. Niemals <code>return</code> oder Ende der Funktion — sonst Hard Fault. Setup einmal, dann ewige <code>for(;;)</code> mit Arbeit und Schlafen.</p>
+<p>Der gespeicherte Kontext liegt auf dem Task-Stack. Der TCB hält insbesondere den Stackpointer, nicht den PC als loses Feld.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -636,18 +614,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-task-control-block-tcb-in-freertos" class="slide level2">
 <h2>Der Task Control Block (TCB) in FreeRTOS</h2>
 <ul>
-<li>FreeRTOS legt für jede Task ein Struct im RAM an</li>
-<li>Wichtige Felder in <code>tskTCB</code>:
-<ul>
-<li><code>pxTopOfStack</code>: Wo liegen die CPU-Register dieser Task?</li>
-<li><code>xStateListItem</code>: Knoten für Ready/Blocked-Listen</li>
-<li><code>uxPriority</code>: Aktuelle Priorität</li>
-<li><code>pcTaskName</code>: String für Debugging (z. B. <code>"MotorTask"</code>)</li>
-</ul></li>
-<li>Der TCB wird vom OS verwaltet — wir fassen ihn niemals direkt an</li>
+<li><code>pxTopOfStack</code>: Oberkante des gesicherten Kontexts</li>
+<li>Listenelemente: Ready, Delayed, …</li>
+<li><code>uxPriority</code>: nativ <code>UBaseType_t</code>, nicht pauschal <code>uint8_t</code></li>
+<li>CMSIS sieht <code>osPriority_t</code>; der Wrapper bildet ab und kann Werte ablehnen</li>
 </ul>
 <aside class="notes">
-<p>Bei <code>xTaskCreate</code> alloziert FreeRTOS den TCB: Stack-Pointer für PendSV, Listen-Knoten, Name für Debugger. Nur über die FreeRTOS-API manipulieren.</p>
+<p>Drei TCBs, drei Stacks. PSP für den laufenden Thread, MSP für Handler. IRQ-Stack extra bilanzieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -663,13 +636,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="speichermanagement-der-stack" class="slide level2">
 <h2>Speichermanagement: Der Stack</h2>
 <ul>
-<li>In Bare-Metal: ein globaler Stack für das ganze Programm</li>
-<li>In FreeRTOS: jede Task hat einen eigenen, isolierten Stack im RAM</li>
-<li>Lokale Variablen und Funktionsaufrufe nutzen nur diesen privaten Stack</li>
-<li>Vorsicht: Stack zu klein → Stack Overflow in den RAM anderer Tasks</li>
+<li>Lokale Variablen und Aufrufe liegen auf dem <strong>Task-Stack</strong></li>
+<li>Hardware-Frame: R0–R3, R12, LR, PC, xPSR; Software zusätzlich R4–R11, portabhängig FPU</li>
+<li>128 Einträge <code>StackType_t</code> × 4 Byte = <strong>512 Byte</strong></li>
+<li>CMSIS <code>stack_size = 512</code> bedeutet <strong>512 Byte</strong>, nicht 512 Wörter</li>
+<li>Cube-Feld gegen den generierten Wert prüfen</li>
 </ul>
 <aside class="notes">
-<p>Zehn Tasks = zehn separate RAM-Blöcke. Lokale Variable landet nur im eigenen Block. Zu große lokale Arrays: Stack Overflow — Absturzursache Nummer 1 in der Praxis.</p>
+<p>Statischer Puffer reserviert früh, beweist aber keine ausreichende Tiefe.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -684,17 +658,32 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="berechnung-des-ram-bedarfs" class="slide level2">
 <h2>Berechnung des RAM-Bedarfs</h2>
+<p>Annahme, ausdrücklich nicht die Map-Datei: TCB ≈ 80 Byte.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Position</th>
+<th style="text-align: right;">Byte</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Stack 512 + TCB 80</td>
+<td style="text-align: right;">592</td>
+</tr>
+<tr class="even">
+<td>Drei Threads 512 / 1024 / 1024 + 3×80</td>
+<td style="text-align: right;"><strong>2800</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Dazu, oft <strong>andere</strong> Pools: Idle, Timer-Task, Queues, Heap-Metadaten, Alignment, MSP.</p>
 <ul>
-<li>RAM ist auf Mikrocontrollern kostbar (STM32H755: <span class="math inline">\(1\,\mathrm{MB}\)</span>; kleinere Cortex-M oft nur <span class="math inline">\(16\,\mathrm{KB}\)</span>)</li>
-<li>RAM-Kosten einer neuen Task: <span class="math display">\[\mathrm{RAM} = \text{TCB}~(\approx 80\,\mathrm{Byte}) + (\text{Stack-Wörter} \times 4\,\mathrm{Byte})\]</span></li>
-<li>Beispiel: Stack von <span class="math inline">\(128\)</span> Wörtern auf 32-Bit-ARM <span class="math inline">\(= 512\,\mathrm{Byte}\)</span>
-<ul>
-<li>Gesamt: <span class="math inline">\(\approx 512 + 80 = 592\,\mathrm{Byte}\)</span> pro Task</li>
-</ul></li>
-<li>Lektion: Keine großen Arrays als lokale Variablen — Heap oder globale Variablen nutzen</li>
+<li>Das gesamte H755-SRAM ist kein frei zusammenhängender CM4-Heap</li>
+<li>Dynamische Anlage kann scheitern; statische Reservierung verlagert die Planung nach vorn</li>
 </ul>
 <aside class="notes">
-<p>FreeRTOS-API: Stackgröße <code>128</code> meint 128 Wörter à 4 Byte = 512 Byte. Zehn Tasks: fast 6 KB ohne sinnvolle Arbeit. Große Puffer nie lokal in der Task.</p>
+<p>2800 Byte decken nur diese drei Beispieltasks unter der 80-Byte-Annahme. Linker-Map und <code>configTOTAL_HEAP_SIZE</code> liefern den Projektwert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -709,22 +698,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="speicherallokation-statisch-vs.-dynamisch" class="slide level2">
 <h2>Speicherallokation: Statisch vs.&nbsp;Dynamisch</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Dynamisch (<code>xTaskCreate</code>):</p>
 <ul>
-<li>OS ruft intern <code>pvPortMalloc()</code> (RTOS-Heap)</li>
-<li>Problem: Kann fehlschlagen, wenn der Heap voll ist (Laufzeitfehler)</li>
+<li>Dynamisch: <code>osThreadNew</code> kann <code>NULL</code> liefern</li>
+<li>Statisch: Speicher ist vorher da, Stacktiefe bleibt eine Messfrage</li>
+<li>Große Puffer brauchen Eigentümer und Lebensdauer</li>
+<li>Eine globale Variable ist keine automatische Safety-Lösung</li>
+<li>MPU-Isolation nur mit dem dafür gebauten Port und passender Konfiguration</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>Statisch (<code>xTaskCreateStatic</code>):</p>
-<ul>
-<li>Globale C-Arrays für den Stack übergeben</li>
-<li>Vorteil: RAM-Mangel fällt schon beim Kompilieren auf (Automotive-Standard)</li>
-</ul>
-</div></div>
 <aside class="notes">
-<p>Dynamisch bequem, aber gefährlich bei vollem Heap. Safety/Automotive oft nur statisch: Linker bricht ab, bevor das Auto startet. Im Labor zunächst der dynamische Weg.</p>
+<p>Heap voll ≠ HardFault. Zuerst Handle prüfen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -739,13 +721,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-freertos-zustandsmodell" class="slide level2">
 <h2>Das FreeRTOS Zustandsmodell</h2>
+<p><img data-src="../_livefigures/inline-plantuml-82e1b88c.svg" class="livefigure"></p>
 <ul>
-<li>Das Verständnis dieses Modells entscheidet, ob Ihr System echtzeitfähig ist</li>
-<li>Eine Task befindet sich immer in exakt einem von vier Zuständen</li>
+<li>Suspend ist administrativ, nicht dasselbe wie Warten auf ein Ereignis</li>
+<li>CMSIS <code>osThreadState_t</code> hat <strong>kein</strong> eigenes Suspended; die Abfrage zeigt das oft als Blocked</li>
+<li>Blocked: der Task führt keine eigenen Befehle aus; Tick und Wakeup kosten trotzdem Zeit</li>
 </ul>
-<p><img data-src="../_livefigures/inline-plantuml-ee8c3992.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Herzstück: State-Diagramm. Blocked ist kriegsentscheidend. Nie Blocked → Running direkt — immer erst Ready. Suspended: künstliches Koma bis <code>vTaskResume()</code>.</p>
+<p>Frage: Ist Ready schon Running? Nein. Es darf höchstens ein Thread rechnen; IRQ/Kernel extra.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -761,21 +744,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-running-zustand" class="slide level2">
 <h2>Der „Running“-Zustand</h2>
 <ul>
-<li>Die Task besitzt die Kontrolle über die CPU-Hardware (Register, ALU)</li>
-<li>Auf einem Single-Core kann immer nur genau eine Task Running sein</li>
-<li>Auf dem STM32H755 (Dual-Core):
-<ul>
-<li>Ein Kernel auf Cortex-M7 (eine Task Running)</li>
-<li>Ein Kernel auf Cortex-M4 (eine Task Running)</li>
-</ul></li>
-<li>Die Task bleibt Running, bis sie:
-<ul>
-<li>etwas Blockierendes aufruft (Delay, Mutex)</li>
-<li>von einer wichtigeren Task unterbrochen wird (Präemption)</li>
-</ul></li>
+<li>Genau ein Thread hat die CPU</li>
+<li>Idle rechnet, wenn niemand sonst Ready ist</li>
+<li><code>HAL_Delay</code> ist in der üblichen HAL ein Busy-Wait: Zustand bleibt Running, höherpriore Threads können trotzdem präemptieren</li>
+<li>Busy-Wait ist Last, kein automatisches „Echtzeit zerstört“ — im Labor trotzdem <code>osDelay</code></li>
 </ul>
 <aside class="notes">
-<p>Running = König der CPU. Heute Nachmittag FreeRTOS nur auf dem M4. Illusion der Gleichzeitigkeit durch schnelles Umschalten. Thronverlust: freiwillig (Delay) oder gewaltsam (SysTick/höhere Prio).</p>
+<p>Nicht behaupten, HAL_Delay laufe ununterbrochen allein bis zum Ende.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -791,16 +766,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-ready-zustand" class="slide level2">
 <h2>Der „Ready“-Zustand</h2>
 <ul>
-<li>Warteschlange der arbeitswilligen Tasks</li>
-<li>Logisch und rechnerisch bereit, alle nötigen Daten vorhanden</li>
-<li>Warum läuft sie nicht?
-<ul>
-<li>Eine Task mit gleicher oder höherer Priorität blockiert aktuell Running</li>
-</ul></li>
-<li>FreeRTOS verwaltet pro Prioritäts-Level eine eigene Ready-Liste</li>
+<li>Will rechnen, wartet auf Zuteilung</li>
+<li>Nach Timeout kann ein höherpriorer Thread nach IRQ-Ende und PendSV <strong>sofort</strong> laufen</li>
+<li>Ready heißt nicht „noch einen ganzen Tick warten“</li>
+<li>Maskierung oder eine laufende höhere ISR verzögern den Wechsel</li>
 </ul>
 <aside class="notes">
-<p>Ready = kein Problem, nur gerade nicht ausgewählt. Array von Listen pro Priorität: Scheduler schaut nur auf die oberste nicht-leere Liste — immer gleich viele Takte (Determinismus).</p>
+<p>Das Intervall zwischen Timeout und Lauf ist Dispatcherzeit, keine erfundene 1-ms-Wechseldauer.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -816,18 +788,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-blocked-zustand-die-magie-des-rtos" class="slide level2">
 <h2>Der „Blocked“-Zustand (Die Magie des RTOS)</h2>
 <ul>
-<li>Wichtigster Zustand für ein stabiles Echtzeitsystem</li>
-<li>Task wartet auf ein Ereignis:
-<ul>
-<li>Zeitlich: <code>vTaskDelay(100)</code> (schlafe exakt 100 Ticks)</li>
-<li>Logisch: Taste, UART-Daten, Queue</li>
-</ul></li>
-<li>Clou: Blocked-Task wird vom Scheduler beim Suchen komplett ignoriert</li>
-<li>Verbrauch: <span class="math inline">\(0{,}00\%\)</span> CPU-Rechenzeit</li>
-<li>Deshalb niemals <code>HAL_Delay()</code> in einem RTOS (Busy-Wait auf <code>uwTick</code>: Task bleibt <em>Running</em>)</li>
+<li>Eigene Auslastung des wartenden Threads: keine Instruktionen</li>
+<li>Gesamt-CPU kann durch HeavyMath trotzdem voll sein</li>
+<li><code>osDelay</code> / <code>osThreadFlagsWait</code> blockieren; <code>HAL_Delay</code> nicht</li>
+<li>Aus der ISR kein <code>osDelay</code> und kein Mutex-Warten</li>
 </ul>
 <aside class="notes">
-<p>Warten auf ADC? FreeRTOS-Blockade: CPU weg, Blocked-Liste, null Prozent Last. <code>HAL_Delay</code> busy-waitet auf <code>uwTick</code> und bleibt Running — immer RTOS-Blockade-Funktionen nutzen.</p>
+<p>„0 % eigener Code“ und „0 % Kernel“ nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -842,14 +809,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-task-zustände-im-zeitverlauf" class="slide level2">
 <h2>Visualisierung: Task-Zustände im Zeitverlauf</h2>
-<p><img data-src="../_livefigures/inline-plantuml-067150c4.svg" class="livefigure"></p>
+<p>A höher als B. A läuft, ruft Delay, B läuft, A wird Ready und läuft nach zulässigem Wechsel wieder.</p>
+<p><img data-src="../_livefigures/inline-plantuml-ff865a8e.svg" class="livefigure"></p>
 <ul>
-<li>Task A schickt sich selbst in den Blocked-Zustand</li>
-<li>Task B darf endlich rechnen</li>
-<li>Timeout: A wird Ready (nie direkt Running), dann Dispatch — A verdrängt B</li>
+<li>Bei <span class="math inline">\(t = 5\)</span> rechnet A, nicht „A wartet noch bis <span class="math inline">\(t = 6\)</span>“</li>
+<li>Kurze PendSV-Zeit im Detail denken, nicht als 1-ms-Balken messen</li>
 </ul>
 <aside class="notes">
-<p>t=0: A rechnet, B wartet. t=1: A ruft <code>osDelay</code> — B bekommt die CPU. t=3: Schlafzeit vorbei, A wird Ready (nie direkt Running). t=4: Dispatch — A Running, B Ready (Präemption).</p>
+<p>Wenn die Zeichnung A zwischen 5 und 6 nur Ready zeigte, wäre das ein Fehler ohne benannte Ursache.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -865,17 +832,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="freertos-scheduler-konfiguration" class="slide level2">
 <h2>FreeRTOS Scheduler-Konfiguration</h2>
 <ul>
-<li>Scheduler-Verhalten tiefgreifend anpassbar</li>
-<li>Steuerung über <code>FreeRTOSConfig.h</code></li>
-<li>Präemption aktivieren:
-<ul>
-<li><code>configUSE_PREEMPTION = 1</code>: Scheduler darf Tasks unterbrechen (präemptiv / Fixed Priority)</li>
-<li><code>configUSE_PREEMPTION = 0</code>: kooperatives Scheduling (wie unser Eigenbau)</li>
-</ul></li>
-<li>Für unsere Vorlesung: diesen Wert immer auf <span class="math inline">\(1\)</span> setzen</li>
+<li>Höchste nichtleere Ready-Priorität gewinnt</li>
+<li>Suche oder optimierte Bitmap: abhängig von <code>configUSE_PORT_OPTIMISED_TASK_SELECTION</code></li>
+<li>Deshalb keine universelle Taktzahl für „den“ Scheduler</li>
+<li><code>configMAX_PRIORITIES</code> und der CMSIS-Wrapper gemeinsam prüfen</li>
 </ul>
 <aside class="notes">
-<p><code>FreeRTOSConfig.h</code> ist die Schaltzentrale. <code>configUSE_PREEMPTION = 0</code> macht FreeRTOS kooperativ wie unser Eigenbau. Für ernsthafte Projekte und den Rest der Vorlesung strikt auf 1.</p>
+<p>Zu wenige Stufen: der Wrapper klemmt oder weist eine CMSIS-Priorität zurück.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -890,21 +853,36 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="prioritäten-in-freertos-achtung-falle" class="slide level2">
 <h2>Prioritäten in FreeRTOS (Achtung: Falle!)</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Skala</th>
+<th>Richtung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Native FreeRTOS-Task</td>
+<td>größere Zahl = dringender</td>
+</tr>
+<tr class="even">
+<td>CMSIS <code>osPriority_t</code></td>
+<td>ebenso, andere Symbole</td>
+</tr>
+<tr class="odd">
+<td>NVIC, logisch</td>
+<td>kleinere Zahl = dringendere IRQ</td>
+</tr>
+</tbody>
+</table>
+<p>Labor-Ordnung: Emergency <span class="math inline">\(&gt;\)</span> Heartbeat <span class="math inline">\(&gt;\)</span> HeavyMath <span class="math inline">\(&gt;\)</span> Idle.</p>
 <ul>
-<li>Jede Task bekommt beim Start eine Priorität als Integer (<code>uint8_t</code>)</li>
-<li>FreeRTOS-Regel:
-<ul>
-<li>Prio <span class="math inline">\(0\)</span> = niedrigste Priorität</li>
-<li>Prio <code>configMAX_PRIORITIES - 1</code> = höchste Priorität</li>
-</ul></li>
-<li>Falle für Hardware-Entwickler:
-<ul>
-<li>ARM Cortex-M NVIC denkt genau andersherum (<span class="math inline">\(0\)</span> = höchste Prio)</li>
-</ul></li>
-<li>Merken: OS-Level (hohe Zahl = wichtig), Hardware-Level (kleine Zahl = wichtig)</li>
+<li>Konkrete Abbildung steht in der verwendeten <code>cmsis_os2.c</code></li>
+<li>„Oft 7 Stufen“ nicht mit einem Wrapper mischen, der mehr CMSIS-Stufen erwartet</li>
+<li><code>osThreadYield</code>: hohe Priorität bleibt Ready und wird wieder gewählt</li>
 </ul>
 <aside class="notes">
-<p>FreeRTOS: 0 unwichtig, hohe Zahl wichtig. NVIC: 0 ist König. Strikt trennen: OS-C-Code vs.&nbsp;Hardware-Register — bringt Anfänger oft zur Verzweiflung.</p>
+<p>Frage: Warum hilft Yield dem niedrigprioren Task nicht? Weil die hohe Aufgabe weiter bereit ist. Gleichstand plus <code>configUSE_TIME_SLICING</code> ist ein eigener Fall.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -920,18 +898,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-idle-task-prio-0" class="slide level2">
 <h2>Die Idle-Task (Prio 0)</h2>
 <ul>
-<li>Was passiert, wenn alle eigenen Tasks Blocked sind?</li>
-<li>Die CPU muss Assembler ausführen — sie kann nicht „nichts“ tun</li>
-<li>FreeRTOS erstellt beim Start automatisch die Idle-Task</li>
-<li>Immer Priorität <span class="math inline">\(0\)</span> (lässt jeden anderen ran)</li>
-<li>Nutzen der Idle-Task:
-<ul>
-<li>Speicher gelöschter Tasks aufräumen</li>
-<li>CPU in Hardware-Tiefschlaf (<code>WFI</code> — Wait For Interrupt), starker Stromspar-Effekt (<code>configUSE_TICKLESS_IDLE</code>)</li>
-</ul></li>
+<li>Idle hat die niedrigste native Priorität, muss sie aber nicht allein besitzen</li>
+<li>Dauerhaft bereites HeavyMath <strong>oberhalb</strong> Idle verhindert Idle-Lauf, Cleanup und Idle-Schlaf</li>
+<li>Hooks und das Löschen beendeter Tasks sind konfigurationsabhängig</li>
+<li><code>WFI</code> ist kein automatischer Standardpfad jeder <code>FreeRTOSConfig.h</code></li>
 </ul>
 <aside class="notes">
-<p>Drei Tasks Blocked: CPU braucht trotzdem Befehle. Idle-Task mit Prio 0 läuft nur, wenn niemand sonst will. Modern: <code>WFI</code> schaltet den Kern ab bis zum nächsten Timer — Batteriesensoren über Jahre.</p>
+<p>Frage: Warum läuft Idle im normalen Labor nicht? Weil HeavyMath bereit bleibt und höher ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -947,18 +920,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="strom-sparen-tickless-idle" class="slide level2">
 <h2>Strom sparen: Tickless Idle</h2>
 <ul>
-<li>Was passiert, wenn alle Tasks für z. B. <span class="math inline">\(500\,\mathrm{ms}\)</span> blockiert sind?</li>
-<li>Normalerweise wacht der SysTick trotzdem jede <span class="math inline">\(1\,\mathrm{ms}\)</span> auf, prüft Listen und schläft wieder</li>
-<li>Problem: Die CPU wird 500-mal sinnlos geweckt (Stromverschwendung)</li>
-<li>Lösung: <code>configUSE_TICKLESS_IDLE = 1</code>
-<ul>
-<li>FreeRTOS berechnet die Zeit bis zum nächsten Event (z. B. <span class="math inline">\(500\,\mathrm{ms}\)</span>)</li>
-<li>SysTick aus, Low-Power-Timer auf diese Dauer programmieren</li>
-<li>CPU geht in echten Deep-Sleep</li>
-</ul></li>
+<li>Tickless unterdrückt geeignete Kernel-Ticks</li>
+<li>Der übliche CM4F-Port verlängert SysTick; das ist kein eigener Low-Power-Timer</li>
+<li>LPTIM/RTC brauchen eine passende Portierung</li>
+<li>24-Bit-Zähler: bei <span class="math inline">\(100\,\mathrm{MHz}\)</span> etwa <span class="math inline">\(167{,}8\,\mathrm{ms}\)</span>, bei <span class="math inline">\(240\,\mathrm{MHz}\)</span> etwa <span class="math inline">\(69{,}9\,\mathrm{ms}\)</span></li>
+<li>„500 ms mit unverändertem SysTick“ nicht zeichnen</li>
+<li>Ein weiterlaufender HAL-TIM6 kann trotzdem wecken</li>
+<li>Deep Sleep braucht PWR, Clock und beide Kerne — das HeavyMath-Labor ist kein Tickless-Versuch</li>
 </ul>
 <aside class="notes">
-<p>Im Normalfall feuert der SysTick jede Millisekunde, auch wenn alle Tasks eine halbe Sekunde blockiert sind — 500 sinnlose Aufwachzyklen. Mit <code>configUSE_TICKLESS_IDLE</code> berechnet der Scheduler die Zeit bis zur nächsten Deadline, schaltet den 1-ms-SysTick ab, programmiert einen stromsparenden Hardware-Timer und schickt die CPU schlafen. Für batteriebetriebene Sensoren entscheidend.</p>
+<p>Tickless erzeugt weder automatisch Deep Sleep noch einen korrigierten Betrieb ohne <code>vTaskStepTick</code>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -974,18 +945,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-rtos-herzschlag-die-tick-rate" class="slide level2">
 <h2>Der RTOS-Herzschlag: Die Tick-Rate</h2>
 <ul>
-<li>Das Zeitgefühl von FreeRTOS basiert auf Ticks</li>
-<li>Ein Tick entspricht einem Interrupt des SysTick-Timers</li>
-<li>Gesteuert durch <code>configTICK_RATE_HZ</code> (meist <span class="math inline">\(1000\,\mathrm{Hz}\)</span>)</li>
-<li>Bedeutung:
-<ul>
-<li>Bei <span class="math inline">\(1000\,\mathrm{Hz}\)</span> dauert 1 Tick exakt <span class="math inline">\(1\,\mathrm{ms}\)</span></li>
-<li>Das OS löst Zeiten nur in ganzzahligen Vielfachen von Ticks auf</li>
-<li>Ein Delay von <span class="math inline">\(1{,}5\,\mathrm{ms}\)</span> ist nicht möglich (wird gerundet)</li>
-</ul></li>
+<li><code>configTICK_RATE_HZ</code> setzt die <strong>Kernel</strong>-Tickperiode, nicht die Wanduhr allein</li>
+<li><code>osDelay(1)</code> endet an einer Tickgrenze</li>
+<li>Aufruf bei <span class="math inline">\(0{,}1\,\mathrm{ms}\)</span>: Ready bei <span class="math inline">\(1\,\mathrm{ms}\)</span> (Dauer <span class="math inline">\(0{,}9\,\mathrm{ms}\)</span>)</li>
+<li>Aufruf bei <span class="math inline">\(0{,}9\,\mathrm{ms}\)</span>: Ready bei <span class="math inline">\(1\,\mathrm{ms}\)</span> (Dauer <span class="math inline">\(0{,}1\,\mathrm{ms}\)</span>)</li>
+<li>Danach kann höherpriore Arbeit den echten Start noch schieben</li>
 </ul>
 <aside class="notes">
-<p><code>configTICK_RATE_HZ</code> steht fast immer auf 1000: SysTick jede Millisekunde. FreeRTOS hat keine Nanosekunden-Uhr — die kleinste Einheit ist der Tick. Für <span class="math inline">\(1{,}5\,\mathrm{ms}\)</span> Delay geht das nicht; Mikrosekunden-präzises Timing braucht einen separaten Hardware-Timer, kein OS-Delay.</p>
+<p>Frage: Garantiert ein Tick mindestens 1 ms? Nein. Bei 1 kHz ist die Periode 1 ms, die Restzeit bis zur Grenze kann kürzer sein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1000,26 +967,50 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zeit-umrechnung-die-goldene-regel" class="slide level2">
 <h2>Zeit-Umrechnung (Die goldene Regel)</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
+<p>Aufrundender Helfer, nicht <code>pdMS_TO_TICKS</code> ungeprüft:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">uint32_t</span> ms_to_ticks_ceil<span class="op">(</span><span class="dt">uint32_t</span> ms<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> f <span class="op">=</span> osKernelGetTickFreq<span class="op">();</span></span>
+<span id="cb3-3"><a aria-label="3"></a>    <span class="cf">if</span> <span class="op">(</span>ms <span class="op">==</span> <span class="dv">0</span> <span class="op">||</span> f <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-4"><a aria-label="4"></a>    <span class="cf">return</span> <span class="op">(</span><span class="dt">uint32_t</span><span class="op">)(((</span><span class="dt">uint64_t</span><span class="op">)</span>ms <span class="op">*</span> f <span class="op">+</span> <span class="dv">999</span><span class="bu">u</span><span class="op">)</span> <span class="op">/</span> <span class="dv">1000</span><span class="bu">u</span><span class="op">);</span></span>
+<span id="cb3-5"><a aria-label="5"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;">ms</th>
+<th style="text-align: right;">1000 Hz</th>
+<th style="text-align: right;">100 Hz, ceil</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">10</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">50</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Zeiten niemals als nackte Integer angeben</li>
-<li><code>vTaskDelay(100)</code> bedeutet: schlafe 100 Ticks</li>
-<li>Ändert ein Kollege die Tick-Rate auf <span class="math inline">\(100\,\mathrm{Hz}\)</span>?
-<ul>
-<li>Aus <span class="math inline">\(100\,\mathrm{ms}\)</span> wird plötzlich <span class="math inline">\(1\,\mathrm{s}\)</span></li>
-</ul></li>
+<li>Ceil vermeidet 0 Ticks für kleine positive ms, garantiert aber keine Mindest-Wandzeit</li>
+<li><code>pdMS_TO_TICKS</code> rundet je nach Makro ab: 1 ms oder 5 ms bei 100 Hz können 0 sein</li>
+<li><code>vTaskDelay(0)</code> yieldet; <code>osDelay(0)</code> ist nicht dieselbe Warte-API</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<p>Immer das Makro nutzen:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="co">// FALSCH (Tick-abhängig):</span></span>
-<span id="cb3-2"><a aria-label="2"></a>vTaskDelay<span class="op">(</span><span class="dv">100</span><span class="op">);</span></span>
-<span id="cb3-3"><a aria-label="3"></a></span>
-<span id="cb3-4"><a aria-label="4"></a><span class="co">// RICHTIG (immer 100 ms):</span></span>
-<span id="cb3-5"><a aria-label="5"></a>vTaskDelay<span class="op">(</span>pdMS_TO_TICKS<span class="op">(</span><span class="dv">100</span><span class="op">));</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Die FreeRTOS-API erwartet Ticks. Bei <span class="math inline">\(1000\,\mathrm{Hz}\)</span> sind 100 Ticks zufällig <span class="math inline">\(100\,\mathrm{ms}\)</span>. Senkt jemand die Rate auf <span class="math inline">\(100\,\mathrm{Hz}\)</span>, blockiert dieselbe Zahl eine ganze Sekunde. Deshalb immer <code>pdMS_TO_TICKS()</code> — der Precompiler rechnet Millisekunden in Ticks um.</p>
+<p>Null, Überlauf der 32-Bit-Multiplikation und die Tickfrequenz prüfen. Lehrfrequenzen, nicht als gemessenen H755-Takt ausgeben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1035,19 +1026,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-context-switch-overhead-analyse" class="slide level2">
 <h2>Der Context Switch (Overhead-Analyse)</h2>
 <ul>
-<li>Der Wechsel erfolgt via PendSV-Assembler-Code</li>
-<li>Was kostet das die CPU?
-<ul>
-<li>Hardware rettet 8 Kern-Register (<span class="math inline">\(\approx 12\)</span> Takte)</li>
-<li>PendSV-Handler rettet restliche Register (Push)</li>
-<li>Scheduler-Logik (Listen umhängen)</li>
-<li>Neue Register laden (Pop)</li>
-</ul></li>
-<li>Summe: ca. <span class="math inline">\(150\)</span>–<span class="math inline">\(300\)</span> Taktzyklen (je nach Optimierung)</li>
-<li>Bei <span class="math inline">\(100\,\mathrm{MHz}\)</span> CPU-Takt: nur <span class="math inline">\(\approx 2\)</span>–<span class="math inline">\(3\,\text{µs}\)</span></li>
+<li>Lehrannahme 150–300 Zyklen, <strong>kein</strong> Messwert</li>
+<li>Bei <span class="math inline">\(100\,\mathrm{MHz}\)</span>: <span class="math inline">\(1{,}5\)</span>–<span class="math inline">\(3\,\text{µs}\)</span></li>
+<li>200 Zyklen, 500 Wechsel/s, <span class="math inline">\(100\,\mathrm{MHz}\)</span>: <span class="math inline">\(0{,}1\,\%\)</span> CPU, Tick und ISRs extra</li>
+<li>Hardware-Frame, Software-Register, PSP setzen, EXC_RETURN</li>
+<li>FPU nur wenn der Port den Kontext mitsichert</li>
 </ul>
 <aside class="notes">
-<p>PendSV sichert Register, FreeRTOS-Assembler pusht den Rest, Listen werden umgehängt, neue Register geladen. Auf Cortex-M4 grob 150–300 Takte; bei <span class="math inline">\(\geq 100\,\mathrm{MHz}\)</span> am STM32H755 also 2–3 Mikrosekunden. Der Latenz-Overhead ist real, für die meisten Anwendungen vernachlässigbar.</p>
+<p>Kein eigener Assembler im Labor. Referenz bleibt der CM4F-Port der eingesetzten Version.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1063,16 +1049,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="wann-wechselt-der-scheduler" class="slide level2">
 <h2>Wann wechselt der Scheduler?</h2>
 <ul>
-<li>Der Context Switch passiert nicht nur beim 1-ms-SysTick</li>
-<li>Das OS wechselt sofort asynchron, wenn:
-<ul>
-<li>eine laufende Task <code>vTaskDelay()</code> aufruft (freiwillig abgeben)</li>
-<li>ein Hardware-Interrupt (z. B. UART RX) Daten in eine Queue legt und dadurch eine blockierte Task mit höherer Prio aufweckt</li>
-</ul></li>
-<li>Genau das sorgt für minimale Latenzen in harten Echtzeitsystemen</li>
+<li>Tick, Yield, Blockieren, oder eine ISR, die einen höheren Thread bereit macht</li>
+<li>Der Wechsel läuft in PendSV, wenn die IRQ-Priorität das zulässt</li>
+<li>Nicht jeder Wechsel wartet auf den nächsten Tick</li>
+<li>SysTick und PendSV im üblichen Port: niedrigste IRQ-Priorität (VL2)</li>
 </ul>
 <aside class="notes">
-<p>Fehlannahme: Scheduler wechselt nur im 1-ms-Raster. Für harte Echtzeit zu langsam. <code>vTaskDelay</code> löst sofort PendSV aus. UART-ISR legt ein Byte in eine Queue: hochpriore wartende Task wird Ready; nach der ISR springt die CPU nicht zurück in die alte Task, sondern in die aufgeweckte.</p>
+<p>Pending ist nicht Running.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1087,47 +1070,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="vtaskdelay-vs.-hal_delay" class="slide level2">
 <h2>vTaskDelay vs.&nbsp;HAL_Delay</h2>
+<p><img data-src="../_livefigures/inline-plantuml-c3e10ea4.svg" class="livefigure"></p>
 <ul>
-<li>Das wichtigste Konzept für das Labor</li>
+<li>Busy-Wait: eigene Last, Zustand Running, präemptierbar</li>
+<li><code>osDelay</code>: Blocked, CPU für Ready oder Idle</li>
+<li>Laborregel für diese Threads: CMSIS-Warten</li>
 </ul>
-<table class="caption-top">
-<colgroup>
-<col style="width: 17%">
-<col style="width: 40%">
-<col style="width: 42%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Metrik</th>
-<th><code>HAL_Delay(100)</code></th>
-<th><code>vTaskDelay(...)</code></th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>CPU-Zustand</td>
-<td>Busy-Wait auf <code>uwTick</code></td>
-<td>Wechsel zu anderer Task / Idle</td>
-</tr>
-<tr class="even">
-<td>Task-Zustand</td>
-<td>Bleibt Running</td>
-<td>Wechselt nach Blocked</td>
-</tr>
-<tr class="odd">
-<td>Auslastung <span class="math inline">\(U\)</span></td>
-<td><span class="math inline">\(100\%\)</span> CPU-Last</td>
-<td><span class="math inline">\(0\%\)</span> CPU-Last</td>
-</tr>
-<tr class="even">
-<td>Fazit</td>
-<td>Zerstört Echtzeit</td>
-<td>Echtes OS-Scheduling</td>
-</tr>
-</tbody>
-</table>
 <aside class="notes">
-<p><code>HAL_Delay</code> ist Bare-Metal: Busy-Wait auf <code>uwTick</code> — die Task bleibt Running, die CPU kreist. Das OS denkt, die Task rechnet. <code>vTaskDelay</code> / <code>osDelay</code> sagt: fertig für 100 ms — Task blockiert, Auslastung nahe null, andere Tasks dürfen laufen. Im Labor: niemals <code>HAL_Delay</code> in FreeRTOS-Tasks.</p>
+<p>Heartbeat unter HeavyMath bleibt lange Blocked, die CPU-Summe bleibt hoch. Das ist kein Widerspruch.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1142,31 +1092,26 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="drift-freies-timing-vtaskdelayuntil" class="slide level2">
 <h2>Drift-freies Timing: vTaskDelayUntil</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
+<p>Ideales Modell, Tick 1 ms, Störungen 0. Arbeit <span class="math inline">\(2/4/1\,\mathrm{ms}\)</span>, danach relatives Delay 10 Ticks:</p>
 <ul>
-<li><code>vTaskDelay</code> blockiert relativ zur aktuellen Zeit</li>
-<li>Problem: Ausführungszeit verschiebt den nächsten Start (Drift)</li>
-<li>Lösung: <code>vTaskDelayUntil()</code> merkt sich den absoluten Startzeitpunkt</li>
-<li>Wichtig für präzise PID-Regler</li>
+<li>Starts <span class="math inline">\(0/12/26/37\,\mathrm{ms}\)</span></li>
+<li>Absolutes Sollraster <span class="math inline">\(0/10/20/30\,\mathrm{ms}\)</span>; die Arbeiten passen hier vor den nächsten Punkt</li>
+<li>Tatsächliche Starts können <span class="math inline">\(0/10{,}4/20{,}2/30{,}6\,\mathrm{ms}\)</span> sein: Raster gleich, Zuteilung schwankt</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a>TickType_t lastWakeTime<span class="op">;</span></span>
-<span id="cb4-2"><a aria-label="2"></a>lastWakeTime <span class="op">=</span> xTaskGetTickCount<span class="op">();</span></span>
-<span id="cb4-3"><a aria-label="3"></a></span>
-<span id="cb4-4"><a aria-label="4"></a><span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb4-5"><a aria-label="5"></a>    Rechne_PID<span class="op">();</span> <span class="co">// Dauer schwankt!</span></span>
-<span id="cb4-6"><a aria-label="6"></a></span>
-<span id="cb4-7"><a aria-label="7"></a>    <span class="co">// Startet exakt alle 100 ms,</span></span>
-<span id="cb4-8"><a aria-label="8"></a>    <span class="co">// ohne zeitlichen Drift:</span></span>
-<span id="cb4-9"><a aria-label="9"></a>    vTaskDelayUntil<span class="op">(</span></span>
-<span id="cb4-10"><a aria-label="10"></a>        <span class="op">&amp;</span>lastWakeTime<span class="op">,</span></span>
-<span id="cb4-11"><a aria-label="11"></a>        pdMS_TO_TICKS<span class="op">(</span><span class="dv">100</span><span class="op">)</span></span>
-<span id="cb4-12"><a aria-label="12"></a>    <span class="op">);</span></span>
-<span id="cb4-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">uint32_t</span> next <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    do_work<span class="op">();</span></span>
+<span id="cb4-4"><a aria-label="4"></a>    next <span class="op">+=</span> period_ticks<span class="op">;</span>          <span class="co">/* Wrap in uint32_t */</span></span>
+<span id="cb4-5"><a aria-label="5"></a>    osStatus_t st <span class="op">=</span> osDelayUntil<span class="op">(</span>next<span class="op">);</span></span>
+<span id="cb4-6"><a aria-label="6"></a>    <span class="cf">if</span> <span class="op">(</span>st <span class="op">==</span> osErrorParameter<span class="op">)</span> <span class="op">{</span> <span class="co">/* Ziel zu weit oder ungültig */</span> <span class="op">}</span></span>
+<span id="cb4-7"><a aria-label="7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>osDelayUntil</code> erwartet den <strong>absoluten</strong> Tick; native <code>xTaskDelayUntil</code> hat eine andere Signatur</li>
+<li>Überlast: Miss zählen und neu synchronisieren oder die Aktivierung verwerfen — keine stille Aufholschleife</li>
+<li>Grenze der Until-API: Abstand höchstens <span class="math inline">\(2^{31}-1\)</span> Ticks; ein kleinerer Zähler kann nach Wrap in der Zukunft liegen</li>
+</ul>
 <aside class="notes">
-<p><code>vTaskDelay</code> verzögert relativ zum Aufruf: 2 ms rechnen + 10 ms schlafen = Periode 12 ms; schwankt die Rechenzeit, driftet der Zyklus. PID braucht konstantes <span class="math inline">\(\Delta t\)</span>. <code>vTaskDelayUntil</code> nimmt den letzten Aufwach-Zeitpunkt und schläft nur die Restzeit — kein Drift über Stunden.</p>
+<p>„Startet exakt alle 100 ms“ ersetzen durch: nächstes Freigabeziel. Der CPU-Start hängt vom Scheduler ab.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1182,18 +1127,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-datei-freertosconfig.h" class="slide level2">
 <h2>Die Datei FreeRTOSConfig.h</h2>
 <ul>
-<li>Jeder Port von FreeRTOS benötigt diese Konfigurationsdatei</li>
-<li>Definiert das Verhalten des OS zur Kompilierzeit</li>
-<li>Wichtige Makros:
-<ul>
-<li><code>configUSE_PREEMPTION</code> (<span class="math inline">\(1\)</span> = an, <span class="math inline">\(0\)</span> = aus)</li>
-<li><code>configMAX_PRIORITIES</code> (Anzahl der Listen, oft 7)</li>
-<li><code>configMINIMAL_STACK_SIZE</code> (Mindest-RAM für die Idle-Task)</li>
-<li><code>configTOTAL_HEAP_SIZE</code> (RAM-Pool für dynamische Allokation)</li>
-</ul></li>
+<li>Tickrate, Heap, maximale Prioritäten, Assert, Stack-Overflow-Check</li>
+<li><code>configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY</code>: logische API-Schwelle</li>
+<li><code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code>: derselbe Wert in die Registerbits geschoben</li>
+<li>Grouping und <code>__NVIC_PRIO_BITS</code> am Projekt prüfen; 4 Bit und Schwelle 5 sind nur ein Beispiel</li>
+<li>Dann dürfen logische Stufen 0–4 keine Kernel-API rufen; 5–15 nur die erlaubten FromISR-Operationen</li>
 </ul>
 <aside class="notes">
-<p>Zuerst in <code>FreeRTOSConfig.h</code> schauen: präemptiv?, Prioritätsstufen?, Heap-Größe? <code>configTOTAL_HEAP_SIZE</code> entscheidet, ob Task-Erstellung zur Laufzeit fehlschlägt. In der STM32CubeIDE oft über das grafische Interface statt Handedit.</p>
+<p>Nicht die logische 5 in das NVIC-Register schreiben, als wäre sie schon verschoben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1209,14 +1150,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-scheduler-und-timing" class="slide level2">
 <h2>Zusammenfassung: Scheduler und Timing</h2>
 <ul>
-<li>FreeRTOS ist primär präemptiv (SysTick, PendSV)</li>
-<li>Die Tick-Rate bestimmt die feinste zeitliche Auflösung (meist <span class="math inline">\(1\,\mathrm{ms}\)</span>)</li>
-<li>Blocked-Tasks entlasten die CPU massiv</li>
-<li>Konfiguration statisch über C-Makros</li>
-<li>Prioritäten: hohe Zahl = hohe Prio (Achtung Cortex-M NVIC)</li>
+<li>Auswahl: höchste bereite Taskpriorität, Kosten konfigurationsabhängig</li>
+<li>Tickphase erklärt kurze <code>osDelay(1)</code>-Reste</li>
+<li>Until hält das Sollraster, nicht jeden Startzeitpunkt</li>
+<li>Idle arbeitet nur, wenn niemand darüber dauerhaft Ready ist</li>
 </ul>
 <aside class="notes">
-<p>Zusammenfassung Theorie: portables, präemptives OS; SysTick für Zeit, PendSV für Registertausch; blockierte Task kostet null Rechenzeit; Prioritäts-Fallstricke merken. Als Nächstes: Wie ruft man FreeRTOS im C-Code auf?</p>
+<p>Frage: Warum kann <code>osKernelStart</code> zurückkehren? Weil die Initialisierung fehlschlagen kann. Bei Erfolg kehrt der Aufruf normalerweise nicht zurück.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1232,17 +1172,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="freertos-api-vs.-cmsis-rtos-v2" class="slide level2">
 <h2>FreeRTOS API vs.&nbsp;CMSIS-RTOS v2</h2>
 <ul>
-<li>Native FreeRTOS-API ist historisch gewachsen (z. B. <code>xTaskCreate</code>)</li>
-<li>Problem: Vendor Lock-in — Wechsel zu Zephyr oder ThreadX wird teuer</li>
-<li>Lösung: CMSIS-RTOS v2 (ARM)
-<ul>
-<li>Standardisierte Abstraktionsschicht (Wrapper)</li>
-<li>Einheitliche C-Funktionen (z. B. <code>osThreadNew</code>)</li>
-<li>Darunter kann ein beliebiges RTOS liegen</li>
-</ul></li>
+<li>CMSIS-RTOS2 ist der Adapter, den Cube für STM32 erzeugt</li>
+<li>Weniger direkte Abhängigkeit von <code>vTask…</code>, aber nicht jedes RTOS bietet dieselben Objekte</li>
+<li>Thread-Flags: ein Bit signalisiert; wiederholtes Setzen <strong>zählt nicht</strong> verlustfrei</li>
+<li>Rückgabe von <code>osThreadFlagsWait</code> sind Flag-Bits, Fehler über gesetzte Fehlerbits — nicht mit <code>osOK</code> vergleichen</li>
 </ul>
 <aside class="notes">
-<p>FreeRTOS-Namen mit <code>x</code>/<code>v</code>/<code>pc</code> (ungarische Notation). Reine FreeRTOS-API kettet an den Vendor. CMSIS-RTOS ist ein Wörterbuch: <code>osThreadNew</code> wird intern zu <code>xTaskCreate</code>. OS wechseln = Kern tauschen, Applikationscode bleibt.</p>
+<p><code>osThreadFlagsSet</code> darf aus einer ISR, <code>osThreadFlagsWait</code> nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1258,42 +1194,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="stmicroelectronics-und-cmsis" class="slide level2">
 <h2>STMicroelectronics und CMSIS</h2>
 <ul>
-<li>Die STM32CubeIDE generiert standardmäßig CMSIS-RTOS v2</li>
-<li>FreeRTOS dient uns als Backend</li>
+<li>Heute: Kernel auf dem CM4, CMSIS_V2</li>
+<li>Ab CubeIDE 2.0 oft: CubeMX separat, Projekt importieren</li>
+<li>Ältere IDE: Device Configuration Tool innen</li>
+<li>Menüpunkte an der <strong>installierten</strong> Version prüfen, nicht auswendig</li>
+<li>Generierte Thread-Funktionen können in <code>main.c</code> oder <code>freertos.c</code> liegen</li>
 </ul>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Aktion</th>
-<th>FreeRTOS nativ</th>
-<th>CMSIS-RTOS v2</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Task erstellen</td>
-<td><code>xTaskCreate()</code></td>
-<td><code>osThreadNew()</code></td>
-</tr>
-<tr class="even">
-<td>Task blockieren</td>
-<td><code>vTaskDelay()</code></td>
-<td><code>osDelay()</code></td>
-</tr>
-<tr class="odd">
-<td>Queue anlegen</td>
-<td><code>xQueueCreate()</code></td>
-<td><code>osMessageQueueNew()</code></td>
-</tr>
-<tr class="even">
-<td>Zeit holen</td>
-<td><code>xTaskGetTickCount()</code></td>
-<td><code>osKernelGetTickCount()</code></td>
-</tr>
-</tbody>
-</table>
 <aside class="notes">
-<p>CubeIDE stülpt den CMSIS-v2-Wrapper über FreeRTOS. Ab hier und im Labor: CMSIS (<code>osDelay</code>, <code>osThreadNew</code>). Native FreeRTOS-API (<code>vTaskDelay</code> + <code>pdMS_TO_TICKS</code>) nur als kurzer Vergleich — nicht mit Roh-Tick-<code>osDelay</code> vermischen ohne klare Tick-Rate.</p>
+<p>Keine .ioc im Repo, deshalb keine behauptete Cube-Version.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1308,29 +1216,22 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="ein-cmsis-thread-im-code" class="slide level2">
 <h2>Ein CMSIS-Thread im Code</h2>
-<div class="columns">
-<div class="column" style="width:45%;">
-<ul>
-<li>Thread-Attribute: Name, Stack-Größe, Prio</li>
-<li>Danach Anmeldung beim OS</li>
-<li>Falle: CMSIS erwartet Stack-Größe in Bytes, nicht in Wörtern</li>
-</ul>
-</div><div class="column" style="width:55%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">const</span> osThreadAttr_t myTaskAttr <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb5-2"><a aria-label="2"></a>  <span class="op">.</span>name <span class="op">=</span> <span class="st">"MyTask"</span><span class="op">,</span></span>
-<span id="cb5-3"><a aria-label="3"></a>  <span class="op">.</span>stack_size <span class="op">=</span> <span class="dv">1024</span><span class="op">,</span> <span class="co">// Bytes!</span></span>
-<span id="cb5-4"><a aria-label="4"></a>  <span class="op">.</span>priority <span class="op">=</span> osPriorityNormal<span class="op">,</span></span>
-<span id="cb5-5"><a aria-label="5"></a><span class="op">};</span></span>
-<span id="cb5-6"><a aria-label="6"></a></span>
-<span id="cb5-7"><a aria-label="7"></a>osThreadId_t myTaskHandle <span class="op">=</span></span>
-<span id="cb5-8"><a aria-label="8"></a>    osThreadNew<span class="op">(</span></span>
-<span id="cb5-9"><a aria-label="9"></a>        MyTask_Function<span class="op">,</span></span>
-<span id="cb5-10"><a aria-label="10"></a>        NULL<span class="op">,</span></span>
-<span id="cb5-11"><a aria-label="11"></a>        <span class="op">&amp;</span>myTaskAttr</span>
-<span id="cb5-12"><a aria-label="12"></a>    <span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a>osThreadId_t hHb<span class="op">;</span></span>
+<span id="cb5-2"><a aria-label="2"></a><span class="dt">const</span> osThreadAttr_t attrHb <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb5-3"><a aria-label="3"></a>    <span class="op">.</span>name <span class="op">=</span> <span class="st">"Heartbeat"</span><span class="op">,</span></span>
+<span id="cb5-4"><a aria-label="4"></a>    <span class="op">.</span>priority <span class="op">=</span> osPriorityNormal<span class="op">,</span></span>
+<span id="cb5-5"><a aria-label="5"></a>    <span class="op">.</span>stack_size <span class="op">=</span> <span class="dv">512</span>   <span class="co">/* Byte, generierten Wert gegenprüfen */</span></span>
+<span id="cb5-6"><a aria-label="6"></a><span class="op">};</span></span>
+<span id="cb5-7"><a aria-label="7"></a></span>
+<span id="cb5-8"><a aria-label="8"></a><span class="dt">void</span> app_create<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-9"><a aria-label="9"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelInitialize<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span> Error_Handler<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb5-10"><a aria-label="10"></a>    hHb <span class="op">=</span> osThreadNew<span class="op">(</span>Heartbeat<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>attrHb<span class="op">);</span></span>
+<span id="cb5-11"><a aria-label="11"></a>    <span class="cf">if</span> <span class="op">(</span>hHb <span class="op">==</span> NULL<span class="op">)</span> <span class="op">{</span> Error_Handler<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb5-12"><a aria-label="12"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelStart<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span> Error_Handler<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb5-13"><a aria-label="13"></a>    <span class="co">/* Erfolg: hier kommt man üblicherweise nicht an */</span></span>
+<span id="cb5-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>CMSIS nennt Tasks Threads. Struct mit Name, Stack und Prio. Falle: 1024 bedeutet 1 KB Bytes; nativ FreeRTOS hätte 256 Wörter verlangt. <code>osThreadNew</code> legt TCB an und setzt Ready.</p>
+<p>Jedes Handle und jeder Status. Dieselbe Prüfung für HeavyMath und Emergency.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1345,21 +1246,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="starten-des-betriebssystems" class="slide level2">
 <h2>Starten des Betriebssystems</h2>
-<ul>
-<li>Nach Hardware-Init und Task-Anlage: Kontrolle abgeben</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a>osKernelStart<span class="op">();</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Was passiert?
-<ul>
-<li>SysTick wird auf <span class="math inline">\(1\,\mathrm{ms}\)</span> programmiert</li>
-<li>Scheduler durchsucht die Ready-Liste</li>
-<li>Stack-Pointer springt in die Task mit höchster Prio</li>
-</ul></li>
-<li>Wichtigste Regel: Code nach <code>osKernelStart()</code> wird niemals ausgeführt</li>
-</ul>
+<ol type="1">
+<li>Takt, GPIO, EXTI — IRQ des Tasters noch aus</li>
+<li><code>osKernelInitialize</code> erfolgreich</li>
+<li>Threads anlegen, Handles prüfen</li>
+<li><code>osKernelStart</code></li>
+<li>Erst dann EXTI freigeben, wenn das Emergency-Handle gilt</li>
+</ol>
+<p>Tickfrequenz kommt aus der Config, nicht automatisch aus „immer 1 ms“.</p>
 <aside class="notes">
-<p>Point of no Return: <code>osKernelStart()</code> (nativ: <code>vTaskStartScheduler()</code>). SysTick, Sprung in den ersten TCB, kein Return. Ein <code>printf</code> darunter erscheint nie — der lineare Bare-Metal-Pfad ist beendet.</p>
+<p>Fehlerzweige nicht löschen, nur weil der Erfolgspfad nicht zurückkehrt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1375,18 +1271,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="fehlerbehandlung-wenn-ram-fehlt" class="slide level2">
 <h2>Fehlerbehandlung: Wenn RAM fehlt</h2>
 <ul>
-<li>Erschöpfter Heap: <code>osThreadNew</code> liefert <code>NULL</code></li>
-<li>Immer prüfen, sonst Hard Fault zur Laufzeit</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>myTaskHandle <span class="op">==</span> NULL<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb7-2"><a aria-label="2"></a>    <span class="co">// Kein RAM mehr für TCB oder Stack</span></span>
-<span id="cb7-3"><a aria-label="3"></a>    Error_Handler<span class="op">();</span></span>
-<span id="cb7-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Labor-Tipp: Task startet nicht? <code>configTOTAL_HEAP_SIZE</code> in CubeMX erhöhen</li>
+<li><code>osThreadNew</code> → <code>NULL</code>: Heap, Stackgröße oder Priorität</li>
+<li>Assert, Overflow-Hook, High-Water-Mark in der Einheit der API</li>
+<li>Heap-Reste und Linker-Map, nicht „Stack verdoppeln“</li>
+<li>HardFault hat viele Ursachen; Overflow beschädigt zuerst Speicher und faultet nicht zuverlässig</li>
 </ul>
 <aside class="notes">
-<p>Zu viele Tasks: dynamische Allokation schlägt fehl, Handle ist <code>NULL</code>. Professionell abfangen (rote LED, Stop). Im Debugger springt eine Task nicht an? Meist voller Heap — Gesamtgröße erhöhen.</p>
+<p>Keine 90-%-Behauptung. Endliche Watermark-Tests sind Stichproben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1402,13 +1293,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="schritt-1-stm32cubeide-setup" class="slide level2">
 <h2>Schritt 1: STM32CubeIDE-Setup</h2>
 <ul>
-<li>Ziel: FreeRTOS auf dem Cortex-M4, präemptives Prioritäts-Scheduling live beweisen (Prioritäten nach Kritikalität — das ist <em>nicht</em> Rate Monotonic, dafür bräuchten wir Perioden <span class="math inline">\(\rightarrow\)</span> Prioritäten)</li>
-<li>Neues Projekt STM32H755 (Cortex-M4 aktivieren)</li>
-<li>Middleware: FREERTOS, Interface CMSIS_V2</li>
-<li><code>TOTAL_HEAP_SIZE</code> mindestens <span class="math inline">\(16384\)</span> Bytes (<span class="math inline">\(16\,\mathrm{KB}\)</span>)</li>
+<li>Board NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, FreeRTOS nur für den CM4, Interface CMSIS_V2</li>
+<li>Heap so groß wählen, dass die drei Threads plus Idle/Timer laut Map passen — 16 KB ist ein Startwert, kein Beweis</li>
+<li>LED LD2 = PE1 (MB1363); Tasterpin und EXTI am Schaltplan prüfen</li>
+<li>Prioritäten anlegen und in <code>cmsis_os2.c</code> nachsehen, ob sie unverändert ankommen</li>
 </ul>
 <aside class="notes">
-<p>Nicht mehr selbst basteln: echtes RTOS per CubeIDE. Middleware FreeRTOS, CMSIS_V2, Heap sofort auf 16 KB — sonst knallt es beim Anlegen mehrerer Tasks.</p>
+<p>Starvation-Versuch später: HeavyMath auf <code>osPriorityAboveNormal</code>, weiter unter Emergency. Bleiben beide auf High, Zeitscheibe und Gleichstand extra betrachten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1423,22 +1314,33 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-2-der-konflikt-der-timer" class="slide level2">
 <h2>Schritt 2: Der Konflikt der Timer</h2>
+<p>Gewählte Laborkonfiguration, kein Naturgesetz:</p>
 <ul>
-<li>Problem:
-<ul>
-<li>HAL nutzt SysTick für <code>HAL_Delay()</code></li>
-<li>FreeRTOS braucht SysTick zwingend für den Scheduler</li>
-<li>Beide auf demselben Timer: Absturz zur Laufzeit</li>
-</ul></li>
-<li>Lösung (CubeMX-Warnung!):
-<ul>
-<li>System Core <span class="math inline">\(\rightarrow\)</span> SYS <span class="math inline">\(\rightarrow\)</span> Timebase Source</li>
-<li>Von SysTick auf TIM6 umstellen</li>
-<li>HAL nutzt TIM6; SysTick gehört FreeRTOS exklusiv</li>
-</ul></li>
+<li>SysTick: Kernel-Tick</li>
+<li>TIM6, falls frei: HAL <code>uwTick</code></li>
+<li>Beide auf dem CM4, Priorität und Handlerkette prüfen</li>
+<li>Ein gemeinsamer SysTick ist bei korrekter Integration möglich</li>
+<li>FreeRTOS kann auch einen anderen Tick-Timer nutzen</li>
 </ul>
+<div class="cell" data-reveal="true" data-fig-width="5.5" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  ST[SysTick] --&gt; K[Kernel-Tick]
+  T6[TIM6] --&gt; H[HAL uwTick]
+  K --&gt; M4[CM4]
+  H --&gt; M4
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <aside class="notes">
-<p>CubeIDE warnt sofort: HAL und FreeRTOS kämpfen um SysTick. Lösung: HAL-Timebase auf TIM6. SysTick frei für den Scheduler.</p>
+<p>„Gleicher SysTick stürzt immer ab“ streichen. Getrennte Basen sind die konkrete Laborwahl, damit HAL-Delay und Kernel sich nicht dieselbe ISR teilen müssen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1453,16 +1355,43 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-3-task-design-für-das-labor" class="slide level2">
 <h2>Schritt 3: Task-Design für das Labor</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Thread</th>
+<th>Priorität</th>
+<th>Verhalten</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Emergency</td>
+<td>hoch</td>
+<td>wartet auf Flag, kurze Reaktion</td>
+</tr>
+<tr class="even">
+<td>Heartbeat</td>
+<td>normal</td>
+<td>Sollraster 500 ms, Toggle PE1</td>
+</tr>
+<tr class="odd">
+<td>HeavyMath</td>
+<td>darunter</td>
+<td>dauerhaft Ready, Ergebnis benutzen</td>
+</tr>
+<tr class="even">
+<td>Idle</td>
+<td>nativ 0</td>
+<td>kommt im Normalversuch nicht dran</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Drei Tasks, um Fixed-Priority-Präemption zu beweisen:
-<ul>
-<li>Heartbeat (<code>osPriorityNormal</code>): LED alle <span class="math inline">\(500\,\mathrm{ms}\)</span> via <code>osDelay</code></li>
-<li>HeavyMath (<code>osPriorityBelowNormal</code>): Endlosschleife ohne Delay, <span class="math inline">\(100\%\)</span> CPU</li>
-<li>Emergency (<code>osPriorityHigh</code>): wartet auf Tastendruck (später per Queue)</li>
-</ul></li>
+<li>Vollständiger LED-Zyklus bei Toggle alle 500 ms: etwa 1 s</li>
+<li>Emergency keine Endlos-Ready-Schleife und kein <code>printf</code> als Messmarker</li>
 </ul>
 <aside class="notes">
-<p>Heartbeat: normale Prio, blinkt alle 500 ms. HeavyMath: niedrigere Prio, reine while-Schleife ohne Delay. Emergency: höchste Prio, meist blockiert auf Taste. Drei Tasks im Configurator anlegen und Code generieren.</p>
+<p>Überblick 0–1100 ms, Lehre: Heartbeat-Ziele 0/500/1000, Ereignis bei 750, HeavyMath in den Lücken. Kurze Kernelzeiten nur im Detail, nicht als gemessene Balken.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1477,23 +1406,20 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="code-struktur-nach-generierung" class="slide level2">
 <h2>Code-Struktur nach Generierung</h2>
-<ul>
-<li>CubeIDE platziert CMSIS-Aufrufe (<code>osThreadNew</code>) in <code>main.c</code></li>
-<li>Unten: leere Skelette für die Task-Funktionen</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> Header_StartHeartbeat */</span></span>
-<span id="cb8-2"><a aria-label="2"></a><span class="dt">void</span> StartHeartbeat<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span></span>
-<span id="cb8-3"><a aria-label="3"></a><span class="op">{</span></span>
-<span id="cb8-4"><a aria-label="4"></a>  <span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> StartHeartbeat */</span></span>
-<span id="cb8-5"><a aria-label="5"></a>  <span class="cf">for</span><span class="op">(;;)</span></span>
-<span id="cb8-6"><a aria-label="6"></a>  <span class="op">{</span></span>
-<span id="cb8-7"><a aria-label="7"></a>    HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
-<span id="cb8-8"><a aria-label="8"></a>    osDelay<span class="op">(</span><span class="dv">500</span><span class="op">);</span> <span class="co">// Ticks; bei 1000 Hz = 500 ms</span></span>
-<span id="cb8-9"><a aria-label="9"></a>  <span class="op">}</span></span>
-<span id="cb8-10"><a aria-label="10"></a>  <span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> StartHeartbeat */</span></span>
-<span id="cb8-11"><a aria-label="11"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Code in den Funktions-<code>USER CODE</code>-Block, nicht in <code>Header_…</code>-Kommentare. Keine zweite Definition derselben Thread-Funktion.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> StartHeartbeatTask */</span></span>
+<span id="cb6-2"><a aria-label="2"></a><span class="dt">uint32_t</span> next <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb6-3"><a aria-label="3"></a><span class="dt">uint32_t</span> period <span class="op">=</span> ms_to_ticks_ceil<span class="op">(</span><span class="dv">500</span><span class="op">);</span></span>
+<span id="cb6-4"><a aria-label="4"></a><span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-5"><a aria-label="5"></a>    HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
+<span id="cb6-6"><a aria-label="6"></a>    next <span class="op">+=</span> period<span class="op">;</span></span>
+<span id="cb6-7"><a aria-label="7"></a>    <span class="cf">if</span> <span class="op">(</span>osDelayUntil<span class="op">(</span>next<span class="op">)</span> <span class="op">==</span> osErrorParameter<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-8"><a aria-label="8"></a>        next <span class="op">=</span> osKernelGetTickCount<span class="op">();</span> <span class="co">/* bewusst neu aufsetzen */</span></span>
+<span id="cb6-9"><a aria-label="9"></a>    <span class="op">}</span></span>
+<span id="cb6-10"><a aria-label="10"></a><span class="op">}</span></span>
+<span id="cb6-11"><a aria-label="11"></a><span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> StartHeartbeatTask */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>In <code>main.c</code> ganz unten: generierte Task-Skelette. Heartbeat: Toggle + <code>osDelay(500)</code>. Bei <code>configTICK_RATE_HZ = 1000</code> sind das <span class="math inline">\(500\,\mathrm{ms}\)</span> — CMSIS-<code>osDelay</code> nimmt Ticks, nicht Millisekunden (anders als <code>pdMS_TO_TICKS(...)</code> in der nativen FreeRTOS-API). Im Labor: CMSIS (<code>osDelay</code>); native API nur zum Vergleich. Diese Task verbringt fast die gesamte Lebenszeit im Blocked-Zustand.</p>
+<p>Bei verpasstem Ziel nicht in einer Aufholschleife stecken bleiben. <code>osError</code> vom Kernelstart nicht mit einem gewöhnlichen Miss verwechseln.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1508,21 +1434,41 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="code-skelett-die-heavymath-task" class="slide level2">
 <h2>Code-Skelett: Die HeavyMath-Task</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="co">/* USER CODE </span><span class="re">BEGIN</span><span class="co"> StartHeavyMathTask */</span></span>
+<span id="cb7-2"><a aria-label="2"></a><span class="dt">static</span> <span class="dt">volatile</span> <span class="dt">uint32_t</span> acc<span class="op">;</span></span>
+<span id="cb7-3"><a aria-label="3"></a><span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb7-4"><a aria-label="4"></a>    acc <span class="op">=</span> acc <span class="op">*</span> <span class="dv">1664525</span><span class="bu">u</span> <span class="op">+</span> <span class="dv">1013904223</span><span class="bu">u</span><span class="op">;</span> <span class="co">/* benutztes Ergebnis */</span></span>
+<span id="cb7-5"><a aria-label="5"></a><span class="op">}</span></span>
+<span id="cb7-6"><a aria-label="6"></a><span class="co">/* USER CODE </span><span class="re">END</span><span class="co"> StartHeavyMathTask */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Diese Task bricht die Blockade-Regel absichtlich</li>
+<li>Kein <code>osDelay</code>, keine IRQ-Sperre</li>
+<li>Der seltene GPIO-Schreibzugriff hält die Rechnung lebendig, ohne die LED-Messung zu dominieren</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb9-1"><a aria-label="1"></a><span class="dt">void</span> StartHeavyMath<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span></span>
-<span id="cb9-2"><a aria-label="2"></a><span class="op">{</span></span>
-<span id="cb9-3"><a aria-label="3"></a>  <span class="dt">volatile</span> <span class="dt">uint32_t</span> primes_found <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb9-4"><a aria-label="4"></a>  <span class="cf">for</span><span class="op">(;;)</span></span>
-<span id="cb9-5"><a aria-label="5"></a>  <span class="op">{</span></span>
-<span id="cb9-6"><a aria-label="6"></a>     <span class="co">// KEIN osDelay! 100% CPU.</span></span>
-<span id="cb9-7"><a aria-label="7"></a>     <span class="co">// In Bare-Metal: System freezt.</span></span>
-<span id="cb9-8"><a aria-label="8"></a>     Calculate_Primes<span class="op">(&amp;</span>primes_found<span class="op">);</span></span>
-<span id="cb9-9"><a aria-label="9"></a>  <span class="op">}</span></span>
-<span id="cb9-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Primzahlen, Hashes oder Counter — Variable <code>volatile</code>, sonst optimiert der Compiler die Schleife weg. Kein <code>osDelay</code>: Running wird nie freiwillig verlassen. Beim kooperativen Scheduler von letzter Woche wäre hier alles eingefroren.</p>
+<p>Ein ungenutzter Zähler wird bei Optimierung oft entfernt. Priorität unter Heartbeat, sonst Starvation.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="vom-taster-zum-emergency-thread" class="slide level2">
+<h2>Vom Taster zum Emergency-Thread</h2>
+<p><img data-src="../_livefigures/inline-plantuml-3c8d2f85.svg" class="livefigure"></p>
+<ul>
+<li>ISR: <code>osThreadFlagsSet(hEm, 0x1)</code> — nur wenn Handle und Kernel leben und die IRQ-Priorität es darf</li>
+<li>Thread: <code>osThreadFlagsWait(0x1, osFlagsWaitAny, osWaitForever)</code>, dann kurze Reaktion, wieder warten</li>
+<li>Dasselbe Bit kann mehrere Flanken zu einem Wake zusammenfassen</li>
+<li>Entprellung und erlaubte Rate festlegen; der Thread wartet nicht auf den nächsten Tick</li>
+</ul>
+<aside class="notes">
+<p>Native <code>xTaskNotifyFromISR</code> plus <code>portYIELD_FROM_ISR</code> nur als Vergleich. Vorhandenen HAL-Callback nutzen, keinen zweiten Handler erzeugen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1538,20 +1484,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="beobachtung-1-der-präemptions-beweis" class="slide level2">
 <h2>Beobachtung 1: Der Präemptions-Beweis</h2>
 <ul>
-<li>Code auf den STM32H755 flashen</li>
-<li>Was passiert?
-<ul>
-<li>Heartbeat-LED blinkt stabil im <span class="math inline">\(500\,\mathrm{ms}\)</span>-Takt</li>
-</ul></li>
-<li>Warum friert das System nicht ein?
-<ul>
-<li>Heartbeat: Normal; HeavyMath: BelowNormal</li>
-<li>Nach <span class="math inline">\(500\,\mathrm{ms}\)</span> weckt SysTick Heartbeat</li>
-<li>Höhere Prio: OS reißt HeavyMath die CPU weg (Präemption)</li>
-</ul></li>
+<li>HeavyMath bleibt Ready und rechnet in den Lücken</li>
+<li>Heartbeat wird am Sollpunkt Ready und verdrängt HeavyMath, weil die Priorität höher ist</li>
+<li>Das zeigt Präemption, nicht eine harte Frist und nicht „Jitter ≈ 0“</li>
+<li>Stabiles Blinken ist kein Deadline-Nachweis</li>
 </ul>
 <aside class="notes">
-<p>LED blinkt trotz 100%-Mathe-Schleife. Heartbeat schläft Blocked; HeavyMath nutzt Idle-Zeit. SysTick weckt Heartbeat; PendSV wirft Mathe von der CPU, Toggle, wieder Delay, zurück zur Mathematik.</p>
+<p>Messung, falls ein Oszi da ist: Pulsbreite und Startabstand getrennt. Lehrkurven synthetisch lassen. Ohne Board keine Messwerte eintragen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1566,12 +1505,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visuelle-erklärung-präemption-im-labor" class="slide level2">
 <h2>Visuelle Erklärung: Präemption im Labor</h2>
-<p><img data-src="../_livefigures/inline-plantuml-d4ba4abd.svg" class="livefigure"></p>
+<p>Ziele Heartbeat: <span class="math inline">\(0\)</span>, <span class="math inline">\(500\)</span>, <span class="math inline">\(1000\,\mathrm{ms}\)</span>. Angenommenes Flag bei <span class="math inline">\(750\,\mathrm{ms}\)</span>.</p>
 <ul>
-<li>CPU dauerhaft bei <span class="math inline">\(100\%\)</span>, Auslastung aber nach Prioritäten (Fixed Priority) aufgeteilt</li>
+<li>Dazwischen HeavyMath, solange Emergency blockiert</li>
+<li>Bei 750: EXTI, Flag, PendSV, kurze Emergency-Arbeit, wieder Blocked</li>
+<li>Zwei Spuren denkbar: Stimulus und Emergency-GPIO</li>
+<li>Endpunkte der Latenz vorher festlegen (Flanke bis erste Thread-Anweisung oder bis GPIO)</li>
 </ul>
 <aside class="notes">
-<p>t=0: Emergency und Heartbeat Blocked, HeavyMath Running. t=2: Heartbeat-Timer, Präemption. t=3: Blinken fertig, wieder Delay, HeavyMath weiter. t=5: Emergency-Button, Prio High übernimmt sofort. Fixed-Priority-Präemption auf Hardware-Ebene — nicht Rate Monotonic (Prioritäten hier nach Kritikalität, nicht nach Periode).</p>
+<p>IRQ- und Kernelanteile nicht in die Task-Balken schummeln. 150–300 Zyklen bleiben Lehrannahme.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1587,19 +1529,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="beobachtung-2-starvation-durch-falsche-prioritäten" class="slide level2">
 <h2>Beobachtung 2: Starvation durch falsche Prioritäten</h2>
 <ul>
-<li>Absichtlicher Fehler zum Verständnis von Prioritäts-Scheduling:
-<ul>
-<li>HeavyMath-Prio <span class="math inline">\(\rightarrow\)</span> <code>osPriorityHigh</code> (höher als Heartbeat)</li>
-</ul></li>
-<li>Flashen und beobachten:
-<ul>
-<li>LED bleibt dunkel / blinkt nie wieder</li>
-<li>Heartbeat verhungert in der Ready-Liste (Starvation)</li>
-<li>Hochpriore Endlosschleife gibt die CPU nicht frei</li>
-</ul></li>
+<li>HeavyMath auf <code>osPriorityAboveNormal</code>: über Heartbeat, unter Emergency</li>
+<li>Heartbeat wird Ready und bleibt es; die LED kann an <strong>oder</strong> aus stehen bleiben</li>
+<li>Das ist Starvation, keine Priority Inversion</li>
+<li><code>osThreadYield</code> in HeavyMath ändert nichts, solange HeavyMath Ready bleibt</li>
+<li>Danach die normalen Prioritäten wiederherstellen</li>
 </ul>
 <aside class="notes">
-<p>HeavyMath auf High: LED tot. Heartbeat wacht auf, Scheduler sagt: Prio Normal gegen High — warten. Mathe-Schleife endet nie → Starvation. Das ist kein Priority Inversion (dort hält niedrige Prio eine Sperre); hier reine Verhungerung durch falsche Prioritäten. Scharfes Schwert!</p>
+<p>Priority Inversion braucht eine gemeinsam gehaltene Ressource. Die kommt in einem späteren Termin.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1614,18 +1551,20 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="debugging-stack-overflow-erkennen" class="slide level2">
 <h2>Debugging: Stack Overflow erkennen</h2>
+<ol type="1">
+<li>Kernelstart oder Handle fehlgeschlagen?</li>
+<li>Takt, IRQ, Boot, EXTI-Priorität?</li>
+<li>Task Ready, aber verdrängt?</li>
+<li>Assert oder Overflow-Hook?</li>
+<li>Watermark, Heap, Map, Fehlerregister?</li>
+</ol>
 <ul>
-<li>Board tut nichts (keine LED, kein sichtbarer Code)?</li>
-<li>Oft: Stack der Task zu klein (Stack Overflow)</li>
-<li>Hardware-Tipp:
-<ul>
-<li>Cortex-M4 löst HardFault aus</li>
-<li>Debugger pausieren: Ausführung steckt in <code>HardFault_Handler()</code></li>
-</ul></li>
-<li>Lösung: In CubeMX Stack Size der betroffenen Task verdoppeln</li>
+<li>Hook und <code>configASSERT</code> einschalten, wenn das Projekt das vorsieht</li>
+<li>Keine CMSIS-Funktion erfinden, die es nicht gibt; Watermark ist backendbezogen (<code>uxTaskGetStackHighWaterMark</code> o. ä.)</li>
+<li>Reserve aus Messung, nicht aus Verdopplung als einzigem Rezept</li>
 </ul>
 <aside class="notes">
-<p>90 % der „nichts tut“-Fälle: Stack Overflow durch lokale Variablen. Hardware wirft HardFault; Call-Stack zeigt <code>HardFault_Handler</code>. Cube-Configurator: Stack verdoppeln.</p>
+<p>Frage: Warum ist „90 % sind Stack Overflow“ falsch? Weil auch Priorität, Heap, IRQ-Schwelle und Boot dieselbe LED dunkel lassen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1641,14 +1580,57 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-des-tages" class="slide level2">
 <h2>Zusammenfassung des Tages</h2>
 <ul>
-<li>RTOS: maximale Geschwindigkeit (Latenz) gegen Garantie (Determinismus)</li>
-<li>Jede Task braucht RAM-Budget (TCB + eigener Stack)</li>
-<li>Blockierte Task: <span class="math inline">\(0\%\)</span> Rechenzeit — niemals reine C-Delays</li>
-<li>CMSIS-RTOS v2 schützt vor Vendor Lock-in</li>
-<li>Timer-Interrupts und Prioritäten verhindern das Einfrieren wichtiger Teile</li>
+<li>Kernel auf dem CM4 strukturiert Threads; Analyse bleibt nötig</li>
+<li>512 Byte Stack ≠ 128 Byte; drei Beispielthreads unter der 80-Byte-TCB-Annahme: 2800 Byte</li>
+<li>Blocked spart eigene Befehle, nicht jeden Kernel-Tick</li>
+<li><code>osDelayUntil</code> setzt das Raster; Starts können trotzdem zittern</li>
+<li>Emergency: Flag aus erlaubter ISR, dann kurze Arbeit</li>
 </ul>
 <aside class="notes">
-<p>Sie verstehen den Latenz-Determinismus-Trade-off, das RAM-Modell und CMSIS als API. Im Labor: präemptives Scheduling live und die Gefahr falsch gesetzter Prioritäten. Vielen Dank — bis gleich im Labor!</p>
+<p>Kontrollen: <span class="math inline">\(128 \times 4 = 512\)</span>; <span class="math inline">\(512+80 = 592\)</span>; <span class="math inline">\(512+1024+1024+240 = 2800\)</span>. Relative Starts <span class="math inline">\(0/12/26/37\)</span>. Absolut <span class="math inline">\(0/10/20/30\)</span>. <span class="math inline">\(150\)</span>–<span class="math inline">\(300\)</span> Zyklen bei <span class="math inline">\(100\,\mathrm{MHz}\)</span> sind <span class="math inline">\(1{,}5\)</span>–<span class="math inline">\(3\,\text{µs}\)</span>.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="ausblick-auf-termin-4" class="slide level2">
+<h2>Ausblick auf Termin 4</h2>
+<ul>
+<li>Gemeinsame Daten, Mutex, Priority Inversion</li>
+<li>Bis dahin: keine blockierenden API-Aufrufe in ISRs</li>
+<li>Laborprojekt mit den drei Threads mitbringen</li>
+</ul>
+<aside class="notes">
+<p>Kommunikation nicht heute vorwegnehmen. Thread-Flags bleiben die kleine Ausnahme für Emergency.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="quellen" class="slide level2">
+<h2>Quellen</h2>
+<ul>
+<li>Arm CMSIS-RTOS2: Kernel, Threads, Wait, Thread Flags</li>
+<li>ARM-software/CMSIS-FreeRTOS, Stand am Wrapper prüfen</li>
+<li>FreeRTOS-Kernel, Port GCC/ARM_CM4F; Dokument zu Delays, Stack, Tickless, Cortex-M-Prioritäten</li>
+<li>ST AN5361, PM0214, UM2408, RM0399 — Revision am verwendeten PDF</li>
+</ul>
+<aside class="notes">
+<p>Öffentliche main-Zweige belegen nicht die Laborversion. Keine Oszi-Zahlen ohne Protokoll.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
