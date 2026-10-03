@@ -1,920 +1,783 @@
 ---
 title: "06 · Multicore-Echtzeit"
-subtitle: "AMP, STM32H755 und Shared Memory · EZS · DHBW Stuttgart"
+subtitle: "AMP, Shared Memory, Cache und MPU · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 # Vortrag:  quarto preview vorlesungen/06_multicore-echtzeit.qmd
-#           (Notizen nur mit Taste S)
 # Handout:  quarto render vorlesungen/06_multicore-echtzeit.qmd --profile handout --to pdf
-#           → _handout/vorlesungen/06_multicore-echtzeit.pdf
 format: revealjs
 ---
 
 ## Willkommen in der Multicore-Königsklasse!
 
-- Herzlich willkommen zum 6. Termin unserer Vorlesung
-- Die letzten 5 Wochen: Single-Core-Echtzeit (Scheduling, IPC, Interrupts)
-- Heute heben wir die Komplexität auf das nächste Level: Multicore-Systeme
-- Zwei unterschiedliche Prozessorkerne in einem Chip
-- Praxis am Nachmittag: zweites „Gehirn“ des STM32H755 aufwecken
+- Sechster Termin: zwei Kerne, ein Chip, keine automatische Isolation
+- Labor: **M7 Bare-Metal**, **M4 FreeRTOS** (CMSIS-RTOS2)
+- HSEM kommt hier als **Boot-Handshake** vor, wenn das Template ihn erzeugt
+- HSEM als Laufzeitsperre bleibt Termin 8
+- Nächstes Mal: Tracing, nicht die volle HSEM-Vorlesung
 
 ::: notes
-Guten Morgen und herzlich willkommen in der Königsklasse der Embedded-Programmierung! In den letzten fünf Wochen: Task-Scheduling, Queues, Hardware-Interrupts über Semaphoren — alles auf einem Prozessorkern. Heute: Multicore-Architekturen, warum Ihr PC anders tickt als ein Steuergerät, und wie wir auf dem STM32H755 zwei Kerne parallel und sicher betreiben.
+Keine .ioc und kein HAL-Baum im Kursrepo. Funktionsnamen, Takte und Boardrevision am generierten Projekt prüfen. NUCLEO-H755ZI-Q nur, wenn Cube dieses Board erzeugt hat.
 :::
 
 ## Agenda für heute
 
-1. Recap: Die Grenzen der Single-Core-Architektur
-2. Symmetrisches vs. Asymmetrisches Multiprocessing (SMP vs. AMP)
-3. Hardware Deep-Dive: Dual-Core-Architektur des STM32H755
-4. Boot-Prozess und Toolchain-Setup für zwei Kerne
-5. Die Speicherarchitektur (RAM-Domänen)
-6. *[Nach der Pause]* Shared Memory und Cache-Kohärenz
-7. Ausblick Labor: Ping-Pong-Datenaustausch
+1. Ein Kern, SMP, AMP
+2. H755: Domänen, Bus, Boot
+3. Zwei Images, ein SRAM4-Block
+4. Cache, Ordnung, Ownership
+5. MPU und Ping-Pong
 
 ::: notes
-Motivation für mehrere Kerne, dann SMP vs. AMP. Anschließend den STM32H755 zerlegen: M7 und M4, Boot und Speicheraufteilung. Nach der Pause: Cache-Kohärenz bei geteiltem Speicher. Am Nachmittag kommunizieren beide Kerne live.
+EDF mit $U \le 1$ galt für einen Prozessor, $D = T$, ohne versteckte Kosten. Zwei Kerne übernehmen diese Formel nicht unverändert.
 :::
 
 ## Recap: Die Grenzen des Single-Core
 
-- Erinnern wir uns an die Schedulability-Tests (Termin 2)
-- EDF-Schranke: $\sum \frac{C_i}{T_i} \le 1$ ($100\%$ Auslastung)
-- Bei $100\%$ CPU-Nutzung ist physikalisch Schluss
-- Das Problem der Industrie:
-  - Steuergeräte sollen immer mehr können (KI, Ethernet, GUI)
-  - Gleichzeitig harte Timing-Regelkreise ($100\,\text{µs}$ Raster)
-- Wie bekommen wir mehr Rechenleistung in das System?
+Didaktische Aufteilung, keine Messung:
+
+| Arbeit | ein Kern | Laboridee |
+|--------|----------|-----------|
+| Regelung | teilt sich die Zeit | eher M4 |
+| Netz, GUI | dieselbe CPU | eher M7 |
+
+Gemeinsames SRAM, die Busbrücke und DMA bleiben Störquellen.
+
+Vereinfacht, nur dynamische Schaltleistung:
+
+$$P_{\mathrm{dyn}} \approx \alpha\, C\, V^{2}\, f$$
+
+Spannung, Aktivität und Leckstrom kommen dazu. Keine gemessene Kurve.
 
 ::: notes
-Woche 2: EDF kann die CPU zu 100% auslasten — mathematisches Limit. Ein modernes Automotive-Steuergerät soll Kamerabilder mit KI auswerten, Touch-Display bespielen und den Elektromotor mit Mikrosekunden-Präzision ansteuern. Ein einzelner Kern ist überfordert. Wir brauchen mehr Rechenleistung.
+Frage: Welche Kosten bleiben mit einem zweiten Kern? Interferenz, Kopien, Protokoll, Boot. Ein rechnerisches $U = 1$ auf einem Kern hatte keine Reserve für IRQ und OS.
 :::
 
 ## Erhöhung der Taktfrequenz?
 
-- Warum takten wir den Cortex-M4 nicht mit $5\,\mathrm{GHz}$ statt $240\,\mathrm{MHz}$?
-- Die Power Wall (Leistungsmauer):
-  - Höherer Takt → höhere Spannung → exponentiell mehr Abwärme
-  - Embedded Systems oft ohne Lüfter (z. B. vergossenes Motorsteuergerät)
-- Die Memory Wall (Speichermauer):
-  - RAM-Zugriffszeiten skalieren nicht mit CPU-Takten
-  - Die CPU wartet auf Daten (Pipeline Stalls)
+- Höheres $f$ erhöht $P_{\mathrm{dyn}}$, nicht „exponentiell“ als einziges Modell
+- 480 MHz (M7) und 240 MHz (M4) sind spezifizierte Maxima
+- 400/200 MHz nur, wenn der Clock-Tree, VOS und die Flash-Wartezeit das hergeben
+- Mehr Takt parallelisiert keine zwei Aufgaben auf einem Kern
 
 ::: notes
-Intuitiv: Takt erhöhen. Physik: Power Wall — 5 GHz erzeugen massive Abwärme. Im PC: Kühler und Lüfter. Im Auto: oft am Getriebeblock, wasserdicht vergossen, 100 Grad Umgebungstemperatur ohne Lüfter. Memory Wall: selbst bei 5 GHz intern liefert der Arbeitsspeicher zu langsam — die CPU verbrennt Zeit mit Warten.
+Die Laborfrequenz nicht aus dem Datenblatt-Maximum abschreiben.
 :::
 
 ## Der Ausweg: Multicore-Architekturen
 
-- Lösung: lieber mehrere langsame, effiziente Kerne als ein extrem heißer, schneller Kern
-- Beispiele aus der Industrie:
-  - Automotive Domain Controller: viele kleine Steuergeräte in einem Multicore-Chip
-  - Industrie 4.0 (Edge Computing): ein Core steuert die Maschine (harte Echtzeit), ein anderer funkt in die Cloud (weiche Echtzeit)
-- Multicore in der Echtzeit ist fundamental anders als in Ihrem Laptop
+- Zwei Kerne können rechnen, solange ihre Datenwege frei sind
+- Partitionieren heißt: getrennte Firmware und klare Zuständigkeit
+- Es heißt nicht: der andere Kern ist zeitlich unsichtbar
 
 ::: notes
-Die Lösung von Intel/AMD für den PC ist in der MCU-Welt angekommen: Multicore. Automotive: Domain Controller statt vieler Einzelprozessoren. Industrie 4.0: harte Echtzeit auf einem Kern, MQTT/OPC-UA auf dem anderen. Aber: Echtzeit-Multicore tickt völlig anders als der i7 in Ihrem Laptop.
+AMP erleichtert die Trennung. Es ist kein Sicherheitsnachweis.
 :::
 
 ## Multiprocessing-Architekturen
 
-Zwei grundlegende Konzepte:
-
-1. SMP (Symmetric Multiprocessing)
-2. AMP (Asymmetric Multiprocessing)
-
-Beide haben unterschiedliche Einsatzgebiete.
-
 ```{mermaid}
-graph TD
-    MC[Multicore] --> SMP[SMP Symmetrisch]
-    MC --> AMP[AMP Asymmetrisch]
-    style MC fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style SMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style AMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+%%| fig-width: 6.4
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TB
+  subgraph SMP["SMP: ein Scheduling-Kontext"]
+    K[ein Kernel]
+    K --> C0[Kern 0]
+    K --> C1[Kern 1]
+  end
+  subgraph AMP["AMP: zwei Kontexte"]
+    A7[M7 Bare-Metal]
+    A4[M4 FreeRTOS]
+    A7 --- CH[expliziter Kanal]
+    A4 --- CH
+  end
 ```
 
+- SMP: gemeinsamer OS-Kontext, nicht „Kerne müssen identisch und gleichtaktig sein“
+- Ready-Queues dürfen global oder je Kern sein, plus Affinität
+- Migration verschiebt einen gesicherten Kontext; der Zielcache ist nicht leer versprochen
+
 ::: notes
-Es gibt nicht „die eine“ Multicore-Architektur. Zwei Familien: SMP und AMP. Beide lösen Rechenlast, aber auf unterschiedlichen Wegen. Für Ihre Karriere: Unterschied kennen und wissen, warum AMP in der Echtzeit oft bevorzugt wird.
+Das rechte Bild ist das Labor. Links ist die Definition, nicht der H755-Zustand heute.
 :::
 
 ## Symmetrisches Multiprocessing (SMP)
 
-- Die PC- und Smartphone-Welt (Windows, Linux, Android, iOS)
-- Architekturmerkmale:
-  - Alle Kerne physisch identisch (z. B. 4× Cortex-A53)
-  - Gemeinsamer physikalischer Speicher (RAM)
-  - Genau ein Betriebssystem über alle Kerne
-  - Das OS orchestriert alle Kerne zentral
+- Ein Scheduler sieht die Kerne
+- Eine Task kann, wenn die Politik das erlaubt, den Kern wechseln
+- Dabei werden Register gesichert, nicht der ganze Cache „genullt“
+- Harte Fristen sind unter Annahmen möglich und unter anderen Annahmen schwer
 
 ::: notes
-SMP kennen Sie aus Alltag: Handy und Laptop. „Symmetrisch“: identische Kerne, gleicher Befehlssatz, gleicher Takt, gemeinsamer RAM. Darüber liegt ein einziges OS (Windows, Linux-Kernel). Das OS sieht alle Kerne und verteilt die Arbeit.
+Titel der alten Folie „SMP scheitert oft“ wird zur Herausforderung, nicht zum Verbot.
 :::
 
 ## Wie funktioniert ein SMP-Scheduler?
 
-- Das OS hat eine Ready-Warteschlange für Tasks
-- Load-Balancing: Tasks dynamisch auf den Kern mit wenig Last
-- Task-Migration: Millisekunde 1 auf Core 0, Millisekunde 2 auf Core 1
-
-```{mermaid}
-graph TD
-    OS[Single OS Linux / Windows] --> TQ[Task-Queue]
-    TQ --> C0[Core 0 Task A]
-    TQ --> C1[Core 1 Task B]
-    TQ --> C2[Core 2 Task C]
-    C2 -.->|Migration| C0
-    style OS fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style TQ fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style C0 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style C1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style C2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-```
+- Globale Queue: ein Kern nimmt die höchste bereite Aufgabe
+- Oder: Warteschlange je Kern, der Scheduler schiebt nur bei Affinität oder Last
+- Beides ist SMP, solange es **ein** Betriebssystemkontext ist
+- Keine Pflicht zu genau einer Ready-Liste
 
 ::: notes
-Der SMP-Scheduler betreibt Load-Balancing. Word, Excel, Browser: OS weist Threads freien Kernen zu. Task-Migration: Thread startet auf Core 0, wird pausiert, läuft später auf Core 1 weiter — Register wandern mit. Fantastische Gesamtauslastung.
+FreeRTOS auf nur dem M4 ist kein SMP über M7 und M4.
 :::
 
 ## Warum SMP für harte Echtzeit oft scheitert
 
-- SMP ist genial für Durchsatz, aber für **harte** Echtzeit oft problematisch
-- Latenz-Probleme:
-  - Task-Migration kostet Zeit (Register von Kern zu Kern)
-  - Cache-Thrashing: L1-Cache des Zielkerns ist leer → Cache-Misses
-  - Contention: mehrere Kerne auf demselben RAM-Bus → Mikro-Staus
-- Ergebnis: WCET wird schwerer vorherzusagen (oft unpraktisch für harte Deadlines)
+Besser: **Echtzeit-Herausforderungen bei SMP**
+
+- Wer darf wohin migrieren?
+- Geteilte Caches und Busse erzeugen Interferenz
+- Sperren müssen kernübergreifend gedacht werden
+- Das ist kein Beweis, dass SMP nie hart echtzeitfähig ist
 
 ::: notes
-Warum selten Airbag-Steuerung mit SMP? Determinismus leidet. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird schwer beherrschbar.
+Geeignete Affinität, Budgets und ein Interferenzmodell können Fristen tragen. Die Analyse wird nur größer als auf einem Kern.
 :::
 
 ## Asymmetrisches Multiprocessing (AMP)
 
-- Die Embedded-Welt (Steuergeräte, Motor-Regler)
-- Architekturmerkmale:
-  - Kerne oft unterschiedlich (z. B. Cortex-M7 und Cortex-M4)
-  - System strikt partitioniert
-  - Jeder Kern führt eigenes Programm / OS aus
-  - Kerne wissen beim Start oft nichts voneinander
+- Zwei Firmware- und oft zwei OS-Kontexte
+- Beispiel allgemein: Cortex-A mit Linux und Cortex-M mit RTOS
+- Beispiel **dieser** Chip: M7 Bare-Metal und M4 FreeRTOS
+- Der H755-M7 ist hier kein Linux-Standard
 
 ::: notes
-Daher AMP in der Echtzeit. Asymmetrisch: oft ungleiche Kerntypen — wuchtiger Kern für Rechnen, präziser Kern für Steuerung. Kein Über-Betriebssystem: zwei unabhängige Programme. Core A und Core B booten getrennt.
+Die beiden Beispiele nicht ineinanderzeichnen.
 :::
 
 ## Software-Aufteilung in AMP
 
-:::: {.columns}
-::: {.column width="50%"}
-Core 1 (z. B. Cortex-M7)
-
-- OS: Embedded Linux oder Bare-Metal
-- Job: GUI, Netzwerk (TCP/IP), ML
-- Fokus: Durchsatz (weiche Echtzeit)
-:::
-::: {.column width="50%"}
-Core 2 (z. B. Cortex-M4)
-
-- OS: FreeRTOS oder AUTOSAR
-- Job: PWM, Encoder, PID-Regler
-- Fokus: Determinismus (harte Echtzeit)
-:::
-::::
-
-- $100\%$ CPU-Load auf Core 1 hat keine Auswirkung auf das Timing von Core 2
+- M4: Tasks, Tick, Queues **dieses** Kernels
+- M7: Superloop oder eigene Struktur, ohne diese Queue-IDs
+- Eine lokale `osMessageQueueId_t` im Shared SRAM wird keine Inter-Core-Queue
+- Der Kanal ist ein vereinbartes Speicherlayout plus Protokoll
 
 ::: notes
-Bestes aus beiden Welten: rechenstarker Kern mit Linux/Netzwerk (Timing darf schwanken), kleiner Kern mit FreeRTOS und Motor-PWM. Isolation fast perfekt: hängt Linux bei 100% Auslastung, tuckert der FreeRTOS-Regler jitterfrei weiter — Safety per Hardware-Design.
+Frage: Warum darf die Queue-ID nicht auf dem anderen Kern liegen? Weil Handle, Heap und Listen dem einen Kernel gehören.
 :::
 
 ## Wie kommunizieren AMP-Kerne?
 
-- Kein gemeinsames OS → keine normale FreeRTOS-Queue von Core 1 nach Core 2
-- Kommunikation über Hardware-Mechanismen:
-  - Message Buffers (Hardware-Mailboxes): Schreiben löst Interrupt am anderen Kern aus
-  - Hardware-FIFOs: echte Puffer zwischen den Kernen
-  - Shared Memory (SRAM): vereinbarter RAM-Bereich mit physischem Zugriff beider Kerne
-- Heute: Shared Memory — flexibel, aber gefährlich
+| Mittel | hier |
+|--------|------|
+| Software-Puffer | unser SRAM4-Block |
+| Hardware-Mailbox / FIFO | anderes Gerät, nicht dieser Ping-Pong |
+| HSEM | Boot-Signal, später auch Sperre |
+| lokale RTOS-Queue | nur M4-intern |
 
 ::: notes
-Wie reden die Kerne? `osMessageQueuePut` geht nicht — FreeRTOS auf Core 2 kennt die Datenstrukturen von Bare-Metal auf Core 1 nicht. Hardware hilft: Queues oder Shared Memory. Beide Kerne greifen auf denselben RAM-Block zu. Schnell, aber tückisch bei der Datenintegrität.
+Shared Memory ist der Ort. Das Protokoll sagt, wer schreiben darf.
 :::
 
 ## Zusammenfassung Block 1
 
-| Eigenschaft | SMP (Symmetrisch) | AMP (Asymmetrisch) |
-|-------------|-------------------|--------------------|
-| Kerne | Identisch | Oft heterogen |
-| Betriebssystem | Ein gemeinsames OS | Getrennte Programme / OS |
-| Lastverteilung | Dynamisch durch Scheduler | Statisch durch Programmierer |
-| Determinismus | Oft schwierig (Migration, Cache-Misses) | Typischerweise besser isolierbar |
-| Beispiel | Laptop, Raspberry Pi | STM32H755, NXP i.MX RT |
+- $U \le 1$ bleibt ein Ein-Kern-Satz mit Annahmen
+- SMP teilt einen Scheduler, AMP teilt ihn nicht
+- M7-Rechnen ohne gemeinsame Zugriffe stört den M4 weniger als M7-Buslast
+- „100 % M7-Last wirkt nie auf den M4“ ist falsch
 
 ::: notes
-SMP: identische Kerne, ein OS, Meister des Durchsatzes. AMP: oft ungleiche Kerne, strikte Isolation, Meister des Determinismus. Wir bauen fast ausschließlich AMP-Systeme. Als Nächstes: der STM32H755 im Detail.
+Nächster Block: wo die Last sich trifft.
 :::
 
 ## Hardware Deep-Dive: Der STM32H755
 
-- Ein Silizium-Plättchen (Die), zwei getrennte Prozessorkerne
+Vereinfachte Karte, Details in RM0399 der verwendeten Revision:
 
-```{mermaid}
-graph TD
-    CHIP[STM32H755 Chip]
-    CHIP --> M7[Cortex-M7 Spec max 480 MHz]
-    CHIP --> M4[Cortex-M4 Spec max 240 MHz]
-    style CHIP fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style M7 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style M4 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-```
+| Domäne | in dieser Zeichnung |
+|--------|---------------------|
+| D1 | M7, TCM, AXI, Flash-Anbindung |
+| D2 | M4, viel AHB-Peripherie, Ethernet 10/100, USB |
+| D3 | SRAM4, langsame I/Os |
 
-- Trotzdem teilen sie sich Pins, Taktquellen und Speicher
-- Wie organisiert STMicroelectronics dieses Chaos?
+Nicht jede schnelle Peripherie liegt in D1. Ethernet ist nicht Gigabit.
 
 ::: notes
-Der STM32H755 ist ein Flaggschiff der AMP-Architektur. Ein Gehäuse, zwei Herzen: Cortex-M7 und Cortex-M4. Logisch getrennt, physisch im selben Package: Strom, Clocks, Pins teilen. Core 1 darf Pin A5 nicht High setzen, während Core 2 ihn Low zieht.
+Die Zeichnung ist bewusst grob. Wer ein Blockbild aus dem Referenzhandbuch abzeichnet, prüft die Revision.
 :::
 
 ## Der Cortex-M7 (Das Muskelpaket)
 
-- Unser Core 1 (Master)
-- Specs: bis $480\,\mathrm{MHz}$, 6-stufige superskalare Pipeline
-- Superskalar: zwei Instruktionen in einem Taktzyklus möglich
-- Caches:
-  - L1 Data Cache ($16\,\mathrm{KB}$)
-  - L1 Instruction Cache ($16\,\mathrm{KB}$)
-- FPU: Double-Precision (64-Bit)
-- Ziel: Rechenleistung, schnelle Netzwerk-Verarbeitung
+- Spec bis 480 MHz, L1-I- und D-Cache, TCM
+- TCM ist nicht der direkte Arbeitsplatz des M4
+- Cache macht wiederholte Zugriffe schnell und fremde Werte unsichtbar
+- Labor darf 400 MHz nur nach Clock-Tree-Prüfung sagen
 
 ::: notes
-Core 1, der Cortex-M7: Muskelpaket bis 480 MHz, superskalar mit parallelen Rechenwerken. L1-Caches für Daten und Code, weil RAM für 480 MHz zu langsam ist. 64-Bit-FPU. Gebaut für Filter, Ethernet und Touch-Displays.
+TCM in der Shared-Variable wäre für den M4 unerreichbar.
 :::
 
 ## Der Cortex-M4 (Das Präzisionswerkzeug)
 
-- Unser Core 2
-- Specs: bis $240\,\mathrm{MHz}$, 3-stufige Pipeline
-- Wichtigster Unterschied: keine Caches!
-- Ausführungszeit eines Assembler-Befehls ist absolut deterministisch
-- FPU: Single-Precision (32-Bit)
-- Ziel: harte Echtzeit-Regelung, enge Anbindung an Timer und ADC
-- Hier lassen wir FreeRTOS laufen
+- Spec bis 240 MHz
+- Kein M7-artiger L1-Daten-/Instruktionscache
+- Der ART-Beschleuniger auf dem Flash-Pfad bleibt
+- Wait-States, Bus, IRQs und die Speicherregion bleiben in der Zeit
+- „Jeder Zugriff gleich viele Takte“ und „auf die Nanosekunde“ streichen
 
 ::: notes
-Der Cortex-M4: halb so schnell, simplere Pipeline. Entscheidend: keine Caches. Jeder Speicherzugriff dauert immer gleich viele Takte — Timing auf die Nanosekunde vorherberechenbar. Skalpell neben dem Vorschlaghammer. Ideal für Motoren und Leistungselektronik. FreeRTOS läuft heute Nachmittag exklusiv auf dem M4.
+Ohne L1-D-Cache ist der M4 nicht automatisch interferenzfrei.
 :::
 
 ## Die Bus-Matrix (AHB / AXI)
 
-- Kerne, Speicher und Peripherie: keine einzelne Leitung, sondern eine Matrix
-- AXI-Bus-Matrix: Netzwerk aus Schaltern
-- Vorteil: M7 liest Flash, während M4 eine GPIO-LED schaltet — ohne Blockade
-- Blockaden nur, wenn beide Cores im selben Takt dasselbe Ziel treffen
+- Parallele Wege, wenn die Pfade verschieden sind
+- Dieselbe SRAM-Bank oder dieselbe Brücke serialisiert
+- Ein Konflikt braucht nicht denselben CPU-Takt
+- „AXI-SRAM immer 1 Takt“ ist keine universelle Garantie
 
 ::: notes
-Früher: ein Bus, eine Hauptstraße. Der STM32H7 nutzt eine AXI-Bus-Matrix — Autobahnkreuze und Brücken. M7 auf Flash und M4 auf GPIO kreuzen sich nicht. Stau nur bei gleichzeitigem Zugriff auf dasselbe Modul; die Matrix regelt Vorfahrt.
+Die Matrix beseitigt Interferenz nicht. Sie verschiebt sie auf die gemeinsamen Ziele.
 :::
 
 ## Die 3 Power-Domänen (D1, D2, D3)
 
-- D1 (High-Performance Domain):
-  - Cortex-M7, AXI-SRAM, High-Speed USB, Ethernet
-- D2 (Real-Time Domain):
-  - Cortex-M4, SRAM 1/2/3, Timer, ADCs, UARTs
-- D3 (Low-Power Domain):
-  - RTC, SRAM 4
-  - Läuft oft weiter, wenn D1 und D2 schlafen
+```{mermaid}
+%%| fig-width: 6.2
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  M7[M7 D1] --> BM[Busmatrix]
+  M4[M4 D2] --> BM
+  DMA[DMA] --> BM
+  BM --> S4[SRAM4 D3]
+  RCC[RCC gemeinsam] --- M7
+  RCC --- M4
+```
+
+Oben getrennte Rechenkerne, unten gemeinsame Ziele.
 
 ::: notes
-Drei Kontinente: D1 (Partyzone mit M7 und Gigabit), D2 (Echtzeit-Zone mit M4 und Timern), D3 (Low-Power). Im Batteriebetrieb können D1 und D2 abgeschaltet werden — D3 hält Uhr und SRAM4 mit Mikroampere am Leben.
+Eine reine Registerschleife im M7-TCM teilt sich den SRAM4-Port nicht. Sobald der M7 SRAM4, DMA oder RCC anfasst, kann der M4 warten. Qualitativ, ohne WCET-Zahl.
 :::
 
 ## Taktversorgung (RCC)
 
-- Specs vs. Board-Setup (kanonisch für diese Vorlesung):
-
-| Kern | Spec-Maximum | Typisches Nucleo-Setup |
-|------|--------------|------------------------|
-| Cortex-M7 | bis $480\,\mathrm{MHz}$ | $400\,\mathrm{MHz}$ |
-| Cortex-M4 | bis $240\,\mathrm{MHz}$ | $200\,\mathrm{MHz}$ |
-
-- Beide Kerne haben eigene Phasenregelkreise (PLLs)
-- Achtung im CubeMX Configurator:
-  - Änderungen am System Clock beeinflussen meist beide Kerne
-  - Stoppt Core 1 die PLL, crasht Core 2
+- Ein Taktbaum, keine private PLL je Kern
+- Wer `SystemClock_Config` zweimal ausführt, schreibt dieselben Register
+- Im Labor initialisiert der M7 die gemeinsamen Takte, bevor der M4 weiterläuft
+- Maxima 480/240 MHz zeichnerisch von der gewählten Laborfrequenz trennen
 
 ::: notes
-Ähnliche Teilung bei RCC: eigene Teiler und PLLs. Specs nennen Maxima (480/240); im Labor und in Timing-Beispielen (Cache, Trace) rechnen wir mit dem typischen Nucleo-Setup 400/200 MHz. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.
+GPIO-Ports teilen Register. Zwei Pins am selben Port sind kein konfliktfreier Read-Modify-Write.
 :::
 
 ## Der Boot-Prozess: Wer weckt wen?
 
-- Beim Einschalten starten nicht beide Kerne
-- Cortex-M7 ist der Master und bootet zuerst
-- Cortex-M4 ist der Slave und bleibt im Reset (Hold)
-- Aufgabe des M7:
-  - System-Clock hochfahren
-  - RAM und Peripherie stabilisieren
-  - Hardware-Schalter umlegen, der den M4 entfesselt
+Übliches CubeMX-Muster, nicht „M4 bleibt in Reset“:
+
+1. Option Bytes legen fest, wer überhaupt startet; Standard oft: beide Bootcodes
+2. M4 richtet eine HSEM-Benachrichtigung ein und geht in **Stop**
+3. M7 wartet auf diesen Zustand, setzt Takt und Shared-Block
+4. M7 gibt das HSEM frei, M4 läuft weiter ins RTOS
+
+Stop, Reset und abgetakteter Kern sind drei Zustände.
+
+Die konkrete HSEM-ID und die Funktionsnamen stehen in der generierten `main`. `HAL_PWREx_ReleaseCore` nicht aus dem Gedächtnis ergänzen.
 
 ::: notes
-Häufige Anfängerfrage: Wer startet zuerst? Nur der M7. Der M4 bleibt im Reset. M7 konfiguriert Taktbaum und Bus-Matrix, legt dann den Schalter um — M4 springt in seine eigene `main()`.
+Begrenzte Wartezeit, sonst Diagnose-LED oder UART, keine Endlosschleife ohne Spur. Dieser HSEM-Schritt ist der Boot, nicht die Sperre für jedes Payload-Byte.
 :::
 
 ## Hardware-Register: Den M4 wecken
 
-- Schalter im Power-Management-Register (PWR)
-- In der `main.c` des M7:
-
-```c
-// Weckt den Cortex-M4 auf
-HAL_PWREx_ReleaseCore(PWR_CORE_CPU2);
+```{mermaid}
+%%| fig-width: 6.2
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+sequenceDiagram
+  participant M4 as CM4
+  participant H as HSEM
+  participant M7 as CM7
+  M4->>H: Notify, dann Stop
+  M7->>M7: Takt, dann Shared-Init
+  M7->>H: Release
+  H-->>M4: weiter, RTOS
 ```
 
-- Ohne diese Zeile läuft FreeRTOS auf dem M4 nie
+Warten ohne Fortschritt: Diagnosekasten, nicht stiller Reset.
 
 ::: notes
-Diesen Schalter betätigen Sie heute Nachmittag selbst. In der M7-`main.c`: `HAL_PWREx_ReleaseCore(PWR_CORE_CPU2)`. Blinken die M4-LEDs nicht: zuerst diese Zeile prüfen.
+Vorlage AN5361 und das eigene Template. Wenn das Projekt eine andere Option-Byte-Variante nutzt, gewinnt das Projekt.
 :::
 
 ## Pin-Zuweisung im Dual-Core
 
-- Dem Chip ist egal, wer einen GPIO-Pin schaltet
-- Gefahr: M7 und M4 konfigurieren denselben Pin → Register-Konflikte
-- Im CubeMX Configurator:
-  - Pin Context Assignment → ARM Cortex-M7 oder ARM Cortex-M4
-  - Codegenerator schreibt `HAL_GPIO_Init` nur in die `main.c` des zugewiesenen Cores
+- Pin Context steuert, **welcher Generator** den Init-Code schreibt
+- Das ist keine Hardware-Sperre für den anderen Kern
+- RCC und jeder Peripherieblock brauchen eine Zuständigkeit
+- Gleicher GPIO-Port, verschiedener Pin: immer noch ein Register
 
 ::: notes
-Beide können auf GPIO schreiben. M7 als Ausgang und M4 als Eingang am selben Pin kracht. In CubeIDE: Pin Context Assignment. Der Generator schreibt die Init nur in den Ordner des zugewiesenen Kerns — saubere Architektur.
+Beide Kerne dürfen nicht gleichzeitig `GPIOE->MODER` lesen-ändern-schreiben.
 :::
 
 ## Toolchain und Projektstruktur
 
-- Dual-Core-Projekt in CubeIDE: drei Ordner
-  - `Project_CM7`: eigene `main.c`, eigene Linker-Skripte
-  - `Project_CM4`: isolierte Code-Basis für den M4
-  - `Project_Common`: gemeinsame Dateien (z. B. HAL-Treiber)
-- Beim Kompilieren entstehen zwei unabhängige `.elf` / `.bin`-Dateien
+- Zwei ELF-Dateien, zwei Vektortabellen, zwei Linkerlayouts
+- CM7 in Bank 1 und CM4 in Bank 2 ist eine mögliche Konvention
+- Startadresse und Option Bytes müssen dazu passen
+- Ab CubeIDE 2.0 oft: CubeMX separat, dann Import
+- Eine Launch-Gruppe ist nicht automatisch da
 
 ::: notes
-Drei Ordner statt einem: CM7 und CM4 mit eigener `main.c`, Interrupt-Tabellen und Linker-Skripten — zwei C-Projekte. Common nur für gemeinsame Treiber. GCC wirft zwei Firmware-Dateien aus: eine für Master, eine für Slave.
+Keine erfundenen Menüscreenshots. Die Kursversion am Rechner nachsehen.
 :::
 
 ## Debugging im AMP-System
 
-- ST-Link unterstützt Multicore-Debugging
-- Debug startet zwei GDB-Instanzen parallel
-- Zwei Konsolen: Breakpoints von M7 und M4 umschalten
-- Flashen: Programm 1 in Bank 1, Programm 2 in Bank 2
+- Eine ST-LINK- oder OpenOCD-Sitzung, nicht beides gemischt beschreiben
+- Zwei Images laden, Reset-Reihenfolge zum Boot-Handshake passen
+- „Halt all cores“ und Cross-Trigger können den Stop-Weckruf verfälschen
+- Nach dem Halt die HSEM- und Stop-Zustände prüfen, nicht nur den PC
 
 ::: notes
-Der ST-Link fragt beide Kerne per JTAG ab. Debug flasht beide Programme in getrennte Flash-Banken und startet zwei Debug-Server. Breakpoint im FreeRTOS des M4 setzen, dann in den M7-Tab wechseln und zuschauen, wie Bare-Metal weiterläuft.
+Der genaue Klickpfad hängt von der IDE-Version ab. Offen, solange kein Projekt im Repo liegt.
 :::
 
 ## Zusammenfassung Block 2
 
-- STM32H755: High-Performance-Kern (M7 mit Cache) und Echtzeit-Kern (M4 ohne Cache)
-- Bus-Matrix routet Zugriffe kreuzungsfrei — außer bei exakt demselben Ziel
-- M7 bootet zuerst und weckt den M4
-- Zwei unabhängige Firmware-Dateien aus zwei Code-Ordnern
+- D1/D2/D3 grob, Ethernet in D2, 10/100
+- Bus parallel nur auf freien Wegen
+- Boot: Stop und HSEM, nicht Reset-Leitung
+- Zwei Images, eine Shared-Adresse
 
 ::: notes
-Zusammenfassung Hardware: schnelles und determiniertes Herz, Bus-Matrix gegen Staus, M7 als Boss, Software wie zwei separate Projekte. Fragen zur Hardware, bevor wir zum Speicher und zur Kommunikation gehen?
+Als Nächstes das Layout, das beide Linker meinen.
 :::
 
 ## Die Speicherarchitektur (RAM)
 
-- Datenaustausch M7 → M4 braucht Shared Memory
-- Fast $1\,\mathrm{MB}$ RAM, aber aufgeteilt:
-  - AXI-SRAM (D1): klebt am M7 — schnell für M7, langsam für M4
-  - SRAM 1/2/3 (D2): klebt am M4 — schnell für M4, langsam für M7
-  - SRAM 4 (D3): unabhängig, oft für Peripherie oder Standby
+Übliche H755-Anker, im Datenblatt der Revision prüfen:
+
+| Region | Adresse | Rolle im Labor |
+|--------|---------|----------------|
+| DTCM/ITCM | M7-lokal | nicht der Shared-Puffer |
+| SRAM1–3 | D2 | M4-Heap/Stack, nicht automatisch shared |
+| SRAM4 | `0x38000000`–`0x3800FFFF` | 64 KiB, gewählter Kanal |
+| Backup-SRAM | andere Adresse | nicht SRAM4, nicht immer im Standby erhalten |
+
+SRAM4 ist die **Laborentscheidung**, keine Vorschrift für jede Anwendung.
 
 ::: notes
-AMP-Kerne reden über Shared Memory — aber es gibt nicht „den einen“ RAM. AXI-SRAM klebt am M7 (1 Takt für M7, teuer für M4 über die Bus-Matrix). SRAM 1–3 kleben beim M4 in D2.
+Bandbreite, DMA-Erreichbarkeit und Energiemodus können eine andere Bank nahelegen.
 :::
 
 ## Wo legen wir den Shared Memory an?
 
-- Neutraler Ort, gut erreichbar für beide Kerne
-- Best Practice: SRAM4 in der D3-Domäne
-- Basis-Adresse: `0x38000000` (Größe: $64\,\mathrm{KB}$)
-- Ziel: C-Struct für Sensorwerte exakt an diese Adresse legen
-- Wie zwingen wir den Compiler dazu?
+- Beide Linker reservieren **dieselbe** Spanne und legen sonst nichts hinein
+- Heap und Stack bleiben außerhalb
+- `NOLOAD` heißt: der Loader schreibt die Sektion nicht
+- Es heißt nicht: jedes Startup lässt die Bytes in Ruhe
+- `.bss`-Zero und `.data`-Copy beider Images prüfen
 
 ::: notes
-Treffpunkt oft SRAM4 in D3: 64 KB ab `0x38000000`. Ein C-Struct darf nicht irgendwo im AXI-SRAM landen — wir nageln es bytegenau auf diese Adresse.
+Nach Reset ist der Inhalt nicht als saubere Null vorauszusetzen. M7 schreibt Zustand und Payload, bevor M4 kommuniziert.
 :::
 
 ## Das Linker-Script (`.ld`)
 
-- GCC erzeugt Maschinencode; der Linker legt physikalische Adressen fest
-- Linker-Skripte beider Kerne anpassen:
+Schema, keine abgelesene Map:
 
-```ld
-/* Definition der Speicherbereiche */
-MEMORY
-{
-  FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
-  RAM_D1 (xrw)    : ORIGIN = 0x24000000, LENGTH = 512K
-  /* NEU: Shared Memory (CubeMX: oft RAM_D3) */
-  RAM_D3 (xrw)    : ORIGIN = 0x38000000, LENGTH = 64K
-}
-```
+- Region SRAM4 einmal, nicht ein zweites `RAM_D3` daneben
+- Sektion `.shared` mit `NOLOAD`, `KEEP`, Alignment 32
+- `ASSERT` auf Größe und Adresse
+- Symbol `sd` in **beiden** Maps gleich, sonst ist es nicht derselbe Block
 
 ::: notes
-Das Linker-Script ist das Fundament. In beiden `.ld`-Dateien einen MEMORY-Bereich `RAM_D3` (SRAM4) mit Adresse `0x38000000` und 64 KB deklarieren — beide Kerne kennen den Bereich.
+Die echten `.ld` erzeugt Cube. Wir fügen eine Sektion ein und duplizieren die Speicherliste nicht. Map-Vergleich ist Pflicht und im Repo noch nicht ausführbar.
 :::
 
 ## Eine eigene Sektion anlegen
 
-- Sektion (Container) im Shared-RAM anlegen:
-
 ```ld
-SECTIONS
+.shared (NOLOAD) :
 {
-  /* Sektion .shared_memory */
-  .shared_memory (NOLOAD) :
-  {
-    . = ALIGN(4);
-    *(.shared_memory) /* Variablen mit diesem Tag */
-  } > RAM_D3
-}
+  . = ALIGN(32);
+  KEEP(*(.shared))
+  . = ALIGN(32);
+} >RAM_D3
 ```
 
-- Extrem wichtig: `(NOLOAD)`
-  - Ohne NOLOAD füllt der Startup-Code den RAM mit Nullen
-  - M7 schreibt, M4 bootet $1\,\mathrm{ms}$ später → Shared Memory wird genullt
+Nur wenn `RAM_D3` schon die SRAM4-Region ist. Sonst den vorhandenen Namen nehmen.
 
 ::: notes
-Sektion `.shared_memory` anlegen. Entscheidend: `NOLOAD`. Ohne NOLOAD initialisiert der Startup alle globalen Variablen mit 0. M7 schreibt Sensordaten, M4 bootet eine Millisekunde später und überschreibt den Shared Memory mit Nullen. NOLOAD verbietet dieses Nullen.
+`KEEP` gegen Garbage Collection. Alignment 32 wegen einer späteren Cache-Line, auch wenn die Basisregion non-cacheable ist.
 :::
 
 ## Zuweisung im C-Code (GCC-Attribute)
 
-:::: {.columns}
-::: {.column width="50%"}
-- Wir haben den RAM (`.shared_memory`) im Linker-Script reserviert
-- Wie sagen wir dem Compiler, dass unser Struct genau dort landen soll?
-- Die Lösung: ein Compiler-spezifisches Attribut (`__attribute__`)
-- Wir „nageln“ die Variable physisch auf die Adresse `0x38000000` fest
-:::
-::: {.column width="50%"}
 ```c
-// Die Variable wird zwingend in
-// die .shared_memory Sektion gelegt!
+/* shared_data.h: nur Typ und extern */
+extern volatile ipc_block_t ipc
+    __attribute__((section(".shared")));
 
-__attribute__((section(".shared_memory")))
-volatile SharedData_t sd;
+/* genau eine .c je ELF */
+volatile ipc_block_t ipc
+    __attribute__((section(".shared")));
 ```
-:::
-::::
+
+Das Attribut allein setzt nicht die Adresse. Linker, Alignment und weitere Objekte entscheiden.
 
 ::: notes
-Ohne Attribut landet die Variable in `.bss`/`.data` (oft AXI-SRAM). Mit `__attribute__((section(".shared_memory")))` zwingt GCC den Linker auf `0x38000000` — beide Kerne sehen dieselben Bytes.
+Dieselbe `.c` nicht in beide Projekte kopieren und zusätzlich im Header definieren. Einmal pro Image.
 :::
 
 ## Das Schlüsselwort volatile
 
-- Ein weiteres Problem beim Speichern: der C-Compiler-Optimizer (`-O2` / `-O3`)
-- Der Compiler analysiert den Code einer Task (z. B. auf dem M4)
-- Er sieht eine `while(sd.m7_ready == 0);`-Schleife
-- Er denkt: „In meiner Task ändert niemand diese Variable. Also lese ich sie nur 1× aus dem RAM und nutze danach für immer ein CPU-Register!“ $\rightarrow$ Endlosschleife!
-- Lösung: `volatile`
-- Sagt dem Compiler: Diese Variable kann sich jederzeit durch externe Hardware (oder einen anderen Kern) ändern! Lese sie bei JEDEM Zugriff zwingend frisch aus dem RAM!
+- `volatile` zwingt den Compiler zu den Zugriffen, die **dieser** Compiler dafür definiert
+- Es umgeht nicht den D-Cache
+- Es ist kein Mutex und kein atomares Read-Modify-Write
+- Es veröffentlicht nicht „den ganzen Struct auf einmal“
 
 ::: notes
-Ohne `volatile` darf der Optimizer das Flag einmal lesen und danach nur noch das Register prüfen — der M4 friert ein, obwohl der M7 den RAM ändert. `volatile` erzwingt frische RAM-Reads.
+GCC-Volatile-Doku. Für die Reihenfolge kommt eine Barriere dazu, für den Cache die MPU oder eine Wartung.
 :::
 
 ## Reicht volatile für Multicore?
 
-- Wir haben die Variable im richtigen SRAM platziert (`__attribute__`)
-- Wir haben den Compiler gezwungen, immer aus dem RAM zu lesen (`volatile`)
-- Sind wir jetzt sicher?
-- NEIN! Absolut nicht
-- `volatile` kontrolliert nur den Software-Compiler. Es kontrolliert nicht die Hardware-Caches der CPU!
-- Hier betreten wir das gefährlichste Feld der Embedded-Entwicklung
+Vier verschiedene Probleme:
+
+| Problem | Mittel | löst allein nicht |
+|---------|--------|-------------------|
+| Compiler hält einen Wert | `volatile` | Cache, Reihenfolge, Konflikt |
+| veraltete Cachezeile | MPU oder Clean/Invalidate | wer schreiben darf |
+| Reihenfolge der Zugriffe | `DMB` / `DSB` | Cache-Inhalt |
+| beide schreiben | Ownership oder HSEM | Sichtbarkeit |
+
+`DMB` ordnet. `DSB` wartet auf den Abschluss. Keines reinigt den D-Cache.
+
+Keine Armv8-M-Acquire-Intrinsics ungeprüft auf M4/M7.
 
 ::: notes
-`volatile` stoppt nur Compiler-Optimierungen — nicht den L1-Cache des M7. Hardware-Puffern bleibt das Multicore-Problem.
+Frage zur Brücke: Warum reicht non-cacheable nicht? Weil die Reihenfolge Payload vor Zustand und das alleinige Schreibrecht bleiben.
 :::
 
 ## Struktur der Ping-Pong Daten
 
-- Für unser Labor bauen wir uns ein C-Struct, das beide Kerne kennen
-- Beide Kerne binden dieselbe Header-Datei ein!
+Altes Bild mit zwei `uint8_t` und einem `uint32_t`: natürliche Ausrichtung **8 Byte**, Offsets 0, 1 und 4, nicht 12.
+
+Gewählter Block:
 
 ```c
 typedef struct {
-    uint8_t  m7_ready;      // 1 = M7 hat Daten geschrieben
-    uint8_t  m4_ready;      // 1 = M4 hat Daten geschrieben
-    uint32_t payload_value; // Der eigentliche Wert (Payload)
-} SharedData_t;
-
-// Im Code (in CM7 und CM4):
-__attribute__((section(".shared_memory")))
-volatile SharedData_t sd;
+    uint32_t magic;
+    uint32_t state;   /* TURN_M7, REQUEST_M4, RESPONSE_M7 */
+    uint32_t payload;
+} ipc_block_t;
 ```
 
+`_Static_assert` auf Größe und Alignment im Zielbuild. Kein `packed` als Multicore-Trick.
+
+Nur der Berechtigte schreibt `payload`. Der Zustand wechselt danach.
+
 ::: notes
-Bevor wir uns dem Cache-Problem widmen, hier noch kurz die Datenstruktur für unser heutiges Labor. Wir bauen ein Struct namens `SharedData_t`. Es enthält ein Flag, mit dem der M7 signalisiert „Ich habe fertig geschrieben“, und ein Flag für den M4. Darunter liegt der eigentliche Payload-Wert. Dieses Struct deklarieren wir als `volatile` und legen es in die Shared-Memory-Sektion. Achten Sie darauf, dass diese Definition in einer Header-Datei liegt, die in beide Unterprojekte (CM4 und CM7) eingebunden wird. Sonst wissen die Kerne nicht, wie die Bytes im RAM angeordnet sind.
+M7 initialisiert magic, state und payload, solange M4 noch nicht kommuniziert. NOLOAD-Müll ist kein Startwert 0.
 :::
 
 ## Zusammenfassung: Shared Memory
 
-- AMP erfordert physikalischen Datenaustausch, da es kein gemeinsames Betriebssystem gibt
-- Wir nutzen den SRAM4 (D3-Domäne), da er für beide Kerne gut erreichbar ist
-- Die Adress-Zuweisung erfolgt über das Linker-Script (`.ld`) und `__attribute__((section))`
-- Das Flag `NOLOAD` schützt den RAM vor dem Überschreiben beim Booten
-- Das Keyword `volatile` stoppt gefährliche Compiler-Optimierungen
+- Eine Adresse, zwei ELF, eine Definition je Image
+- M7 initialisiert, M4 löscht den Block beim Start nicht
+- Ein Core-Reset mitten im Ping-Pong ist nicht das Basislabor
+- Ein gemeinsamer Reset muss den Handshake neu durchlaufen
 
 ::: notes
-Fassen wir den ersten Teil zusammen. Wir haben die logische Struktur für unsere Inter-Core-Kommunikation gelegt. Wir nutzen den SRAM4 als toten Briefkasten. Wir weisen dem Linker den Weg und hindern den C-Startup-Code am Nullen der Daten. Wenn Sie das auf einem Cortex-M0 oder Cortex-M4 Dual-Core machen würden, wären Sie jetzt fertig. Aber wir haben einen Cortex-M7. Und der M7 bringt ein Feature mit, das uns jetzt das Leben zur Hölle macht.
+Was steht nach dem Reset vor der Init? Undefiniert, bis M7 schreibt.
 :::
 
 ## Was ist ein CPU-Cache?
 
-- Die CPU (Board-Setup z. B. $400\,\mathrm{MHz}$) ist extrem schnell
-- Der Hauptspeicher (SRAM) ist langsam (z. B. braucht ein Zugriff $5$ Taktzyklen)
-- Der L1-Cache:
-  - Ein winziger, aber unfassbar schneller SRAM direkt im Prozessorkern ($1$ Taktzyklus)
-  - Wenn die CPU eine Variable aus dem RAM liest, kopiert die Hardware einen ganzen Block (Cache-Line, $32\,\mathrm{Byte}$) in den Cache
-  - Beim nächsten Lesen wird die Variable aus dem Cache geholt (blitzschnell!)
+- Zeile typisch 32 Byte auf diesem M7
+- Ein Lese-Treffer kann einen alten Wert liefern
+- Ein Schreib-Treffer kann nur die Zeile ändern
+- Der M4 sieht SRAM, nicht die Dirty-Line des M7
 
 ::: notes
-Bei Board-Setup $\approx 400\,\mathrm{MHz}$ ist SRAM oft mehrere Takte entfernt. L1-Cache ($32$-Byte-Lines) liefert Folgezugriffe in einem Takt.
+Auch Lesen ist ein Kohärenzproblem, nicht nur Schreiben.
 :::
 
 ## Write-Through vs. Write-Back
 
-- Was passiert, wenn der C-Code eine Variable schreibt (`sd.m7_ready = 1;`)?
-- **Write-Through:**
-  - Die CPU schreibt den Wert in den Cache UND sofort parallel durch in den Haupt-RAM
-  - (Sicher, aber langsamer)
-- **Write-Back** (häufig, solange die Region cacheable ist):
-  - Die CPU schreibt den Wert NUR in den internen Cache!
-  - Der echte SRAM bleibt veraltet (Stale Data)
-  - Der Cache schreibt die Daten erst in den RAM zurück (Eviction), wenn er Platz für neue Variablen braucht
+- Write-Through: Schreiben geht Richtung Speicher, hilft nicht für die Richtung M4 → M7
+- Write-Back: Rückschreiben bei Verdrängung oder Clean, nicht nur „wenn der Cache voll ist“
+- Clean schreibt Dirty-Daten
+- Invalidate verwirft die **Kopie**, nicht benachbarte SRAM-Bytes
+- Verloren gehen Dirty-Daten, die noch nicht zurückgeschrieben waren
 
 ::: notes
-Das Lesen ist unproblematisch. Aber was passiert beim Schreiben? Hier gibt es in der IT zwei Architekturen. Bei Write-Through schreibt der Cache jede Änderung sofort durch auf den großen SRAM. Das ist sicher, bremst den Bus aber aus. Moderne Prozessoren wie der Cortex-M7 nutzen deshalb standardmäßig Write-Back. Wenn Ihr Code `m7_ready = 1` ausführt, speichert die Hardware diese „1“ ausschließlich im winzigen L1-Cache des M7. Im echten SRAM auf der Platine steht weiterhin eine „0“. Der L1-Cache behält das für sich, bis er irgendwann voll ist und Platz machen muss. Erst dann schreibt er die Daten in den echten RAM zurück. Und hier beginnt die Katastrophe für unsere Multicore-Kommunikation.
+Eine alte Line über neue M4-Daten zu cleanen überschreibt die Antwort. Deshalb nicht „ganzes Struct immer clean+invalidate“.
 :::
 
 ## Das Drama der Cache-Kohärenz
 
-- Das Szenario:
-  - Der Cortex-M7 rechnet einen Wert aus und setzt das Flag `m7_ready = 1`
-  - Dank Write-Back landet die 1 nur im L1-Cache des M7. Im SRAM4 steht weiterhin 0
-  - Der Cortex-M4 (ohne Cache) fragt über die Bus-Matrix den SRAM4 ab
-  - Der SRAM4 antwortet mit 0
-- Ergebnis: Der M4 wartet ewig. Die Cores sind asynchron. Die Daten sind korrumpiert!
-- Dieses Problem nennt man einen *Cache Coherency Failure*
+Zwei Zustände, dieselbe Zeile:
+
+1. M7 hat den neuen Request nur dirty. M4 liest den alten SRAM-Wert.
+2. M4 hat die Antwort ins SRAM geschrieben. M7 liest noch seine alte Kopie.
 
 ::: notes
-M7 setzt `m7_ready = 1` nur im Write-Back-Cache; SRAM4 bleibt 0. M4 liest physisch 0 und wartet ewig — Cache Coherency Failure.
+Werte und Pfeile getrennt halten. Keine Zeitachse, solange wir keine Latenzen messen.
 :::
 
 ## Visualisierung: Cache Coherency Failure
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-
-concise "M7 L1-Cache" as C7
-concise "SRAM4 (Physikalisch)" as RAM
-concise "M4 (ohne Cache)" as M4
-
-@0
-C7 is "0"
-RAM is "0"
-M4 is "wartet"
-
-@1
-C7 is "1 Dirty" : M7 write
-RAM is "0 alt"
-M4 is "liest 0"
-
-@2
-C7 is "1"
-RAM is "0"
-M4 is "liest 0"
-
-@3
-C7 is "1"
-RAM is "0"
-M4 is "Freeze"
-@enduml
+```{mermaid}
+%%| fig-width: 6.4
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  subgraph bad["Zustand 1: M4 sieht Altlast"]
+    C1[M7-Line dirty 1] -.-> S1[SRAM noch 0]
+    S1 --> R1[M4 liest 0]
+  end
+  subgraph bad2["Zustand 2: M7 sieht Altlast"]
+    S2[SRAM schon 1] --> R2[M4 hat geschrieben]
+    C2[M7-Line noch 0] -.-> S2
+  end
 ```
 
-- Der M4 sieht die neuen Daten des M7 nicht, da sie im L1-Cache „feststecken“
-
 ::: notes
-Diagramm: Cache dirty, RAM stale, M4 liest 0 — reines Hardware-/Kohärenz-Problem, kein Compiler-/RTOS-Bug.
+Synthetisches Bild. Die Laborbasis umgeht den D-Cache per MPU, statt jede Richtung von Hand zu warten.
 :::
 
 ## HW-Lösung in PCs: Cache-Snooping
 
-- Wie löst Ihr Intel-i7 im Laptop das Problem?
-- Er nutzt Hardware-Snooping (z. B. MESI-Protokoll)
-- Die Kerne „schnüffeln“ (Snoop) gegenseitig auf dem Bus
-- Wenn Core 2 den RAM liest, bemerkt Core 1 das, unterbricht den Vorgang, schreibt schnell seinen Cache in den RAM und lässt Core 2 dann erst lesen
-- Warum hat der STM32H755 das nicht?
-- Snooping kostet extrem viel Siliziumfläche, viel Strom und (das Schlimmste) verursacht unvorhersehbare Bus-Latenzen $\rightarrow$ Gift für harte Echtzeit!
+- Kohärenz kann Cache-zu-Cache liefern, nicht nur über RAM
+- MESI ist ein Lehrbild, nicht das vollständige Modell jedes PCs
+- Daraus folgt nicht, dass PC-Kerne nie hart echtzeitfähig sind
+- Der H755 hat diese Kohärenz zwischen M7-L1 und M4 nicht
 
 ::: notes
-PCs lösen Kohärenz per Hardware-Snooping (z. B. MESI) — teuer, stromhungrig, jitterbehaftet. Auf dem STM32H755 lösen wir es software-/MPU-seitig.
+Konzeptfolie. Keine Register des M7 daraus ableiten.
 :::
 
 ## Software-Lösung 1: Manuelles Management
 
-- Wir zwingen den M7 per C-Code, seinen Cache zu leeren
-- Die `core_cm7.h`-Bibliothek bietet dafür spezielle CMSIS-Befehle:
-  - `SCB_CleanDCache_by_Addr(...)`:
-    Nimm diese Variable aus dem L1-Cache und schreibe sie zwingend sofort in den SRAM durch! (nach dem Schreiben)
-  - `SCB_InvalidateDCache_by_Addr(...)`:
-    Verwirf diese Variable im L1-Cache! Zwinge die CPU, sie beim nächsten Mal direkt aus dem SRAM zu lesen! (vor dem Lesen)
+Option, nicht die Basis:
+
+- Getrennte 32-Byte-Blöcke, ein Schreiber
+- Clean nur der eigenen neuen Daten, bevor der andere lesen muss
+- Invalidate nur, bevor man fremde neue Daten lesen will, und ohne dirty Nachbarschaft zu opfern
+
+Eine Line mit Payload, Flag und fremder Dirty-Variable ist der Fehlerfall.
 
 ::: notes
-Die erste Möglichkeit, dieses Problem zu lösen, ist manuelles Cache-Management im C-Code. ARM liefert dafür CMSIS-Kern-Funktionen. Wenn der M7 fertig geschrieben hat, rufen wir `SCB_CleanDCache_by_Addr` auf. Das befiehlt der CPU: Nimm genau diesen Speicherbereich aus dem L1-Cache und schreibe ihn gewaltsam und sofort in den echten SRAM. Umgekehrt, bevor der M7 eine Variable liest, auf die der M4 eventuell geschrieben hat, rufen wir `SCB_InvalidateDCache_by_Addr` auf. Das erklärt die Cache-Line für ungültig und zwingt die M7-Hardware, den Wert beim nächsten Zugriff physikalisch neu aus dem SRAM zu holen.
+Alignment der Startadresse genügt nicht. Größe und wer sonst in der Line schreibt, zählen.
 :::
 
 ## Nachteile der Software-Lösung
 
-```c
-// Beispielcode M7:
-sd.m7_ready = 1;
-// Manuelles Durchschreiben!
-SCB_CleanDCache_by_Addr((uint32_t*)&sd,
-                        sizeof(SharedData_t));
-```
-
-- Warum wir das im Labor NICHT machen:
-  - Man vergisst es extrem leicht $\rightarrow$ schwer zu findende Bugs
-  - Der Cache arbeitet immer in $32$-Byte-Blöcken (Cache-Lines). Wenn Ihre Datenstruktur nicht exakt auf $32$ Byte ausgerichtet ist, invalidieren Sie versehentlich auch benachbarte Variablen!
-  - Es kostet unnötig CPU-Taktzyklen
+- Leicht die Richtung zu verwechseln
+- Clean der veralteten Line kann M4-Daten überschreiben
+- Invalidate kann eigene Dirty-Bytes verwerfen
+- Nur aufnehmen, wenn der Code wirklich geprüft ist
+- Das Basislabor macht die Region non-cacheable
 
 ::: notes
-Das manuelle Management funktioniert, ist aber in der Praxis fehleranfällig. Schauen Sie sich den Code an. Sie müssen nach jedem Schreibvorgang diese Clean-Funktion aufrufen. Vergessen Sie es nur an einer einzigen Stelle im Code, haben Sie Ihren Heisenbug. Viel schlimmer ist das $32$-Byte-Problem. Ein L1-Cache reinigt nie einzelne Bytes, er operiert immer auf $32$-Byte-Blöcken. Wenn Ihr Struct nur $12$ Byte groß ist und Sie es invalidieren, löscht die CPU auch die $20$ benachbarten Bytes im Cache aus dem RAM. Liegt dort eine völlig unbeteiligte Variable, die die CPU gerade berechnet hat, vernichten Sie Daten! Wir werden diese Software-Lösung heute deshalb nicht verwenden.
+Zwischen den Varianten neu starten. Attribute nicht umschalten, während beide schreiben.
 :::
 
 ## Hardware-Lösung 2 (Best Practice): Die MPU
 
-- Wir entziehen dem Cache einfach die Erlaubnis, diesen spezifischen RAM-Bereich (SRAM4) zu puffern!
-- Das Werkzeug dafür ist die MPU (Memory Protection Unit) im Cortex-M7
-- Die MPU ist ein Hardware-Modul, das Zugriffsrechte und Cache-Regeln für bestimmte Speicherregionen definiert
-- Unsere Konfiguration:
-  - Wir definieren eine MPU-Region über den Bereich des SRAM4 (`0x38000000`)
-  - Wir setzen die Eigenschaft auf *Disable Cache* / *Non-Cacheable* (ARM: oft TEX/C/B so gesetzt, dass kein Caching erfolgt)
+Für SRAM4 im Basislabor, Attribute aus AN4838, Konstanten im HAL-Header prüfen:
+
+| Feld | Wert |
+|------|------|
+| Basis / Größe | `0x38000000`, 64 KiB |
+| Typ | Normal, TEX = 001, C = 0, B = 0 |
+| Rechte | Schreiben erlaubt, Execute Never |
+| Shareability | passend zur Doku der Region setzen |
+
+Reihenfolge: MPU, dann D-Cache an, dann Shared-Zugriff.
+
+Der Pfeil umgeht den D-Cache. Ownership und `DMB` bleiben.
 
 ::: notes
-Es gibt einen besseren Weg: Wir lösen das Problem wieder hardwareseitig, aber ohne Snooping. Wir nutzen die Memory Protection Unit, die MPU des Cortex-M7. Die MPU ist eine Art Türsteher im Prozessorkern. Wir können der MPU sagen: Pass auf, der Bereich ab `0x38000000` gehört zum Shared Memory. Dieser Bereich ist tabu für den Cache! Wir markieren diesen speziellen Teil des RAMs als Non-Cacheable (in CubeMX oft: Disable Cache). Sobald wir das tun, wird die Hardware den L1-Cache für alle Variablen aus diesem Struct schlichtweg umgehen.
+Überlappende Regionen: die höhere Regionsnummer gewinnt auf dem M7. Eine cacheable Region darüber würde die Absicht kaputtmachen. Das im MPU-Register nachsehen.
 :::
 
 ## Was bewirkt die MPU?
 
-- Wenn der M7 nun `sd.m7_ready = 1;` ausführt:
-  - Die MPU sieht die Adresse `0x38000000`
-  - Sie weiß: Cache ist hier verboten!
-  - Sie leitet den Schreibbefehl direkt über die Bus-Matrix an den SRAM4 durch
-- Vorteile:
-  - Kein C-Code (Clean/Invalidate) mehr nötig!
-  - Cache-Kohärenz ist zu $100\,\%$ physikalisch garantiert
-  - Der M4 sieht die neuen Daten sofort in Echtzeit
-- Nachteil: Zugriffe auf das Struct sind langsamer (Bus-Latenz), aber für ein paar Ping-Pong-Flags ist das irrelevant
+- Diese Region wird für den M7 nicht als cachebarer Normal-Speicher behandelt
+- Sie macht die Bytes nicht „100 % sicher“
+- Zwei Kerne ohne Cache brauchen das Protokoll trotzdem
+- Weglassen der MPU erzeugt nur dann den Cachefehler, wenn der D-Cache an ist und der Weg cachebar bleibt
 
 ::: notes
-Was passiert nun zur Laufzeit? Der M7 schreibt `m7_ready = 1`. Der Schreibbefehl geht an den Kern. Der Türsteher, die MPU, sieht die Adresse und leitet den Befehl am L1-Cache vorbei direkt in die AXI-Bus-Matrix bis zum SRAM4. Die 1 landet sofort und ohne Umwege physikalisch im RAM. Das Schöne daran: Unser C-Code bleibt absolut sauber. Wir müssen keine Clean-Funktionen mehr aufrufen. Der einzige Nachteil ist, dass dieser direkte Zugriff $5$ Takte statt $1$ Takt dauert. Aber für die wenigen Bytes an Status-Flags in der Multicore-Kommunikation ist diese minimale Latenz absolut zu verschmerzen.
+CCR und die Regionsregister sind der Nachweis, nicht die Hoffnung. Eine eigene Write-Back-Variante nur als Versuch 2.
 :::
 
 ## Laborvorbereitung: Der Ping-Pong Datenaustausch
 
-- Ziel für heute Nachmittag:
-  - Beide Kerne wecken
-  - Shared Memory konfigurieren
-  - Daten hin- und herspielen (Ping-Pong mit Handshake-Flags)
+Zustand: `TURN_M7`, `REQUEST_M4`, `RESPONSE_M7`.
+
+M7 setzt vor der Freigabe Payload 0 und den ersten Request.
+
+M4 macht daraus 1. M7 druckt 1, legt 2 hin, requested wieder.
+
+M4 antwortet 3. Sichtbar: **1, 3, 5, …** nicht zuerst 0.
+
+Nach der Übergabe schreibt niemand weiter am Payload.
 
 ::: notes
-Damit sind wir bei der Vorbereitung für das heutige Labor angekommen. Wir werden den STM32H755 in seiner ganzen asymmetrischen Pracht nutzen: Shared Memory, Linker-Sektion, MPU und ein kontrolliertes Handshake zwischen M7 und M4.
+Die 500-ms-Pause und die UART-Zeit sind die sichtbare Rate, nicht die IPC-Latenz. `osDelay(1)` ist ein Tick, nicht automatisch 1 ms.
 :::
 
 ## Schritt 1: CubeMX Dual-Core Setup
 
-- Starten Sie ein Projekt für das Board (mit beiden Cores M7 & M4)
-- Unter Middleware $\rightarrow$ FreeRTOS:
-  - Aktivieren Sie FreeRTOS ausschließlich für den Cortex-M4
-  - Den M7 lassen wir komplett Bare-Metal laufen! (Asymmetric OS-Design)
+- Board nur übernehmen, wenn es NUCLEO-H755ZI-Q ist
+- Beide Kerne, FreeRTOS nur auf dem M4, CMSIS_V2
+- UART-Retargeting einem Kern zuordnen
+- Takt aus dem Cube-Tree abschreiben, nicht aus dieser Folie
 
 ::: notes
-Legen Sie ein neues Projekt an und aktivieren Sie beide Kerne. Wir setzen heute ein klassisches Industrie-Pattern um: FreeRTOS ausschließlich auf dem M4-Kern für die harte Echtzeit. Den M7-Kern lassen wir als hochperformantes Bare-Metal-Programm völlig ohne Betriebssystem laufen.
+Stromversorgung und VOS bestimmen, ob 400/480 MHz legal sind. Offen ohne Projekt.
 :::
 
 ## Schritt 2: Den Cortex-M4 wecken
 
-- In der generierten Struktur öffnen Sie die `main.c` im Ordner CM7
-- Fügen Sie ganz am Anfang der `main()` den Weckruf ein!
+Den generierten HSEM/Stop-Code behalten und prüfen:
 
-```c
-int main(void)
-{
-  HAL_Init();
-  SystemClock_Config();
-
-  // WICHTIG: M4 aus dem Hardware-Reset befreien!
-  HAL_PWREx_ReleaseCore(PWR_CORE_CPU2);
-
-  // ... restlicher Code des M7
-}
-```
+- HSEM-Takt an
+- ID notieren
+- M4: Notify, Stop, begrenztes Warten auf M7-Seite
+- M7: Shared-Init **danach** erst Release
+- Fehler: Status ausgeben, nicht den Block löschen, während der andere läuft
 
 ::: notes
-Der erste Programmierschritt im Labor ist extrem wichtig: Öffnen Sie den Ordner für den CM7. In dessen `main`-Funktion hat der Codegenerator bereits die HAL-Initialisierung und den System-Clock konfiguriert. Darunter müssen Sie den M4-Kern aufwecken, indem Sie die Hardware-Reset-Linie lösen. Rufen Sie `HAL_PWREx_ReleaseCore` auf. Ab dieser Mikrosekunde laufen beide Kerne gleichzeitig.
+Keine zweite Wake-Funktion neben dem Template erfinden.
 :::
 
 ## Schritt 3: Shared Memory Struct anlegen
 
-- Legen Sie eine neue Datei `shared_data.h` im `Common/Inc`-Ordner an
-- Binden Sie diese Header-Datei in der `main.c` beider Kerne ein
+Header gemeinsam, Definition je eine `.c` pro Image.
 
-```c
-#ifndef SHARED_DATA_H
-#define SHARED_DATA_H
+`_Static_assert(sizeof(ipc_block_t) % 4 == 0)`.
 
-#include <stdint.h>
-
-typedef struct {
-    uint8_t m7_ready;
-    uint8_t m4_ready;
-    uint32_t payload_value;
-} SharedData_t;
-
-// Deklaration mit Sektions-Zuweisung
-extern __attribute__((section(".shared_memory")))
-       volatile SharedData_t sd;
-
-#endif
-```
+Magic ungleich 0, damit M4 uninitialisierten Speicher erkennt und wartet oder den Timeout nimmt.
 
 ::: notes
-In Schritt 3 definieren wir unsere Sprache. Da beide Kerne völlig getrennte C-Projekte sind, müssen wir eine Header-Datei im Common-Ordner anlegen, auf den beide Zugriff haben. Wir definieren unser Struct `SharedData_t` mit den Bereit-Flags und einem Payload. Darunter deklarieren wir die Variable `sd` als `extern`, binden sie fest an die `.shared_memory`-Sektion und markieren sie als `volatile`. Damit haben beide Kerne dasselbe logische Verständnis der Datenstruktur. Hinweis: Die Definition (ohne `extern`) gehört in genau eine `.c`-Datei, typischerweise im Common-Ordner.
+M4 darf `memset` auf den Block nicht im Task-Start ausführen.
 :::
 
 ## Schritt 4: Das Linker-Script anpassen
 
-- Öffnen Sie in beiden Projekten (CM7 und CM4) die Datei `STM32H755..._FLASH.ld`
-- Fügen Sie im `MEMORY`-Block den SRAM4 hinzu
-  (CubeMX-Name: `RAM_D3`; entscheidend ist die Adresse `0x38000000`):
+Beide Skripte: dieselbe Sektion, kein doppeltes RAM.
 
-```ld
-RAM_D3 (xrw) : ORIGIN = 0x38000000, LENGTH = 64K
-```
+Map: `ipc` bzw. `sd` gleiche Adresse.
 
-- Fügen Sie im `SECTIONS`-Block unsere Sektion ein (Achtung auf `NOLOAD`!):
-
-```ld
-.shared_memory (NOLOAD) :
-{
-  . = ALIGN(4);
-  *(.shared_memory)
-} > RAM_D3
-```
+Startup: der Bereich darf nicht in der Zero-Tabelle liegen, sonst löscht ein Kern den laufenden Dialog.
 
 ::: notes
-Nun müssen wir den Worten im C-Code auch Taten im Linker-Script folgen lassen. Suchen Sie die `.ld`-Dateien im Projektbaum. Fügen Sie im `MEMORY`-Block den D3-RAM ein, beginnend bei `0x38000000`. Dann scrollen Sie runter in den `SECTIONS`-Block und fügen unsere Sektion `.shared_memory` ein. Vergessen Sie das `NOLOAD` nicht, sonst überschreibt der M4-Bootcode den SRAM4 mit Nullen und zerschießt die Daten, die der M7 vielleicht schon geschrieben hat. Sie müssen diese Änderungen zwingend in den Linker-Scripten beider Kerne vornehmen!
+Schema-Snippet, keine behauptete Map aus diesem Repo.
 :::
 
 ## Schritt 5: Die Ping-Pong Logik (Cortex-M4)
 
-- In der FreeRTOS-Task des M4:
-
 ```c
-void StartDefaultTask(void *argument) {
-  for(;;) {
-    // 1. Warten bis M7 Daten bereitstellt
-    while(sd.m7_ready == 0) {
-      osDelay(1); // Task schlafen, CPU nicht blockieren
+void IpcTask(void *argument) {
+    (void)argument;
+    for (;;) {
+        if (ipc.state != REQUEST_M4) {
+            osDelay(1); /* ein Tick, Frequenz aus der Config */
+            continue;
+        }
+        __DMB();
+        uint32_t v = ipc.payload + 1u;
+        ipc.payload = v;
+        __DMB();
+        ipc.state = RESPONSE_M7;
+        osDelay(1);
     }
-
-    // 2. Daten verarbeiten
-    sd.m7_ready = 0; // Quittieren
-    sd.payload_value += 1;
-
-    // 3. Antwort an M7 signalisieren
-    sd.m4_ready = 1;
-  }
 }
 ```
 
+Timeout über einen Zähler der Runden, nicht über `HAL_GetTick` des anderen Kerns.
+
 ::: notes
-Kommen wir zur eigentlichen Logik. Auf dem M4 läuft unser FreeRTOS. In der generierten Task bauen wir eine Warteschleife. Solange der M7 noch keine Daten geliefert hat (`m7_ready == 0`), schicken wir die Task mit `osDelay(1)` schlafen. So belasten wir die Echtzeit-Umgebung des M4 nicht mit ewigem Busy-Polling. Sobald das Flag auf 1 springt, wachen wir auf. Wir löschen das M7-Flag (Quittierung), addieren eine 1 auf den Payload-Wert und setzen unser eigenes Bereit-Flag `m4_ready` auf 1. Der Ball liegt wieder beim M7.
+Während `osDelay` laufen andere M4-Tasks. Ein hängender Handshake ist kein kompletter CPU-Stillstand.
 :::
 
 ## Schritt 6: Die Ping-Pong Logik (Cortex-M7)
 
-- In der Super-Loop (`while(1)`) des M7:
-
 ```c
-// Initiale Übergabe
-sd.payload_value = 0;
-sd.m7_ready = 1;
-
-while (1) {
-  // 1. M7 hat kein OS! Polling ist hier (als Demo) ok.
-  if(sd.m4_ready == 1) {
-
-    printf("M4 hat geantwortet: %lu\n",
-           (unsigned long)sd.payload_value);
-
-    sd.m4_ready = 0; // Quittieren
-    sd.payload_value += 1;
-
-    HAL_Delay(500); // Demo: Lesbarkeit am Terminal
-    sd.m7_ready = 1; // Ball zurück zu M4!
-  }
-}
+ipc.payload = 0;
+__DMB();
+ipc.state = REQUEST_M4;
+/* nach Antwort: */
+__DMB();
+log_u32(ipc.payload); /* 1, dann 3, dann 5 */
+ipc.payload += 1u;
+__DMB();
+ipc.state = REQUEST_M4;
 ```
 
+`HAL_Delay(500)` nur als sichtbare Pause. Nicht als Latenzmessung.
+
+Keine Antwort innerhalb weniger Pausen: Fehlerzeile, Zustand stehen lassen, Schleife beenden.
+
 ::: notes
-Das Gegenstück auf dem M7 ist reines Bare-Metal. Wir initiieren das Spiel vor der While-Schleife, indem wir den Payload auf 0 setzen und den Ball losspielen (`m7_ready = 1`). In der Super-Loop pollen wir das Flag des M4. Da wir auf dem M7 kein Betriebssystem haben, ist das Polling hier in Ordnung. Wenn der M4 geantwortet hat, drucken wir den Wert über UART aus, quittieren das Flag, addieren wieder eine 1, machen absichtlich ein `HAL_Delay` (nur Demo, Bare-Metal!), damit wir die Ausgabe am Terminal mitlesen können, und spielen den Ball zurück zum M4.
+M7-`HAL_Delay` ist Busy-Wait auf dem M7. Der M4 kann trotzdem im RTOS weiterlaufen, solange der Bus das erlaubt.
 :::
 
 ## Schritt 7: MPU im M7 konfigurieren
 
-- Ohne diese Konfiguration wird der Code aus Schritt 6 scheitern!
-- Gehen Sie im CubeMX Configurator auf:
-  System Core $\rightarrow$ CORTEX_M7 $\rightarrow$ Reiter MPU Control
-- Aktivieren Sie Region 0:
-  - Base Address: `0x38000000`
-  - Size: $64\,\mathrm{KB}$
-  - Access Permission: ALL ACCESS
-  - TEX / Shareable / Cacheable: Disable Cache (Non-Cacheable)
-- Code neu generieren!
+Vor `SCB_EnableDCache()` und vor dem ersten Shared-Zugriff.
+
+Konstantennamen aus `stm32h7xx_hal_cortex.h` der installierten CubeH7-Version. Nicht raten, wenn der Header abweicht.
+
+Versuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.
 
 ::: notes
-Würden wir den Code jetzt flashen, würde absolut nichts passieren. Das System friert ein — wegen des Cache-Kohärenz-Problems. Um das zu beheben, müssen wir in den Configurator der CubeIDE. Unter System Core finden Sie die Cortex-M7-Einstellungen. Dort gehen Sie in das Memory Protection Unit Control. Wir legen eine neue Regel an: Für den Bereich beginnend bei `0x38000000` mit einer Größe von $64\,\mathrm{KB}$ stellen wir das Caching-Verhalten auf Disable Cache. Generieren Sie den Code. Ab jetzt umgeht die M7-Hardware den L1-Cache komplett, wenn sie auf unser `sd`-Struct zugreift.
+Ohne aktiven D-Cache zeigt Versuch 2 nichts. CCR lesen.
 :::
 
 ## Flashen & Debuggen im Labor
 
-- Klicken Sie im CM7-Projekt auf den kleinen Pfeil neben dem Käfer-Icon (Debug) und wählen Sie „Debug Configurations“
-- Die CubeIDE hat automatisch eine Startup-Gruppe angelegt
-- Achten Sie darauf, dass beide `.elf`-Dateien (CM7 und CM4) angewählt sind
-- Ein Klick lädt erst den M7 in den Flash (Bank 1), danach den M4 (Bank 2) und stoppt beide an ihrer jeweiligen `main()`
-- Drücken Sie auf beiden Konsolen auf Play (Resume)
+- Beide ELF laden, Reset so, dass der HSEM-Handshake durchläuft
+- Erste drei Runden: M4 schreibt 1, 3, 5; M7 druckt sie
+- UART-Kern ist der, der `printf` wirklich bedient
+- Breakpoints auf beiden Kernen verschieben Timeouts
 
 ::: notes
-Das Flashen eines Dual-Core-Projekts bedarf eines kleinen Tricks in Eclipse. Sie dürfen nicht einfach blind auf Run klicken, sonst flashen Sie vielleicht nur den M7. Gehen Sie in die Debug Configurations. ST hat dort meist schon eine Multicore-Startgruppe angelegt. Vergewissern Sie sich, dass die Checkboxen für beide Firmware-Dateien, also `CM7.elf` und `CM4.elf`, gesetzt sind. Wenn Sie starten, brennt der ST-Link zuerst Programm 1 und dann Programm 2 in den Chip. Dann halten beide Kerne in der ersten Zeile Code an. Sie müssen dann oben in der Taskleiste beide Kerne separat auf Resume drücken, damit das Ping-Pong-Spiel beginnt.
+ST-LINK-Ablauf der Kursversion. OpenOCD nicht in denselben Satz mischen, solange er nicht der verwendete Server ist.
 :::
 
 ## Mutwilliger Fehler: MPU deaktivieren
 
-- Wenn Ihr System läuft und der UART fröhlich zählt:
-- Gehen Sie in den Code und kommentieren Sie die MPU-Initialisierung aus:
+| Symptom | Prüfung | typische Ursache |
+|---------|---------|------------------|
+| M4 startet nicht | Stop, HSEM-ID | Boot, nicht Cache |
+| falsche Adresse | beide Maps | Linker |
+| Magic falsch | Speicherfenster | Init fehlt oder Zero läuft |
+| M7 sieht alten Wert | CCR, MPU-Region | Cachezeile |
+| Timeout | Zustand eingefroren | Ownership oder Barriere |
+| falsches Image | ELF-Namen | Bank/Startadresse |
 
-```c
-/* HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT); */
-```
-
-- Die Beobachtung:
-  - Der M7 gibt initial 0 aus und friert dann für immer ein
-  - Der M4 wartet ewig im `osDelay(1)`
-- Sie haben den berüchtigten Cache Coherency Failure live am Debugger!
+GPIO oder UART-Status je Symptom, keine erfundene Messung.
 
 ::: notes
-Wenn Ihr Terminal im Labor anfängt, im $500\,\mathrm{ms}$-Takt die Zahlen hochzuzählen, haben Sie es geschafft. Beide Kerne reden miteinander. Um sich aber zu beweisen, dass die Theorie stimmt, machen wir einen mutwilligen Fehler. Gehen Sie in die `main.c` des M7 und kommentieren Sie die Zeile aus, in der die MPU aktiviert wird (`HAL_MPU_Enable`). Flashen Sie das Programm neu. Das Terminal wird stumm bleiben. Der M7 schreibt in seinen L1-Cache, der M4 liest aus dem SRAM4 die alten Nullen aus. Beide hängen in ihren While-Schleifen fest. Sie haben gerade den berüchtigtsten Architektur-Fehler der Multicore-Entwicklung live erzeugt.
+Ein blockierter M4-Task im `osDelay` lässt andere Tasks laufen. Das ist kein Beweis, dass der Kern steht.
 :::
 
 ## Die Gefahr für nächste Woche (HSEM)
 
-- Unser Ping-Pong heute nutzt ein strenges Handshake-Protokoll (`m7_ready`, `m4_ready`). Jeder Kern weiß genau, wann er schreiben darf
-- Was passiert aber…
-  - wenn beide Kerne asynchron arbeiten und gleichzeitig `sd.payload_value` überschreiben wollen?
-- Ein FreeRTOS-Mutex hilft hier nicht! (Der M7 hat ja gar kein FreeRTOS!)
-- Wir brauchen hardware-basierte Schlösser, die über Core-Grenzen hinweg funktionieren (HSEM)
-- $\rightarrow$ Thema für Vorlesung 8!
+- Boot-HSEM ist heute erledigt
+- Eine HSEM-Sperre für jeden Zugriff ist Termin 8
+- HSEM ersetzt weder MPU noch DMB
+- Ein lokaler FreeRTOS-Mutex sieht den M7 nicht
 
 ::: notes
-Das heutige Labor ist ein kontrolliertes Ping-Pong. Die Fahne `m7_ready` sorgt dafür, dass immer nur ein Kern zur selben Zeit in das Struct schreibt. Aber was passiert nächste Woche, wenn beide Kerne völlig asynchron und unabhängig voneinander auf denselben Payload-Wert zugreifen wollen? Dann haben wir eine Multicore Race Condition. Unser schöner FreeRTOS-Mutex aus Woche 4 hilft uns hier keinen Millimeter weiter. Der Mutex existiert ja nur im RAM des M4-Kerns, der Bare-Metal-M7 weiß davon gar nichts. Wir benötigen ein Schloss, das auf Hardware-Ebene in Silizium gegossen ist und über Bus-Grenzen hinweg funktioniert. Das nennt sich Hardware Semaphores (HSEM) und wird das große Thema in Vorlesung 8 sein.
+Kursplan: Termin 7 Tracing, Termin 8 HSEM und Safety. „Nächste Woche HSEM“ wäre der falsche Verweis.
 :::
 
 ## Zusammenfassung des Tages
 
-- AMP ist der Standard für harte Echtzeit-Multicore-Systeme, um Interferenzen zwischen Betriebssystemen zu vermeiden
-- Der Cortex-M4 übernimmt oft das RTOS, der Cortex-M7 (Bare-Metal) kümmert sich um den Durchsatz
-- Die Adress-Zuordnung von geteilten Daten muss hart über `.ld`-Linker-Skripte erzwungen werden (`.shared_memory`)
-- Cache-Kohärenz zerschießt die Kommunikation, wenn schnelle Kerne (M7) Write-Back-Caches nutzen
-- Die Lösung ist die Deaktivierung des Caches für den geteilten RAM per Hardware (MPU)
+- AMP partitioniert Firmware, nicht automatisch die Zeit
+- Boot: M4 Stop, M7 init, HSEM Release
+- Shared: eine Adresse, M7 initialisiert, Zustand vor Payload-Leser
+- Cache: beide Richtungen; MPU non-cacheable plus DMB plus ein Schreiber
+- Ausgabe 1, 3, 5 ist das Protokoll, nicht eine Messung
 
 ::: notes
-Fassen wir zusammen. Sie kennen nun den fundamentalen Architektur-Unterschied zwischen dem Laptop zu Hause (SMP) und dem Steuergerät im Labor (AMP). Sie können den Boot-Ablauf eines Dual-Core-Chips orchestrieren. Sie verstehen, wie man per C-Attribut Daten in spezifische SRAM-Sektoren zwingt. Und das Wichtigste: Sie haben verstanden, warum ein L1-Cache uns die Datenkonsistenz zerstört und wie wir das durch die Memory Protection Unit auf Hardware-Ebene sauber und professionell beheben können. Damit sind Sie perfekt gewappnet für das Labor am Nachmittag!
+Quellen: DS12919, RM0399 der Projekt-Revision, AN5361, AN5617, AN4839, AN4838, CMSIS-Cache und Intrinsics, GCC volatile, GNU ld NOLOAD. Offene Punkte: installierte Cube-Version, echte Map, UART-Pin, VOS.
 :::
