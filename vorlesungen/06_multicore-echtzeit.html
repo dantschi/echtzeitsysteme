@@ -7,8 +7,7 @@
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
 <link href="../site_libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<link href="../site_libs/quarto-contrib/livefigures-0.8.0/livefigures.css" rel="stylesheet"><meta charset="utf-8">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
   <meta name="generator" content="quarto-1.10.18">
 
   <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
@@ -208,7 +207,7 @@
 
 <section id="title-slide" class="quarto-title-block center">
   <h1 class="title">06 · Multicore-Echtzeit</h1>
-  <p class="subtitle">AMP, STM32H755 und Shared Memory · EZS · DHBW Stuttgart</p>
+  <p class="subtitle">AMP, Shared Memory, Cache und MPU · EZS · DHBW Stuttgart</p>
 
 <div class="quarto-title-authors">
 <div class="quarto-title-author">
@@ -222,14 +221,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-in-der-multicore-königsklasse" class="slide level2">
 <h2>Willkommen in der Multicore-Königsklasse!</h2>
 <ul>
-<li>Herzlich willkommen zum 6. Termin unserer Vorlesung</li>
-<li>Die letzten 5 Wochen: Single-Core-Echtzeit (Scheduling, IPC, Interrupts)</li>
-<li>Heute heben wir die Komplexität auf das nächste Level: Multicore-Systeme</li>
-<li>Zwei unterschiedliche Prozessorkerne in einem Chip</li>
-<li>Praxis am Nachmittag: zweites „Gehirn“ des STM32H755 aufwecken</li>
+<li>Sechster Termin: zwei Kerne, ein Chip, keine automatische Isolation</li>
+<li>Labor: <strong>M7 Bare-Metal</strong>, <strong>M4 FreeRTOS</strong> (CMSIS-RTOS2)</li>
+<li>HSEM kommt hier als <strong>Boot-Handshake</strong> vor, wenn das Template ihn erzeugt</li>
+<li>HSEM als Laufzeitsperre bleibt Termin 8</li>
+<li>Nächstes Mal: Tracing, nicht die volle HSEM-Vorlesung</li>
 </ul>
 <aside class="notes">
-<p>Guten Morgen und herzlich willkommen in der Königsklasse der Embedded-Programmierung! In den letzten fünf Wochen: Task-Scheduling, Queues, Hardware-Interrupts über Semaphoren — alles auf einem Prozessorkern. Heute: Multicore-Architekturen, warum Ihr PC anders tickt als ein Steuergerät, und wie wir auf dem STM32H755 zwei Kerne parallel und sicher betreiben.</p>
+<p>Keine .ioc und kein HAL-Baum im Kursrepo. Funktionsnamen, Takte und Boardrevision am generierten Projekt prüfen. NUCLEO-H755ZI-Q nur, wenn Cube dieses Board erzeugt hat.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -245,16 +244,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
 <ol type="1">
-<li>Recap: Die Grenzen der Single-Core-Architektur</li>
-<li>Symmetrisches vs.&nbsp;Asymmetrisches Multiprocessing (SMP vs.&nbsp;AMP)</li>
-<li>Hardware Deep-Dive: Dual-Core-Architektur des STM32H755</li>
-<li>Boot-Prozess und Toolchain-Setup für zwei Kerne</li>
-<li>Die Speicherarchitektur (RAM-Domänen)</li>
-<li><em>[Nach der Pause]</em> Shared Memory und Cache-Kohärenz</li>
-<li>Ausblick Labor: Ping-Pong-Datenaustausch</li>
+<li>Ein Kern, SMP, AMP</li>
+<li>H755: Domänen, Bus, Boot</li>
+<li>Zwei Images, ein SRAM4-Block</li>
+<li>Cache, Ordnung, Ownership</li>
+<li>MPU und Ping-Pong</li>
 </ol>
 <aside class="notes">
-<p>Motivation für mehrere Kerne, dann SMP vs.&nbsp;AMP. Anschließend den STM32H755 zerlegen: M7 und M4, Boot und Speicheraufteilung. Nach der Pause: Cache-Kohärenz bei geteiltem Speicher. Am Nachmittag kommunizieren beide Kerne live.</p>
+<p>EDF mit <span class="math inline">\(U \le 1\)</span> galt für einen Prozessor, <span class="math inline">\(D = T\)</span>, ohne versteckte Kosten. Zwei Kerne übernehmen diese Formel nicht unverändert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -269,19 +266,34 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="recap-die-grenzen-des-single-core" class="slide level2">
 <h2>Recap: Die Grenzen des Single-Core</h2>
-<ul>
-<li>Erinnern wir uns an die Schedulability-Tests (Termin 2)</li>
-<li>EDF-Schranke: <span class="math inline">\(\sum \frac{C_i}{T_i} \le 1\)</span> (<span class="math inline">\(100\%\)</span> Auslastung)</li>
-<li>Bei <span class="math inline">\(100\%\)</span> CPU-Nutzung ist physikalisch Schluss</li>
-<li>Das Problem der Industrie:
-<ul>
-<li>Steuergeräte sollen immer mehr können (KI, Ethernet, GUI)</li>
-<li>Gleichzeitig harte Timing-Regelkreise (<span class="math inline">\(100\,\text{µs}\)</span> Raster)</li>
-</ul></li>
-<li>Wie bekommen wir mehr Rechenleistung in das System?</li>
-</ul>
+<p>Didaktische Aufteilung, keine Messung:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Arbeit</th>
+<th>ein Kern</th>
+<th>Laboridee</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Regelung</td>
+<td>teilt sich die Zeit</td>
+<td>eher M4</td>
+</tr>
+<tr class="even">
+<td>Netz, GUI</td>
+<td>dieselbe CPU</td>
+<td>eher M7</td>
+</tr>
+</tbody>
+</table>
+<p>Gemeinsames SRAM, die Busbrücke und DMA bleiben Störquellen.</p>
+<p>Vereinfacht, nur dynamische Schaltleistung:</p>
+<p><span class="math display">\[P_{\mathrm{dyn}} \approx \alpha\, C\, V^{2}\, f\]</span></p>
+<p>Spannung, Aktivität und Leckstrom kommen dazu. Keine gemessene Kurve.</p>
 <aside class="notes">
-<p>Woche 2: EDF kann die CPU zu 100% auslasten — mathematisches Limit. Ein modernes Automotive-Steuergerät soll Kamerabilder mit KI auswerten, Touch-Display bespielen und den Elektromotor mit Mikrosekunden-Präzision ansteuern. Ein einzelner Kern ist überfordert. Wir brauchen mehr Rechenleistung.</p>
+<p>Frage: Welche Kosten bleiben mit einem zweiten Kern? Interferenz, Kopien, Protokoll, Boot. Ein rechnerisches <span class="math inline">\(U = 1\)</span> auf einem Kern hatte keine Reserve für IRQ und OS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -297,20 +309,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="erhöhung-der-taktfrequenz" class="slide level2">
 <h2>Erhöhung der Taktfrequenz?</h2>
 <ul>
-<li>Warum takten wir den Cortex-M4 nicht mit <span class="math inline">\(5\,\mathrm{GHz}\)</span> statt <span class="math inline">\(240\,\mathrm{MHz}\)</span>?</li>
-<li>Die Power Wall (Leistungsmauer):
-<ul>
-<li>Höherer Takt → höhere Spannung → exponentiell mehr Abwärme</li>
-<li>Embedded Systems oft ohne Lüfter (z. B. vergossenes Motorsteuergerät)</li>
-</ul></li>
-<li>Die Memory Wall (Speichermauer):
-<ul>
-<li>RAM-Zugriffszeiten skalieren nicht mit CPU-Takten</li>
-<li>Die CPU wartet auf Daten (Pipeline Stalls)</li>
-</ul></li>
+<li>Höheres <span class="math inline">\(f\)</span> erhöht <span class="math inline">\(P_{\mathrm{dyn}}\)</span>, nicht „exponentiell“ als einziges Modell</li>
+<li>480 MHz (M7) und 240 MHz (M4) sind spezifizierte Maxima</li>
+<li>400/200 MHz nur, wenn der Clock-Tree, VOS und die Flash-Wartezeit das hergeben</li>
+<li>Mehr Takt parallelisiert keine zwei Aufgaben auf einem Kern</li>
 </ul>
 <aside class="notes">
-<p>Intuitiv: Takt erhöhen. Physik: Power Wall — 5 GHz erzeugen massive Abwärme. Im PC: Kühler und Lüfter. Im Auto: oft am Getriebeblock, wasserdicht vergossen, 100 Grad Umgebungstemperatur ohne Lüfter. Memory Wall: selbst bei 5 GHz intern liefert der Arbeitsspeicher zu langsam — die CPU verbrennt Zeit mit Warten.</p>
+<p>Die Laborfrequenz nicht aus dem Datenblatt-Maximum abschreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -326,16 +331,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-ausweg-multicore-architekturen" class="slide level2">
 <h2>Der Ausweg: Multicore-Architekturen</h2>
 <ul>
-<li>Lösung: lieber mehrere langsame, effiziente Kerne als ein extrem heißer, schneller Kern</li>
-<li>Beispiele aus der Industrie:
-<ul>
-<li>Automotive Domain Controller: viele kleine Steuergeräte in einem Multicore-Chip</li>
-<li>Industrie 4.0 (Edge Computing): ein Core steuert die Maschine (harte Echtzeit), ein anderer funkt in die Cloud (weiche Echtzeit)</li>
-</ul></li>
-<li>Multicore in der Echtzeit ist fundamental anders als in Ihrem Laptop</li>
+<li>Zwei Kerne können rechnen, solange ihre Datenwege frei sind</li>
+<li>Partitionieren heißt: getrennte Firmware und klare Zuständigkeit</li>
+<li>Es heißt nicht: der andere Kern ist zeitlich unsichtbar</li>
 </ul>
 <aside class="notes">
-<p>Die Lösung von Intel/AMD für den PC ist in der MCU-Welt angekommen: Multicore. Automotive: Domain Controller statt vieler Einzelprozessoren. Industrie 4.0: harte Echtzeit auf einem Kern, MQTT/OPC-UA auf dem anderen. Aber: Echtzeit-Multicore tickt völlig anders als der i7 in Ihrem Laptop.</p>
+<p>AMP erleichtert die Trennung. Es ist kein Sicherheitsnachweis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -350,31 +351,37 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="multiprocessing-architekturen" class="slide level2">
 <h2>Multiprocessing-Architekturen</h2>
-<p>Zwei grundlegende Konzepte:</p>
-<ol type="1">
-<li>SMP (Symmetric Multiprocessing)</li>
-<li>AMP (Asymmetric Multiprocessing)</li>
-</ol>
-<p>Beide haben unterschiedliche Einsatzgebiete.</p>
-<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell" data-reveal="true" data-fig-width="6.4" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class=""><p></p>
 <div>
-<pre class="mermaid mermaid-js">graph TD
-    MC[Multicore] --&gt; SMP[SMP Symmetrisch]
-    MC --&gt; AMP[AMP Asymmetrisch]
-    style MC fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style SMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style AMP fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TB
+  subgraph SMP["SMP: ein Scheduling-Kontext"]
+    K[ein Kernel]
+    K --&gt; C0[Kern 0]
+    K --&gt; C1[Kern 1]
+  end
+  subgraph AMP["AMP: zwei Kontexte"]
+    A7[M7 Bare-Metal]
+    A4[M4 FreeRTOS]
+    A7 --- CH[expliziter Kanal]
+    A4 --- CH
+  end
 </pre>
 </div>
 <p></p></figure><p></p>
 </div>
 </div>
 </div>
+<ul>
+<li>SMP: gemeinsamer OS-Kontext, nicht „Kerne müssen identisch und gleichtaktig sein“</li>
+<li>Ready-Queues dürfen global oder je Kern sein, plus Affinität</li>
+<li>Migration verschiebt einen gesicherten Kontext; der Zielcache ist nicht leer versprochen</li>
+</ul>
 <aside class="notes">
-<p>Es gibt nicht „die eine“ Multicore-Architektur. Zwei Familien: SMP und AMP. Beide lösen Rechenlast, aber auf unterschiedlichen Wegen. Für Ihre Karriere: Unterschied kennen und wissen, warum AMP in der Echtzeit oft bevorzugt wird.</p>
+<p>Das rechte Bild ist das Labor. Links ist die Definition, nicht der H755-Zustand heute.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -390,17 +397,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="symmetrisches-multiprocessing-smp" class="slide level2">
 <h2>Symmetrisches Multiprocessing (SMP)</h2>
 <ul>
-<li>Die PC- und Smartphone-Welt (Windows, Linux, Android, iOS)</li>
-<li>Architekturmerkmale:
-<ul>
-<li>Alle Kerne physisch identisch (z. B. 4× Cortex-A53)</li>
-<li>Gemeinsamer physikalischer Speicher (RAM)</li>
-<li>Genau ein Betriebssystem über alle Kerne</li>
-<li>Das OS orchestriert alle Kerne zentral</li>
-</ul></li>
+<li>Ein Scheduler sieht die Kerne</li>
+<li>Eine Task kann, wenn die Politik das erlaubt, den Kern wechseln</li>
+<li>Dabei werden Register gesichert, nicht der ganze Cache „genullt“</li>
+<li>Harte Fristen sind unter Annahmen möglich und unter anderen Annahmen schwer</li>
 </ul>
 <aside class="notes">
-<p>SMP kennen Sie aus Alltag: Handy und Laptop. „Symmetrisch“: identische Kerne, gleicher Befehlssatz, gleicher Takt, gemeinsamer RAM. Darüber liegt ein einziges OS (Windows, Linux-Kernel). Das OS sieht alle Kerne und verteilt die Arbeit.</p>
+<p>Titel der alten Folie „SMP scheitert oft“ wird zur Herausforderung, nicht zum Verbot.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -416,34 +419,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="wie-funktioniert-ein-smp-scheduler" class="slide level2">
 <h2>Wie funktioniert ein SMP-Scheduler?</h2>
 <ul>
-<li>Das OS hat eine Ready-Warteschlange für Tasks</li>
-<li>Load-Balancing: Tasks dynamisch auf den Kern mit wenig Last</li>
-<li>Task-Migration: Millisekunde 1 auf Core 0, Millisekunde 2 auf Core 1</li>
+<li>Globale Queue: ein Kern nimmt die höchste bereite Aufgabe</li>
+<li>Oder: Warteschlange je Kern, der Scheduler schiebt nur bei Affinität oder Last</li>
+<li>Beides ist SMP, solange es <strong>ein</strong> Betriebssystemkontext ist</li>
+<li>Keine Pflicht zu genau einer Ready-Liste</li>
 </ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph TD
-    OS[Single OS Linux / Windows] --&gt; TQ[Task-Queue]
-    TQ --&gt; C0[Core 0 Task A]
-    TQ --&gt; C1[Core 1 Task B]
-    TQ --&gt; C2[Core 2 Task C]
-    C2 -.-&gt;|Migration| C0
-    style OS fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style TQ fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style C0 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style C1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style C2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
 <aside class="notes">
-<p>Der SMP-Scheduler betreibt Load-Balancing. Word, Excel, Browser: OS weist Threads freien Kernen zu. Task-Migration: Thread startet auf Core 0, wird pausiert, läuft später auf Core 1 weiter — Register wandern mit. Fantastische Gesamtauslastung.</p>
+<p>FreeRTOS auf nur dem M4 ist kein SMP über M7 und M4.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -458,18 +440,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="warum-smp-für-harte-echtzeit-oft-scheitert" class="slide level2">
 <h2>Warum SMP für harte Echtzeit oft scheitert</h2>
+<p>Besser: <strong>Echtzeit-Herausforderungen bei SMP</strong></p>
 <ul>
-<li>SMP ist genial für Durchsatz, aber für <strong>harte</strong> Echtzeit oft problematisch</li>
-<li>Latenz-Probleme:
-<ul>
-<li>Task-Migration kostet Zeit (Register von Kern zu Kern)</li>
-<li>Cache-Thrashing: L1-Cache des Zielkerns ist leer → Cache-Misses</li>
-<li>Contention: mehrere Kerne auf demselben RAM-Bus → Mikro-Staus</li>
-</ul></li>
-<li>Ergebnis: WCET wird schwerer vorherzusagen (oft unpraktisch für harte Deadlines)</li>
+<li>Wer darf wohin migrieren?</li>
+<li>Geteilte Caches und Busse erzeugen Interferenz</li>
+<li>Sperren müssen kernübergreifend gedacht werden</li>
+<li>Das ist kein Beweis, dass SMP nie hart echtzeitfähig ist</li>
 </ul>
 <aside class="notes">
-<p>Warum selten Airbag-Steuerung mit SMP? Determinismus leidet. Migration: Register kopieren und L1-Cache leer → Jitter. Bus-Staus bei parallelem RAM-Zugriff. Die WCET für den Schedulability-Test wird schwer beherrschbar.</p>
+<p>Geeignete Affinität, Budgets und ein Interferenzmodell können Fristen tragen. Die Analyse wird nur größer als auf einem Kern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -485,17 +464,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="asymmetrisches-multiprocessing-amp" class="slide level2">
 <h2>Asymmetrisches Multiprocessing (AMP)</h2>
 <ul>
-<li>Die Embedded-Welt (Steuergeräte, Motor-Regler)</li>
-<li>Architekturmerkmale:
-<ul>
-<li>Kerne oft unterschiedlich (z. B. Cortex-M7 und Cortex-M4)</li>
-<li>System strikt partitioniert</li>
-<li>Jeder Kern führt eigenes Programm / OS aus</li>
-<li>Kerne wissen beim Start oft nichts voneinander</li>
-</ul></li>
+<li>Zwei Firmware- und oft zwei OS-Kontexte</li>
+<li>Beispiel allgemein: Cortex-A mit Linux und Cortex-M mit RTOS</li>
+<li>Beispiel <strong>dieser</strong> Chip: M7 Bare-Metal und M4 FreeRTOS</li>
+<li>Der H755-M7 ist hier kein Linux-Standard</li>
 </ul>
 <aside class="notes">
-<p>Daher AMP in der Echtzeit. Asymmetrisch: oft ungleiche Kerntypen — wuchtiger Kern für Rechnen, präziser Kern für Steuerung. Kein Über-Betriebssystem: zwei unabhängige Programme. Core A und Core B booten getrennt.</p>
+<p>Die beiden Beispiele nicht ineinanderzeichnen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -510,27 +485,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="software-aufteilung-in-amp" class="slide level2">
 <h2>Software-Aufteilung in AMP</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Core 1 (z. B. Cortex-M7)</p>
 <ul>
-<li>OS: Embedded Linux oder Bare-Metal</li>
-<li>Job: GUI, Netzwerk (TCP/IP), ML</li>
-<li>Fokus: Durchsatz (weiche Echtzeit)</li>
-</ul>
-</div><div class="column" style="width:50%;">
-<p>Core 2 (z. B. Cortex-M4)</p>
-<ul>
-<li>OS: FreeRTOS oder AUTOSAR</li>
-<li>Job: PWM, Encoder, PID-Regler</li>
-<li>Fokus: Determinismus (harte Echtzeit)</li>
-</ul>
-</div></div>
-<ul>
-<li><span class="math inline">\(100\%\)</span> CPU-Load auf Core 1 hat keine Auswirkung auf das Timing von Core 2</li>
+<li>M4: Tasks, Tick, Queues <strong>dieses</strong> Kernels</li>
+<li>M7: Superloop oder eigene Struktur, ohne diese Queue-IDs</li>
+<li>Eine lokale <code>osMessageQueueId_t</code> im Shared SRAM wird keine Inter-Core-Queue</li>
+<li>Der Kanal ist ein vereinbartes Speicherlayout plus Protokoll</li>
 </ul>
 <aside class="notes">
-<p>Bestes aus beiden Welten: rechenstarker Kern mit Linux/Netzwerk (Timing darf schwanken), kleiner Kern mit FreeRTOS und Motor-PWM. Isolation fast perfekt: hängt Linux bei 100% Auslastung, tuckert der FreeRTOS-Regler jitterfrei weiter — Safety per Hardware-Design.</p>
+<p>Frage: Warum darf die Queue-ID nicht auf dem anderen Kern liegen? Weil Handle, Heap und Listen dem einen Kernel gehören.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -545,18 +507,34 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wie-kommunizieren-amp-kerne" class="slide level2">
 <h2>Wie kommunizieren AMP-Kerne?</h2>
-<ul>
-<li>Kein gemeinsames OS → keine normale FreeRTOS-Queue von Core 1 nach Core 2</li>
-<li>Kommunikation über Hardware-Mechanismen:
-<ul>
-<li>Message Buffers (Hardware-Mailboxes): Schreiben löst Interrupt am anderen Kern aus</li>
-<li>Hardware-FIFOs: echte Puffer zwischen den Kernen</li>
-<li>Shared Memory (SRAM): vereinbarter RAM-Bereich mit physischem Zugriff beider Kerne</li>
-</ul></li>
-<li>Heute: Shared Memory — flexibel, aber gefährlich</li>
-</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Mittel</th>
+<th>hier</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Software-Puffer</td>
+<td>unser SRAM4-Block</td>
+</tr>
+<tr class="even">
+<td>Hardware-Mailbox / FIFO</td>
+<td>anderes Gerät, nicht dieser Ping-Pong</td>
+</tr>
+<tr class="odd">
+<td>HSEM</td>
+<td>Boot-Signal, später auch Sperre</td>
+</tr>
+<tr class="even">
+<td>lokale RTOS-Queue</td>
+<td>nur M4-intern</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Wie reden die Kerne? <code>osMessageQueuePut</code> geht nicht — FreeRTOS auf Core 2 kennt die Datenstrukturen von Bare-Metal auf Core 1 nicht. Hardware hilft: Queues oder Shared Memory. Beide Kerne greifen auf denselben RAM-Block zu. Schnell, aber tückisch bei der Datenintegrität.</p>
+<p>Shared Memory ist der Ort. Das Protokoll sagt, wer schreiben darf.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -571,49 +549,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zusammenfassung-block-1" class="slide level2">
 <h2>Zusammenfassung Block 1</h2>
-<table class="caption-top">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 36%">
-<col style="width: 38%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Eigenschaft</th>
-<th>SMP (Symmetrisch)</th>
-<th>AMP (Asymmetrisch)</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Kerne</td>
-<td>Identisch</td>
-<td>Oft heterogen</td>
-</tr>
-<tr class="even">
-<td>Betriebssystem</td>
-<td>Ein gemeinsames OS</td>
-<td>Getrennte Programme / OS</td>
-</tr>
-<tr class="odd">
-<td>Lastverteilung</td>
-<td>Dynamisch durch Scheduler</td>
-<td>Statisch durch Programmierer</td>
-</tr>
-<tr class="even">
-<td>Determinismus</td>
-<td>Oft schwierig (Migration, Cache-Misses)</td>
-<td>Typischerweise besser isolierbar</td>
-</tr>
-<tr class="odd">
-<td>Beispiel</td>
-<td>Laptop, Raspberry Pi</td>
-<td>STM32H755, NXP i.MX RT</td>
-</tr>
-</tbody>
-</table>
+<ul>
+<li><span class="math inline">\(U \le 1\)</span> bleibt ein Ein-Kern-Satz mit Annahmen</li>
+<li>SMP teilt einen Scheduler, AMP teilt ihn nicht</li>
+<li>M7-Rechnen ohne gemeinsame Zugriffe stört den M4 weniger als M7-Buslast</li>
+<li>„100 % M7-Last wirkt nie auf den M4“ ist falsch</li>
+</ul>
 <aside class="notes">
-<p>SMP: identische Kerne, ein OS, Meister des Durchsatzes. AMP: oft ungleiche Kerne, strikte Isolation, Meister des Determinismus. Wir bauen fast ausschließlich AMP-Systeme. Als Nächstes: der STM32H755 im Detail.</p>
+<p>Nächster Block: wo die Last sich trifft.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -628,33 +571,32 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="hardware-deep-dive-der-stm32h755" class="slide level2">
 <h2>Hardware Deep-Dive: Der STM32H755</h2>
-<ul>
-<li>Ein Silizium-Plättchen (Die), zwei getrennte Prozessorkerne</li>
-</ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph TD
-    CHIP[STM32H755 Chip]
-    CHIP --&gt; M7[Cortex-M7 Spec max 480 MHz]
-    CHIP --&gt; M4[Cortex-M4 Spec max 240 MHz]
-    style CHIP fill:#FFFFFF,stroke:#1D1D1F,stroke-width:1px !important
-    style M7 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-    style M4 fill:#F5F5F7,stroke:#E2001A,stroke-width:2px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
-<ul>
-<li>Trotzdem teilen sie sich Pins, Taktquellen und Speicher</li>
-<li>Wie organisiert STMicroelectronics dieses Chaos?</li>
-</ul>
+<p>Vereinfachte Karte, Details in RM0399 der verwendeten Revision:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Domäne</th>
+<th>in dieser Zeichnung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>D1</td>
+<td>M7, TCM, AXI, Flash-Anbindung</td>
+</tr>
+<tr class="even">
+<td>D2</td>
+<td>M4, viel AHB-Peripherie, Ethernet 10/100, USB</td>
+</tr>
+<tr class="odd">
+<td>D3</td>
+<td>SRAM4, langsame I/Os</td>
+</tr>
+</tbody>
+</table>
+<p>Nicht jede schnelle Peripherie liegt in D1. Ethernet ist nicht Gigabit.</p>
 <aside class="notes">
-<p>Der STM32H755 ist ein Flaggschiff der AMP-Architektur. Ein Gehäuse, zwei Herzen: Cortex-M7 und Cortex-M4. Logisch getrennt, physisch im selben Package: Strom, Clocks, Pins teilen. Core 1 darf Pin A5 nicht High setzen, während Core 2 ihn Low zieht.</p>
+<p>Die Zeichnung ist bewusst grob. Wer ein Blockbild aus dem Referenzhandbuch abzeichnet, prüft die Revision.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -670,19 +612,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-cortex-m7-das-muskelpaket" class="slide level2">
 <h2>Der Cortex-M7 (Das Muskelpaket)</h2>
 <ul>
-<li>Unser Core 1 (Master)</li>
-<li>Specs: bis <span class="math inline">\(480\,\mathrm{MHz}\)</span>, 6-stufige superskalare Pipeline</li>
-<li>Superskalar: zwei Instruktionen in einem Taktzyklus möglich</li>
-<li>Caches:
-<ul>
-<li>L1 Data Cache (<span class="math inline">\(16\,\mathrm{KB}\)</span>)</li>
-<li>L1 Instruction Cache (<span class="math inline">\(16\,\mathrm{KB}\)</span>)</li>
-</ul></li>
-<li>FPU: Double-Precision (64-Bit)</li>
-<li>Ziel: Rechenleistung, schnelle Netzwerk-Verarbeitung</li>
+<li>Spec bis 480 MHz, L1-I- und D-Cache, TCM</li>
+<li>TCM ist nicht der direkte Arbeitsplatz des M4</li>
+<li>Cache macht wiederholte Zugriffe schnell und fremde Werte unsichtbar</li>
+<li>Labor darf 400 MHz nur nach Clock-Tree-Prüfung sagen</li>
 </ul>
 <aside class="notes">
-<p>Core 1, der Cortex-M7: Muskelpaket bis 480 MHz, superskalar mit parallelen Rechenwerken. L1-Caches für Daten und Code, weil RAM für 480 MHz zu langsam ist. 64-Bit-FPU. Gebaut für Filter, Ethernet und Touch-Displays.</p>
+<p>TCM in der Shared-Variable wäre für den M4 unerreichbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -698,16 +634,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-cortex-m4-das-präzisionswerkzeug" class="slide level2">
 <h2>Der Cortex-M4 (Das Präzisionswerkzeug)</h2>
 <ul>
-<li>Unser Core 2</li>
-<li>Specs: bis <span class="math inline">\(240\,\mathrm{MHz}\)</span>, 3-stufige Pipeline</li>
-<li>Wichtigster Unterschied: keine Caches!</li>
-<li>Ausführungszeit eines Assembler-Befehls ist absolut deterministisch</li>
-<li>FPU: Single-Precision (32-Bit)</li>
-<li>Ziel: harte Echtzeit-Regelung, enge Anbindung an Timer und ADC</li>
-<li>Hier lassen wir FreeRTOS laufen</li>
+<li>Spec bis 240 MHz</li>
+<li>Kein M7-artiger L1-Daten-/Instruktionscache</li>
+<li>Der ART-Beschleuniger auf dem Flash-Pfad bleibt</li>
+<li>Wait-States, Bus, IRQs und die Speicherregion bleiben in der Zeit</li>
+<li>„Jeder Zugriff gleich viele Takte“ und „auf die Nanosekunde“ streichen</li>
 </ul>
 <aside class="notes">
-<p>Der Cortex-M4: halb so schnell, simplere Pipeline. Entscheidend: keine Caches. Jeder Speicherzugriff dauert immer gleich viele Takte — Timing auf die Nanosekunde vorherberechenbar. Skalpell neben dem Vorschlaghammer. Ideal für Motoren und Leistungselektronik. FreeRTOS läuft heute Nachmittag exklusiv auf dem M4.</p>
+<p>Ohne L1-D-Cache ist der M4 nicht automatisch interferenzfrei.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -723,13 +657,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-bus-matrix-ahb-axi" class="slide level2">
 <h2>Die Bus-Matrix (AHB / AXI)</h2>
 <ul>
-<li>Kerne, Speicher und Peripherie: keine einzelne Leitung, sondern eine Matrix</li>
-<li>AXI-Bus-Matrix: Netzwerk aus Schaltern</li>
-<li>Vorteil: M7 liest Flash, während M4 eine GPIO-LED schaltet — ohne Blockade</li>
-<li>Blockaden nur, wenn beide Cores im selben Takt dasselbe Ziel treffen</li>
+<li>Parallele Wege, wenn die Pfade verschieden sind</li>
+<li>Dieselbe SRAM-Bank oder dieselbe Brücke serialisiert</li>
+<li>Ein Konflikt braucht nicht denselben CPU-Takt</li>
+<li>„AXI-SRAM immer 1 Takt“ ist keine universelle Garantie</li>
 </ul>
 <aside class="notes">
-<p>Früher: ein Bus, eine Hauptstraße. Der STM32H7 nutzt eine AXI-Bus-Matrix — Autobahnkreuze und Brücken. M7 auf Flash und M4 auf GPIO kreuzen sich nicht. Stau nur bei gleichzeitigem Zugriff auf dasselbe Modul; die Matrix regelt Vorfahrt.</p>
+<p>Die Matrix beseitigt Interferenz nicht. Sie verschiebt sie auf die gemeinsamen Ziele.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -744,23 +678,28 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-3-power-domänen-d1-d2-d3" class="slide level2">
 <h2>Die 3 Power-Domänen (D1, D2, D3)</h2>
-<ul>
-<li>D1 (High-Performance Domain):
-<ul>
-<li>Cortex-M7, AXI-SRAM, High-Speed USB, Ethernet</li>
-</ul></li>
-<li>D2 (Real-Time Domain):
-<ul>
-<li>Cortex-M4, SRAM 1/2/3, Timer, ADCs, UARTs</li>
-</ul></li>
-<li>D3 (Low-Power Domain):
-<ul>
-<li>RTC, SRAM 4</li>
-<li>Läuft oft weiter, wenn D1 und D2 schlafen</li>
-</ul></li>
-</ul>
+<div class="cell" data-reveal="true" data-fig-width="6.2" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  M7[M7 D1] --&gt; BM[Busmatrix]
+  M4[M4 D2] --&gt; BM
+  DMA[DMA] --&gt; BM
+  BM --&gt; S4[SRAM4 D3]
+  RCC[RCC gemeinsam] --- M7
+  RCC --- M4
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Oben getrennte Rechenkerne, unten gemeinsame Ziele.</p>
 <aside class="notes">
-<p>Drei Kontinente: D1 (Partyzone mit M7 und Gigabit), D2 (Echtzeit-Zone mit M4 und Timern), D3 (Low-Power). Im Batteriebetrieb können D1 und D2 abgeschaltet werden — D3 hält Uhr und SRAM4 mit Mikroampere am Leben.</p>
+<p>Eine reine Registerschleife im M7-TCM teilt sich den SRAM4-Port nicht. Sobald der M7 SRAM4, DMA oder RCC anfasst, kann der M4 warten. Qualitativ, ohne WCET-Zahl.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -776,39 +715,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="taktversorgung-rcc" class="slide level2">
 <h2>Taktversorgung (RCC)</h2>
 <ul>
-<li>Specs vs.&nbsp;Board-Setup (kanonisch für diese Vorlesung):</li>
-</ul>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Kern</th>
-<th>Spec-Maximum</th>
-<th>Typisches Nucleo-Setup</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Cortex-M7</td>
-<td>bis <span class="math inline">\(480\,\mathrm{MHz}\)</span></td>
-<td><span class="math inline">\(400\,\mathrm{MHz}\)</span></td>
-</tr>
-<tr class="even">
-<td>Cortex-M4</td>
-<td>bis <span class="math inline">\(240\,\mathrm{MHz}\)</span></td>
-<td><span class="math inline">\(200\,\mathrm{MHz}\)</span></td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li>Beide Kerne haben eigene Phasenregelkreise (PLLs)</li>
-<li>Achtung im CubeMX Configurator:
-<ul>
-<li>Änderungen am System Clock beeinflussen meist beide Kerne</li>
-<li>Stoppt Core 1 die PLL, crasht Core 2</li>
-</ul></li>
+<li>Ein Taktbaum, keine private PLL je Kern</li>
+<li>Wer <code>SystemClock_Config</code> zweimal ausführt, schreibt dieselben Register</li>
+<li>Im Labor initialisiert der M7 die gemeinsamen Takte, bevor der M4 weiterläuft</li>
+<li>Maxima 480/240 MHz zeichnerisch von der gewählten Laborfrequenz trennen</li>
 </ul>
 <aside class="notes">
-<p>Ähnliche Teilung bei RCC: eigene Teiler und PLLs. Specs nennen Maxima (480/240); im Labor und in Timing-Beispielen (Cache, Trace) rechnen wir mit dem typischen Nucleo-Setup 400/200 MHz. Falle: der externe Quarz ist gemeinsam. Schaltet M7 den Hauptoszillator ab, bleibt dem M4 das Herz stehen — einer muss Boss bleiben.</p>
+<p>GPIO-Ports teilen Register. Zwei Pins am selben Port sind kein konfliktfreier Read-Modify-Write.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -823,19 +736,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-boot-prozess-wer-weckt-wen" class="slide level2">
 <h2>Der Boot-Prozess: Wer weckt wen?</h2>
-<ul>
-<li>Beim Einschalten starten nicht beide Kerne</li>
-<li>Cortex-M7 ist der Master und bootet zuerst</li>
-<li>Cortex-M4 ist der Slave und bleibt im Reset (Hold)</li>
-<li>Aufgabe des M7:
-<ul>
-<li>System-Clock hochfahren</li>
-<li>RAM und Peripherie stabilisieren</li>
-<li>Hardware-Schalter umlegen, der den M4 entfesselt</li>
-</ul></li>
-</ul>
+<p>Übliches CubeMX-Muster, nicht „M4 bleibt in Reset“:</p>
+<ol type="1">
+<li>Option Bytes legen fest, wer überhaupt startet; Standard oft: beide Bootcodes</li>
+<li>M4 richtet eine HSEM-Benachrichtigung ein und geht in <strong>Stop</strong></li>
+<li>M7 wartet auf diesen Zustand, setzt Takt und Shared-Block</li>
+<li>M7 gibt das HSEM frei, M4 läuft weiter ins RTOS</li>
+</ol>
+<p>Stop, Reset und abgetakteter Kern sind drei Zustände.</p>
+<p>Die konkrete HSEM-ID und die Funktionsnamen stehen in der generierten <code>main</code>. <code>HAL_PWREx_ReleaseCore</code> nicht aus dem Gedächtnis ergänzen.</p>
 <aside class="notes">
-<p>Häufige Anfängerfrage: Wer startet zuerst? Nur der M7. Der M4 bleibt im Reset. M7 konfiguriert Taktbaum und Bus-Matrix, legt dann den Schalter um — M4 springt in seine eigene <code>main()</code>.</p>
+<p>Begrenzte Wartezeit, sonst Diagnose-LED oder UART, keine Endlosschleife ohne Spur. Dieser HSEM-Schritt ist der Boot, nicht die Sperre für jedes Payload-Byte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -850,17 +761,29 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="hardware-register-den-m4-wecken" class="slide level2">
 <h2>Hardware-Register: Den M4 wecken</h2>
-<ul>
-<li>Schalter im Power-Management-Register (PWR)</li>
-<li>In der <code>main.c</code> des M7:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">// Weckt den Cortex-M4 auf</span></span>
-<span id="cb1-2"><a aria-label="2"></a>HAL_PWREx_ReleaseCore<span class="op">(</span>PWR_CORE_CPU2<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Ohne diese Zeile läuft FreeRTOS auf dem M4 nie</li>
-</ul>
+<div class="cell" data-reveal="true" data-fig-width="6.2" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+sequenceDiagram
+  participant M4 as CM4
+  participant H as HSEM
+  participant M7 as CM7
+  M4-&gt;&gt;H: Notify, dann Stop
+  M7-&gt;&gt;M7: Takt, dann Shared-Init
+  M7-&gt;&gt;H: Release
+  H--&gt;&gt;M4: weiter, RTOS
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Warten ohne Fortschritt: Diagnosekasten, nicht stiller Reset.</p>
 <aside class="notes">
-<p>Diesen Schalter betätigen Sie heute Nachmittag selbst. In der M7-<code>main.c</code>: <code>HAL_PWREx_ReleaseCore(PWR_CORE_CPU2)</code>. Blinken die M4-LEDs nicht: zuerst diese Zeile prüfen.</p>
+<p>Vorlage AN5361 und das eigene Template. Wenn das Projekt eine andere Option-Byte-Variante nutzt, gewinnt das Projekt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -876,16 +799,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="pin-zuweisung-im-dual-core" class="slide level2">
 <h2>Pin-Zuweisung im Dual-Core</h2>
 <ul>
-<li>Dem Chip ist egal, wer einen GPIO-Pin schaltet</li>
-<li>Gefahr: M7 und M4 konfigurieren denselben Pin → Register-Konflikte</li>
-<li>Im CubeMX Configurator:
-<ul>
-<li>Pin Context Assignment → ARM Cortex-M7 oder ARM Cortex-M4</li>
-<li>Codegenerator schreibt <code>HAL_GPIO_Init</code> nur in die <code>main.c</code> des zugewiesenen Cores</li>
-</ul></li>
+<li>Pin Context steuert, <strong>welcher Generator</strong> den Init-Code schreibt</li>
+<li>Das ist keine Hardware-Sperre für den anderen Kern</li>
+<li>RCC und jeder Peripherieblock brauchen eine Zuständigkeit</li>
+<li>Gleicher GPIO-Port, verschiedener Pin: immer noch ein Register</li>
 </ul>
 <aside class="notes">
-<p>Beide können auf GPIO schreiben. M7 als Ausgang und M4 als Eingang am selben Pin kracht. In CubeIDE: Pin Context Assignment. Der Generator schreibt die Init nur in den Ordner des zugewiesenen Kerns — saubere Architektur.</p>
+<p>Beide Kerne dürfen nicht gleichzeitig <code>GPIOE-&gt;MODER</code> lesen-ändern-schreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -901,16 +821,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="toolchain-und-projektstruktur" class="slide level2">
 <h2>Toolchain und Projektstruktur</h2>
 <ul>
-<li>Dual-Core-Projekt in CubeIDE: drei Ordner
-<ul>
-<li><code>Project_CM7</code>: eigene <code>main.c</code>, eigene Linker-Skripte</li>
-<li><code>Project_CM4</code>: isolierte Code-Basis für den M4</li>
-<li><code>Project_Common</code>: gemeinsame Dateien (z. B. HAL-Treiber)</li>
-</ul></li>
-<li>Beim Kompilieren entstehen zwei unabhängige <code>.elf</code> / <code>.bin</code>-Dateien</li>
+<li>Zwei ELF-Dateien, zwei Vektortabellen, zwei Linkerlayouts</li>
+<li>CM7 in Bank 1 und CM4 in Bank 2 ist eine mögliche Konvention</li>
+<li>Startadresse und Option Bytes müssen dazu passen</li>
+<li>Ab CubeIDE 2.0 oft: CubeMX separat, dann Import</li>
+<li>Eine Launch-Gruppe ist nicht automatisch da</li>
 </ul>
 <aside class="notes">
-<p>Drei Ordner statt einem: CM7 und CM4 mit eigener <code>main.c</code>, Interrupt-Tabellen und Linker-Skripten — zwei C-Projekte. Common nur für gemeinsame Treiber. GCC wirft zwei Firmware-Dateien aus: eine für Master, eine für Slave.</p>
+<p>Keine erfundenen Menüscreenshots. Die Kursversion am Rechner nachsehen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -926,13 +844,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="debugging-im-amp-system" class="slide level2">
 <h2>Debugging im AMP-System</h2>
 <ul>
-<li>ST-Link unterstützt Multicore-Debugging</li>
-<li>Debug startet zwei GDB-Instanzen parallel</li>
-<li>Zwei Konsolen: Breakpoints von M7 und M4 umschalten</li>
-<li>Flashen: Programm 1 in Bank 1, Programm 2 in Bank 2</li>
+<li>Eine ST-LINK- oder OpenOCD-Sitzung, nicht beides gemischt beschreiben</li>
+<li>Zwei Images laden, Reset-Reihenfolge zum Boot-Handshake passen</li>
+<li>„Halt all cores“ und Cross-Trigger können den Stop-Weckruf verfälschen</li>
+<li>Nach dem Halt die HSEM- und Stop-Zustände prüfen, nicht nur den PC</li>
 </ul>
 <aside class="notes">
-<p>Der ST-Link fragt beide Kerne per JTAG ab. Debug flasht beide Programme in getrennte Flash-Banken und startet zwei Debug-Server. Breakpoint im FreeRTOS des M4 setzen, dann in den M7-Tab wechseln und zuschauen, wie Bare-Metal weiterläuft.</p>
+<p>Der genaue Klickpfad hängt von der IDE-Version ab. Offen, solange kein Projekt im Repo liegt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -948,13 +866,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-block-2" class="slide level2">
 <h2>Zusammenfassung Block 2</h2>
 <ul>
-<li>STM32H755: High-Performance-Kern (M7 mit Cache) und Echtzeit-Kern (M4 ohne Cache)</li>
-<li>Bus-Matrix routet Zugriffe kreuzungsfrei — außer bei exakt demselben Ziel</li>
-<li>M7 bootet zuerst und weckt den M4</li>
-<li>Zwei unabhängige Firmware-Dateien aus zwei Code-Ordnern</li>
+<li>D1/D2/D3 grob, Ethernet in D2, 10/100</li>
+<li>Bus parallel nur auf freien Wegen</li>
+<li>Boot: Stop und HSEM, nicht Reset-Leitung</li>
+<li>Zwei Images, eine Shared-Adresse</li>
 </ul>
 <aside class="notes">
-<p>Zusammenfassung Hardware: schnelles und determiniertes Herz, Bus-Matrix gegen Staus, M7 als Boss, Software wie zwei separate Projekte. Fragen zur Hardware, bevor wir zum Speicher und zur Kommunikation gehen?</p>
+<p>Als Nächstes das Layout, das beide Linker meinen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -969,17 +887,46 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-speicherarchitektur-ram" class="slide level2">
 <h2>Die Speicherarchitektur (RAM)</h2>
-<ul>
-<li>Datenaustausch M7 → M4 braucht Shared Memory</li>
-<li>Fast <span class="math inline">\(1\,\mathrm{MB}\)</span> RAM, aber aufgeteilt:
-<ul>
-<li>AXI-SRAM (D1): klebt am M7 — schnell für M7, langsam für M4</li>
-<li>SRAM 1/2/3 (D2): klebt am M4 — schnell für M4, langsam für M7</li>
-<li>SRAM 4 (D3): unabhängig, oft für Peripherie oder Standby</li>
-</ul></li>
-</ul>
+<p>Übliche H755-Anker, im Datenblatt der Revision prüfen:</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 24%">
+<col style="width: 27%">
+<col style="width: 48%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Region</th>
+<th>Adresse</th>
+<th>Rolle im Labor</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DTCM/ITCM</td>
+<td>M7-lokal</td>
+<td>nicht der Shared-Puffer</td>
+</tr>
+<tr class="even">
+<td>SRAM1–3</td>
+<td>D2</td>
+<td>M4-Heap/Stack, nicht automatisch shared</td>
+</tr>
+<tr class="odd">
+<td>SRAM4</td>
+<td><code>0x38000000</code>–<code>0x3800FFFF</code></td>
+<td>64 KiB, gewählter Kanal</td>
+</tr>
+<tr class="even">
+<td>Backup-SRAM</td>
+<td>andere Adresse</td>
+<td>nicht SRAM4, nicht immer im Standby erhalten</td>
+</tr>
+</tbody>
+</table>
+<p>SRAM4 ist die <strong>Laborentscheidung</strong>, keine Vorschrift für jede Anwendung.</p>
 <aside class="notes">
-<p>AMP-Kerne reden über Shared Memory — aber es gibt nicht „den einen“ RAM. AXI-SRAM klebt am M7 (1 Takt für M7, teuer für M4 über die Bus-Matrix). SRAM 1–3 kleben beim M4 in D2.</p>
+<p>Bandbreite, DMA-Erreichbarkeit und Energiemodus können eine andere Bank nahelegen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -995,14 +942,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="wo-legen-wir-den-shared-memory-an" class="slide level2">
 <h2>Wo legen wir den Shared Memory an?</h2>
 <ul>
-<li>Neutraler Ort, gut erreichbar für beide Kerne</li>
-<li>Best Practice: SRAM4 in der D3-Domäne</li>
-<li>Basis-Adresse: <code>0x38000000</code> (Größe: <span class="math inline">\(64\,\mathrm{KB}\)</span>)</li>
-<li>Ziel: C-Struct für Sensorwerte exakt an diese Adresse legen</li>
-<li>Wie zwingen wir den Compiler dazu?</li>
+<li>Beide Linker reservieren <strong>dieselbe</strong> Spanne und legen sonst nichts hinein</li>
+<li>Heap und Stack bleiben außerhalb</li>
+<li><code>NOLOAD</code> heißt: der Loader schreibt die Sektion nicht</li>
+<li>Es heißt nicht: jedes Startup lässt die Bytes in Ruhe</li>
+<li><code>.bss</code>-Zero und <code>.data</code>-Copy beider Images prüfen</li>
 </ul>
 <aside class="notes">
-<p>Treffpunkt oft SRAM4 in D3: 64 KB ab <code>0x38000000</code>. Ein C-Struct darf nicht irgendwo im AXI-SRAM landen — wir nageln es bytegenau auf diese Adresse.</p>
+<p>Nach Reset ist der Inhalt nicht als saubere Null vorauszusetzen. M7 schreibt Zustand und Payload, bevor M4 kommuniziert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1017,20 +964,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-linker-script-.ld" class="slide level2">
 <h2>Das Linker-Script (<code>.ld</code>)</h2>
+<p>Schema, keine abgelesene Map:</p>
 <ul>
-<li>GCC erzeugt Maschinencode; der Linker legt physikalische Adressen fest</li>
-<li>Linker-Skripte beider Kerne anpassen:</li>
+<li>Region SRAM4 einmal, nicht ein zweites <code>RAM_D3</code> daneben</li>
+<li>Sektion <code>.shared</code> mit <code>NOLOAD</code>, <code>KEEP</code>, Alignment 32</li>
+<li><code>ASSERT</code> auf Größe und Adresse</li>
+<li>Symbol <code>sd</code> in <strong>beiden</strong> Maps gleich, sonst ist es nicht derselbe Block</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb2-1"><a aria-label="1"></a>/* Definition der Speicherbereiche */</span>
-<span id="cb2-2"><a aria-label="2"></a>MEMORY</span>
-<span id="cb2-3"><a aria-label="3"></a>{</span>
-<span id="cb2-4"><a aria-label="4"></a>  FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K</span>
-<span id="cb2-5"><a aria-label="5"></a>  RAM_D1 (xrw)    : ORIGIN = 0x24000000, LENGTH = 512K</span>
-<span id="cb2-6"><a aria-label="6"></a>  /* NEU: Shared Memory (CubeMX: oft RAM_D3) */</span>
-<span id="cb2-7"><a aria-label="7"></a>  RAM_D3 (xrw)    : ORIGIN = 0x38000000, LENGTH = 64K</span>
-<span id="cb2-8"><a aria-label="8"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Das Linker-Script ist das Fundament. In beiden <code>.ld</code>-Dateien einen MEMORY-Bereich <code>RAM_D3</code> (SRAM4) mit Adresse <code>0x38000000</code> und 64 KB deklarieren — beide Kerne kennen den Bereich.</p>
+<p>Die echten <code>.ld</code> erzeugt Cube. Wir fügen eine Sektion ein und duplizieren die Speicherliste nicht. Map-Vergleich ist Pflicht und im Repo noch nicht ausführbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1045,27 +987,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="eine-eigene-sektion-anlegen" class="slide level2">
 <h2>Eine eigene Sektion anlegen</h2>
-<ul>
-<li>Sektion (Container) im Shared-RAM anlegen:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb3-1"><a aria-label="1"></a>SECTIONS</span>
-<span id="cb3-2"><a aria-label="2"></a>{</span>
-<span id="cb3-3"><a aria-label="3"></a>  /* Sektion .shared_memory */</span>
-<span id="cb3-4"><a aria-label="4"></a>  .shared_memory (NOLOAD) :</span>
-<span id="cb3-5"><a aria-label="5"></a>  {</span>
-<span id="cb3-6"><a aria-label="6"></a>    . = ALIGN(4);</span>
-<span id="cb3-7"><a aria-label="7"></a>    *(.shared_memory) /* Variablen mit diesem Tag */</span>
-<span id="cb3-8"><a aria-label="8"></a>  } &gt; RAM_D3</span>
-<span id="cb3-9"><a aria-label="9"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Extrem wichtig: <code>(NOLOAD)</code>
-<ul>
-<li>Ohne NOLOAD füllt der Startup-Code den RAM mit Nullen</li>
-<li>M7 schreibt, M4 bootet <span class="math inline">\(1\,\mathrm{ms}\)</span> später → Shared Memory wird genullt</li>
-</ul></li>
-</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb1-1"><a aria-label="1"></a>.shared (NOLOAD) :</span>
+<span id="cb1-2"><a aria-label="2"></a>{</span>
+<span id="cb1-3"><a aria-label="3"></a>  . = ALIGN(32);</span>
+<span id="cb1-4"><a aria-label="4"></a>  KEEP(*(.shared))</span>
+<span id="cb1-5"><a aria-label="5"></a>  . = ALIGN(32);</span>
+<span id="cb1-6"><a aria-label="6"></a>} &gt;RAM_D3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Nur wenn <code>RAM_D3</code> schon die SRAM4-Region ist. Sonst den vorhandenen Namen nehmen.</p>
 <aside class="notes">
-<p>Sektion <code>.shared_memory</code> anlegen. Entscheidend: <code>NOLOAD</code>. Ohne NOLOAD initialisiert der Startup alle globalen Variablen mit 0. M7 schreibt Sensordaten, M4 bootet eine Millisekunde später und überschreibt den Shared Memory mit Nullen. NOLOAD verbietet dieses Nullen.</p>
+<p><code>KEEP</code> gegen Garbage Collection. Alignment 32 wegen einer späteren Cache-Line, auch wenn die Basisregion non-cacheable ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1080,23 +1010,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zuweisung-im-c-code-gcc-attribute" class="slide level2">
 <h2>Zuweisung im C-Code (GCC-Attribute)</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<ul>
-<li>Wir haben den RAM (<code>.shared_memory</code>) im Linker-Script reserviert</li>
-<li>Wie sagen wir dem Compiler, dass unser Struct genau dort landen soll?</li>
-<li>Die Lösung: ein Compiler-spezifisches Attribut (<code>__attribute__</code>)</li>
-<li>Wir „nageln“ die Variable physisch auf die Adresse <code>0x38000000</code> fest</li>
-</ul>
-</div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="co">// Die Variable wird zwingend in</span></span>
-<span id="cb4-2"><a aria-label="2"></a><span class="co">// die .shared_memory Sektion gelegt!</span></span>
-<span id="cb4-3"><a aria-label="3"></a></span>
-<span id="cb4-4"><a aria-label="4"></a>__attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared_memory"</span><span class="op">)))</span></span>
-<span id="cb4-5"><a aria-label="5"></a><span class="dt">volatile</span> SharedData_t sd<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="co">/* shared_data.h: nur Typ und extern */</span></span>
+<span id="cb2-2"><a aria-label="2"></a><span class="kw">extern</span> <span class="dt">volatile</span> ipc_block_t ipc</span>
+<span id="cb2-3"><a aria-label="3"></a>    __attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared"</span><span class="op">)));</span></span>
+<span id="cb2-4"><a aria-label="4"></a></span>
+<span id="cb2-5"><a aria-label="5"></a><span class="co">/* genau eine .c je ELF */</span></span>
+<span id="cb2-6"><a aria-label="6"></a><span class="dt">volatile</span> ipc_block_t ipc</span>
+<span id="cb2-7"><a aria-label="7"></a>    __attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared"</span><span class="op">)));</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Das Attribut allein setzt nicht die Adresse. Linker, Alignment und weitere Objekte entscheiden.</p>
 <aside class="notes">
-<p>Ohne Attribut landet die Variable in <code>.bss</code>/<code>.data</code> (oft AXI-SRAM). Mit <code>__attribute__((section(".shared_memory")))</code> zwingt GCC den Linker auf <code>0x38000000</code> — beide Kerne sehen dieselben Bytes.</p>
+<p>Dieselbe <code>.c</code> nicht in beide Projekte kopieren und zusätzlich im Header definieren. Einmal pro Image.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1112,15 +1035,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-schlüsselwort-volatile" class="slide level2">
 <h2>Das Schlüsselwort volatile</h2>
 <ul>
-<li>Ein weiteres Problem beim Speichern: der C-Compiler-Optimizer (<code>-O2</code> / <code>-O3</code>)</li>
-<li>Der Compiler analysiert den Code einer Task (z.&nbsp;B. auf dem M4)</li>
-<li>Er sieht eine <code>while(sd.m7_ready == 0);</code>-Schleife</li>
-<li>Er denkt: „In meiner Task ändert niemand diese Variable. Also lese ich sie nur 1× aus dem RAM und nutze danach für immer ein CPU-Register!“ <span class="math inline">\(\rightarrow\)</span> Endlosschleife!</li>
-<li>Lösung: <code>volatile</code></li>
-<li>Sagt dem Compiler: Diese Variable kann sich jederzeit durch externe Hardware (oder einen anderen Kern) ändern! Lese sie bei JEDEM Zugriff zwingend frisch aus dem RAM!</li>
+<li><code>volatile</code> zwingt den Compiler zu den Zugriffen, die <strong>dieser</strong> Compiler dafür definiert</li>
+<li>Es umgeht nicht den D-Cache</li>
+<li>Es ist kein Mutex und kein atomares Read-Modify-Write</li>
+<li>Es veröffentlicht nicht „den ganzen Struct auf einmal“</li>
 </ul>
 <aside class="notes">
-<p>Ohne <code>volatile</code> darf der Optimizer das Flag einmal lesen und danach nur noch das Register prüfen — der M4 friert ein, obwohl der M7 den RAM ändert. <code>volatile</code> erzwingt frische RAM-Reads.</p>
+<p>GCC-Volatile-Doku. Für die Reihenfolge kommt eine Barriere dazu, für den Cache die MPU oder eine Wartung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1135,16 +1056,47 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="reicht-volatile-für-multicore" class="slide level2">
 <h2>Reicht volatile für Multicore?</h2>
-<ul>
-<li>Wir haben die Variable im richtigen SRAM platziert (<code>__attribute__</code>)</li>
-<li>Wir haben den Compiler gezwungen, immer aus dem RAM zu lesen (<code>volatile</code>)</li>
-<li>Sind wir jetzt sicher?</li>
-<li>NEIN! Absolut nicht</li>
-<li><code>volatile</code> kontrolliert nur den Software-Compiler. Es kontrolliert nicht die Hardware-Caches der CPU!</li>
-<li>Hier betreten wir das gefährlichste Feld der Embedded-Entwicklung</li>
-</ul>
+<p>Vier verschiedene Probleme:</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 22%">
+<col style="width: 52%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Problem</th>
+<th>Mittel</th>
+<th>löst allein nicht</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Compiler hält einen Wert</td>
+<td><code>volatile</code></td>
+<td>Cache, Reihenfolge, Konflikt</td>
+</tr>
+<tr class="even">
+<td>veraltete Cachezeile</td>
+<td>MPU oder Clean/Invalidate</td>
+<td>wer schreiben darf</td>
+</tr>
+<tr class="odd">
+<td>Reihenfolge der Zugriffe</td>
+<td><code>DMB</code> / <code>DSB</code></td>
+<td>Cache-Inhalt</td>
+</tr>
+<tr class="even">
+<td>beide schreiben</td>
+<td>Ownership oder HSEM</td>
+<td>Sichtbarkeit</td>
+</tr>
+</tbody>
+</table>
+<p><code>DMB</code> ordnet. <code>DSB</code> wartet auf den Abschluss. Keines reinigt den D-Cache.</p>
+<p>Keine Armv8-M-Acquire-Intrinsics ungeprüft auf M4/M7.</p>
 <aside class="notes">
-<p><code>volatile</code> stoppt nur Compiler-Optimierungen — nicht den L1-Cache des M7. Hardware-Puffern bleibt das Multicore-Problem.</p>
+<p>Frage zur Brücke: Warum reicht non-cacheable nicht? Weil die Reihenfolge Payload vor Zustand und das alleinige Schreibrecht bleiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1159,21 +1111,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="struktur-der-ping-pong-daten" class="slide level2">
 <h2>Struktur der Ping-Pong Daten</h2>
-<ul>
-<li>Für unser Labor bauen wir uns ein C-Struct, das beide Kerne kennen</li>
-<li>Beide Kerne binden dieselbe Header-Datei ein!</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
-<span id="cb5-2"><a aria-label="2"></a>    <span class="dt">uint8_t</span>  m7_ready<span class="op">;</span>      <span class="co">// 1 = M7 hat Daten geschrieben</span></span>
-<span id="cb5-3"><a aria-label="3"></a>    <span class="dt">uint8_t</span>  m4_ready<span class="op">;</span>      <span class="co">// 1 = M4 hat Daten geschrieben</span></span>
-<span id="cb5-4"><a aria-label="4"></a>    <span class="dt">uint32_t</span> payload_value<span class="op">;</span> <span class="co">// Der eigentliche Wert (Payload)</span></span>
-<span id="cb5-5"><a aria-label="5"></a><span class="op">}</span> SharedData_t<span class="op">;</span></span>
-<span id="cb5-6"><a aria-label="6"></a></span>
-<span id="cb5-7"><a aria-label="7"></a><span class="co">// Im Code (in CM7 und CM4):</span></span>
-<span id="cb5-8"><a aria-label="8"></a>__attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared_memory"</span><span class="op">)))</span></span>
-<span id="cb5-9"><a aria-label="9"></a><span class="dt">volatile</span> SharedData_t sd<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Altes Bild mit zwei <code>uint8_t</code> und einem <code>uint32_t</code>: natürliche Ausrichtung <strong>8 Byte</strong>, Offsets 0, 1 und 4, nicht 12.</p>
+<p>Gewählter Block:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> magic<span class="op">;</span></span>
+<span id="cb3-3"><a aria-label="3"></a>    <span class="dt">uint32_t</span> state<span class="op">;</span>   <span class="co">/* TURN_M7, REQUEST_M4, RESPONSE_M7 */</span></span>
+<span id="cb3-4"><a aria-label="4"></a>    <span class="dt">uint32_t</span> payload<span class="op">;</span></span>
+<span id="cb3-5"><a aria-label="5"></a><span class="op">}</span> ipc_block_t<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>_Static_assert</code> auf Größe und Alignment im Zielbuild. Kein <code>packed</code> als Multicore-Trick.</p>
+<p>Nur der Berechtigte schreibt <code>payload</code>. Der Zustand wechselt danach.</p>
 <aside class="notes">
-<p>Bevor wir uns dem Cache-Problem widmen, hier noch kurz die Datenstruktur für unser heutiges Labor. Wir bauen ein Struct namens <code>SharedData_t</code>. Es enthält ein Flag, mit dem der M7 signalisiert „Ich habe fertig geschrieben“, und ein Flag für den M4. Darunter liegt der eigentliche Payload-Wert. Dieses Struct deklarieren wir als <code>volatile</code> und legen es in die Shared-Memory-Sektion. Achten Sie darauf, dass diese Definition in einer Header-Datei liegt, die in beide Unterprojekte (CM4 und CM7) eingebunden wird. Sonst wissen die Kerne nicht, wie die Bytes im RAM angeordnet sind.</p>
+<p>M7 initialisiert magic, state und payload, solange M4 noch nicht kommuniziert. NOLOAD-Müll ist kein Startwert 0.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1189,14 +1137,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-shared-memory" class="slide level2">
 <h2>Zusammenfassung: Shared Memory</h2>
 <ul>
-<li>AMP erfordert physikalischen Datenaustausch, da es kein gemeinsames Betriebssystem gibt</li>
-<li>Wir nutzen den SRAM4 (D3-Domäne), da er für beide Kerne gut erreichbar ist</li>
-<li>Die Adress-Zuweisung erfolgt über das Linker-Script (<code>.ld</code>) und <code>__attribute__((section))</code></li>
-<li>Das Flag <code>NOLOAD</code> schützt den RAM vor dem Überschreiben beim Booten</li>
-<li>Das Keyword <code>volatile</code> stoppt gefährliche Compiler-Optimierungen</li>
+<li>Eine Adresse, zwei ELF, eine Definition je Image</li>
+<li>M7 initialisiert, M4 löscht den Block beim Start nicht</li>
+<li>Ein Core-Reset mitten im Ping-Pong ist nicht das Basislabor</li>
+<li>Ein gemeinsamer Reset muss den Handshake neu durchlaufen</li>
 </ul>
 <aside class="notes">
-<p>Fassen wir den ersten Teil zusammen. Wir haben die logische Struktur für unsere Inter-Core-Kommunikation gelegt. Wir nutzen den SRAM4 als toten Briefkasten. Wir weisen dem Linker den Weg und hindern den C-Startup-Code am Nullen der Daten. Wenn Sie das auf einem Cortex-M0 oder Cortex-M4 Dual-Core machen würden, wären Sie jetzt fertig. Aber wir haben einen Cortex-M7. Und der M7 bringt ein Feature mit, das uns jetzt das Leben zur Hölle macht.</p>
+<p>Was steht nach dem Reset vor der Init? Undefiniert, bis M7 schreibt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1212,17 +1159,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-ist-ein-cpu-cache" class="slide level2">
 <h2>Was ist ein CPU-Cache?</h2>
 <ul>
-<li>Die CPU (Board-Setup z.&nbsp;B. <span class="math inline">\(400\,\mathrm{MHz}\)</span>) ist extrem schnell</li>
-<li>Der Hauptspeicher (SRAM) ist langsam (z.&nbsp;B. braucht ein Zugriff <span class="math inline">\(5\)</span> Taktzyklen)</li>
-<li>Der L1-Cache:
-<ul>
-<li>Ein winziger, aber unfassbar schneller SRAM direkt im Prozessorkern (<span class="math inline">\(1\)</span> Taktzyklus)</li>
-<li>Wenn die CPU eine Variable aus dem RAM liest, kopiert die Hardware einen ganzen Block (Cache-Line, <span class="math inline">\(32\,\mathrm{Byte}\)</span>) in den Cache</li>
-<li>Beim nächsten Lesen wird die Variable aus dem Cache geholt (blitzschnell!)</li>
-</ul></li>
+<li>Zeile typisch 32 Byte auf diesem M7</li>
+<li>Ein Lese-Treffer kann einen alten Wert liefern</li>
+<li>Ein Schreib-Treffer kann nur die Zeile ändern</li>
+<li>Der M4 sieht SRAM, nicht die Dirty-Line des M7</li>
 </ul>
 <aside class="notes">
-<p>Bei Board-Setup <span class="math inline">\(\approx 400\,\mathrm{MHz}\)</span> ist SRAM oft mehrere Takte entfernt. L1-Cache (<span class="math inline">\(32\)</span>-Byte-Lines) liefert Folgezugriffe in einem Takt.</p>
+<p>Auch Lesen ist ein Kohärenzproblem, nicht nur Schreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1238,21 +1181,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="write-through-vs.-write-back" class="slide level2">
 <h2>Write-Through vs.&nbsp;Write-Back</h2>
 <ul>
-<li>Was passiert, wenn der C-Code eine Variable schreibt (<code>sd.m7_ready = 1;</code>)?</li>
-<li><strong>Write-Through:</strong>
-<ul>
-<li>Die CPU schreibt den Wert in den Cache UND sofort parallel durch in den Haupt-RAM</li>
-<li>(Sicher, aber langsamer)</li>
-</ul></li>
-<li><strong>Write-Back</strong> (häufig, solange die Region cacheable ist):
-<ul>
-<li>Die CPU schreibt den Wert NUR in den internen Cache!</li>
-<li>Der echte SRAM bleibt veraltet (Stale Data)</li>
-<li>Der Cache schreibt die Daten erst in den RAM zurück (Eviction), wenn er Platz für neue Variablen braucht</li>
-</ul></li>
+<li>Write-Through: Schreiben geht Richtung Speicher, hilft nicht für die Richtung M4 → M7</li>
+<li>Write-Back: Rückschreiben bei Verdrängung oder Clean, nicht nur „wenn der Cache voll ist“</li>
+<li>Clean schreibt Dirty-Daten</li>
+<li>Invalidate verwirft die <strong>Kopie</strong>, nicht benachbarte SRAM-Bytes</li>
+<li>Verloren gehen Dirty-Daten, die noch nicht zurückgeschrieben waren</li>
 </ul>
 <aside class="notes">
-<p>Das Lesen ist unproblematisch. Aber was passiert beim Schreiben? Hier gibt es in der IT zwei Architekturen. Bei Write-Through schreibt der Cache jede Änderung sofort durch auf den großen SRAM. Das ist sicher, bremst den Bus aber aus. Moderne Prozessoren wie der Cortex-M7 nutzen deshalb standardmäßig Write-Back. Wenn Ihr Code <code>m7_ready = 1</code> ausführt, speichert die Hardware diese „1“ ausschließlich im winzigen L1-Cache des M7. Im echten SRAM auf der Platine steht weiterhin eine „0“. Der L1-Cache behält das für sich, bis er irgendwann voll ist und Platz machen muss. Erst dann schreibt er die Daten in den echten RAM zurück. Und hier beginnt die Katastrophe für unsere Multicore-Kommunikation.</p>
+<p>Eine alte Line über neue M4-Daten zu cleanen überschreibt die Antwort. Deshalb nicht „ganzes Struct immer clean+invalidate“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1267,19 +1203,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-drama-der-cache-kohärenz" class="slide level2">
 <h2>Das Drama der Cache-Kohärenz</h2>
-<ul>
-<li>Das Szenario:
-<ul>
-<li>Der Cortex-M7 rechnet einen Wert aus und setzt das Flag <code>m7_ready = 1</code></li>
-<li>Dank Write-Back landet die 1 nur im L1-Cache des M7. Im SRAM4 steht weiterhin 0</li>
-<li>Der Cortex-M4 (ohne Cache) fragt über die Bus-Matrix den SRAM4 ab</li>
-<li>Der SRAM4 antwortet mit 0</li>
-</ul></li>
-<li>Ergebnis: Der M4 wartet ewig. Die Cores sind asynchron. Die Daten sind korrumpiert!</li>
-<li>Dieses Problem nennt man einen <em>Cache Coherency Failure</em></li>
-</ul>
+<p>Zwei Zustände, dieselbe Zeile:</p>
+<ol type="1">
+<li>M7 hat den neuen Request nur dirty. M4 liest den alten SRAM-Wert.</li>
+<li>M4 hat die Antwort ins SRAM geschrieben. M7 liest noch seine alte Kopie.</li>
+</ol>
 <aside class="notes">
-<p>M7 setzt <code>m7_ready = 1</code> nur im Write-Back-Cache; SRAM4 bleibt 0. M4 liest physisch 0 und wartet ewig — Cache Coherency Failure.</p>
+<p>Werte und Pfeile getrennt halten. Keine Zeitachse, solange wir keine Latenzen messen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1294,12 +1224,29 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-cache-coherency-failure" class="slide level2">
 <h2>Visualisierung: Cache Coherency Failure</h2>
-<p><img data-src="../_livefigures/inline-plantuml-74c0316b.svg" class="livefigure"></p>
-<ul>
-<li>Der M4 sieht die neuen Daten des M7 nicht, da sie im L1-Cache „feststecken“</li>
-</ul>
+<div class="cell" data-reveal="true" data-fig-width="6.4" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  subgraph bad["Zustand 1: M4 sieht Altlast"]
+    C1[M7-Line dirty 1] -.-&gt; S1[SRAM noch 0]
+    S1 --&gt; R1[M4 liest 0]
+  end
+  subgraph bad2["Zustand 2: M7 sieht Altlast"]
+    S2[SRAM schon 1] --&gt; R2[M4 hat geschrieben]
+    C2[M7-Line noch 0] -.-&gt; S2
+  end
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <aside class="notes">
-<p>Diagramm: Cache dirty, RAM stale, M4 liest 0 — reines Hardware-/Kohärenz-Problem, kein Compiler-/RTOS-Bug.</p>
+<p>Synthetisches Bild. Die Laborbasis umgeht den D-Cache per MPU, statt jede Richtung von Hand zu warten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1315,15 +1262,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="hw-lösung-in-pcs-cache-snooping" class="slide level2">
 <h2>HW-Lösung in PCs: Cache-Snooping</h2>
 <ul>
-<li>Wie löst Ihr Intel-i7 im Laptop das Problem?</li>
-<li>Er nutzt Hardware-Snooping (z.&nbsp;B. MESI-Protokoll)</li>
-<li>Die Kerne „schnüffeln“ (Snoop) gegenseitig auf dem Bus</li>
-<li>Wenn Core 2 den RAM liest, bemerkt Core 1 das, unterbricht den Vorgang, schreibt schnell seinen Cache in den RAM und lässt Core 2 dann erst lesen</li>
-<li>Warum hat der STM32H755 das nicht?</li>
-<li>Snooping kostet extrem viel Siliziumfläche, viel Strom und (das Schlimmste) verursacht unvorhersehbare Bus-Latenzen <span class="math inline">\(\rightarrow\)</span> Gift für harte Echtzeit!</li>
+<li>Kohärenz kann Cache-zu-Cache liefern, nicht nur über RAM</li>
+<li>MESI ist ein Lehrbild, nicht das vollständige Modell jedes PCs</li>
+<li>Daraus folgt nicht, dass PC-Kerne nie hart echtzeitfähig sind</li>
+<li>Der H755 hat diese Kohärenz zwischen M7-L1 und M4 nicht</li>
 </ul>
 <aside class="notes">
-<p>PCs lösen Kohärenz per Hardware-Snooping (z.&nbsp;B. MESI) — teuer, stromhungrig, jitterbehaftet. Auf dem STM32H755 lösen wir es software-/MPU-seitig.</p>
+<p>Konzeptfolie. Keine Register des M7 daraus ableiten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1338,16 +1283,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="software-lösung-1-manuelles-management" class="slide level2">
 <h2>Software-Lösung 1: Manuelles Management</h2>
+<p>Option, nicht die Basis:</p>
 <ul>
-<li>Wir zwingen den M7 per C-Code, seinen Cache zu leeren</li>
-<li>Die <code>core_cm7.h</code>-Bibliothek bietet dafür spezielle CMSIS-Befehle:
-<ul>
-<li><code>SCB_CleanDCache_by_Addr(...)</code>: Nimm diese Variable aus dem L1-Cache und schreibe sie zwingend sofort in den SRAM durch! (nach dem Schreiben)</li>
-<li><code>SCB_InvalidateDCache_by_Addr(...)</code>: Verwirf diese Variable im L1-Cache! Zwinge die CPU, sie beim nächsten Mal direkt aus dem SRAM zu lesen! (vor dem Lesen)</li>
-</ul></li>
+<li>Getrennte 32-Byte-Blöcke, ein Schreiber</li>
+<li>Clean nur der eigenen neuen Daten, bevor der andere lesen muss</li>
+<li>Invalidate nur, bevor man fremde neue Daten lesen will, und ohne dirty Nachbarschaft zu opfern</li>
 </ul>
+<p>Eine Line mit Payload, Flag und fremder Dirty-Variable ist der Fehlerfall.</p>
 <aside class="notes">
-<p>Die erste Möglichkeit, dieses Problem zu lösen, ist manuelles Cache-Management im C-Code. ARM liefert dafür CMSIS-Kern-Funktionen. Wenn der M7 fertig geschrieben hat, rufen wir <code>SCB_CleanDCache_by_Addr</code> auf. Das befiehlt der CPU: Nimm genau diesen Speicherbereich aus dem L1-Cache und schreibe ihn gewaltsam und sofort in den echten SRAM. Umgekehrt, bevor der M7 eine Variable liest, auf die der M4 eventuell geschrieben hat, rufen wir <code>SCB_InvalidateDCache_by_Addr</code> auf. Das erklärt die Cache-Line für ungültig und zwingt die M7-Hardware, den Wert beim nächsten Zugriff physikalisch neu aus dem SRAM zu holen.</p>
+<p>Alignment der Startadresse genügt nicht. Größe und wer sonst in der Line schreibt, zählen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1362,21 +1306,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="nachteile-der-software-lösung" class="slide level2">
 <h2>Nachteile der Software-Lösung</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">// Beispielcode M7:</span></span>
-<span id="cb6-2"><a aria-label="2"></a>sd<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb6-3"><a aria-label="3"></a><span class="co">// Manuelles Durchschreiben!</span></span>
-<span id="cb6-4"><a aria-label="4"></a>SCB_CleanDCache_by_Addr<span class="op">((</span><span class="dt">uint32_t</span><span class="op">*)&amp;</span>sd<span class="op">,</span></span>
-<span id="cb6-5"><a aria-label="5"></a>                        <span class="kw">sizeof</span><span class="op">(</span>SharedData_t<span class="op">));</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Warum wir das im Labor NICHT machen:
-<ul>
-<li>Man vergisst es extrem leicht <span class="math inline">\(\rightarrow\)</span> schwer zu findende Bugs</li>
-<li>Der Cache arbeitet immer in <span class="math inline">\(32\)</span>-Byte-Blöcken (Cache-Lines). Wenn Ihre Datenstruktur nicht exakt auf <span class="math inline">\(32\)</span> Byte ausgerichtet ist, invalidieren Sie versehentlich auch benachbarte Variablen!</li>
-<li>Es kostet unnötig CPU-Taktzyklen</li>
-</ul></li>
+<li>Leicht die Richtung zu verwechseln</li>
+<li>Clean der veralteten Line kann M4-Daten überschreiben</li>
+<li>Invalidate kann eigene Dirty-Bytes verwerfen</li>
+<li>Nur aufnehmen, wenn der Code wirklich geprüft ist</li>
+<li>Das Basislabor macht die Region non-cacheable</li>
 </ul>
 <aside class="notes">
-<p>Das manuelle Management funktioniert, ist aber in der Praxis fehleranfällig. Schauen Sie sich den Code an. Sie müssen nach jedem Schreibvorgang diese Clean-Funktion aufrufen. Vergessen Sie es nur an einer einzigen Stelle im Code, haben Sie Ihren Heisenbug. Viel schlimmer ist das <span class="math inline">\(32\)</span>-Byte-Problem. Ein L1-Cache reinigt nie einzelne Bytes, er operiert immer auf <span class="math inline">\(32\)</span>-Byte-Blöcken. Wenn Ihr Struct nur <span class="math inline">\(12\)</span> Byte groß ist und Sie es invalidieren, löscht die CPU auch die <span class="math inline">\(20\)</span> benachbarten Bytes im Cache aus dem RAM. Liegt dort eine völlig unbeteiligte Variable, die die CPU gerade berechnet hat, vernichten Sie Daten! Wir werden diese Software-Lösung heute deshalb nicht verwenden.</p>
+<p>Zwischen den Varianten neu starten. Attribute nicht umschalten, während beide schreiben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1391,18 +1329,37 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="hardware-lösung-2-best-practice-die-mpu" class="slide level2">
 <h2>Hardware-Lösung 2 (Best Practice): Die MPU</h2>
-<ul>
-<li>Wir entziehen dem Cache einfach die Erlaubnis, diesen spezifischen RAM-Bereich (SRAM4) zu puffern!</li>
-<li>Das Werkzeug dafür ist die MPU (Memory Protection Unit) im Cortex-M7</li>
-<li>Die MPU ist ein Hardware-Modul, das Zugriffsrechte und Cache-Regeln für bestimmte Speicherregionen definiert</li>
-<li>Unsere Konfiguration:
-<ul>
-<li>Wir definieren eine MPU-Region über den Bereich des SRAM4 (<code>0x38000000</code>)</li>
-<li>Wir setzen die Eigenschaft auf <em>Disable Cache</em> / <em>Non-Cacheable</em> (ARM: oft TEX/C/B so gesetzt, dass kein Caching erfolgt)</li>
-</ul></li>
-</ul>
+<p>Für SRAM4 im Basislabor, Attribute aus AN4838, Konstanten im HAL-Header prüfen:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Feld</th>
+<th>Wert</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Basis / Größe</td>
+<td><code>0x38000000</code>, 64 KiB</td>
+</tr>
+<tr class="even">
+<td>Typ</td>
+<td>Normal, TEX = 001, C = 0, B = 0</td>
+</tr>
+<tr class="odd">
+<td>Rechte</td>
+<td>Schreiben erlaubt, Execute Never</td>
+</tr>
+<tr class="even">
+<td>Shareability</td>
+<td>passend zur Doku der Region setzen</td>
+</tr>
+</tbody>
+</table>
+<p>Reihenfolge: MPU, dann D-Cache an, dann Shared-Zugriff.</p>
+<p>Der Pfeil umgeht den D-Cache. Ownership und <code>DMB</code> bleiben.</p>
 <aside class="notes">
-<p>Es gibt einen besseren Weg: Wir lösen das Problem wieder hardwareseitig, aber ohne Snooping. Wir nutzen die Memory Protection Unit, die MPU des Cortex-M7. Die MPU ist eine Art Türsteher im Prozessorkern. Wir können der MPU sagen: Pass auf, der Bereich ab <code>0x38000000</code> gehört zum Shared Memory. Dieser Bereich ist tabu für den Cache! Wir markieren diesen speziellen Teil des RAMs als Non-Cacheable (in CubeMX oft: Disable Cache). Sobald wir das tun, wird die Hardware den L1-Cache für alle Variablen aus diesem Struct schlichtweg umgehen.</p>
+<p>Überlappende Regionen: die höhere Regionsnummer gewinnt auf dem M7. Eine cacheable Region darüber würde die Absicht kaputtmachen. Das im MPU-Register nachsehen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1418,22 +1375,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-bewirkt-die-mpu" class="slide level2">
 <h2>Was bewirkt die MPU?</h2>
 <ul>
-<li>Wenn der M7 nun <code>sd.m7_ready = 1;</code> ausführt:
-<ul>
-<li>Die MPU sieht die Adresse <code>0x38000000</code></li>
-<li>Sie weiß: Cache ist hier verboten!</li>
-<li>Sie leitet den Schreibbefehl direkt über die Bus-Matrix an den SRAM4 durch</li>
-</ul></li>
-<li>Vorteile:
-<ul>
-<li>Kein C-Code (Clean/Invalidate) mehr nötig!</li>
-<li>Cache-Kohärenz ist zu <span class="math inline">\(100\,\%\)</span> physikalisch garantiert</li>
-<li>Der M4 sieht die neuen Daten sofort in Echtzeit</li>
-</ul></li>
-<li>Nachteil: Zugriffe auf das Struct sind langsamer (Bus-Latenz), aber für ein paar Ping-Pong-Flags ist das irrelevant</li>
+<li>Diese Region wird für den M7 nicht als cachebarer Normal-Speicher behandelt</li>
+<li>Sie macht die Bytes nicht „100 % sicher“</li>
+<li>Zwei Kerne ohne Cache brauchen das Protokoll trotzdem</li>
+<li>Weglassen der MPU erzeugt nur dann den Cachefehler, wenn der D-Cache an ist und der Weg cachebar bleibt</li>
 </ul>
 <aside class="notes">
-<p>Was passiert nun zur Laufzeit? Der M7 schreibt <code>m7_ready = 1</code>. Der Schreibbefehl geht an den Kern. Der Türsteher, die MPU, sieht die Adresse und leitet den Befehl am L1-Cache vorbei direkt in die AXI-Bus-Matrix bis zum SRAM4. Die 1 landet sofort und ohne Umwege physikalisch im RAM. Das Schöne daran: Unser C-Code bleibt absolut sauber. Wir müssen keine Clean-Funktionen mehr aufrufen. Der einzige Nachteil ist, dass dieser direkte Zugriff <span class="math inline">\(5\)</span> Takte statt <span class="math inline">\(1\)</span> Takt dauert. Aber für die wenigen Bytes an Status-Flags in der Multicore-Kommunikation ist diese minimale Latenz absolut zu verschmerzen.</p>
+<p>CCR und die Regionsregister sind der Nachweis, nicht die Hoffnung. Eine eigene Write-Back-Variante nur als Versuch 2.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1448,16 +1396,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="laborvorbereitung-der-ping-pong-datenaustausch" class="slide level2">
 <h2>Laborvorbereitung: Der Ping-Pong Datenaustausch</h2>
-<ul>
-<li>Ziel für heute Nachmittag:
-<ul>
-<li>Beide Kerne wecken</li>
-<li>Shared Memory konfigurieren</li>
-<li>Daten hin- und herspielen (Ping-Pong mit Handshake-Flags)</li>
-</ul></li>
-</ul>
+<p>Zustand: <code>TURN_M7</code>, <code>REQUEST_M4</code>, <code>RESPONSE_M7</code>.</p>
+<p>M7 setzt vor der Freigabe Payload 0 und den ersten Request.</p>
+<p>M4 macht daraus 1. M7 druckt 1, legt 2 hin, requested wieder.</p>
+<p>M4 antwortet 3. Sichtbar: <strong>1, 3, 5, …</strong> nicht zuerst 0.</p>
+<p>Nach der Übergabe schreibt niemand weiter am Payload.</p>
 <aside class="notes">
-<p>Damit sind wir bei der Vorbereitung für das heutige Labor angekommen. Wir werden den STM32H755 in seiner ganzen asymmetrischen Pracht nutzen: Shared Memory, Linker-Sektion, MPU und ein kontrolliertes Handshake zwischen M7 und M4.</p>
+<p>Die 500-ms-Pause und die UART-Zeit sind die sichtbare Rate, nicht die IPC-Latenz. <code>osDelay(1)</code> ist ein Tick, nicht automatisch 1 ms.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1473,15 +1418,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="schritt-1-cubemx-dual-core-setup" class="slide level2">
 <h2>Schritt 1: CubeMX Dual-Core Setup</h2>
 <ul>
-<li>Starten Sie ein Projekt für das Board (mit beiden Cores M7 &amp; M4)</li>
-<li>Unter Middleware <span class="math inline">\(\rightarrow\)</span> FreeRTOS:
-<ul>
-<li>Aktivieren Sie FreeRTOS ausschließlich für den Cortex-M4</li>
-<li>Den M7 lassen wir komplett Bare-Metal laufen! (Asymmetric OS-Design)</li>
-</ul></li>
+<li>Board nur übernehmen, wenn es NUCLEO-H755ZI-Q ist</li>
+<li>Beide Kerne, FreeRTOS nur auf dem M4, CMSIS_V2</li>
+<li>UART-Retargeting einem Kern zuordnen</li>
+<li>Takt aus dem Cube-Tree abschreiben, nicht aus dieser Folie</li>
 </ul>
 <aside class="notes">
-<p>Legen Sie ein neues Projekt an und aktivieren Sie beide Kerne. Wir setzen heute ein klassisches Industrie-Pattern um: FreeRTOS ausschließlich auf dem M4-Kern für die harte Echtzeit. Den M7-Kern lassen wir als hochperformantes Bare-Metal-Programm völlig ohne Betriebssystem laufen.</p>
+<p>Stromversorgung und VOS bestimmen, ob 400/480 MHz legal sind. Offen ohne Projekt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1496,22 +1439,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-2-den-cortex-m4-wecken" class="slide level2">
 <h2>Schritt 2: Den Cortex-M4 wecken</h2>
+<p>Den generierten HSEM/Stop-Code behalten und prüfen:</p>
 <ul>
-<li>In der generierten Struktur öffnen Sie die <code>main.c</code> im Ordner CM7</li>
-<li>Fügen Sie ganz am Anfang der <code>main()</code> den Weckruf ein!</li>
+<li>HSEM-Takt an</li>
+<li>ID notieren</li>
+<li>M4: Notify, Stop, begrenztes Warten auf M7-Seite</li>
+<li>M7: Shared-Init <strong>danach</strong> erst Release</li>
+<li>Fehler: Status ausgeben, nicht den Block löschen, während der andere läuft</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">int</span> main<span class="op">(</span><span class="dt">void</span><span class="op">)</span></span>
-<span id="cb7-2"><a aria-label="2"></a><span class="op">{</span></span>
-<span id="cb7-3"><a aria-label="3"></a>  HAL_Init<span class="op">();</span></span>
-<span id="cb7-4"><a aria-label="4"></a>  SystemClock_Config<span class="op">();</span></span>
-<span id="cb7-5"><a aria-label="5"></a></span>
-<span id="cb7-6"><a aria-label="6"></a>  <span class="co">// WICHTIG: M4 aus dem Hardware-Reset befreien!</span></span>
-<span id="cb7-7"><a aria-label="7"></a>  HAL_PWREx_ReleaseCore<span class="op">(</span>PWR_CORE_CPU2<span class="op">);</span></span>
-<span id="cb7-8"><a aria-label="8"></a></span>
-<span id="cb7-9"><a aria-label="9"></a>  <span class="co">// ... restlicher Code des M7</span></span>
-<span id="cb7-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Der erste Programmierschritt im Labor ist extrem wichtig: Öffnen Sie den Ordner für den CM7. In dessen <code>main</code>-Funktion hat der Codegenerator bereits die HAL-Initialisierung und den System-Clock konfiguriert. Darunter müssen Sie den M4-Kern aufwecken, indem Sie die Hardware-Reset-Linie lösen. Rufen Sie <code>HAL_PWREx_ReleaseCore</code> auf. Ab dieser Mikrosekunde laufen beide Kerne gleichzeitig.</p>
+<p>Keine zweite Wake-Funktion neben dem Template erfinden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1526,28 +1463,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-3-shared-memory-struct-anlegen" class="slide level2">
 <h2>Schritt 3: Shared Memory Struct anlegen</h2>
-<ul>
-<li>Legen Sie eine neue Datei <code>shared_data.h</code> im <code>Common/Inc</code>-Ordner an</li>
-<li>Binden Sie diese Header-Datei in der <code>main.c</code> beider Kerne ein</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="pp">#ifndef SHARED_DATA_H</span></span>
-<span id="cb8-2"><a aria-label="2"></a><span class="pp">#define SHARED_DATA_H</span></span>
-<span id="cb8-3"><a aria-label="3"></a></span>
-<span id="cb8-4"><a aria-label="4"></a><span class="pp">#include </span><span class="im">&lt;stdint.h&gt;</span></span>
-<span id="cb8-5"><a aria-label="5"></a></span>
-<span id="cb8-6"><a aria-label="6"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
-<span id="cb8-7"><a aria-label="7"></a>    <span class="dt">uint8_t</span> m7_ready<span class="op">;</span></span>
-<span id="cb8-8"><a aria-label="8"></a>    <span class="dt">uint8_t</span> m4_ready<span class="op">;</span></span>
-<span id="cb8-9"><a aria-label="9"></a>    <span class="dt">uint32_t</span> payload_value<span class="op">;</span></span>
-<span id="cb8-10"><a aria-label="10"></a><span class="op">}</span> SharedData_t<span class="op">;</span></span>
-<span id="cb8-11"><a aria-label="11"></a></span>
-<span id="cb8-12"><a aria-label="12"></a><span class="co">// Deklaration mit Sektions-Zuweisung</span></span>
-<span id="cb8-13"><a aria-label="13"></a><span class="kw">extern</span> __attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared_memory"</span><span class="op">)))</span></span>
-<span id="cb8-14"><a aria-label="14"></a>       <span class="dt">volatile</span> SharedData_t sd<span class="op">;</span></span>
-<span id="cb8-15"><a aria-label="15"></a></span>
-<span id="cb8-16"><a aria-label="16"></a><span class="pp">#endif</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Header gemeinsam, Definition je eine <code>.c</code> pro Image.</p>
+<p><code>_Static_assert(sizeof(ipc_block_t) % 4 == 0)</code>.</p>
+<p>Magic ungleich 0, damit M4 uninitialisierten Speicher erkennt und wartet oder den Timeout nimmt.</p>
 <aside class="notes">
-<p>In Schritt 3 definieren wir unsere Sprache. Da beide Kerne völlig getrennte C-Projekte sind, müssen wir eine Header-Datei im Common-Ordner anlegen, auf den beide Zugriff haben. Wir definieren unser Struct <code>SharedData_t</code> mit den Bereit-Flags und einem Payload. Darunter deklarieren wir die Variable <code>sd</code> als <code>extern</code>, binden sie fest an die <code>.shared_memory</code>-Sektion und markieren sie als <code>volatile</code>. Damit haben beide Kerne dasselbe logische Verständnis der Datenstruktur. Hinweis: Die Definition (ohne <code>extern</code>) gehört in genau eine <code>.c</code>-Datei, typischerweise im Common-Ordner.</p>
+<p>M4 darf <code>memset</code> auf den Block nicht im Task-Start ausführen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1562,21 +1482,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-4-das-linker-script-anpassen" class="slide level2">
 <h2>Schritt 4: Das Linker-Script anpassen</h2>
-<ul>
-<li>Öffnen Sie in beiden Projekten (CM7 und CM4) die Datei <code>STM32H755..._FLASH.ld</code></li>
-<li>Fügen Sie im <code>MEMORY</code>-Block den SRAM4 hinzu (CubeMX-Name: <code>RAM_D3</code>; entscheidend ist die Adresse <code>0x38000000</code>):</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb9-1"><a aria-label="1"></a>RAM_D3 (xrw) : ORIGIN = 0x38000000, LENGTH = 64K</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Fügen Sie im <code>SECTIONS</code>-Block unsere Sektion ein (Achtung auf <code>NOLOAD</code>!):</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb10-1"><a aria-label="1"></a>.shared_memory (NOLOAD) :</span>
-<span id="cb10-2"><a aria-label="2"></a>{</span>
-<span id="cb10-3"><a aria-label="3"></a>  . = ALIGN(4);</span>
-<span id="cb10-4"><a aria-label="4"></a>  *(.shared_memory)</span>
-<span id="cb10-5"><a aria-label="5"></a>} &gt; RAM_D3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Beide Skripte: dieselbe Sektion, kein doppeltes RAM.</p>
+<p>Map: <code>ipc</code> bzw. <code>sd</code> gleiche Adresse.</p>
+<p>Startup: der Bereich darf nicht in der Zero-Tabelle liegen, sonst löscht ein Kern den laufenden Dialog.</p>
 <aside class="notes">
-<p>Nun müssen wir den Worten im C-Code auch Taten im Linker-Script folgen lassen. Suchen Sie die <code>.ld</code>-Dateien im Projektbaum. Fügen Sie im <code>MEMORY</code>-Block den D3-RAM ein, beginnend bei <code>0x38000000</code>. Dann scrollen Sie runter in den <code>SECTIONS</code>-Block und fügen unsere Sektion <code>.shared_memory</code> ein. Vergessen Sie das <code>NOLOAD</code> nicht, sonst überschreibt der M4-Bootcode den SRAM4 mit Nullen und zerschießt die Daten, die der M7 vielleicht schon geschrieben hat. Sie müssen diese Änderungen zwingend in den Linker-Scripten beider Kerne vornehmen!</p>
+<p>Schema-Snippet, keine behauptete Map aus diesem Repo.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1591,26 +1501,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-5-die-ping-pong-logik-cortex-m4" class="slide level2">
 <h2>Schritt 5: Die Ping-Pong Logik (Cortex-M4)</h2>
-<ul>
-<li>In der FreeRTOS-Task des M4:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb11-1"><a aria-label="1"></a><span class="dt">void</span> StartDefaultTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb11-2"><a aria-label="2"></a>  <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb11-3"><a aria-label="3"></a>    <span class="co">// 1. Warten bis M7 Daten bereitstellt</span></span>
-<span id="cb11-4"><a aria-label="4"></a>    <span class="cf">while</span><span class="op">(</span>sd<span class="op">.</span>m7_ready <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb11-5"><a aria-label="5"></a>      osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">// Task schlafen, CPU nicht blockieren</span></span>
-<span id="cb11-6"><a aria-label="6"></a>    <span class="op">}</span></span>
-<span id="cb11-7"><a aria-label="7"></a></span>
-<span id="cb11-8"><a aria-label="8"></a>    <span class="co">// 2. Daten verarbeiten</span></span>
-<span id="cb11-9"><a aria-label="9"></a>    sd<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> <span class="co">// Quittieren</span></span>
-<span id="cb11-10"><a aria-label="10"></a>    sd<span class="op">.</span>payload_value <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb11-11"><a aria-label="11"></a></span>
-<span id="cb11-12"><a aria-label="12"></a>    <span class="co">// 3. Antwort an M7 signalisieren</span></span>
-<span id="cb11-13"><a aria-label="13"></a>    sd<span class="op">.</span>m4_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb11-14"><a aria-label="14"></a>  <span class="op">}</span></span>
-<span id="cb11-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> IpcTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb4-4"><a aria-label="4"></a>        <span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>state <span class="op">!=</span> REQUEST_M4<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-5"><a aria-label="5"></a>            osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">/* ein Tick, Frequenz aus der Config */</span></span>
+<span id="cb4-6"><a aria-label="6"></a>            <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb4-7"><a aria-label="7"></a>        <span class="op">}</span></span>
+<span id="cb4-8"><a aria-label="8"></a>        __DMB<span class="op">();</span></span>
+<span id="cb4-9"><a aria-label="9"></a>        <span class="dt">uint32_t</span> v <span class="op">=</span> ipc<span class="op">.</span>payload <span class="op">+</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
+<span id="cb4-10"><a aria-label="10"></a>        ipc<span class="op">.</span>payload <span class="op">=</span> v<span class="op">;</span></span>
+<span id="cb4-11"><a aria-label="11"></a>        __DMB<span class="op">();</span></span>
+<span id="cb4-12"><a aria-label="12"></a>        ipc<span class="op">.</span>state <span class="op">=</span> RESPONSE_M7<span class="op">;</span></span>
+<span id="cb4-13"><a aria-label="13"></a>        osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb4-14"><a aria-label="14"></a>    <span class="op">}</span></span>
+<span id="cb4-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Timeout über einen Zähler der Runden, nicht über <code>HAL_GetTick</code> des anderen Kerns.</p>
 <aside class="notes">
-<p>Kommen wir zur eigentlichen Logik. Auf dem M4 läuft unser FreeRTOS. In der generierten Task bauen wir eine Warteschleife. Solange der M7 noch keine Daten geliefert hat (<code>m7_ready == 0</code>), schicken wir die Task mit <code>osDelay(1)</code> schlafen. So belasten wir die Echtzeit-Umgebung des M4 nicht mit ewigem Busy-Polling. Sobald das Flag auf 1 springt, wachen wir auf. Wir löschen das M7-Flag (Quittierung), addieren eine 1 auf den Payload-Wert und setzen unser eigenes Bereit-Flag <code>m4_ready</code> auf 1. Der Ball liegt wieder beim M7.</p>
+<p>Während <code>osDelay</code> laufen andere M4-Tasks. Ein hängender Handshake ist kein kompletter CPU-Stillstand.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1625,29 +1533,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-6-die-ping-pong-logik-cortex-m7" class="slide level2">
 <h2>Schritt 6: Die Ping-Pong Logik (Cortex-M7)</h2>
-<ul>
-<li>In der Super-Loop (<code>while(1)</code>) des M7:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb12-1"><a aria-label="1"></a><span class="co">// Initiale Übergabe</span></span>
-<span id="cb12-2"><a aria-label="2"></a>sd<span class="op">.</span>payload_value <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb12-3"><a aria-label="3"></a>sd<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb12-4"><a aria-label="4"></a></span>
-<span id="cb12-5"><a aria-label="5"></a><span class="cf">while</span> <span class="op">(</span><span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb12-6"><a aria-label="6"></a>  <span class="co">// 1. M7 hat kein OS! Polling ist hier (als Demo) ok.</span></span>
-<span id="cb12-7"><a aria-label="7"></a>  <span class="cf">if</span><span class="op">(</span>sd<span class="op">.</span>m4_ready <span class="op">==</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb12-8"><a aria-label="8"></a></span>
-<span id="cb12-9"><a aria-label="9"></a>    printf<span class="op">(</span><span class="st">"M4 hat geantwortet: </span><span class="sc">%lu\n</span><span class="st">"</span><span class="op">,</span></span>
-<span id="cb12-10"><a aria-label="10"></a>           <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">long</span><span class="op">)</span>sd<span class="op">.</span>payload_value<span class="op">);</span></span>
-<span id="cb12-11"><a aria-label="11"></a></span>
-<span id="cb12-12"><a aria-label="12"></a>    sd<span class="op">.</span>m4_ready <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> <span class="co">// Quittieren</span></span>
-<span id="cb12-13"><a aria-label="13"></a>    sd<span class="op">.</span>payload_value <span class="op">+=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb12-14"><a aria-label="14"></a></span>
-<span id="cb12-15"><a aria-label="15"></a>    HAL_Delay<span class="op">(</span><span class="dv">500</span><span class="op">);</span> <span class="co">// Demo: Lesbarkeit am Terminal</span></span>
-<span id="cb12-16"><a aria-label="16"></a>    sd<span class="op">.</span>m7_ready <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> <span class="co">// Ball zurück zu M4!</span></span>
-<span id="cb12-17"><a aria-label="17"></a>  <span class="op">}</span></span>
-<span id="cb12-18"><a aria-label="18"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a>ipc<span class="op">.</span>payload <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-2"><a aria-label="2"></a>__DMB<span class="op">();</span></span>
+<span id="cb5-3"><a aria-label="3"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span>
+<span id="cb5-4"><a aria-label="4"></a><span class="co">/* nach Antwort: */</span></span>
+<span id="cb5-5"><a aria-label="5"></a>__DMB<span class="op">();</span></span>
+<span id="cb5-6"><a aria-label="6"></a>log_u32<span class="op">(</span>ipc<span class="op">.</span>payload<span class="op">);</span> <span class="co">/* 1, dann 3, dann 5 */</span></span>
+<span id="cb5-7"><a aria-label="7"></a>ipc<span class="op">.</span>payload <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
+<span id="cb5-8"><a aria-label="8"></a>__DMB<span class="op">();</span></span>
+<span id="cb5-9"><a aria-label="9"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>HAL_Delay(500)</code> nur als sichtbare Pause. Nicht als Latenzmessung.</p>
+<p>Keine Antwort innerhalb weniger Pausen: Fehlerzeile, Zustand stehen lassen, Schleife beenden.</p>
 <aside class="notes">
-<p>Das Gegenstück auf dem M7 ist reines Bare-Metal. Wir initiieren das Spiel vor der While-Schleife, indem wir den Payload auf 0 setzen und den Ball losspielen (<code>m7_ready = 1</code>). In der Super-Loop pollen wir das Flag des M4. Da wir auf dem M7 kein Betriebssystem haben, ist das Polling hier in Ordnung. Wenn der M4 geantwortet hat, drucken wir den Wert über UART aus, quittieren das Flag, addieren wieder eine 1, machen absichtlich ein <code>HAL_Delay</code> (nur Demo, Bare-Metal!), damit wir die Ausgabe am Terminal mitlesen können, und spielen den Ball zurück zum M4.</p>
+<p>M7-<code>HAL_Delay</code> ist Busy-Wait auf dem M7. Der M4 kann trotzdem im RTOS weiterlaufen, solange der Bus das erlaubt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1662,20 +1560,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-7-mpu-im-m7-konfigurieren" class="slide level2">
 <h2>Schritt 7: MPU im M7 konfigurieren</h2>
-<ul>
-<li>Ohne diese Konfiguration wird der Code aus Schritt 6 scheitern!</li>
-<li>Gehen Sie im CubeMX Configurator auf: System Core <span class="math inline">\(\rightarrow\)</span> CORTEX_M7 <span class="math inline">\(\rightarrow\)</span> Reiter MPU Control</li>
-<li>Aktivieren Sie Region 0:
-<ul>
-<li>Base Address: <code>0x38000000</code></li>
-<li>Size: <span class="math inline">\(64\,\mathrm{KB}\)</span></li>
-<li>Access Permission: ALL ACCESS</li>
-<li>TEX / Shareable / Cacheable: Disable Cache (Non-Cacheable)</li>
-</ul></li>
-<li>Code neu generieren!</li>
-</ul>
+<p>Vor <code>SCB_EnableDCache()</code> und vor dem ersten Shared-Zugriff.</p>
+<p>Konstantennamen aus <code>stm32h7xx_hal_cortex.h</code> der installierten CubeH7-Version. Nicht raten, wenn der Header abweicht.</p>
+<p>Versuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.</p>
 <aside class="notes">
-<p>Würden wir den Code jetzt flashen, würde absolut nichts passieren. Das System friert ein — wegen des Cache-Kohärenz-Problems. Um das zu beheben, müssen wir in den Configurator der CubeIDE. Unter System Core finden Sie die Cortex-M7-Einstellungen. Dort gehen Sie in das Memory Protection Unit Control. Wir legen eine neue Regel an: Für den Bereich beginnend bei <code>0x38000000</code> mit einer Größe von <span class="math inline">\(64\,\mathrm{KB}\)</span> stellen wir das Caching-Verhalten auf Disable Cache. Generieren Sie den Code. Ab jetzt umgeht die M7-Hardware den L1-Cache komplett, wenn sie auf unser <code>sd</code>-Struct zugreift.</p>
+<p>Ohne aktiven D-Cache zeigt Versuch 2 nichts. CCR lesen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1691,14 +1580,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="flashen-debuggen-im-labor" class="slide level2">
 <h2>Flashen &amp; Debuggen im Labor</h2>
 <ul>
-<li>Klicken Sie im CM7-Projekt auf den kleinen Pfeil neben dem Käfer-Icon (Debug) und wählen Sie „Debug Configurations“</li>
-<li>Die CubeIDE hat automatisch eine Startup-Gruppe angelegt</li>
-<li>Achten Sie darauf, dass beide <code>.elf</code>-Dateien (CM7 und CM4) angewählt sind</li>
-<li>Ein Klick lädt erst den M7 in den Flash (Bank 1), danach den M4 (Bank 2) und stoppt beide an ihrer jeweiligen <code>main()</code></li>
-<li>Drücken Sie auf beiden Konsolen auf Play (Resume)</li>
+<li>Beide ELF laden, Reset so, dass der HSEM-Handshake durchläuft</li>
+<li>Erste drei Runden: M4 schreibt 1, 3, 5; M7 druckt sie</li>
+<li>UART-Kern ist der, der <code>printf</code> wirklich bedient</li>
+<li>Breakpoints auf beiden Kernen verschieben Timeouts</li>
 </ul>
 <aside class="notes">
-<p>Das Flashen eines Dual-Core-Projekts bedarf eines kleinen Tricks in Eclipse. Sie dürfen nicht einfach blind auf Run klicken, sonst flashen Sie vielleicht nur den M7. Gehen Sie in die Debug Configurations. ST hat dort meist schon eine Multicore-Startgruppe angelegt. Vergewissern Sie sich, dass die Checkboxen für beide Firmware-Dateien, also <code>CM7.elf</code> und <code>CM4.elf</code>, gesetzt sind. Wenn Sie starten, brennt der ST-Link zuerst Programm 1 und dann Programm 2 in den Chip. Dann halten beide Kerne in der ersten Zeile Code an. Sie müssen dann oben in der Taskleiste beide Kerne separat auf Resume drücken, damit das Ping-Pong-Spiel beginnt.</p>
+<p>ST-LINK-Ablauf der Kursversion. OpenOCD nicht in denselben Satz mischen, solange er nicht der verwendete Server ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1713,21 +1601,50 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="mutwilliger-fehler-mpu-deaktivieren" class="slide level2">
 <h2>Mutwilliger Fehler: MPU deaktivieren</h2>
-<ul>
-<li>Wenn Ihr System läuft und der UART fröhlich zählt:</li>
-<li>Gehen Sie in den Code und kommentieren Sie die MPU-Initialisierung aus:</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb13-1"><a aria-label="1"></a><span class="co">/* HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT); */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Die Beobachtung:
-<ul>
-<li>Der M7 gibt initial 0 aus und friert dann für immer ein</li>
-<li>Der M4 wartet ewig im <code>osDelay(1)</code></li>
-</ul></li>
-<li>Sie haben den berüchtigten Cache Coherency Failure live am Debugger!</li>
-</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>Prüfung</th>
+<th>typische Ursache</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>M4 startet nicht</td>
+<td>Stop, HSEM-ID</td>
+<td>Boot, nicht Cache</td>
+</tr>
+<tr class="even">
+<td>falsche Adresse</td>
+<td>beide Maps</td>
+<td>Linker</td>
+</tr>
+<tr class="odd">
+<td>Magic falsch</td>
+<td>Speicherfenster</td>
+<td>Init fehlt oder Zero läuft</td>
+</tr>
+<tr class="even">
+<td>M7 sieht alten Wert</td>
+<td>CCR, MPU-Region</td>
+<td>Cachezeile</td>
+</tr>
+<tr class="odd">
+<td>Timeout</td>
+<td>Zustand eingefroren</td>
+<td>Ownership oder Barriere</td>
+</tr>
+<tr class="even">
+<td>falsches Image</td>
+<td>ELF-Namen</td>
+<td>Bank/Startadresse</td>
+</tr>
+</tbody>
+</table>
+<p>GPIO oder UART-Status je Symptom, keine erfundene Messung.</p>
 <aside class="notes">
-<p>Wenn Ihr Terminal im Labor anfängt, im <span class="math inline">\(500\,\mathrm{ms}\)</span>-Takt die Zahlen hochzuzählen, haben Sie es geschafft. Beide Kerne reden miteinander. Um sich aber zu beweisen, dass die Theorie stimmt, machen wir einen mutwilligen Fehler. Gehen Sie in die <code>main.c</code> des M7 und kommentieren Sie die Zeile aus, in der die MPU aktiviert wird (<code>HAL_MPU_Enable</code>). Flashen Sie das Programm neu. Das Terminal wird stumm bleiben. Der M7 schreibt in seinen L1-Cache, der M4 liest aus dem SRAM4 die alten Nullen aus. Beide hängen in ihren While-Schleifen fest. Sie haben gerade den berüchtigtsten Architektur-Fehler der Multicore-Entwicklung live erzeugt.</p>
+<p>Ein blockierter M4-Task im <code>osDelay</code> lässt andere Tasks laufen. Das ist kein Beweis, dass der Kern steht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1743,17 +1660,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-gefahr-für-nächste-woche-hsem" class="slide level2">
 <h2>Die Gefahr für nächste Woche (HSEM)</h2>
 <ul>
-<li>Unser Ping-Pong heute nutzt ein strenges Handshake-Protokoll (<code>m7_ready</code>, <code>m4_ready</code>). Jeder Kern weiß genau, wann er schreiben darf</li>
-<li>Was passiert aber…
-<ul>
-<li>wenn beide Kerne asynchron arbeiten und gleichzeitig <code>sd.payload_value</code> überschreiben wollen?</li>
-</ul></li>
-<li>Ein FreeRTOS-Mutex hilft hier nicht! (Der M7 hat ja gar kein FreeRTOS!)</li>
-<li>Wir brauchen hardware-basierte Schlösser, die über Core-Grenzen hinweg funktionieren (HSEM)</li>
-<li><span class="math inline">\(\rightarrow\)</span> Thema für Vorlesung 8!</li>
+<li>Boot-HSEM ist heute erledigt</li>
+<li>Eine HSEM-Sperre für jeden Zugriff ist Termin 8</li>
+<li>HSEM ersetzt weder MPU noch DMB</li>
+<li>Ein lokaler FreeRTOS-Mutex sieht den M7 nicht</li>
 </ul>
 <aside class="notes">
-<p>Das heutige Labor ist ein kontrolliertes Ping-Pong. Die Fahne <code>m7_ready</code> sorgt dafür, dass immer nur ein Kern zur selben Zeit in das Struct schreibt. Aber was passiert nächste Woche, wenn beide Kerne völlig asynchron und unabhängig voneinander auf denselben Payload-Wert zugreifen wollen? Dann haben wir eine Multicore Race Condition. Unser schöner FreeRTOS-Mutex aus Woche 4 hilft uns hier keinen Millimeter weiter. Der Mutex existiert ja nur im RAM des M4-Kerns, der Bare-Metal-M7 weiß davon gar nichts. Wir benötigen ein Schloss, das auf Hardware-Ebene in Silizium gegossen ist und über Bus-Grenzen hinweg funktioniert. Das nennt sich Hardware Semaphores (HSEM) und wird das große Thema in Vorlesung 8 sein.</p>
+<p>Kursplan: Termin 7 Tracing, Termin 8 HSEM und Safety. „Nächste Woche HSEM“ wäre der falsche Verweis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1769,14 +1682,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-des-tages" class="slide level2">
 <h2>Zusammenfassung des Tages</h2>
 <ul>
-<li>AMP ist der Standard für harte Echtzeit-Multicore-Systeme, um Interferenzen zwischen Betriebssystemen zu vermeiden</li>
-<li>Der Cortex-M4 übernimmt oft das RTOS, der Cortex-M7 (Bare-Metal) kümmert sich um den Durchsatz</li>
-<li>Die Adress-Zuordnung von geteilten Daten muss hart über <code>.ld</code>-Linker-Skripte erzwungen werden (<code>.shared_memory</code>)</li>
-<li>Cache-Kohärenz zerschießt die Kommunikation, wenn schnelle Kerne (M7) Write-Back-Caches nutzen</li>
-<li>Die Lösung ist die Deaktivierung des Caches für den geteilten RAM per Hardware (MPU)</li>
+<li>AMP partitioniert Firmware, nicht automatisch die Zeit</li>
+<li>Boot: M4 Stop, M7 init, HSEM Release</li>
+<li>Shared: eine Adresse, M7 initialisiert, Zustand vor Payload-Leser</li>
+<li>Cache: beide Richtungen; MPU non-cacheable plus DMB plus ein Schreiber</li>
+<li>Ausgabe 1, 3, 5 ist das Protokoll, nicht eine Messung</li>
 </ul>
 <aside class="notes">
-<p>Fassen wir zusammen. Sie kennen nun den fundamentalen Architektur-Unterschied zwischen dem Laptop zu Hause (SMP) und dem Steuergerät im Labor (AMP). Sie können den Boot-Ablauf eines Dual-Core-Chips orchestrieren. Sie verstehen, wie man per C-Attribut Daten in spezifische SRAM-Sektoren zwingt. Und das Wichtigste: Sie haben verstanden, warum ein L1-Cache uns die Datenkonsistenz zerstört und wie wir das durch die Memory Protection Unit auf Hardware-Ebene sauber und professionell beheben können. Damit sind Sie perfekt gewappnet für das Labor am Nachmittag!</p>
+<p>Quellen: DS12919, RM0399 der Projekt-Revision, AN5361, AN5617, AN4839, AN4838, CMSIS-Cache und Intrinsics, GCC volatile, GNU ld NOLOAD. Offene Punkte: installierte Cube-Version, echte Map, UART-Pin, VOS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
