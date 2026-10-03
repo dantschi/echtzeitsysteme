@@ -7,12 +7,11 @@
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
 <link href="../site_libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<link href="../site_libs/quarto-contrib/livefigures-0.8.0/livefigures.css" rel="stylesheet"><meta charset="utf-8">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
   <meta name="generator" content="quarto-1.10.18">
 
   <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
-  <title>Echtzeitsysteme – 07 · Tracing &amp; Timing-Analyse</title>
+  <title>Echtzeitsysteme – 07 · Tracing und Timing-Analyse</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
@@ -129,6 +128,9 @@
       margin-right: 0; 
     }
   </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
@@ -138,8 +140,8 @@
     <div class="slides">
 
 <section id="title-slide" class="quarto-title-block center">
-  <h1 class="title">07 · Tracing &amp; Timing-Analyse</h1>
-  <p class="subtitle">Non-Intrusive Observation, CoreSight und BlueBox · EZS · DHBW Stuttgart</p>
+  <h1 class="title">07 · Tracing und Timing-Analyse</h1>
+  <p class="subtitle">Beobachten, ohne die Messung mit der Ursache zu verwechseln · EZS · DHBW Stuttgart</p>
 
 <div class="quarto-title-authors">
 <div class="quarto-title-author">
@@ -153,15 +155,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-in-der-systemanalyse" class="slide level2">
 <h2>Willkommen in der Systemanalyse!</h2>
 <ul>
-<li>Herzlich Willkommen zum 7. Termin unserer Vorlesung.</li>
-<li>Letzte Woche: Wir haben zwei Kerne in einem Chip vernetzt.</li>
-<li>Die Realität im Labor: <em>Läuft das wirklich so, wie wir uns das gedacht haben?</em></li>
-<li>Heute verlassen wir die reine Programmierung.</li>
-<li>Wir wechseln in die Rolle des <strong>Analysten</strong> und <strong>System-Architekten</strong>.</li>
-<li>Ziel: Wir beweisen mathematisch und physikalisch, dass unsere Deadlines eingehalten werden.</li>
+<li>Siebter Termin: eine Messfrage stellen, eine Quelle wählen, die Grenze nennen</li>
+<li>Zielchip wie in VL6: STM32H755, M7 Bare-Metal, M4 FreeRTOS</li>
+<li>Ein Trace ist Evidenz für <strong>beobachtete</strong> Läufe</li>
+<li>Er ist kein WCET-Beweis und kein Normenstempel</li>
+<li>Im Repo liegen kein winIDEA-Projekt und kein BlueBox-Modell</li>
 </ul>
 <aside class="notes">
-<p>Guten Morgen und herzlich willkommen zur siebten Vorlesung! In den letzten Wochen haben wir wie die Weltmeister programmiert. Letzte Woche haben wir sogar das Kunststück vollbracht, zwei völlig unterschiedliche Betriebssystemwelten auf zwei Kernen miteinander sprechen zu lassen. Aber Hand aufs Herz: Haben Sie im Labor wirklich gewusst, ob Ihr Ping-Pong-Code exakt so schnell lief, wie er sollte? Wenn die LED blinkte, waren wir zufrieden. In der Luftfahrt oder in der Automobilindustrie reicht “Es blinkt” aber nicht als Beweis für die Zertifizierung. Heute wechseln wir die Perspektive. Wir werden zu Analysten. Wir lernen, wie wir uns auf die Nanosekunde genau beweisen können, dass unser RTOS wirklich jede Frist einhält.</p>
+<p>Heisenbug hier: der Fehler ändert sich, weil die Beobachtung Code, Layout oder Zeit verändert. Das ist keine Quantenmechanik. Priority Inversion und Race sind verschiedene Mechanismen aus VL4.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -176,17 +177,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
-<ul>
-<li>Recap: Multicore-Kommunikation und ihre Latenzen.</li>
-<li>Die Grenzen der Sichtbarkeit: Warum klassisches Debugging (<code>printf</code>) tödlich ist.</li>
-<li>Der Heisenbug (Der Beobachter-Effekt der IT).</li>
-<li>ARM CoreSight: Wie Chips intern Daten nach außen funken.</li>
-<li>DWT, ITM und der heilige Gral: ETM (Instruction Trace).</li>
-<li>Timing-Metriken: WCET, Slack, Interrupt-Latenz, Netto vs.&nbsp;Brutto.</li>
-<li>TASKING BlueBox, winIDEA und OS-Awareness (<code>pxCurrentTCB</code>).</li>
-</ul>
+<ol type="1">
+<li>Einfluss der Beobachtung</li>
+<li>CoreSight: ITM, DWT, ETM</li>
+<li>Was eine Zahl bedeutet</li>
+<li>Werkzeugkette und Zeitbasis</li>
+<li>OS-Sicht und Labor, mit offenen Hardwarepunkten</li>
+</ol>
 <aside class="notes">
-<p>Was genau steht heute auf der Agenda? Zuerst müssen wir uns eingestehen, dass unsere bisherigen Debugging-Methoden für harte Echtzeit völlig ungeeignet sind. Wir sprechen über das Phänomen des Heisenbugs. Danach schauen wir uns an, wie ARM dieses Problem auf Hardware-Ebene gelöst hat. Wir besprechen die Begriffe ITM, DWT und ETM. Anschließend diskutieren wir, welche Timing-Metriken uns eigentlich interessieren, wenn wir ein Steuergerät analysieren. Und zum Abschluss stelle ich Ihnen das sündhaft teure Werkzeug vor, das wir heute Nachmittag im Labor verwenden werden: die TASKING BlueBox, ein waschechter Hardware-Tracer.</p>
+<p>UART-Rechnung und Abbildung nutzen denselben Text „Hallo“, fünf Byte, etwa 434 µs Übertragung, nicht CPU-Zeit.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -202,21 +201,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="recap-unser-multicore-system" class="slide level2">
 <h2>Recap: Unser Multicore-System</h2>
 <ul>
-<li>Letzte Woche auf dem STM32H755:
-<ul>
-<li>Cortex-M7 (Bare-Metal) setzt <code>m7_ready = 1</code>.</li>
-<li>Cortex-M4 (FreeRTOS) wartet auf das Flag.</li>
-</ul></li>
-<li>Wir haben die MPU konfiguriert, um <strong>Cache-Kohärenz</strong> zu erzwingen.</li>
-<li>Das System lief flüssig im Terminal.</li>
-<li><strong>Die ungelösten Fragen:</strong>
-<ul>
-<li>Wie viele Mikrosekunden vergingen <em>wirklich</em> zwischen dem Schreiben des M7 und dem Aufwachen des M4?</li>
-<li>Hat FreeRTOS auf dem M4 beim Aufwachen sofort geschaltet, oder hat eine andere Task kurz blockiert?</li>
-</ul></li>
+<li>VL6: Ownership, Barriere, non-cacheable Region</li>
+<li>Heute beobachten wir denselben Vertrag</li>
+<li>DWT sieht konfigurierte <strong>CPU-Zugriffe</strong> des gewählten Kerns</li>
+<li>DWT beweist nicht, was im SRAM hinter dem M7-Cache steht</li>
+<li>Ein Dual-Core-Debug beweist weder parallelen Trace noch SWO</li>
 </ul>
 <aside class="notes">
-<p>Kurzer Rückblick auf letzte Woche. Sie haben ein asymmetrisches Multiprocessing-System gebaut. Der M7 hat Daten in den Shared Memory gelegt und das Flag gesetzt. Wir haben gelernt, dass wir den Cache des M7 für diesen Speicherbereich deaktivieren müssen, damit der M4 die echten Daten sieht. Das Ping-Pong funktionierte. Aber: Haben Sie eine Ahnung, ob der M4 eine Mikrosekunde oder hundert Mikrosekunden gebraucht hat, um aufzuwachen? Was wäre passiert, wenn in genau diesem Moment der SysTick auf dem M4 gefeuert hätte? Bisher haben wir blind darauf vertraut, dass das System schnell genug ist.</p>
+<p>Drei Sichten getrennt halten: M7-Store, M4-Lesewert, SRAM auf einem benannten Zugriffsweg.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -231,19 +223,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-beobachter-effekt-in-der-physik" class="slide level2">
 <h2>Der Beobachter-Effekt in der Physik</h2>
+<p>Analogie, kein physikalisches Gesetz für jede Messung:</p>
 <ul>
-<li>Aus der Quantenmechanik (und dem Alltag):</li>
-<li><em>“Wer ein System misst, verändert unweigerlich dessen Zustand.”</em></li>
-<li><strong>Beispiel:</strong> Prüfen des Reifendrucks.
-<ul>
-<li>Um zu messen, wie viel Luft im Reifen ist, müssen Sie das Ventil öffnen und das Manometer anschließen.</li>
-<li>Dabei entweicht ein kleines bisschen Luft!</li>
-<li>Der Druck nach der Messung ist <em>nicht mehr derselbe</em> wie vor der Messung.</li>
-</ul></li>
-<li>Gilt dieses physikalische Gesetz auch in der Software-Entwicklung? <strong>JA!</strong></li>
+<li>extra Befehle, Logs, anderes Scheduling</li>
+<li>anderes Layout, anderer Cachezustand</li>
+<li>Halt, Buszugriffe des Debuggers, voller Tracepuffer</li>
 </ul>
+<p>GPIO, Zykluszähler, ITM, DWT und ETM beantworten verschiedene Fragen und stören verschieden stark.</p>
 <aside class="notes">
-<p>Um zu verstehen, warum das Messen von Software so schwer ist, müssen wir einen kleinen Exkurs in die Physik machen. In der Quantenmechanik gibt es den berühmten Beobachter-Effekt. Die Kurzform lautet: Es ist physikalisch unmöglich, ein System zu beobachten, ohne es durch die Beobachtung zu verändern. Wenn Sie beim Auto den Reifendruck messen wollen, drücken Sie das Manometer auf das Ventil. Es zischt kurz. Ein bisschen Luft entweicht in das Messgerät. Das bedeutet: Der Druck, den Sie auf der Anzeige ablesen, ist bereits leicht geringer als der Druck, der vor der Messung im Reifen herrschte. Genau dieser Effekt holt uns in der Echtzeit-Programmierung erbarmungslos ein.</p>
+<p>„Non-intrusive“ heißt: Hardwaretrace kann ohne zusätzliche Anwendungsbefehle und ohne Halt aufzeichnen. Aktivierung, Puffer, Überlauf und Stall bleiben zu prüfen. ITM bleibt Software.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -258,18 +246,35 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="klassisches-debugging-die-printf-gefahr" class="slide level2">
 <h2>Klassisches Debugging: Die <code>printf</code>-Gefahr</h2>
-<ul>
-<li>Die häufigste (und schlechteste) Debugging-Methode in C: <code>printf("Task A ist hier! Zeit = %d\n", ticks);</code></li>
-<li><strong>Was passiert physikalisch?</strong>
-<ul>
-<li>Das Wort „Hallo“ hat 5 Bytes; bei 8N1 sind das <span class="math inline">\(5 \times 10 = 50\)</span> Bits (Start- und Stop-Bit).</li>
-<li>Bei Standard <span class="math inline">\(115200\)</span> Baud dauert ein Bit <span class="math inline">\(\approx 8{,}68\,\text{µs}\)</span>.</li>
-<li>„Hallo“ senden blockiert das System für <span class="math inline">\(\approx 430\,\text{µs}\)</span>!</li>
-</ul></li>
-<li><em>Während Sie versuchen zu messen, ob Ihre <span class="math inline">\(50\,\text{µs}\)</span> Frist gehalten wird, halten Sie das System für <span class="math inline">\(430\,\text{µs}\)</span> an!</em></li>
-</ul>
+<p>„Hallo“, 8N1: 5 Byte = 50 Bit.</p>
+<p><span class="math display">\[50 / 115200 \approx 434\,\text{µs}\]</span></p>
+<p>Das ist die <strong>Übertragungsdauer</strong>, nicht automatisch CPU-Zeit und nicht der Halt des Chips.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Weg</th>
+<th>CPU während der Bits</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Polling</td>
+<td>bleibt in der Ausgabe</td>
+</tr>
+<tr class="even">
+<td>IRQ</td>
+<td>kurz, UART läuft weiter</td>
+</tr>
+<tr class="odd">
+<td>DMA</td>
+<td>Start kurz, Transfer ohne CPU</td>
+</tr>
+</tbody>
+</table>
+<p>Formatierung, Locks und Puffer kommen dazu. <code>printf</code> ist auf dem zeitkritischen Messpfad ungeeignet. Außerhalb bleibt begrenztes Logging möglich.</p>
+<p>Ein verpasster Termin ist ein Deadline Miss, kein automatischer Crash.</p>
 <aside class="notes">
-<p>Nehmen wir den Klassiker: <code>printf</code>. Sie wollen wissen, ob Task A rechtzeitig startet. Also schreiben Sie <code>printf("Task A ist hier")</code> in den Code. Sie denken, das sei eine harmlose Textausgabe. Schauen wir uns die Physik dahinter an. Das Wort “Hallo” besteht aus 5 Buchstaben. Über den UART-Port werden inklusive Start- und Stop-Bits (8N1) exakt 50 Bits übertragen. Bei 115200 Baud dauert ein Bit rund 8,7 Mikrosekunden. Das Senden von „Hallo“ blockiert Ihren Code für etwa 430 Mikrosekunden. Wenn Ihre eigentliche Deadline bei 50 Mikrosekunden lag, haben Sie Ihr System durch den bloßen Versuch der Beobachtung restlos zerstört.</p>
+<p>Didaktische Rechnung: 10 µs Arbeit plus 434 µs blockierende Übertragung gegen eine angenommene Frist von 50 µs. Dieselbe Zeichenkette in der Zeichnung, nicht „Hallo Welt“. Zehn Byte wären etwa 868 µs und sind hier nicht das Beispiel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -284,19 +289,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-der-beobachter-effekt" class="slide level2">
 <h2>Visualisierung: Der Beobachter-Effekt</h2>
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="../assets/images/uart_delay.png" class=""></p>
-<figcaption>Timing-Verzerrung durch UART</figcaption>
-</figure>
-</div>
+<p>Lehrstreifen, keine Messung:</p>
 <ul>
-<li><strong>Ideal:</strong> Die Berechnung ist extrem kurz, die Deadline wird souverän eingehalten.</li>
-<li><strong>Beobachtet:</strong> Der „harmlose“ <code>printf</code>-Aufruf bläht die Laufzeit so massiv auf, dass das System die rote Deadline verpasst (System-Crash!).</li>
-<li><em>Hinweis:</em> Die Abbildung zeigt illustrativ <code>printf("Hallo Welt")</code>; die Rechnung oben nutzt bewusst das kürzere „Hallo“ (5 Bytes <span class="math inline">\(\rightarrow\)</span> <span class="math inline">\(\approx 430\,\text{µs}\)</span>).</li>
+<li>nur Rechnung: 10 µs, Frist 50 µs, gehalten</li>
+<li>dieselbe Rechnung plus blockierendes „Hallo“: 444 µs, Frist gerissen</li>
 </ul>
+<p>Der GPIO-Puls von HIGH bis LOW enthält jede Präemption dazwischen. Ein direkter <code>BSRR</code>-Schreibzugriff ist nicht „1–2 Takte bis zur sichtbaren Flanke“: Bus, HAL und Pad bleiben außen vor.</p>
 <aside class="notes">
-<p>Das Diagramm zeigt das visuell. Im idealen Fall dauert unsere Berechnung einen Wimpernschlag. Die rote Deadline-Linie ist weit entfernt. Nun bauen wir das <code>printf</code> ein, um das Timing zu überprüfen. Der riesige UART-Block schiebt sich in unseren Execution-Flow. Die Berechnung wird zwar fertig, aber das UART-Modul lässt uns warten. Wir verpassen die Deadline krachend. In dem Moment, in dem wir das <code>printf</code> wieder löschen, läuft das System wieder fehlerfrei.</p>
+<p>Frage: Welche Zeit misst der Puls? Die verstrichene Zeit zwischen den beiden Stores, inklusive Unterbrechungen, nicht die reine Funktions-CPU-Zeit.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -311,31 +311,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="klassisches-debugging-breakpoints" class="slide level2">
 <h2>Klassisches Debugging: Breakpoints</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
 <ul>
-<li>Wenn <code>printf</code> verboten ist, nutzen wir doch den Debugger (Breakpoints!).</li>
-<li>Sie setzen in der IDE einen roten Punkt in Zeile 42.</li>
-<li><strong>Was passiert in der CPU?</strong>
-<ul>
-<li>Die Hardware hat spezielle Komparator-Register.</li>
-<li>Wenn der Program Counter (<code>PC</code>) die Adresse von Zeile 42 erreicht, löst die CPU einen “Halt” aus.</li>
-</ul></li>
+<li>Der <strong>betroffene</strong> Kern hält an</li>
+<li>Der andere Kern, DMA und Peripherie können weiterlaufen</li>
+<li>DBGMCU kann einzelne Timer oder Watchdogs einfrieren, wenn das so konfiguriert ist</li>
+<li>Der NVIC ist keine unbegrenzte FIFO: Pending kann Flanken zusammenfassen</li>
+<li>Puffer können überlaufen</li>
+<li>„50 Interrupts, dann sicher Stack Overflow“ streichen</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<ul>
-<li><strong>Die CPU stoppt (Core Halted):</strong>
-<ul>
-<li>Es wird kein Assembler-Code mehr ausgeführt.</li>
-<li>Sie können gemütlich im RAM Variablen ansehen.</li>
-</ul></li>
-</ul>
-</div></div>
-<ul>
-<li><em>Klingt perfekt, oder? Es gibt nur ein gigantisches Problem…</em></li>
-</ul>
+<p>Nach Resume ist nur rekonstruierbar, was noch in Registern, FIFOs oder Pending steht.</p>
 <aside class="notes">
-<p>Gut, sagen Sie, wenn Printf verboten ist, nehme ich die Eclipse-IDE und setze einen Breakpoint. Das ist doch sauberes Debugging! Wenn Sie das tun, lädt die IDE die Speicheradresse dieser Code-Zeile in ein spezielles Komparator-Register der ARM-CPU. Sobald der Program Counter der CPU auf diese Adresse trifft, löst die Hardware den sogenannten Halt-Status aus. Der gesamte Cortex-M-Kern friert auf der Nanosekunde genau ein. Die Register ändern sich nicht mehr. Sie können gemütlich eine Tasse Kaffee trinken und sich in der IDE den Inhalt aller Variablen ansehen. Für Desktop-Entwickler ist das perfekt. Für uns Embedded-Entwickler ist es eine Todesfalle.</p>
+<p>Frage: Welche Ereignisse sind nach dem Weiterlaufen noch da? Nicht jede verlorene Flanke.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -350,23 +336,27 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-problem-des-halt-states" class="slide level2">
 <h2>Das Problem des “Halt-States”</h2>
-<ul>
-<li>Die CPU (der Code) stoppt. <strong>Die physikalische Welt stoppt nicht!</strong></li>
-<li>Während Sie in Ruhe Ihre Variablen ansehen:
-<ol type="1">
-<li>Der Motorläufer dreht sich weiter (Sensor-Flanken kommen an).</li>
-<li>Der UART-Port empfängt weiter Bytes (Der Puffer läuft über!).</li>
-<li>Hardware-Timer zählen munter weiter.</li>
-</ol></li>
-<li><strong>Der Crash nach dem Resume (Play):</strong>
-<ul>
-<li>Sie klicken auf “Play”. Die CPU erwacht.</li>
-<li>Plötzlich stehen 50 aufgestaute Hardware-Interrupts gleichzeitig vor der Tür.</li>
-<li>Das OS wird mit ISRs geflutet <span class="math inline">\(\rightarrow\)</span> Stack Overflow oder Deadlock!</li>
-</ul></li>
-</ul>
+<div class="cell" data-reveal="true" data-fig-width="6.2" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TB
+  H[Kern hält] --&gt; U[UART kann weiter senden]
+  H --&gt; D[DMA kann weiter kopieren]
+  H --&gt; O[anderer Kern kann weiterrechnen]
+  U --&gt; X[Overflow möglich]
+  E[externe Flanken] --&gt; P[Pending, nicht jede Flanke gespeichert]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Eine zweite Spur: Timer eingefroren, <strong>wenn</strong> das Freeze-Bit gesetzt ist.</p>
 <aside class="notes">
-<p>Warum? Weil wir ein eingebettetes System bauen. Die CPU friert zwar ein, aber die physikalische Welt um uns herum friert nicht ein! Wenn Ihre CPU gerade einen Elektromotor bei 5000 Umdrehungen ansteuert und Sie klicken auf “Pause”, dann dreht sich der Motor wegen der Trägheit weiter! Der Drehgeber sendet munter hunderte Sensor-Flanken an Ihren Mikrocontroller. Der Hardware-Puffer des UART-Ports läuft voll, weil der externe PC weiter Daten sendet. All das staut sich auf. Wenn Sie dann nach fünf Minuten Ihren Kaffee ausgetrunken haben und auf “Play” drücken, passiert das Unausweichliche: Die CPU wacht auf und wird sofort von 50 anstehenden Interrupts gleichzeitig erschlagen. Das System stürzt unweigerlich mit einem Stack Overflow oder völlig wirrem Timing ab. Sie können eine harte Echtzeitanwendung nicht einfach per Breakpoint anhalten!</p>
+<p>Halt-Debugging, laufende DAP-Lesezugriffe, Softwarelogs und Hardwaretrace sind vier verschiedene Eingriffe. SWD heißt nicht, dass jeder Speicherzugriff den Kern anhält. DAP-Verkehr ist trotzdem Buslast und kein lückenloser Trace.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -382,20 +372,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-heisenbug" class="slide level2">
 <h2>Der Heisenbug</h2>
 <ul>
-<li>Durch diese Effekte entsteht eine spezielle Klasse von Softwarefehlern.</li>
-<li><strong>Benannt nach Werner Heisenberg</strong> (Heisenbergsche Unschärferelation).</li>
-<li><strong>Definition Heisenbug:</strong>
-<ul>
-<li>Ein Bug, der <em>verschwindet</em> oder sein Verhalten <em>verändert</em>, sobald man versucht, ihn mit einem Debugger oder mit <code>printf</code> zu isolieren.</li>
-</ul></li>
-<li><strong>Die Ursache in RTOS-Systemen:</strong>
-<ul>
-<li>Der Fehler war ein “Timing-Fehler” (z. B. eine hauchdünne Race Condition).</li>
-<li>Durch das Anhalten oder Ausgeben von Text verändert sich das Timing so extrem, dass die Race Condition zufällig nicht mehr auftritt!</li>
-</ul></li>
+<li>Der Fehler verschwindet, weil die Beobachtung die Zeit oder das Layout ändert</li>
+<li>Race: verschränkte Zugriffe ohne Vertrag</li>
+<li>Priority Inversion: ein Lock plus Verdrängung des Owners</li>
+<li>Beides kann heikel zu beobachten sein, beides ist nicht dasselbe</li>
 </ul>
 <aside class="notes">
-<p>Diese Phänomene führen zu einer Fehlerkategorie, die gestandene Programmierer zur Verzweiflung treibt: Dem Heisenbug. Benannt nach Werner Heisenberg und seiner Unschärferelation. Ein Heisenbug ist ein Softwarefehler, der sofort verschwindet, wenn Sie versuchen, ihn zu finden. Stellen Sie sich vor, Sie haben eine subtile Priority Inversion, die nur dann zuschlägt, wenn Task A exakt 2 Mikrosekunden nach Task B aufwacht. Das System stürzt ab. Sie bauen ein <code>printf</code> in Task A ein, um den Absturz zu finden. Das Printf verschiebt das Timing um 300 Mikrosekunden. Plötzlich wacht Task A nicht mehr gleichzeitig mit Task B auf. Die Race Condition tritt nicht mehr auf. Das System läuft stabil, solange das Printf drin ist. Sobald Sie den Code für die Auslieferung an den Kunden löschen, stürzt das Gerät wieder ab.</p>
+<p>Die alte Notiz, die Inversion und Race in einen Satz zog, gilt nicht mehr.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -411,18 +394,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-workaround-software-instrumentierung" class="slide level2">
 <h2>Der Workaround: Software Instrumentierung</h2>
 <ul>
-<li>Wie haben wir uns in Termin 1 beholfen? Mit <strong>GPIO Toggling</strong>!</li>
-<li>Vor der Task: Pin auf HIGH. Nach der Task: Pin auf LOW.</li>
-<li><strong>Vorteil:</strong> Extrem schnell (1-2 Taktzyklen). Zerstört das Timing kaum.</li>
-<li><strong>Nachteile:</strong>
-<ol type="1">
-<li><strong>Pin-Mangel:</strong> Sie haben keine 50 freien Pins, um 50 Tasks zu überwachen.</li>
-<li><strong>Intrusiv:</strong> Sie verändern den Original-Code (<code>Toggle</code>-Befehle im Source Code).</li>
-<li><strong>Cache-Effekte:</strong> Selbst eine Zeile Code mehr ändert das Compiler-Layout und kann den L1-Cache beeinflussen (Der Bug verschwindet wieder!).</li>
-</ol></li>
+<li>GPIO und Zähler beantworten „wann bin ich hier?“</li>
+<li>ITM schreibt Stimulus-Wörter, es formatiert keinen Text</li>
+<li><code>ITM_SendChar</code> kann auf freie Kapazität <strong>warten</strong></li>
+<li>Voller Puffer ist keine „winzige Seltenheit“</li>
+<li>Laborvariante, wenn wir sie nutzen: nicht blockieren, Drops zählen, Statusbits der vorhandenen CMSIS-Version prüfen</li>
 </ul>
 <aside class="notes">
-<p>In der ersten Vorlesung haben wir das pragmatisch gelöst. Wir haben Software-Instrumentierung betrieben. Wir haben vor unserer Berechnung einen GPIO-Pin auf HIGH gesetzt und danach auf LOW. Mit dem Oszilloskop haben wir die Pulsweite gemessen. Das ist eine legitime Methode, da ein GPIO-Register-Schreibzugriff nur ein bis zwei Taktzyklen dauert und das Timing kaum zerstört. Aber auch diese Methode skaliert nicht. Sie haben auf Ihrem Controller keine 50 freien Pins für 50 FreeRTOS-Tasks. Außerdem ist es “intrusiv”: Sie manipulieren den Source-Code. Manchmal reicht es schon aus, eine C-Zeile für einen Pin-Toggle hinzuzufügen, um das Alignment des Maschinencodes im Flash so zu verändern, dass der L1-Cache plötzlich anders arbeitet. Und zack – der Heisenbug schlägt wieder zu.</p>
+<p>Keine Behauptung, die Kurshardware habe SWO schon nachgewiesen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -437,19 +416,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wir-brauchen-non-intrusive-observation" class="slide level2">
 <h2>Wir brauchen: Non-Intrusive Observation</h2>
+<p>Präzise Formulierung:</p>
 <ul>
-<li>Um RTOS-Probleme zu finden, brauchen wir eine Methode, die:
-<ol type="1">
-<li>Die CPU nicht für Mikrosekunden blockiert.</li>
-<li>Die CPU niemals anhält (keine Breakpoints).</li>
-<li>Keinerlei Code-Änderungen im C-Sourcecode erfordert!</li>
-</ol></li>
-<li><strong>Der Fachbegriff:</strong> Rückwirkungsfreie Beobachtung (Non-Intrusive).</li>
-<li>Wie ist das physikalisch auf einem Mikrocontroller möglich?</li>
-<li><span class="math inline">\(\rightarrow\)</span> <strong>Mit Hardware-Trace-Technologie!</strong></li>
+<li>ohne extra Anwendungsbefehle</li>
+<li>ohne den Kern anzuhalten</li>
+<li>nicht: Einfluss immer exakt null</li>
 </ul>
+<p>Prüfen: Trace an, Pfad, Puffer, Überlauf, Stall.</p>
 <aside class="notes">
-<p>Wir stecken in einer Sackgasse. Um Echtzeit zu beweisen, brauchen wir eine Methode, die die CPU nicht blockiert, das System niemals anhält und idealerweise nicht eine einzige geänderte Zeile C-Code erfordert. Wir brauchen eine rückwirkungsfreie Beobachtung, im Fachjargon “Non-Intrusive Observation”. Lange Zeit dachte man, das sei unmöglich. Aber moderne Chiphersteller haben das Problem auf Siliziumebene gelöst. Sie haben spezielle Netzwerke parallel zum eigentlichen Prozessor in das Silizium gebrannt: Die Hardware-Trace-Technologie. Und die schauen wir uns jetzt an.</p>
+<p>ITM fällt aus dieser Definition heraus, weil die Anwendung schreibt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -464,15 +439,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zusammenfassung-block-1" class="slide level2">
 <h2>Zusammenfassung Block 1</h2>
-<ol type="1">
-<li><strong>Beobachter-Effekt:</strong> Jeder Versuch, Timing per Software zu messen, verändert das Timing.</li>
-<li><strong><code>printf</code></strong> ist in der Echtzeit wegen massiver Latenzen (<span class="math inline">\(&gt;100\,\text{µs}\)</span>) streng verboten.</li>
-<li><strong>Breakpoints</strong> frieren die CPU ein, aber Peripherie/Interrupts laufen weiter <span class="math inline">\(\rightarrow\)</span> Systemcrash bei Wiederaufnahme.</li>
-<li><strong>Heisenbugs</strong> verbergen sich, wenn das Timing durch Debugging verschoben wird.</li>
-<li>Die Lösung muss zu <span class="math inline">\(100\%\)</span> in Hardware integriert sein.</li>
-</ol>
+<ul>
+<li>434 µs sind Leitungszeit von „Hallo“</li>
+<li>Halt stoppt nicht den ganzen Chip</li>
+<li>GPIO misst ein Intervall, keine reine CPU-Zeit</li>
+<li>Hardwaretrace ist eine Quelle mit eigenen Verlusten</li>
+</ul>
 <aside class="notes">
-<p>Fassen wir das Debakel des klassischen Debuggings zusammen. “Printf” vernichtet harte Deadlines durch UART-Verzögerungen. Breakpoints zerstören den Zustand des Systems, weil sich aufstauende Hardware-Interrupts die Architektur beim Resume zerschießen. Heisenbugs treiben uns in den Wahnsinn. Die Konsequenz ist unumstößlich: Wir müssen das Debugging aus der Software herausholen und komplett in die Hardware verlagern.</p>
+<p>Nächster Block: wer die Pakete erzeugt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -487,14 +461,31 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="hardware-trace-arm-coresight" class="slide level2">
 <h2>Hardware-Trace: ARM CoreSight</h2>
-<ul>
-<li>ARM (der Designer des Cortex-M7/M4) hat ein gigantisches Debug-Netzwerk parallel zur CPU entworfen: <strong>CoreSight</strong>.</li>
-<li>CoreSight besteht aus dedizierten Silizium-Blöcken, die den CPU-Kern “ausspionieren”.</li>
-<li>Sie lesen Bus-Daten, ohne den eigentlichen AHB/AXI-Bus der CPU zu belasten.</li>
-</ul>
-<p><img data-src="../_livefigures/inline-plantuml-c377e783.svg" class="livefigure"></p>
+<div class="cell" data-reveal="true" data-fig-width="6.6" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  SW[Software] --&gt; ITM
+  CPU[CPU-Zugriffe und Ereignisse] --&gt; DWT
+  DWT --&gt; PF[Tracepfad]
+  ITM --&gt; PF
+  CF[Kontrollfluss] --&gt; ETM
+  ETM --&gt; PF
+  PF --&gt; OUT[TPIU oder anderer Sink]
+  DAP[Debugzugriffe] --&gt; BUS[Bus]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Nicht drei gleiche Spione am SRAM. DWT sitzt an der konfigurierten Quelle <strong>des Kerns</strong>.</p>
+<p>Was fehlt: DMA-Schreiben, der andere Kern, Cachezeilen hinter dem Store, alles außerhalb des Filters.</p>
 <aside class="notes">
-<p>Lernen Sie ARM CoreSight kennen. ARM hat erkannt, dass Entwickler ein Werkzeug brauchen, das unsichtbar ist. Sie haben deshalb ein komplettes, eigenständiges Netzwerk aus Logikgattern neben den eigentlichen Cortex-Kern gesetzt. Dieses Netzwerk nennt sich CoreSight. Es ist physikalisch so verdrahtet, dass es passiv auf den Bus-Leitungen der CPU „mitschnüffelt“, ohne dass der Datenfluss der CPU auch nur um einen einzigen Taktzyklus gebremst wird. CoreSight sammelt die Daten ein, bündelt sie und leitet sie an spezielle Pins nach draußen. Schauen wir uns die drei wichtigsten Schnüffler dieses Netzwerks an: ITM, DWT und ETM.</p>
+<p>H755-Integration und optionale Blöcke im RM0399 der Projekt-Revision prüfen. Nicht aus einem generischen M7-Bild abzeichnen. Ob beide Kerne gleichzeitig tracen, ist offen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -509,15 +500,45 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="jtag-vs.-swd-vs.-trace" class="slide level2">
 <h2>JTAG vs.&nbsp;SWD vs.&nbsp;Trace</h2>
-<ul>
-<li>Bisher haben wir zum Flashen/Debuggen JTAG (alt, 5 Pins) oder SWD (Serial Wire Debug, modern, 2 Pins) genutzt</li>
-<li>SWD ist bidirektional: Der PC schickt einen Stopp-Befehl <span class="math inline">\(\rightarrow\)</span> Chip stoppt <span class="math inline">\(\rightarrow\)</span> PC fragt RAM ab <span class="math inline">\(\rightarrow\)</span> Chip antwortet</li>
-<li>Trace-Daten hingegen sind ein gigantischer unidirektionaler Wasserfall!</li>
-<li>Der Chip feuert Millionen von Statusmeldungen pro Sekunde nach außen (<em>Fire and Forget</em>)</li>
-<li>Der PC (oder die BlueBox) muss extrem schnell sein, um alles aufzufangen!</li>
-</ul>
+<table class="caption-top">
+<colgroup>
+<col style="width: 13%">
+<col style="width: 44%">
+<col style="width: 41%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Weg</th>
+<th>transportiert</th>
+<th>beweist nicht</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SWD/JTAG</td>
+<td>Debug</td>
+<td>lückenlosen Trace</td>
+</tr>
+<tr class="even">
+<td>SWO</td>
+<td>oft ITM/DWT</td>
+<td>volles ETM</td>
+</tr>
+<tr class="odd">
+<td>parallele Trace-Pins</td>
+<td>hohe Rate, wenn vorhanden</td>
+<td>dass das Nucleo sie hat</td>
+</tr>
+<tr class="even">
+<td>interner Puffer</td>
+<td>kurz, on-chip</td>
+<td>lange Historie</td>
+</tr>
+</tbody>
+</table>
+<p>UM2408: STDC14/MIPI10 am NUCLEO-H755ZI-Q ist kein Nachweis eines 20-poligen parallelen Trace-Steckers. Pinout, Raster und Adapter am Schaltplan prüfen. Pinmux, ST-LINK-Trennung, GND, VTref, Pegel, Reset.</p>
 <aside class="notes">
-<p>Aber zunächst eine physikalische Klarstellung. Bisher haben Sie Ihren kleinen weißen ST-Link verwendet, der über das Serial Wire Debug-Protokoll, kurz SWD, mit dem Chip spricht. Das sind zwei kleine Kabel. Das Prinzip ist immer Frage und Antwort: Der PC sagt „Stopp“, die CPU stoppt. Der PC sagt „Gib mir Adresse X“, die CPU antwortet. Bei der Trace-Technologie drehen wir das Konzept um. Trace ist ein brutaler, eindimensionaler Wasserfall aus Daten. Die CPU hält nicht an. Sie feuert Millionen von kleinen Statuspaketen über separate Trace-Pins ungefragt nach außen. „Fire and Forget“. Wenn Ihr Analyse-Gerät am Schreibtisch zu langsam ist, um diesen Gigabit-Strom aufzufangen, sind die Daten für immer verloren.</p>
+<p>Ein 20-poliger Debugstecker und ein Cortex-Trace-Stecker sind nicht dasselbe. Keine Buchse zeichnen, die das Board nicht hat.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -533,19 +554,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="modul-1-das-itm-instrumentation-trace" class="slide level2">
 <h2>Modul 1: Das ITM (Instrumentation Trace)</h2>
 <ul>
-<li>Das „bessere <code>printf</code>“</li>
-<li>Die CPU schreibt einen Wert in ein spezielles ITM-Hardware-Register</li>
-<li>Der Unterschied zu UART:
-<ul>
-<li>Der Schreibzugriff auf das ITM-Register dauert typischerweise <strong>einen Taktzyklus</strong> (wenige Nanosekunden)!</li>
-<li>Die CPU rechnet sofort weiter (asynchroner Trace).</li>
-<li>Caveat: Bei vollem ITM-FIFO kann der Schreibzugriff kurz stallen.</li>
-<li>Die CoreSight-Hardware verpackt das Byte im Hintergrund und schickt es asynchron nach draußen</li>
-</ul></li>
-<li>Latenz-Problem von <span class="math inline">\(430\,\text{µs}\)</span> gelöst! (Nur noch winzige Intrusion im Code)</li>
+<li>Stimulus-Port</li>
+<li>Software muss schreiben</li>
+<li>Warten oder Verwerfen ist eine Implementierungsentscheidung</li>
+<li>Drops dokumentieren, sonst sieht die Lücke wie „nichts passiert“ aus</li>
 </ul>
 <aside class="notes">
-<p>Das einfachste CoreSight-Modul ist das ITM, die Instrumentation Trace Macrocell. Das ist unser direkter Ersatz für „printf“. Anstatt einen Buchstaben mühsam in das UART-Register zu schieben und zu warten, bis er gesendet ist, schiebt unser C-Code den Buchstaben in ein spezielles ITM-Register. Das dauert typischerweise einen Taktzyklus (wenige Nanosekunden). Der Kern ist sofort fertig und rechnet nahtlos im Programm weiter. Das ITM-Hardware-Modul übernimmt den Buchstaben, verpackt ihn in ein Trace-Paket und schiebt ihn asynchron nach draußen. Caveat: Ist der interne ITM-FIFO voll, kann der Schreibzugriff kurz stallen — bei massivem Logging also nicht völlig „kostenlos“. Trotzdem haben wir unser 430-Mikrosekunden-Latenz-Problem auf wenige Nanosekunden plus seltene FIFO-Stalls reduziert.</p>
+<p>CMSIS-Version im Cube-Paket lesen, bevor ein Statusbit benannt wird.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -561,15 +576,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="modul-2-das-dwt-data-watchpoint-trace" class="slide level2">
 <h2>Modul 2: Das DWT (Data Watchpoint &amp; Trace)</h2>
 <ul>
-<li>Jetzt wird es komplett rückwirkungsfrei (0 Code-Änderungen)!</li>
-<li>Das DWT beobachtet den RAM-Speicherbus der CPU wie ein Scharfschütze</li>
-<li>Sie konfigurieren im externen Tool: „Beobachte die Adresse von <code>sd.m7_ready</code>.“</li>
-<li>Jedes Mal, wenn die CPU diesen Speicherbereich beschreibt oder liest, erzeugt das DWT ein Hardware-Paket (inklusive des neuen Wertes!)</li>
-<li>Die CPU bekommt davon nichts mit (0 Taktzyklen Overhead!)</li>
-<li>Perfekt, um globale Variablen im OS (z. B. Task-Zustände) zu überwachen</li>
+<li>Wenige Komparatoren, Konflikt mit Watchpoints</li>
+<li>Adresse, Breite, Richtung, Maske, Datenwert und Zeitstempel hängen von der Implementierung ab</li>
+<li>Sie sehen nicht automatisch den anderen Kern oder DMA</li>
+<li>Ein M7-Store „1“ kann im Trace stehen, während Write-Back den Wert dem M4 vorenthält</li>
+<li>Eine flache Kurve beweist nicht „SRAM blieb 0“</li>
 </ul>
+<p>Fehlende Pakete können auch heißen: falscher Kern, falsche Adresse, zu spät aufgenommen, Filter, Verlust, Kapazität.</p>
 <aside class="notes">
-<p>Aber das ITM erforderte immer noch, dass wir ein printf durch einen ITM-Aufruf im Sourcecode ersetzen mussten. Modul Nummer 2, das DWT (Data Watchpoint and Trace), ist magisch. Es ist ein waschechter Hardware-Schnüffler am Speicherbus. Sie tippen in Ihr Analyse-Tool am PC einfach den Namen der C-Variable ein, z. B. unser <code>m7_ready</code>-Flag. Das Tool lädt die Hex-Adresse über SWD still und heimlich in das DWT-Modul. Ab diesem Moment beobachtet die DWT-Hardware jeden einzelnen Speicherzugriff der CPU. Wenn der M7 nun eine „1“ in diese Adresse schreibt, greift das DWT den Wert vom Bus ab und funkt ihn nach außen zum PC. Auf der CPU entsteht exakt 0,0 Prozent Overhead. Der Code bleibt unberührt. Das ist pure Non-Intrusive Observation.</p>
+<p>Offset aus der gemeinsamen Struktur mit <code>offsetof</code> und der Map, nicht aus einem alten Symbolnamen raten. Debugger-Memory ist ein weiterer Zugriffsweg und kann Cachewartung auslösen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -585,19 +600,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="modul-3-das-etm-embedded-trace" class="slide level2">
 <h2>Modul 3: Das ETM (Embedded Trace)</h2>
 <ul>
-<li>Der Heilige Gral der Embedded-Entwicklung</li>
-<li>Das ETM protokolliert die Programmausführung (Instruction Trace)</li>
-<li>Es verrät uns lückenlos, welche C-Zeile (bzw. Assembler-Instruktion) die CPU gerade ausgeführt hat!</li>
-<li>Das Bandbreiten-Problem:
-<ul>
-<li>Bei <span class="math inline">\(400\,\mathrm{MHz}\)</span> führt die CPU <span class="math inline">\(400\,000\,000\)</span> Befehle pro Sekunde aus</li>
-<li>Wenn jeder Befehl <span class="math inline">\(4\,\mathrm{Bytes}\)</span> hat, bräuchten wir <span class="math inline">\(1{,}6\,\mathrm{GB/s}\)</span> Bandbreite!</li>
-<li>Das schaffen die Pins des Chips nicht</li>
-</ul></li>
-<li>Wie löst ARM dieses Problem?</li>
+<li>Komprimierter Kontrollfluss, plus Sync, Ausnahme, manchmal Zeit</li>
+<li>Nicht „ein Bit pro Sprung“</li>
+<li>400 MHz sind 400 Millionen <strong>Takte</strong>, nicht Instruktionen</li>
+<li>Hypothetisches Modell: 400e6 Ereignisse mal 4 Byte = 1,6 GB/s, nicht die echte ETM-Rate und nicht Gbit/s</li>
 </ul>
+<p>Rekonstruktion braucht das passende Maschinenbild, die Protokollversion und einen vollständigen Abschnitt. Eine Lücke ist ein unbekannter Abschnitt, keine erfundene Gerade.</p>
 <aside class="notes">
-<p>Das absolute Highlight von CoreSight ist Modul Nummer 3: Das ETM, die Embedded Trace Macrocell. Sie zeichnet nicht nur Variablen auf, sie protokolliert jeden Schritt des Program Counters. Sie liefert uns einen lückenlosen Film, welche Zeile C-Code die CPU gerade abarbeitet. Aber hier stoßen wir an die Grenzen der Physik. Bei 400 Megahertz Taktung führt der Chip 400 Millionen Befehle pro Sekunde aus. Ein Trace-Paket bräuchte mindestens 4 Byte. Das wären 1,6 Gigabyte pro Sekunde! Es gibt keinen Stecker an einem STM32, der diese Bandbreite auch nur ansatzweise nach außen pumpen könnte. ARM musste hier einen genialen Kompressions-Trick erfinden.</p>
+<p>Instruction Trace ist nicht automatisch ein Zeitstempel je Befehl. Cycle-Accurate und Timestamp extra prüfen. Keine zyklusgenaue C-Pfad-Rechnung inklusive beliebiger Stalls versprechen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -612,17 +622,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-etm-kompression-nur-sprünge" class="slide level2">
 <h2>Die ETM-Kompression: Nur Sprünge!</h2>
-<ul>
-<li>ARM komprimiert den ETM-Datenstrom extrem intelligent:
-<ul>
-<li>Es wird nicht jeder Befehl gemeldet</li>
-<li>Die CPU läuft ohnehin strikt sequenziell von oben nach unten, bis ein „Sprung“ (Branch, If-Abfrage, Interrupt) auftritt</li>
-<li>Das ETM funkt nur: „Ich bin bei der If-Abfrage an Adresse <code>0x0800</code> gesprungen (True) oder nicht gesprungen (False).“</li>
-</ul></li>
-<li>Das externe Tool am PC lädt die <code>.elf</code>-Datei, kennt den C-Code und rekonstruiert am PC den exakten Pfad der CPU!</li>
-</ul>
+<p>Schema, kein echtes Paketformat:</p>
+<p>C-Zweig → mehrere Thumb-Befehle → komprimierte Traceereignisse → Decoder mit ELF.</p>
+<p>Eine C-Zeile kann mehreren Befehlen entsprechen. Ohne das ELF des <strong>denselben</strong> Builds rekonstruiert das Tool den Pfad nicht.</p>
+<p>Sync-Verlust: Strecke grau lassen.</p>
 <aside class="notes">
-<p>Wie bringt man 1,6 Gigabyte auf wenige Megabyte herunter? Das ETM schickt einfach fast gar nichts nach draußen! Ein Prozessor arbeitet Assembler-Befehle normalerweise stur der Reihe nach von oben nach unten ab. Das ist langweilig und berechenbar. Wir müssen nicht wissen, dass Zeile 2 nach Zeile 1 kam. Spannend wird es nur an den Kreuzungen: Eine IF-Bedingung, ein Funktionsaufruf oder ein Hardware-Interrupt. Das ETM schickt nur kleine, 1-Bit-große Pakete, die sagen: „An der Kreuzung X bin ich links abgebogen“. Das externe Trace-Werkzeug am PC kennt unseren C-Code und die <code>.elf</code>-Datei. Es nimmt diese Kreuzungs-Bits und zeichnet auf dem PC im Nachhinein den gesamten Laufweg der CPU als kontinuierlichen Film nach. Genial!</p>
+<p><code>-g</code> liefert Debuginfo, kein Eins-zu-eins zur Zeile. Optimierung, Inlining und entfernte Variablen bleiben. <code>-g</code> und <code>-O2</code> gehen zusammen. Den optimierten Lauf analysieren, nicht einen anderen Debug-Build. Beide Kerne: ihre eigene ELF.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -638,22 +643,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-tpiu-und-der-physikalische-stecker" class="slide level2">
 <h2>Die TPIU und der physikalische Stecker</h2>
 <ul>
-<li>Alle Module (ITM, DWT, ETM) schicken ihre Daten zur TPIU (Trace Port Interface Unit)</li>
-<li>Die TPIU multiplext die Ströme und leitet sie an die Pins des STM32</li>
-<li>1-Bit SWO (Serial Wire Output):
-<ul>
-<li>Standard auf günstigen Nucleo-Boards</li>
-<li>Reicht für ITM (<code>printf</code>) und ein paar DWT-Variablen — zu langsam für ETM!</li>
-</ul></li>
-<li>4-Bit Parallel Trace Port:
-<ul>
-<li>4 Daten-Pins + 1 Clock-Pin (sehr schnell)</li>
-<li>Notwendig für volles ETM (Instruction Trace)</li>
-<li>Benötigt einen teuren, 20-poligen High-Density-Stecker auf dem Board</li>
-</ul></li>
+<li>TPIU ist ein möglicher Ausgang, nicht der Beweis, dass jede Spur dort ankommt</li>
+<li>Laboraufbau erst zeichnen, wenn Adapter, Active Probe und BlueBox-Modell feststehen</li>
+<li>iC5700: Ethernet-Angabe nicht als Gigabit übernehmen, solange die Gerätebeschreibung der <strong>vorliegenden</strong> Hardwareversion das nicht sagt</li>
+<li>FNet, Host-Ethernet und Target-Trace sind drei Kabelklassen</li>
+<li>Einschalten: BlueBox vor Target. Ausschalten: Target vor BlueBox. Stecken im ausgeschalteten Zustand. Herstelleranleitung der vorhandenen Box prüfen</li>
+<li>Keine Preisvergleiche</li>
 </ul>
 <aside class="notes">
-<p>All diese geballten Daten aus ITM, DWT und ETM fließen intern im Chip in die TPIU, eine Multiplexer-Einheit. Sie mixt die Datenströme zusammen und drückt sie aus den Beinchen des Chips heraus. Die meisten günstigen Bastelboards nutzen SWO. Das ist ein einziges Käbelchen. Das reicht wunderbar für ein paar schnelle Printf-Ersatz-Meldungen des ITM, ist aber viel zu schwachbrüstig für den gigantischen Sprung-Datenstrom des ETM. Wer wirklich tief in die Architektur blicken will, muss beim Platinendesign vier parallele Pins und einen Takt-Pin, den sogenannten Trace-Port, vorsehen. Dieser wird oft in einen extrem dichten 20-poligen Stecker auf der Platine herausgeführt.</p>
+<p>Externe Digitaleingänge nur zeichnen, wenn das Zubehör da ist. Es ist nicht da im Repo.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -668,15 +666,39 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="zusammenfassung-coresight" class="slide level2" data-background-color="#F5F5F7">
 <h2>Zusammenfassung CoreSight</h2>
-<ul>
-<li><strong>Hardware-Trace</strong> ist völlig rückwirkungsfrei (Non-Intrusive).</li>
-<li><strong>ITM:</strong> Die schnelle, saubere Alternative zu <code>printf()</code>.</li>
-<li><strong>DWT:</strong> Hardware-Spionage auf exakten RAM-Adressen (ohne Code-Overhead).</li>
-<li><strong>ETM:</strong> Rekonstruktion des gesamten C-Code-Pfades durch Protokollierung aller Sprünge (Branches).</li>
-<li>Um diese extremen Datenmassen aufzufangen, brauchen wir externe Profi-Hardware.</li>
-</ul>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Quelle</th>
+<th>erfasst</th>
+<th>beweist nicht</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ITM</td>
+<td>geschriebene Stimuli</td>
+<td>rückwirkungsfreie App</td>
+</tr>
+<tr class="even">
+<td>DWT</td>
+<td>gefilterte CPU-Ereignisse</td>
+<td>SRAM hinter dem Cache</td>
+</tr>
+<tr class="odd">
+<td>ETM</td>
+<td>Kontrollfluss, soweit komplett</td>
+<td>jede C-Zeile in µs</td>
+</tr>
+<tr class="even">
+<td>DAP</td>
+<td>momentane Sicht</td>
+<td>Historie</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Fassen wir das CoreSight-Konzept noch einmal zusammen, bevor wir uns ansehen, was wir mit diesen Daten tun. Wir haben eine Architektur, die unsichtbar neben der CPU läuft. Mit dem ITM haben wir das Printf-Problem gelöst. Das DWT ist unser Scharfschütze für bestimmte C-Variablen. Das ETM ist die Videokamera, die unseren gesamten Programmablauf filmt, ohne die CPU auch nur um eine Nanosekunde zu bremsen. Diese Datenmenge ist so gigantisch, dass wir sie nicht mehr über USB-Kabel leiten können, was uns direkt zum nächsten Thema führt: Was berechnen wir aus diesen Gigabytes an Trace-Daten?</p>
+<p>Frage: Warum beweist ein M7-Store keine M4-Sichtbarkeit? Weil Cache, MPU und das Protokoll dazwischen liegen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -691,19 +713,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-pflicht-zur-systemanalyse" class="slide level2">
 <h2>Die Pflicht zur Systemanalyse</h2>
+<p>Normen motivieren Nachweise. Sie sind hier keine Rechtsauskunft.</p>
 <ul>
-<li>Warum treiben wir diesen immensen technischen Aufwand?</li>
-<li><strong>Die Normen der Industrie:</strong>
-<ul>
-<li><strong>ISO 26262</strong> (Automotive Functional Safety, bis ASIL D).</li>
-<li><strong>DO-178C</strong> (Luftfahrt).</li>
-<li><strong>IEC 61508</strong> (Industrie / Medizin).</li>
-</ul></li>
-<li><em>Es reicht nicht, wenn die Software „beim Testen auf dem Schreibtisch nicht abgestürzt ist“.</em></li>
-<li>Sie müssen der Zulassungsbehörde <strong>mathematisch und empirisch beweisen</strong>, dass jede Deadline zu 100 % eingehalten wurde!</li>
+<li>ISO 26262: Straßenfahrzeuge, nicht „jede Software ist illegal“</li>
+<li>DO-178C: Luftfahrt-Software, Einordnung über DO-330 und AC 20-115D</li>
+<li>IEC 61508: funktionale Sicherheit, nicht pauschal der Medizinstandard</li>
 </ul>
+<p>Trace ist keines dieser Dokumente als einziges Pflichtwerkzeug. Aussagen nur mit Ausgabe und Abschnitt, wenn wir sie wirklich zitieren. Das tun wir hier nicht im Detail.</p>
 <aside class="notes">
-<p>Warum geben Firmen Millionen für Trace-Hardware aus? Wegen der Zertifizierung. Wenn Sie eine Software für das ABS-System in einem Auto oder die Flugsteuerung eines Airbus schreiben, unterliegen Sie strengen Normen wie der ISO 26262 oder der DO-178C. Wenn die Zulassungsbehörde fragt: „Hält Ihre Motor-Task immer ihre 1-Millisekunden-Deadline ein?“, dann dürfen Sie nicht antworten: „Ja, wir haben das auf dem Schreibtisch ausprobiert und es sah flüssig aus.“ Sie müssen einen physikalischen Beweis vorlegen. Sie müssen die Worst-Case-Szenarien ausgemessen haben. Und genau dafür brauchen wir die Timing-Metriken aus dem Hardware-Trace.</p>
+<p>Kein „ISO-konform beweisen“ aus einem Tracefenster.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -718,21 +736,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="metrik-1-empirische-wcet-mess-wcet" class="slide level2">
 <h2>Metrik 1: Empirische WCET (Mess-WCET)</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<ul>
-<li>In Termin 2 haben wir die WCET (<span class="math inline">\(C_i\)</span>) geschätzt. Jetzt messen wir sie!</li>
-<li>Wir lassen das ETM den Code filmen.</li>
-<li>Das Analyse-Tool zählt die CPU-Taktzyklen exakt mit.</li>
-<li>Aus <span class="math inline">\(1\,000\,000\)</span> Durchläufen extrahiert das Tool den beobachteten Maximalwert (inkl. Pipeline-Stalls und Cache-Misses) — die empirische WCET-Schätzung.</li>
-</ul>
-</div><div class="column" style="width:50%;">
-<ul>
-<li><em>Diesen Wert nutzen wir als <strong>obere beobachtete Schranke</strong> (Mess-WCET) für <span class="math inline">\(C_i\)</span> in der Rate-Monotonic-Formel (<span class="math inline">\(U \le 69{,}3\,\%\)</span>) — nicht als formal bewiesenen Worst Case.</em></li>
-</ul>
-</div></div>
+<p><span class="math inline">\(\max(C_{\mathrm{beobachtet}})\)</span> ist das Maximum <strong>dieser</strong> Läufe.</p>
+<p>Es ist keine obere Schranke für alle zulässigen Ausführungen. Ein ungetesteter Pfad kann länger sein.</p>
+<p>Der RM-Test bleibt der aus VL2: hinreichend <span class="math inline">\(n(2^{1/n}-1)\)</span>, Grenzwert <span class="math inline">\(\ln 2 \approx 69{,}3\,\%\)</span> für große <span class="math inline">\(n\)</span>. Ein Messmaximum ohne konservative Absicherung ist kein <span class="math inline">\(C_i\)</span> für diesen Beweis.</p>
 <aside class="notes">
-<p>Die wichtigste Metrik, die wir aus dem ETM-Trace extrahieren, ist unsere alte Bekannte: Die Worst-Case Execution Time, die WCET. In der zweiten Vorlesung haben wir dafür Platzhalter-Zahlen in unsere Formel eingesetzt. Jetzt messen wir eine empirische obere Schranke — die Mess-WCET. Die externe Trace-Box filmt über Nacht Millionen von Ausführungen Ihrer Task. Am nächsten Morgen schauen Sie in die Software und filtern nach der absoluten Maximalzeit unter den beobachteten Läufen. Da der Trace live auf der echten Hardware lief, sind Pipeline-Verzögerungen, Cache-Fehlschläge und Bus-Staus bereits physikalisch enthalten. Wichtig: Das ist nicht der formal bewiesene Worst Case aller denkbaren Pfade, sondern die beste beobachtete obere Schranke aus dem Test. Diese Mess-WCET setzen wir vorsichtig als <span class="math inline">\(C_i\)</span> in unsere RMS-Formel ein.</p>
+<p>Eine Million Tests zeichnen kein garantiertes Ende der Verteilung. Qualität: Sync, passende ELF, keine Verluste, bekannte Zeitbasis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -747,15 +755,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="metrik-2-deadline-verifizierung" class="slide level2">
 <h2>Metrik 2: Deadline-Verifizierung</h2>
-<ul>
-<li>Hat Task A wirklich jede Deadline eingehalten?</li>
-<li>Der Trace-Analysator kennt durch OS-Awareness (dazu später mehr) die Aufwachzeitpunkte und Fristen.</li>
-<li>Wir suchen im Trace-Protokoll nach dem geringsten <strong>Slack</strong> (Puffer).</li>
-<li><strong>Slack-Time:</strong> Die Zeitspanne zwischen dem Ende der Task-Ausführung und dem tatsächlichen Eintreten der Deadline.</li>
-<li><em>Ist der Slack jemals negativ, haben wir ein unzulässiges System!</em></li>
-</ul>
+<p>Job: Freigabe <span class="math inline">\(r\)</span>, Start <span class="math inline">\(s\)</span>, Fertig <span class="math inline">\(f\)</span>, Deadline <span class="math inline">\(d = r + D\)</span>.</p>
+<p><span class="math display">\[R = f - r, \qquad \text{Slack} = d - f\]</span></p>
+<p>Ein negativer Slack verletzt <strong>diese</strong> Frist. Daraus folgt kein „illegal im Straßenverkehr“.</p>
+<p>OS-Awareness kennt Freigabe und Deadline nicht von selbst. Die Ereignisse müssen im Trace oder im Protokoll liegen.</p>
 <aside class="notes">
-<p>Neben der reinen Rechenzeit müssen wir prüfen, ob das System planmäßig läuft. Das Analyse-Tool gleicht die Start- und Endzeiten der Tasks mit dem FreeRTOS-Scheduler ab. Es berechnet die Slack-Time. Das ist Ihr Sicherheitspuffer. Wie viel Zeit war noch übrig, bevor die rote Deadline-Linie überschritten wurde? Wenn Sie einen Testlauf über ein Wochenende machen und das Tool findet auch nur einen einzigen Durchlauf, bei dem der Slack negativ war, wissen Sie: Ihr System ist für den Straßeneinsatz illegal. Sie müssen die Architektur ändern oder Code optimieren.</p>
+<p>Frage: Woher kennt das Tool die Deadline? Nur wenn wir sie konfigurieren oder aus Ereignissen rekonstruieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -770,18 +775,18 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="metrik-3-interrupt-latenz" class="slide level2" data-background-color="#FFFFFF">
 <h2>Metrik 3: Interrupt-Latenz</h2>
-<ul>
-<li>Wie schnell reagiert das System auf die physische Außenwelt?</li>
-<li><strong>Die Messung (End-to-End):</strong>
+<p>Kette, nicht eine Zahl:</p>
 <ol type="1">
-<li><strong>Zeitpunkt A:</strong> Flanke am echten Hardware-Taster geht auf HIGH. (Gemessen über einen externen Logikanalysator-Kanal der Trace-Box).</li>
-<li><strong>Zeitpunkt B:</strong> Das ETM meldet den Eintritt in die erste C-Zeile der <code>StartButtonTask</code> (Bottom-Half).</li>
-</ol></li>
-<li>Die Differenz (<span class="math inline">\(B - A\)</span>) ist unsere <strong>garantierte Systemlatenz</strong>.</li>
-<li>Ein perfekter Weg, um die Effizienz des <em>Deferred Interrupt Processing</em>-Musters aus Woche 5 zu beweisen!</li>
-</ul>
+<li>Flanke → ISR-Eintritt</li>
+<li>ISR-Laufzeit</li>
+<li>Veröffentlichung → Task Ready</li>
+<li>Ready → Task-Start</li>
+<li>Start → sichtbare Reaktion</li>
+</ol>
+<p>Folie zur „ersten Bottom-Half-Zeile“ meint eine <strong>Dispatchlatenz</strong> bis zu einem definierten Maschinenpunkt, nicht die IRQ-Eintrittslatenz und nicht die End-to-End-Reaktion.</p>
+<p>Eine Messung ist keine obere Schranke. Entprellung, Flanke, Messpunkt und gemeinsame Zeitbasis nennen. „Erste C-Zeile“ ist bei <code>-O2</code> unscharf.</p>
 <aside class="notes">
-<p>Die dritte wichtige Metrik ist die Reaktionszeit auf die echte Welt. Wie messen Sie, wann ein Button gedrückt wurde? Profi-Tracer haben oft einen integrierten Logikanalysator, der an die Platine geklemmt wird. Die Box sieht also elektrisch, wann der Pin HIGH wird. Das ist Zeitpunkt A. Millisekundenbruchteile später registriert das ETM, dass die CPU in die C-Task für den Button springt. Das ist Zeitpunkt B. Die Differenz ist unsere reine End-to-End-Hardwarelatenz. Damit beweisen Sie der TÜV-Behörde, dass Ihr Deferred-Interrupt-Muster aus Vorlesung 5 tatsächlich in den vorgeschriebenen 500 Mikrosekunden reagiert hat.</p>
+<p>Welche Intervalle das vorhandene Zubehör wirklich sieht, bleibt offen, bis der Adapter feststeht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -796,14 +801,45 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="netto-rechenzeit-vs.-brutto-antwortzeit" class="slide level2">
 <h2>Netto-Rechenzeit vs.&nbsp;Brutto-Antwortzeit</h2>
-<p><img data-src="../_livefigures/inline-plantuml-c05f30a2.svg" class="livefigure"></p>
-<ul>
-<li>Netto-Rechenzeit (WCET): <span class="math inline">\(2\,\mathrm{ms} + 1\,\mathrm{ms} = \mathbf{3\,\mathrm{ms}}\)</span>. (Dies ist die CPU-Zeit).</li>
-<li>Brutto-Antwortzeit (Response Time <span class="math inline">\(R\)</span>): Von <span class="math inline">\(t=1\)</span> bis <span class="math inline">\(t=7 = \mathbf{6\,\mathrm{ms}}\)</span>.</li>
-<li>Der Tracer berechnet beide Werte präzise und trennt OS-Overhead sauber heraus!</li>
-</ul>
+<p>Lehrbeispiel, Overhead in diesem Bild <strong>0</strong>:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Marke</th>
+<th style="text-align: right;">Zeit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(r\)</span></td>
+<td style="text-align: right;">1 ms</td>
+</tr>
+<tr class="even">
+<td>Running</td>
+<td style="text-align: right;">2–4 ms</td>
+</tr>
+<tr class="odd">
+<td>Präemption</td>
+<td style="text-align: right;">4–6 ms</td>
+</tr>
+<tr class="even">
+<td>Running</td>
+<td style="text-align: right;">6–7 ms</td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(f\)</span></td>
+<td style="text-align: right;">7 ms</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(d\)</span></td>
+<td style="text-align: right;">8 ms</td>
+</tr>
+</tbody>
+</table>
+<p>CPU-Zeit des Jobs: 3 ms. <span class="math inline">\(R = 6\,\mathrm{ms}\)</span>. Slack: 1 ms.</p>
+<p>Das ist nicht die WCET.</p>
 <aside class="notes">
-<p>Ein häufiger Fehler bei der Timing-Analyse ist die Verwechslung von Netto und Brutto. Hier im PlantUML-Diagramm sehen Sie Task A. Sie wird bei <span class="math inline">\(t=1\)</span> geweckt, wartet kurz, rechnet 2 Millisekunden, wird präemptiert, rechnet noch eine Millisekunde und ist fertig. Die Netto-Rechenzeit (unsere WCET) beträgt also 3 Millisekunden. Aber die Brutto-Antwortzeit, die Response Time <span class="math inline">\(R\)</span> aus unseren Formeln, beträgt 6 Millisekunden! Sie beginnt beim Weckruf und endet beim Einschlafen. Ein Hardware-Tracer unterscheidet diese Werte automatisch. Wenn Sie das mit Software-<code>printf</code> messen würden, wüssten Sie nie, ob Ihr Code zu langsam war, oder ob er einfach nur zwischendurch viermal präemptiert wurde.</p>
+<p>Task A, Task B und „ISR/System“ auf getrennten Zeilen denken. Nach <span class="math inline">\(f\)</span> kann der Thread weiterlaufen oder wieder warten. Eine Jobdauer ist die CPU-Zeit dieses Jobs.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -818,15 +854,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="metrik-4-context-switch-overhead" class="slide level2" data-background-color="#F5F5F7">
 <h2>Metrik 4: Context Switch Overhead</h2>
-<ul>
-<li>In unseren Schedulability-Modellen nehmen wir oft an: OS-Overhead <span class="math inline">\(= 0\)</span>.</li>
-<li>Die Realität sieht anders aus.</li>
-<li>Der Tracer zeigt exakt, wie viele Taktzyklen die CPU in der <code>PendSV_Handler</code>-Assembler-Routine verbringt.</li>
-<li>Ergebnis: Wir sehen die echten Kosten von FreeRTOS (z. B. <span class="math inline">\(2{,}5\,\text{µs}\)</span> pro Wechsel).</li>
-<li>Fließt in komplexe Response-Time-Analyse-Formeln als Korrekturfaktor ein.</li>
-</ul>
+<p>PendSV ist ein Teil. Dazu können Exception-Eintritt, Rückkehr, FPU, Scheduler und die Präemption selbst gehören.</p>
+<p>Dieselbe Zeit nicht zweimal in die Antwortzeitanalyse zählen.</p>
+<p>2,5 µs ist ein Beispiel, keine Kennzahl des H755.</p>
 <aside class="notes">
-<p>Ein weiterer Aspekt ist der OS-Overhead. Wenn wir ein System mathematisch modellieren, tun wir oft so, als wäre der Context Switch kostenlos. Die Wahrheit ist: Die Register müssen auf den Stack, Listen müssen sortiert werden. Da das ETM jeden Funktionsaufruf filmt, können wir uns exakt ansehen, wie viele Taktzyklen der Prozessor in der PendSV-Routine von FreeRTOS verbracht hat. Wir erhalten den präzisen Overhead in Mikrosekunden und können diesen als Straffaktor auf unsere mathematischen Echtzeit-Formeln aufschlagen, um unsere Sicherheitspuffer noch robuster zu berechnen.</p>
+<p>Definieren, welche Kanten der Trace als Anfang und Ende nimmt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -841,19 +873,39 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="ausblick-code-coverage-testabdeckung" class="slide level2">
 <h2>Ausblick: Code Coverage (Testabdeckung)</h2>
-<ul>
-<li>Der Tracer wird nicht nur für das Timing, sondern auch für Software-Tests genutzt.</li>
-<li>Hat unser Testlauf wirklich jede C-Zeile ausgeführt?</li>
-<li>Die Metriken:
-<ul>
-<li><strong>C0</strong> (Statement Coverage): Wurde jede Code-Zeile <span class="math inline">\(\ge 1\times\)</span> berührt?</li>
-<li><strong>C1</strong> (Branch Coverage): Wurde bei jedem <code>if(a &amp;&amp; b)</code> sowohl der TRUE- als auch der FALSE-Pfad betreten?</li>
-<li><strong>MC/DC</strong> (Modified Condition/Decision Coverage): Hatte jede einzelne Sub-Bedingung einen nachweisbaren Effekt? (In ISO 26262 für ASIL D <em>highly recommended</em> — absolute Pflicht analog DO-178C Level A nur in der Avionik).</li>
-</ul></li>
-<li>Hardware-Trace liefert diese Daten zu <span class="math inline">\(100\,\%\)</span> rückwirkungsfrei, ohne den C-Code mit Test-Makros zu instrumentieren!</li>
-</ul>
+<p><code>if (a &amp;&amp; b)</code>, Kurzschluss: bei <code>a == false</code> wird <code>b</code> nicht ausgewertet.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Läufe</th>
+<th>Decision</th>
+<th>Hinweis</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TT</td>
+<td>wahr</td>
+<td>beide Bedingungen wahr</td>
+</tr>
+<tr class="even">
+<td>TF</td>
+<td>falsch</td>
+<td>b kippt das Ergebnis</td>
+</tr>
+<tr class="odd">
+<td>FT</td>
+<td>falsch</td>
+<td>a kippt, b läuft nicht</td>
+</tr>
+</tbody>
+</table>
+<p>Unabhängigkeit im vereinfachten Modell: für <code>a</code> das Paar TT/FT, für <code>b</code> das Paar TT/TF.</p>
+<p>Statement Coverage zählt ausführbare Anweisungen, nicht Textzeilen. Decision ist nicht Condition. MC/DC braucht diese Paare und definierte Regeln bei Kurzschluss.</p>
+<p>Instruction Trace plus Mapping ist kein automatischer MC/DC-Nachweis. Optimierung verändert das Bild. Coverage zeigt nicht, dass die Funktion richtig ist oder die Frist hält.</p>
+<p>Die NASA-Notiz ist ein Tutorial im Kontext von DO-178B. Das ist keine „absolute Pflicht“ für dieses Labor.</p>
 <aside class="notes">
-<p>Neben dem reinen Timing liefert uns das ETM noch ein grandioses Nebenprodukt: Die Code Coverage, die Testabdeckung. Wenn Sie Ihr Steuergerät testen, müssen Sie beweisen, dass Sie keinen toten Code ausgeliefert haben. Wurde jede IF-Abfrage während der Testfahrt mindestens einmal mit TRUE und einmal mit FALSE durchlaufen? Das ETM liefert diese Antworten kostenlos mit, da es jeden Sprung protokolliert. Wir müssen unseren schönen Release-Code nicht mit hässlichen Software-Countern verunstalten, um Testdaten zu sammeln. Die Trace-Hardware macht das völlig unsichtbar.</p>
+<p>Kein Toolqualifikationsstempel aus dieser Folie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -869,16 +921,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-werkzeug-in-circuit-emulator-ice" class="slide level2">
 <h2>Das Werkzeug: In-Circuit Emulator (ICE)</h2>
 <ul>
-<li>Wir haben die Metriken. Wir haben die Cortex-Hardware (CoreSight).</li>
-<li>Jetzt brauchen wir das Bindeglied am Schreibtisch: Den Hardware-Tracer.</li>
-<li><strong>ICE</strong> (In-Circuit Emulator):
-<ul>
-<li>Historischer Begriff, als man Prozessoren noch physikalisch auf der Platine durch Emulatoren ersetzte.</li>
-<li>Heute: Leistungsstarke externe Box, die via JTAG/Trace-Port mit der On-Chip-Debug-Hardware kommuniziert.</li>
-</ul></li>
+<li>BlueBox und winIDEA nur in der Version, die im Labor steht</li>
+<li>Modell, Active Probe, Adapter und Zusatzmodule aufschreiben, bevor eine Folie sie zeichnet</li>
+<li>Hier: Liste offen</li>
 </ul>
 <aside class="notes">
-<p>Wir haben jetzt viel über Daten und Normen gesprochen. Aber wie kommt der Datenstrom auf unseren PC-Bildschirm? Wir brauchen ein Interface. Der klassische Fachbegriff dafür ist ICE, In-Circuit Emulator. Ganz früher, in den 80er Jahren, hat man den Mikrocontroller tatsächlich von der Platine ausgelötet und einen dicken Kabelbaum eingesteckt, der zu einem Kühlschrank-großen Emulator führte, um ins System zu schauen. Heute sitzen die Chips fest auf der Platine. Das ICE steckt heute in kleinen Kästchen, die sich über den 20-poligen Trace-Stecker mit dem CoreSight-Netzwerk im Chip verbinden.</p>
+<p>Herstellerseiten widersprechen sich bei Schnittstellen. Die Hardwareversion gewinnt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -893,27 +941,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="vorstellung-tasking-bluebox" class="slide level2" data-background-color="#FFFFFF">
 <h2>Vorstellung: TASKING BlueBox</h2>
-<div class="columns">
-<div class="column" style="width:55%;">
+<p>Offen, bis das Gerät da ist:</p>
 <ul>
-<li>Im Labor nutzen wir Systeme der Firma TASKING (ehemals iSYSTEM).</li>
-<li>Typisches Modell: BlueBox iC5700.</li>
-<li>Ein Industrie-Standard-Gerät.</li>
-<li><strong>Architektur:</strong>
-<ul>
-<li><strong>Active Probe:</strong> Ein kleiner Stecker direkt am Board (verhindert Signal-Reflexionen bei <span class="math inline">\(400\,\mathrm{MHz}\)</span>).</li>
-<li><strong>FNet:</strong> Ein Flachbandkabel leitet die Rohdaten zur Box.</li>
-<li><strong>BlueBox:</strong> Ein mächtiges FPGA entpackt die ETM-Daten live und puffert sie in Gigabytes an RAM.</li>
-<li><strong>PC-Uplink:</strong> Gigabit-Ethernet / USB 3.0.</li>
-</ul></li>
+<li>genaue Typbezeichnung</li>
+<li>ob paralleler Trace, SWO oder nur Debug</li>
+<li>Ethernet der Box, nicht raten</li>
+<li>keine Gigabit-Annahme</li>
+<li>keine externen ADIO-Pins ohne Modul</li>
 </ul>
-</div><div class="column" style="width:45%;">
-<ul>
-<li><em>(Solche Geräte kosten oft so viel wie ein gut ausgestatteter Mittelklassewagen — behandeln Sie sie im Labor entsprechend vorsichtig!)</em></li>
-</ul>
-</div></div>
 <aside class="notes">
-<p>Hier ist sie: Die TASKING BlueBox. Das ist der Ferrari unter den Debugging-Tools. Sie finden diese Boxen bei Bosch, Continental und in jedem großen Embedded-Projekt. Die Architektur ist durchdacht: Das Gerät, das Sie auf Ihr Board stecken, ist nur eine kleine „Active Probe“. Bei Taktfrequenzen von mehreren hundert Megahertz können Sie Signale nicht über lange Kabel schicken, ohne dass sie durch physikalische Reflexionen zerstört werden. Die Probe greift das Signal ab und schickt es digital zur Hauptbox. Dort sitzt ein frei programmierbarer FPGA-Chip, der die gepackten ARM-Signale entschlüsselt, sortiert und über ein dickes Gigabit-Netzwerkkabel in Ihren PC pumpt. Ich muss nicht extra erwähnen, dass diese Geräte unfassbar teuer sind. Gehen Sie im Labor bitte sehr sanft mit den Stecker-Pins um!</p>
+<p>FBridge nicht mit dem Host-Ethernet-Kabel verwechseln, auch wenn die Stecker ähnlich aussehen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -928,20 +965,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-ide-winidea" class="slide level2">
 <h2>Die IDE: winIDEA</h2>
-<ul>
-<li>Hardware nützt nichts ohne gute Software.</li>
-<li>Wir verlassen heute die STM32CubeIDE zum Analysieren.</li>
-<li>Die TASKING-Software heißt <strong>winIDEA</strong>.</li>
-<li>Was macht winIDEA?
-<ul>
-<li>Konfiguriert die BlueBox und lädt die Firmware in den STM32.</li>
-<li>Liest die <code>.elf</code>-Datei des Compilers.</li>
-<li>Stellt den Quellcode und die Assembler-Verknüpfung dar.</li>
-<li>Analysiert den hochgeladenen ETM-Trace-Strom und rendert die visuelle Timeline.</li>
-</ul></li>
-</ul>
+<p>Menüpfade der <strong>installierten</strong> Version. „Plugins → FreeRTOS“ nicht als ewig gültig abschreiben.</p>
+<p>Geladen wird die ELF des gemessenen Builds, inklusive DWARF, für jeden Kern die eigene Datei. Hash oder Build-ID notieren.</p>
 <aside class="notes">
-<p>Auf der PC-Seite nutzen wir eine spezielle Software. Wir verlassen heute für die Analyse unsere vertraute Eclipse-Umgebung und öffnen winIDEA. Diese Software ist das Cockpit für die BlueBox. Sie übernimmt das Flashen, startet das Board und — das ist ihre Hauptaufgabe — sie interpretiert den gewaltigen Datenstrom. winIDEA rendert die Millionen von ETM-Paketen in eine wunderschöne visuelle Timeline, die wir durchscrollen können.</p>
+<p>Ein zweiter Debug-Build kann andere Zeiten haben als der optimierte Lauf.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -957,18 +984,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-magie-der-.elf-datei" class="slide level2" data-background-color="#F5F5F7">
 <h2>Die Magie der <code>.elf</code>-Datei</h2>
 <ul>
-<li>Woher weiß winIDEA, welche Hex-Adresse zu welcher C-Zeile gehört?</li>
-<li>Das ETM meldet nur: „Sprung zu <code>0x08001A4C</code>“.</li>
-<li>Die <code>.elf</code>-Datei (Executable and Linkable Format) enthält nicht nur den Maschinencode!</li>
-<li>Sie enthält Debug-Symbole (DWARF-Format):
-<ul>
-<li>Eine gigantische Zuordnungstabelle:</li>
-<li><code>0x08001A4C</code> <span class="math inline">\(\leftrightarrow\)</span> Funktion <code>StartButtonTask()</code> <span class="math inline">\(\leftrightarrow\)</span> <code>main.c</code>, Zeile 142.</li>
-</ul></li>
-<li><strong>Wichtig:</strong> Sie müssen im GCC-Compiler das Debugging-Flag <code>-g</code> aktiviert haben, sonst fehlt diese Tabelle!</li>
+<li>Adressen, Typen, manchmal Zeilen</li>
+<li>mehrere Befehle je Zeile, Zeilen ohne Code</li>
+<li>der Decoder braucht dasselbe Image wie der Chip</li>
+<li>ein anderes ELF erklärt den Trace falsch, ohne dass das Tool „lügt“</li>
 </ul>
 <aside class="notes">
-<p>Aber woher weiß die Software eigentlich, was diese Nullen und Einsen bedeuten? Die BlueBox empfängt vom ETM ja nur stumpfe Hex-Speicheradressen: „Bin zu 0x08001A4C gesprungen“. Um daraus den Text „StartButtonTask“ zu machen, liest winIDEA die <code>.elf</code>-Datei ein, die unsere CubeIDE beim Kompilieren ausspuckt. Neben dem reinen Maschinencode enthält diese Datei nämlich die sogenannten DWARF-Debug-Symbole. Das ist ein gigantisches Wörterbuch. Es übersetzt jede Hex-Adresse auf den Millimeter genau in eine Zeile Ihres C-Quellcodes. Dafür muss aber zwingend in den Compiler-Einstellungen das Flag <code>-g</code> gesetzt sein, sonst generiert GCC dieses Wörterbuch erst gar nicht.</p>
+<p>Fehlende Sync-Pakete: Abschnitt ungültig für Summen und Coverage.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -984,18 +1006,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-profiler-und-trigger" class="slide level2">
 <h2>Der Profiler und Trigger</h2>
 <ul>
-<li>Wir können nicht unendlich lange aufzeichnen (Speicher der BlueBox ist begrenzt).</li>
-<li>Wir nutzen Hardware-Trigger, um die Nadel im Heuhaufen zu filmen!</li>
-<li><strong>Beispiel Trigger-Bedingung:</strong>
-<ul>
-<li>„Zeichne nichts auf …“</li>
-<li>„… bis Variable <code>error_flag == 1</code> geschrieben wird (DWT-Erkennung).“</li>
-<li>„… ab dann zeichne 10 Sekunden lang ALLES (ETM) auf!“</li>
-</ul></li>
-<li>So fangen wir den Heisenbug genau im Moment seines Auftretens.</li>
+<li>Trigger brauchen freie Komparatoren und eine Route</li>
+<li><code>error_flag == 1</code> ist ein Beispiel, keine eingebaute Fähigkeit jeder Box</li>
+<li>„10 Sekunden alles“ hängt an Puffer und Rate</li>
+<li>Für die Ursache oft ein Ring mit Pre-Trigger, nicht erst ab dem Fehler starten</li>
 </ul>
 <aside class="notes">
-<p>Da selbst die gigantischen RAM-Puffer der BlueBox bei 1,6 Gigabyte pro Sekunde irgendwann voll sind, können wir nicht tagelang aufzeichnen. Wir müssen intelligent aufzeichnen. Hier kommen die Hardware-Trigger ins Spiel. Sie konfigurieren das DWT-Modul in winIDEA so, dass es lauscht, bis eine bestimmte Fehlervariable im RAM auf 1 gesetzt wird. Sobald das passiert, drückt die Hardware virtuell auf den Aufnahme-Knopf und das ETM filmt die Sekunden nach dem Crash. Sie sparen sich Gigabytes an unnötigem Rauschen und filtern gezielt nach dem Heisenbug.</p>
+<p>Qualität vor der Auswertung: Sync, ELF, keine Overflows, bekannte Zeitbasis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1010,14 +1027,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-problem-der-os-sichtbarkeit" class="slide level2">
 <h2>Das Problem der OS-Sichtbarkeit</h2>
-<ul>
-<li>Wir haben jetzt die C-Funktionen (<code>StartHeavyMath</code>, <code>StartHeartbeat</code>).</li>
-<li>Aber der Tracer weiß nicht, dass das FreeRTOS-Tasks sind!</li>
-<li>Für die Hardware ist das alles einfach nur ein linearer Strom von C-Funktionen, der ab und zu von einer Assembler-Routine (<code>PendSV</code>) unterbrochen wird.</li>
-<li>Wie erzeugen wir ein klares Task-Gantt-Chart, bei dem wir sehen, wann Task A und wann Task B „Running“ war?</li>
-</ul>
+<p><code>pxCurrentTCB</code> im lokalen M4-Kernel: die <strong>ausgewählte</strong> Task.</p>
+<p>Während der ISR zeigt der Zeiger oft weiter auf sie, obwohl kein Taskcode läuft.</p>
+<p>Der Wechsel liegt im Context Switch und ist nicht zwingend der erste Zyklus der neuen Task.</p>
+<p>Ein wiederverwendeter TCB-Pointer ist keine ewige ID. Layout der eingesetzten Kernelversion prüfen. SMP-Strukturen sind hier nicht der M4-Kernel.</p>
 <aside class="notes">
-<p>Ein letztes konzeptionelles Problem müssen wir lösen. Die Hardware filmt C-Funktionen. Aber sie hat nicht die geringste Ahnung, was FreeRTOS ist. Für die Hardware sind Tasks keine Objekte, sondern einfach nur Code-Adressen im Flash. Wir wollen in winIDEA aber bunte Balken sehen, die uns zeigen, welche Task gerade die CPU besitzt. Wir brauchen also eine Möglichkeit, dem Hardware-Tracer beizubringen, wie unser C-Betriebssystem intern funktioniert.</p>
+<p>Running-Profil ist nicht die Ready/Blocked-Historie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1032,18 +1047,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="os-awareness-betriebssystem-bewusstsein" class="slide level2" data-background-color="#FFFFFF">
 <h2>OS-Awareness (Betriebssystem-Bewusstsein)</h2>
-<ul>
-<li>Tracer wie die BlueBox besitzen OS-Awareness.</li>
-<li>Sie können interne Strukturen von OSEK, AUTOSAR oder FreeRTOS lesen.</li>
-<li><strong>Der FreeRTOS-Trick:</strong>
-<ul>
-<li>In FreeRTOS gibt es eine globale System-Variable: <code>TCB_t * volatile pxCurrentTCB;</code></li>
-<li>Sie zeigt immer auf die Task, die gerade die CPU besitzt.</li>
-<li>Wenn der Scheduler (<code>PendSV</code>) die Task wechselt, ändert er diese Variable!</li>
-</ul></li>
-</ul>
+<p>Zwei Stufen:</p>
+<ol type="1">
+<li>Running: aus <code>pxCurrentTCB</code> und dem Trace, ISR und PendSV daneben</li>
+<li>Zustände Ready/Blocked: zusätzliche Instrumentierung, Aufwand kennzeichnen</li>
+</ol>
+<p>Debug-Listen sind keine lückenlose Live-Historie.</p>
+<p>ORTI/OSEK bleibt etwas anderes als FreeRTOS-Awareness. Queues können extra Registrierung brauchen.</p>
 <aside class="notes">
-<p>Diese Funktion nennt man OS-Awareness, Betriebssystem-Bewusstsein. Top-Tracer kennen die Interna von FreeRTOS. Das Prinzip ist bestechend einfach. Im C-Code von FreeRTOS, tief vergraben in <code>tasks.c</code>, gibt es einen globalen Pointer namens <code>pxCurrentTCB</code>. Dieser Pointer ist die absolute Wahrheit im System. Er zeigt immer, in jeder Mikrosekunde, auf den Task Control Block der Task, die gerade läuft. Wenn der Scheduler eine Präemption durchführt, besteht seine wichtigste Handlung darin, diese Variable auf die neue Task umzuschreiben.</p>
+<p>Frage: Was liefert der Zeiger während der ISR? Die zuletzt ausgewählte Task, nicht „die ISR ist diese Task“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1058,15 +1070,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="wie-winidea-freertos-visualisiert" class="slide level2">
 <h2>Wie winIDEA FreeRTOS visualisiert</h2>
-<ul>
-<li>winIDEA sucht in der <code>.elf</code>-Datei nach der Speicheradresse von <code>pxCurrentTCB</code>.</li>
-<li>winIDEA programmiert das DWT-Modul in der Hardware so, dass es exakt und nur diese RAM-Adresse beobachtet.</li>
-<li>Sobald der FreeRTOS-Scheduler den Pointer ändert, funkt das DWT die neue Adresse an die BlueBox.</li>
-<li>winIDEA gleicht den neuen TCB-Pointer mit der internen FreeRTOS-Task-Liste ab und zeichnet den Balken für „Task B“ ab sofort auf „Running“.</li>
-<li>Ergebnis: Eine <span class="math inline">\(100\,\%\)</span> präzise Echtzeit-Visualisierung des Schedulers!</li>
-</ul>
+<p>Nur zusagen, was die installierte Hilfe zu <strong>dieser</strong> Version beschreibt.</p>
+<p>Keine erfundenen Screenshots aus dem Netz als Laborfoto.</p>
+<p>Beide Kernspuren gleichzeitig nur, wenn beide Quellen wirklich korreliert aufgenommen werden. Sonst zwei Aufnahmen und keine Subtraktion der Zeitachsen.</p>
 <aside class="notes">
-<p>Und so baut winIDEA das Balkendiagramm auf: Es schaut in die <code>.elf</code>-Datei und sucht die Hex-Adresse von <code>pxCurrentTCB</code>. Dann programmiert es das DWT-Modul im Chip heimlich so, dass es als Wächter vor genau dieser Adresse steht. Jedes Mal, wenn das Betriebssystem eine andere Task auswählt, ändert sich der Pointer. Das DWT erkennt den Schreibzugriff und feuert eine Trace-Nachricht über den Port zum PC. Die Software am PC liest den Pointer, schaut in der FreeRTOS-Datenstruktur nach, welcher Name („Heartbeat“) dahintersteckt, und zeichnet ab sofort den Zeitstrahl für diese Task weiter. Das ist High-End-Analyse in Vollendung.</p>
+<p>Unabhängige Zykluszähler nicht voneinander abziehen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1082,18 +1090,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="der-osekorti-standard-automotive" class="slide level2">
 <h2>Der OSEK/ORTI-Standard (Automotive)</h2>
 <ul>
-<li><strong>ORTI</strong> (OSEK Run Time Interface) ist die klassische Automotive-/OSEK-Schnittstelle:
-<ul>
-<li>Textdatei, die dem Debugger die Memory-Map des OSEK/AUTOSAR-OS offenlegt (Tasks, Queues, Prioritäten).</li>
-</ul></li>
-<li>FreeRTOS in winIDEA ist etwas anderes:
-<ul>
-<li>Die FreeRTOS-Awareness kommt über ein <strong>Plugin</strong> bzw. Strukturwissen (<code>pxCurrentTCB</code>, TCB-Layout) — nicht über ORTI.</li>
-</ul></li>
-<li>Ergebnis: Live-Sicht auf Ready-/Blocked-Listen und Queues, unabhängig vom Automotive-ORTI-Pfad.</li>
+<li>ORTI beschreibt OSEK/AUTOSAR-OS-Objekte</li>
+<li>FreeRTOS-Awareness ist ein anderes Plugin und ein anderes Layout</li>
+<li>Beides nicht vermischen, auch wenn beide „Tasks“ zeichnen</li>
 </ul>
 <aside class="notes">
-<p>Wichtig trennen: ORTI ist der Automotive-/OSEK-Standard, mit dem Debugger die OS-Memory-Map eines OSEK- oder AUTOSAR-Classic-Systems lesen. FreeRTOS spricht kein ORTI. In winIDEA kommt die FreeRTOS-Awareness über ein Plugin und das Wissen um Strukturen wie <code>pxCurrentTCB</code>. Sie sehen dann trotzdem live, welche Task rechnet, wer in der Ready-Liste wartet und wer auf einen UART-Mutex blockiert — nur eben nicht über die ORTI-Datei.</p>
+<p>Für dieses Labor zählt der M4-FreeRTOS-Kern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1108,23 +1110,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="laborvorbereitung-tracing-im-einsatz" class="slide level2" data-background-color="#F5F5F7">
 <h2>Laborvorbereitung: Tracing im Einsatz</h2>
-<ul>
-<li><strong>Ziel für heute Nachmittag:</strong> Wir nehmen unser kaputtes Ping-Pong-Projekt aus Termin 6 (ohne MPU) und betrachten den Cache-Coherency-Failure durch die Augen der BlueBox!</li>
-<li><strong>Schritt 1: Hardware-Setup</strong>
-<ul>
-<li>Board ausschalten.</li>
-<li>20-Pin-Flachbandkabel der BlueBox vorsichtig aufstecken.</li>
-<li>Board und BlueBox einschalten.</li>
-</ul></li>
-<li><strong>Schritt 2: winIDEA Workspace</strong>
-<ul>
-<li>Starten Sie winIDEA.</li>
-<li>Laden Sie beide <code>.elf</code>-Dateien (CM7 und CM4) in den Workspace.</li>
-<li>Konfigurieren Sie die Taktfrequenz im Tool zwingend auf <span class="math inline">\(400\,\mathrm{MHz}\)</span> (sonst stimmen die Zeitstempel nicht).</li>
-</ul></li>
-</ul>
+<p>Versuch A: eine bekannte Variable, bekannte Adresse, bekannte Anzahl Ereignisse. Fehlendes Anfangspaket ist nicht der Wert 0.</p>
+<p>Versuch B: non-cacheable Ping-Pong aus VL6. Druck 1, 3, 5. Die 500 ms liegen außerhalb der IPC-Messung.</p>
+<p>Versuch C: separates Image, D-Cache an, Region nachweislich Write-Back. Hypothese, kein Drehbuch: M7-Store 1 kann da sein, M4 liest weiter 0. Kein garantierter Freeze. Timeout und Abbruch wie in VL6.</p>
+<p>Versuch D: ein Job mit definierten Kanten. Min, Max, Anzahl, Auflösung, Bedingungen. Verluste machen die Summe ungültig.</p>
 <aside class="notes">
-<p>Kommen wir zur Laboraufgabe für heute. Sie werden den kaputten Multicore-Ping-Pong-Code von letzter Woche analysieren. Genau den Code, bei dem der M7 wegen des L1-Caches die Daten nicht in den echten SRAM geschrieben hat und der M4 eingefroren ist. Verkabeln Sie vorsichtig die BlueBox. Richten Sie in winIDEA einen Workspace ein und laden Sie die beiden Firmware-Dateien für den Cortex-M7 und den Cortex-M4 hinein. Vergessen Sie nicht, die korrekte Taktfrequenz der CPU in winIDEA einzutragen, sonst werden Ihre Mikrosekunden-Achsen alle falsche Werte anzeigen.</p>
+<p>Zeitquellen: M7 400 MHz nur wenn der Tree so steht, dann 1000 Takte = 2,5 µs. M4 200 MHz: 1000 Takte = 5 µs. Trace- und Capture-Zeit sind weitere Uhren. Ein Feld „400 MHz“ füllt nicht jede Achse.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1139,21 +1130,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-34-freertos-awareness-profiler" class="slide level2">
 <h2>Schritt 3–4: FreeRTOS Awareness &amp; Profiler</h2>
-<ul>
-<li><strong>Schritt 3: FreeRTOS Awareness</strong>
-<ul>
-<li>Gehen Sie in winIDEA auf Plugins <span class="math inline">\(\rightarrow\)</span> FreeRTOS.</li>
-<li>Das Plugin liest nun automatisch die <code>.elf</code> des CM4 und sucht nach <code>pxCurrentTCB</code>.</li>
-</ul></li>
-<li><strong>Schritt 4: Profiler einrichten</strong>
-<ul>
-<li>Öffnen Sie den Analyzer / Profiler.</li>
-<li>Wir richten das DWT-Tracing ein:</li>
-<li>Fügen Sie die Variable <code>sd.m7_ready</code> als DWT-Data-Trace hinzu!</li>
-</ul></li>
-</ul>
+<p>Running-Profil der M4-Task: wiederkehrendes Delay ist Blocked/Ready/Running im Polling, kein eingefrorener Kern.</p>
+<p><code>osDelay(1)</code> ist ein Tick. Die Poll-Latenz ist nicht nur die Umschaltzeit.</p>
+<p>Zustandshistorie nur mit der zusätzlichen Konfiguration und als instrumentierte Variante beschriftet.</p>
 <aside class="notes">
-<p>In Schritt 3 schalten Sie die FreeRTOS-Awareness über das Plugin-Menü ein. Dann richten Sie den Profiler ein. Wir wollen heute nicht den vollen Instruction Trace (ETM) aufzeichnen, das sprengt anfangs den Rahmen. Wir nutzen gezielt das DWT. Konfigurieren Sie den Profiler so, dass er ausschließlich die RAM-Adresse unseres Ping-Pong-Flags beobachtet. Wir wollen sehen, wann genau sich dieser Wert ändert.</p>
+<p>PendSV auf einer eigenen Spur. Unter der ISR bleibt der Taskzeiger stehen, die CPU-Zeit gehört der ISR.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1168,19 +1149,55 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schritt-5-die-aufnahme-analyse" class="slide level2">
 <h2>Schritt 5: Die Aufnahme &amp; Analyse</h2>
-<ul>
-<li>Drücken Sie auf Record (roter Punkt) und lassen Sie das Board laufen.</li>
-<li>Beenden Sie die Aufnahme.</li>
-<li><strong>Das Aha-Erlebnis im Analyzer:</strong>
-<ul>
-<li>Sie sehen die Timeline des CM7 und CM4.</li>
-<li>Sie sehen, dass der M4-Task im <code>osDelay()</code> feststeckt.</li>
-<li>Sie sehen, dass sich die DWT-Variable <code>m7_ready</code> im echten SRAM nie ändert, obwohl der C-Code des M7 munter rechnet!</li>
-</ul></li>
-<li>Der visuelle Beweis für das Cache-Kohärenz-Problem!</li>
-</ul>
+<p>Diagnose, je eine Prüfung:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>Prüfung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>keine Verbindung</td>
+<td>Versorgung, Reset-Reihenfolge, richtiger Adapter</td>
+</tr>
+<tr class="even">
+<td>nur ein Kern</td>
+<td>ELF und Core-Zuordnung</td>
+</tr>
+<tr class="odd">
+<td>keine Datenpakete</td>
+<td>Komparator, Adresse, Breite, Startzeit</td>
+</tr>
+<tr class="even">
+<td>falsche Achse</td>
+<td>Zeitquelle, nicht nur 400 MHz</td>
+</tr>
+<tr class="odd">
+<td>Anfang fehlt</td>
+<td>nicht als 0 werten</td>
+</tr>
+<tr class="even">
+<td>Verluste</td>
+<td>Abschnitt verwerfen</td>
+</tr>
+<tr class="odd">
+<td>falsche Tasks</td>
+<td>Kernelversion, TCB-Layout</td>
+</tr>
+<tr class="even">
+<td>nur Running</td>
+<td>State-Profiling fehlt</td>
+</tr>
+<tr class="odd">
+<td>Cachefehler bleibt aus</td>
+<td>CCR, MPU, Neustart, Debug-Cachewartung aus</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Dann starten Sie die Aufnahme. Lassen Sie das System wenige Sekunden leiden. Wenn Sie auf Stopp drücken, wird winIDEA den Trace decodieren und Ihnen das Timeline-Fenster präsentieren. Sie werden ein faszinierendes Bild sehen: Der M7 rechnet. Der M4 verhungert im Delay. Und der Daten-Graph für unser Flag <code>m7_ready</code> bleibt eine absolut flache Nulllinie. Der Beweis ist erbracht: Obwohl Ihr C-Code <code>m7_ready = 1</code> sagt, ist dieser Wert dank Write-Back-Cache niemals auf dem physikalischen Bus des Mikrocontrollers angekommen. Sie sehen den Heisenbug live.</p>
+<p>Automatische Cachewartung und Live-Memory während Versuch C vermeiden oder als Störung protokollieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1196,14 +1213,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-des-tages" class="slide level2" data-background-color="#FFFFFF">
 <h2>Zusammenfassung des Tages</h2>
 <ul>
-<li><strong>Beobachter-Effekt:</strong> <code>printf()</code> und Breakpoints zerstören das Echtzeit-Timing.</li>
-<li><strong>CoreSight:</strong> Die ARM-Hardware bietet Non-Intrusive Tracing (ITM, DWT, ETM).</li>
-<li><strong>Timing-Metriken:</strong> Wir nutzen Hardware-Trace, um die WCET und Interrupt-Latenzen ISO-konform zu beweisen.</li>
-<li><strong>OS-Awareness:</strong> Die BlueBox bespitzelt den FreeRTOS-Scheduler über die <code>pxCurrentTCB</code>-Variable.</li>
-<li>Im Labor machen wir Fehler auf Mikro-Ebene erstmals visuell greifbar!</li>
+<li>Messfrage, Quelle, Grenze</li>
+<li>434 µs Leitungszeit, 3 ms CPU, 6 ms Antwort, 1 ms Slack im Lehrjob</li>
+<li>DWT am CPU-Zugriff, nicht als SRAM-Monitor</li>
+<li>ETM rekonstruiert Pfade, solange das Bild vollständig ist</li>
+<li><span class="math inline">\(\max(C)\)</span> ist kein WCET-Beweis</li>
+<li>Hardwareliste und gleichzeitige Dual-Core-Traces bleiben offen</li>
 </ul>
 <aside class="notes">
-<p>Wir fassen den heutigen Theorieblock zusammen. Sie wissen nun, dass jede Art der Software-Beobachtung Ihr Timing verzerrt und Heisenbugs generiert. Die Rettung ist das ARM CoreSight-Netzwerk. Sie verstehen die Abkürzungen ITM, DWT und ETM und wissen, wofür sie da sind. Sie haben gelernt, dass ein Profi-Tracer aus Hex-Adressen durch die DWARF-Symbole der <code>.elf</code>-Datei echten C-Code macht und durch OS-Awareness ein wunderschönes Gantt-Chart zeichnet. Nun ist es an der Zeit, diese Theorie in der Praxis anzuwenden. Ran an die BlueBox!</p>
+<p>Quellen: Cortex-M7 TRM, CMSIS ITM/NVIC, UM2408, H755-Datenblatt und RM0399 der Revision, AN4839, iSYSTEM-Hilfen der vorhandenen winIDEA-Version, GCC <code>-g</code>, NASA MC/DC-Tutorial mit DO-178B-Kontext, FAA AC 20-115D. Keine Labor-Screenshots aus dem Netz.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
