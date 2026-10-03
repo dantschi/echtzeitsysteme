@@ -222,14 +222,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="willkommen-auf-der-dunklen-seite-der-echtzeit" class="slide level2">
 <h2>Willkommen auf der dunklen Seite der Echtzeit!</h2>
 <ul>
-<li>Herzlich willkommen zum 4. Termin unserer Vorlesung</li>
-<li>Letzte Woche: FreeRTOS installiert und Präemption gefeiert</li>
-<li>Heute: Warum genau diese Präemption das System zerstören kann</li>
-<li>Leitfrage: Was passiert, wenn zwei Tasks gleichzeitig auf dieselbe Hardware zugreifen?</li>
-<li>Werkzeuge: Semaphoren und Mutexe, um das Chaos zu verhindern</li>
+<li>Vierter Termin: geteilte Ressourcen auf <strong>einem</strong> FreeRTOS-Kern (CM4)</li>
+<li>Präemption ist nützlich und erzeugt konkurrierende Zugriffe</li>
+<li>Heute: Race, Semaphor, Mutex, Deadlock, Prioritätsinversion</li>
+<li>Ein Mutex dieses Kernels schützt nicht den CM7, DMA oder fremde ISRs</li>
 </ul>
 <aside class="notes">
-<p>Willkommen zur vierten Vorlesung! Letzte Woche: FreeRTOS und Präemption als Feature für harte Deadlines. Heute die gefährliche Seite: Asynchronität korrumpiert Daten und kann das System lahmlegen. Fokus: Synchronisation in Echtzeitsystemen.</p>
+<p>Plattform wie VL3, soweit das Projekt sie bestätigt: NUCLEO-H755ZI-Q, Kernel auf dem CM4. Keine .ioc im Repo — UART, Takt und IRQ-Prioritäten am Cube-Projekt ablesen. Mehrkern nur als Ausblick.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -245,15 +244,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="agenda-für-heute" class="slide level2">
 <h2>Agenda für heute</h2>
 <ol type="1">
-<li>Recap: Die Macht der Präemption</li>
-<li>Race Conditions und geteilte Ressourcen</li>
-<li>Assembler-Ebene: Warum <code>counter++</code> crasht</li>
-<li>Lösungsansätze: Spinlocks vs.&nbsp;Interrupt-Sperren vs.&nbsp;OS-Blocking</li>
-<li>Semaphoren und Mutexe</li>
-<li>Deadlocks, Priority Inversion und Mars Pathfinder (PIP)</li>
+<li>Lost Update und was „atomar“ hier heißt</li>
+<li>Spin, IRQ-Maske, Blockieren</li>
+<li>Semaphor und Mutex, inklusive ISR-Regeln</li>
+<li>Deadlock und Prioritätsinversion mit Zahlen</li>
+<li>Pathfinder als belegte Fallstudie, dann Labor</li>
 </ol>
 <aside class="notes">
-<p>Problem-Analyse zuerst: Race Conditions und Schuld der Präemption. Dann C auf Assembler-Ebene. Alte Konzepte (Spinlock, IRQ-Sperre) und warum sie im RTOS tödlich sind. Saubere Lösung: Semaphoren und Mutexe. Nach der Pause: Deadlocks und Prioritätsinversion.</p>
+<p>Dieselben Tasksets nicht mit neuen Zahlen vermischen. Das Inversionsbeispiel gilt für beide Diagramme.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -269,14 +267,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="recap-die-macht-der-präemption" class="slide level2">
 <h2>Recap: Die Macht der Präemption</h2>
 <ul>
-<li>Präemptives Scheduling: Das OS (SysTick) kann einer laufenden Task jederzeit die CPU entreißen</li>
-<li>Die unterbrochene Task merkt davon nichts</li>
-<li>Pause exakt am aktuellen Program Counter (PC)</li>
-<li>CPU-Register werden auf den Stack gerettet</li>
-<li>Diese Asynchronität ist gewollt — und extrem gefährlich</li>
+<li>Wechsel nicht nur am SysTick: auch ein Ereignis oder eine IRQ kann einen Thread bereit machen</li>
+<li>Im üblichen CM4F-Port führt <strong>PendSV</strong> den Kontextwechsel aus</li>
+<li>Auf einem Kern rechnen nicht zwei Threads gleichzeitig</li>
+<li>„Gleichzeitig“ heißt hier: verschachtelt, mit eigenen Registern</li>
 </ul>
 <aside class="notes">
-<p>Präemption: SysTick, PendSV rettet Register, andere Task läuft. Die unterbrochene Task kann nicht sagen „Warte, Satz zu Ende schreiben“. Gefahr: beide Tasks beschreiben dasselbe „Blatt Papier“ — Shared Resource.</p>
+<p>Anschluss an VL2/VL3. Hohe Priorität läuft, wenn sie Ready ist. Vor ihrem Release ist sie nicht Ready.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -292,15 +289,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="motivation-der-kampf-um-den-uart" class="slide level2">
 <h2>Motivation: Der Kampf um den UART</h2>
 <ul>
-<li>Szenario auf dem STM32:
-<ul>
-<li><code>Task_Temp</code> (Prio Normal) sendet: <code>"Temperatur: 22 Grad\n"</code></li>
-<li><code>Task_Hum</code> (Prio High) sendet: <code>"Feuchtigkeit: 40 %\n"</code></li>
-</ul></li>
-<li>Beide rufen <code>printf()</code> auf — byteweise Schreiben auf dasselbe UART-Register</li>
+<li>Zwei Threads wollen je eine ganze Zeile ausgeben</li>
+<li><code>printf</code> schreibt nicht universell Byte für Byte in ein Datenregister</li>
+<li>Abhängig von Retargeting, Puffer, Bibliothekslock, HAL und Transfermodus</li>
+<li>Möglich: vermischte Zeichen, <code>HAL_BUSY</code>, verlorene Ausgabe — nicht „immer Buchstabensalat“</li>
 </ul>
 <aside class="notes">
-<p>Alltäglich: Temperatur- und Feuchtigkeits-Task teilen sich den UART und <code>printf</code>. Feuchtigkeit hat höhere Prio (Timer-getriggert). Was erscheint auf der Konsole?</p>
+<p>Das Motivationsbild ist eine angenommene byteweise Ausgabe. Den echten Pfad im Labor prüfen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -315,15 +310,40 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-visuelle-chaos" class="slide level2">
 <h2>Das visuelle Chaos</h2>
-<ul>
-<li><code>Task_Temp</code> beginnt: <code>&gt; Temp</code></li>
-<li>SysTick feuert — <code>Task_Hum</code> (High) präemptiert</li>
-<li><code>Task_Hum</code> schreibt fertig: <code>&gt; TempFeuchtigkeit: 40 %</code></li>
-<li><code>Task_Hum</code> schläft; <code>Task_Temp</code> schreibt den Rest</li>
-<li>Ergebnis: <code>&gt; TempFeuchtigkeit: 40 %eratur: 22 Grad</code> — Buchstabensalat</li>
-</ul>
+<p>Angenommene byteweise Retarget-Funktion, ohne gemeinsamen Schutz:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;">Schritt</th>
+<th>Temp</th>
+<th>Hum</th>
+<th>Leitung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td><code>T=21</code></td>
+<td></td>
+<td><code>T=21</code></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td></td>
+<td><code>H=40\n</code> schiebt sich dazwischen</td>
+<td><code>T=21H=40</code></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Rest <code>C\n</code></td>
+<td></td>
+<td>Zeile zerrissen</td>
+</tr>
+</tbody>
+</table>
+<p>Geschützt: formatieren im privaten Puffer, dann Acquire, <strong>ganze</strong> Nachricht, Abschluss, Release.</p>
 <aside class="notes">
-<p>Temperatur-Task schreibt T-e-m-p, dann präemptiert die Feuchtigkeits-Task und schreibt in dasselbe Register. Danach Rest „eratur“ — Datenstrom korrumpiert.</p>
+<p>Bytes und logische Nachricht trennen. Der Mutex repariert nicht automatisch die C-Bibliothek. Alle Writer müssen denselben Schutz benutzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -339,18 +359,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-problem-geteilter-ressourcen" class="slide level2">
 <h2>Das Problem geteilter Ressourcen</h2>
 <ul>
-<li>UART ist eine Shared Resource (geteilte Ressource)</li>
-<li>Unabgesprochener Zugriff mehrerer Tasks — Datenkorruption</li>
-<li>Typische Shared Resources in Embedded Systems:
-<ul>
-<li>Peripherie-Register (UART, SPI, I2C)</li>
-<li>Hardware (Displays, Motoren)</li>
-<li>Globale Variablen (Arrays, Structs, Fehlerzähler)</li>
-<li>Dynamischer Speicher (<code>malloc</code>/<code>free</code>)</li>
-</ul></li>
+<li>Fehler ist schon ein verlorenes Update, kein nötiger HardFault</li>
+<li><code>volatile</code> macht Read-Modify-Write nicht atomar</li>
+<li>Ein Mutex schließt die <strong>beteiligten Threads</strong> aus, nicht jede IRQ</li>
+<li>Lesen gehört dazu, wenn mehrere Felder zusammen einen Snapshot bilden</li>
 </ul>
 <aside class="notes">
-<p>Buchstabensalat ist nur die sichtbare Form. Sobald zwei Threads asynchron dieselbe Ressource nutzen: Absturz oder Datenverlust. Auch globale Arrays: halb neu, halb alt — logischer Fehler.</p>
+<p>Frage: Hilft <code>volatile</code> gegen das verlorene Update? Nein. Es verhindert Wegoptimieren, nicht das Verschränken zweier RMW-Folgen. Data Race im Sprachmodell und der Maschinenablauf sind verwandt, aber nicht dasselbe.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -366,14 +381,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="lernziele-des-heutigen-tages" class="slide level2">
 <h2>Lernziele des heutigen Tages</h2>
 <ol type="1">
-<li>Race Condition auf Assembler-Ebene erklären</li>
-<li>Unterschied Spinlocks vs.&nbsp;OS-Blocking verstehen</li>
-<li>CMSIS-API für Semaphoren und Mutexe kennen</li>
-<li>Wissen, warum Mutexe Ownership besitzen und Semaphoren nicht</li>
-<li>Priority Inversion und Priority Inheritance kennen</li>
+<li>Ein verlorenes Update an Registern und RAM erklären</li>
+<li>Spin, Maskierung und Blockieren nach dem Konkurrenten wählen</li>
+<li>Semaphor-Token und Mutex-Ownership unterscheiden</li>
+<li>Dieselbe Inversion ohne und mit PIP nachrechnen</li>
+<li>Pathfinder als Vereinfachung einer belegten Ursache einordnen</li>
 </ol>
 <aside class="notes">
-<p>Race Condition auf CPU-Ebene, nicht nur als Buzzword. Semaphor vs.&nbsp;Mutex gezielt einsetzen. Prioritätsinversion: unwichtige Task reißt System mit; FreeRTOS löst mit Priority Inheritance.</p>
+<p>PIP verkürzt die Extra-Verzögerung durch Medium. Es beendet weder Deadlocks noch Starvation.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -389,15 +404,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-ist-eine-race-condition" class="slide level2">
 <h2>Was ist eine Race Condition?</h2>
 <ul>
-<li>Race Condition (Wettlaufsituation):
-<ul>
-<li>Verhalten hängt unvorhersehbar von der zeitlichen Reihenfolge ab</li>
-<li>Code „funktioniert meistens“, crasht aber selten (Heisenbug)</li>
-</ul></li>
-<li>Auslöser: asynchrone Präemption während einer Datenmanipulation</li>
+<li>Das Ergebnis hängt von der Verschränkung nicht synchronisierter Zugriffe ab</li>
+<li>Auf einem Kern genügt eine Präemption zwischen Lesen und Schreiben</li>
+<li>Betroffene: Threads untereinander, oder Thread und ISR, oder ein zweiter Busmaster</li>
+<li>Der Mechanismus muss zu <strong>diesen</strong> Konkurrenten passen</li>
 </ul>
 <aside class="notes">
-<p>Ergebnis hängt davon ab, wer den Wettlauf gewinnt. In 99 % der Fälle zufällig ok. Mit Breakpoints verschwindet der Fehler — klassischer Heisenbug.</p>
+<p>Erste Frage der Matrix: Wer greift noch zu?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -412,32 +425,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="das-simpelste-code-beispiel" class="slide level2">
 <h2>Das simpelste Code-Beispiel</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="dt">static</span> <span class="dt">volatile</span> <span class="dt">uint32_t</span> counter<span class="op">;</span> <span class="co">/* sichtbar, aber nicht atomar */</span></span>
+<span id="cb1-2"><a aria-label="2"></a></span>
+<span id="cb1-3"><a aria-label="3"></a><span class="dt">void</span> bump<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span> counter<span class="op">++;</span> <span class="op">}</span> <span class="co">/* kann ein Update verlieren */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Globale Variable: <code>volatile uint32_t error_counter = 5;</code></li>
-<li>Task A (Low) und Task B (High) melden beide einen Fehler</li>
-<li>Beide rufen <code>error_counter++;</code> auf</li>
-<li>War der Wert <code>5</code>, erwarten wir danach <code>7</code></li>
+<li>Vereinfachtes Compilerbild, keine Garantie für genau drei Befehle</li>
+<li>Ein einzelnes atomares Load oder Store ist noch kein atomares <code>++</code></li>
 </ul>
-</div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="co">// Globale Variable (Shared Resource)</span></span>
-<span id="cb1-2"><a aria-label="2"></a><span class="dt">volatile</span> <span class="dt">uint32_t</span> error_counter <span class="op">=</span> <span class="dv">5</span><span class="op">;</span></span>
-<span id="cb1-3"><a aria-label="3"></a></span>
-<span id="cb1-4"><a aria-label="4"></a><span class="dt">void</span> Task_A<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb1-5"><a aria-label="5"></a>    <span class="co">// ...</span></span>
-<span id="cb1-6"><a aria-label="6"></a>    error_counter<span class="op">++;</span></span>
-<span id="cb1-7"><a aria-label="7"></a>    <span class="co">// ...</span></span>
-<span id="cb1-8"><a aria-label="8"></a><span class="op">}</span></span>
-<span id="cb1-9"><a aria-label="9"></a></span>
-<span id="cb1-10"><a aria-label="10"></a><span class="dt">void</span> Task_B<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb1-11"><a aria-label="11"></a>    <span class="co">// ...</span></span>
-<span id="cb1-12"><a aria-label="12"></a>    error_counter<span class="op">++;</span></span>
-<span id="cb1-13"><a aria-label="13"></a>    <span class="co">// ...</span></span>
-<span id="cb1-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Klassischer Heisenbug: zwei Tasks inkrementieren <code>error_counter</code> von 5. Logik sagt 7 — unter ungünstigem Timing steht am Ende 6. Ein Fehler wurde verschluckt.</p>
+<p>Das Disassembly des Labor-Builds in die Notiz schreiben, sobald der Build existiert. Heute gibt es kein Firmwareprojekt im Repo.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -452,19 +448,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-blick-unter-die-haube-assembler" class="slide level2">
 <h2>Der Blick unter die Haube (Assembler)</h2>
-<ul>
-<li>In C wirkt <code>counter++</code> wie ein Befehl</li>
-<li>ARM ist Load/Store: kein direktes „Erhöhe-RAM“</li>
-<li>Compiler übersetzt in Read-Modify-Write (3 Befehle):
+<p>Lehrbild, nicht das universelle Listing:</p>
 <ol type="1">
-<li><code>LDR</code>: Wert aus RAM in Register (<span class="math inline">\(R0 = 5\)</span>)</li>
-<li><code>ADD</code>: Register in der ALU erhöhen (<span class="math inline">\(R0 = 6\)</span>)</li>
-<li><code>STR</code>: Register zurück in den RAM schreiben</li>
-</ol></li>
-<li>Was, wenn Präemption genau zwischen <code>LDR</code> und <code>STR</code> zuschlägt?</li>
-</ul>
+<li><code>LDR</code>: RAM nach Register</li>
+<li><code>ADD</code>: nur das Register</li>
+<li><code>STR</code>: Register nach RAM</li>
+</ol>
+<p>Zwischen den Befehlen kann der Kern wechseln. Das Register von A bleibt in <strong>As</strong> Kontext, nicht in Bs.</p>
 <aside class="notes">
-<p>C ist eine Illusion: Load/Store-Architektur. Interrupt nach jedem Assembler-Befehl möglich. Kritisch: PendSV zwischen <code>ADD</code> und <code>STR</code>.</p>
+<p>PendSV sichert As Register. B startet mit eigenen Registern und liest den RAM erneut.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -479,12 +471,58 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-der-datenkorruption" class="slide level2">
 <h2>Visualisierung der Datenkorruption</h2>
-<p><img data-src="../_livefigures/inline-plantuml-cf23650b.svg" class="livefigure"></p>
-<ul>
-<li>Task B schreibt <code>6</code>; Task A überschreibt danach mit veralteter <code>6</code> — die <code>7</code> ist verloren</li>
-</ul>
+<p>Start <code>counter = 5</code>. Zwei Inkremente, erwartet 7.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Zeit</th>
+<th>aktiv</th>
+<th>Register A</th>
+<th>Register B</th>
+<th style="text-align: right;">RAM</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>A liest</td>
+<td>5</td>
+<td>—</td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>A addiert</td>
+<td>6</td>
+<td>—</td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>Wechsel, B liest</td>
+<td>6 (gesichert)</td>
+<td>5</td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>B schreibt</td>
+<td>6</td>
+<td>6</td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td>A schreibt</td>
+<td>6</td>
+<td>—</td>
+<td style="text-align: right;"><strong>6</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Geschützt, gleiche Starts: A liest und schreibt fertig (RAM 6), danach B schreibt <strong>7</strong>.</p>
 <aside class="notes">
-<p>Task A: LDR 5, ADD <span class="math inline">\(R0=6\)</span>, dann SysTick. Register auf Stack. Task B liest RAM noch 5, speichert 6. Task A setzt mit STR seine 6 — Erhöhung von B vernichtet.</p>
+<p>Synthetisches Maschinenmodell. Die 6 von A wandert nicht in Bs Register. <code>volatile</code> ändert diese Tabelle nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -500,13 +538,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="atomarität-die-lösung-des-problems" class="slide level2">
 <h2>Atomarität (Die Lösung des Problems)</h2>
 <ul>
-<li>Ein Code-Block muss atomar ausgeführt werden</li>
-<li>Atomar (griech. <em>atomos</em> = unteilbar): keine Unterbrechung, kein sichtbarer Zwischenzustand</li>
-<li>Sobald Task A ausliest, darf keine andere Task lesen/schreiben, bis Task A gespeichert hat</li>
-<li>Frage: Wie erzwingen wir Atomarität in C?</li>
+<li>„Atomar gegenüber den relevanten Zugriffen“ heißt: kein sichtbarer Zwischenstand <strong>für diese Konkurrenten</strong></li>
+<li>Das ist nicht „keine Unterbrechung überhaupt“</li>
+<li>Unter einem Mutex dürfen fremde Threads und IRQs weiterlaufen</li>
+<li>Eine kurze IRQ-Maske ist ein anderes Werkzeug mit anderem Schutzradius</li>
 </ul>
 <aside class="notes">
-<p>Read-Modify-Write wurde zerrissen. Atomarität: LDR/ADD/STR unteilbar. Mehrere Wege in C — nächste Folien.</p>
+<p>Gegenseitiger Ausschluss und Interruptfreiheit nicht gleichsetzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -521,26 +559,69 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="definition-der-begriffe" class="slide level2">
 <h2>Definition der Begriffe</h2>
-<div class="columns">
-<div class="column" style="width:55%;">
-<ul>
-<li>Kritische Variable (Shared Resource): Daten, die geschützt werden müssen</li>
-<li>Kritischer Abschnitt (Critical Section): Code, der atomar auf die Ressource zugreift</li>
-<li>Ziel: nur die Critical Section absichern — nicht die ganze Task</li>
-</ul>
-</div><div class="column" style="width:45%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="dt">void</span> Task_A<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb2-2"><a aria-label="2"></a>    <span class="co">// ... Unkritischer Code ...</span></span>
-<span id="cb2-3"><a aria-label="3"></a></span>
-<span id="cb2-4"><a aria-label="4"></a>    <span class="co">// --- START CRITICAL SECTION ---</span></span>
-<span id="cb2-5"><a aria-label="5"></a>    error_counter<span class="op">++;</span></span>
-<span id="cb2-6"><a aria-label="6"></a>    <span class="co">// --- </span><span class="re">END</span><span class="co"> CRITICAL SECTION ---</span></span>
-<span id="cb2-7"><a aria-label="7"></a></span>
-<span id="cb2-8"><a aria-label="8"></a>    <span class="co">// ... Unkritischer Code ...</span></span>
-<span id="cb2-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Begriff</th>
+<th>hier</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Kritischer Abschnitt</td>
+<td>Zugriffe, die zusammenpassen müssen</td>
+</tr>
+<tr class="even">
+<td>Mutex</td>
+<td>Ausschluss von Threads, mit Owner</td>
+</tr>
+<tr class="odd">
+<td>Semaphor</td>
+<td>Tokenzahl, ohne Owner</td>
+</tr>
+<tr class="even">
+<td>Spin</td>
+<td>aktiv pollen, bleibt Running</td>
+</tr>
+<tr class="odd">
+<td>Blocked</td>
+<td>keine eigenen Threadbefehle; der Kern kostet weiter Zeit</td>
+</tr>
+</tbody>
+</table>
+<p>Entscheidung, kurz:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Konkurrent</th>
+<th>Mittel</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Thread/Thread, Ressource</td>
+<td>Mutex</td>
+</tr>
+<tr class="even">
+<td>ISR signalisiert Thread</td>
+<td>Semaphor oder Thread-Flag</td>
+</tr>
+<tr class="odd">
+<td>ein Zähler, geprüft</td>
+<td>Atomic oder sehr kurze Sektion</td>
+</tr>
+<tr class="even">
+<td>mehrere gleiche Plätze</td>
+<td>Counting Semaphore</td>
+</tr>
+<tr class="odd">
+<td>Nachricht mit Daten</td>
+<td>Queue (nächster Termin)</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Daten vs.&nbsp;Code trennen: Shared Resource = Variable/Register; Critical Section = zugreifender Code. Nicht die ganze Task atomar machen — sonst kein Multitasking.</p>
+<p>Ein Mutex wirkt nur, wenn jeder beteiligte Threadzugriff dieselbe Vereinbarung einhält. Atomics: Typ, Alignment und erzeugter Code prüfen; keine Peripherieregister „nebenbei“ atomar machen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -555,28 +636,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schutzidee-1-der-spinlock-polling" class="slide level2">
 <h2>Schutzidee 1: Der Spinlock (Polling)</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
+<p>Absichtlich falsch:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="cf">while</span> <span class="op">(</span>lock<span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb2-2"><a aria-label="2"></a>lock <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> <span class="co">/* Check-then-Set ist selbst eine Race */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Idee aus der Bare-Metal-Welt: Flag <code>lock</code></li>
-<li>Vor Zugriff: prüfen, ob <code>lock == 0</code>, dann auf <code>1</code> setzen</li>
-<li>Achtung: Check-then-Set auf <code>lock</code> selbst ist eine Race Condition (benötigt atomares Test-and-Set / <code>LDREX</code>/<code>STREX</code>)</li>
-<li>Frage: Warum ist das im RTOS trotzdem eine Katastrophe?</li>
+<li>Ein korrektes Test-and-Set beseitigt diese Race</li>
+<li>Es beseitigt nicht das Fortschrittsproblem auf einem präemptiven Kern</li>
+<li>Für den Laborfall (H wartet auf L) ist Spin die falsche Wahl</li>
+<li>Nicht jedes SMP- oder Bare-Metal-Szenario ist damit verboten</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">volatile</span> <span class="dt">int</span> lock <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-2"><a aria-label="2"></a></span>
-<span id="cb3-3"><a aria-label="3"></a><span class="dt">void</span> Task_A<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb3-4"><a aria-label="4"></a>    <span class="cf">while</span><span class="op">(</span>lock <span class="op">==</span> <span class="dv">1</span><span class="op">);</span> <span class="co">// Spinning</span></span>
-<span id="cb3-5"><a aria-label="5"></a>    lock <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
-<span id="cb3-6"><a aria-label="6"></a></span>
-<span id="cb3-7"><a aria-label="7"></a>    error_counter<span class="op">++;</span></span>
-<span id="cb3-8"><a aria-label="8"></a></span>
-<span id="cb3-9"><a aria-label="9"></a>    lock <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Spinlock: while-Schleife bis frei, dann sperren. Wartende Task „dreht sich im Kreis“. Warum in Single-Core-RTOS Garantie für Totalausfall?</p>
+<p>Zwei Ursachen getrennt halten: nicht-atomares Flag und „der Besitzer bekommt keine CPU“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -591,19 +661,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="warum-spinlocks-im-rtos-crashen" class="slide level2">
 <h2>Warum Spinlocks im RTOS crashen</h2>
+<p>L hält den Lock. H wird bereit und pollt.</p>
 <ul>
-<li>Spinlocks verstoßen gegen RTOS-Regeln</li>
-<li>CPU verbrennen: wartende Task bleibt Running (nicht Blocked), <span class="math inline">\(100\%\)</span> Last</li>
-<li>Deadlock-Szenario:
-<ol type="1">
-<li>Task L (Low) setzt <code>lock = 1</code></li>
-<li>Task H (High) präemptiert und spinnt auf <code>lock</code></li>
-<li>H gibt CPU nie ab — L kommt nie zu <code>lock = 0</code></li>
-</ol></li>
-<li>System friert ein; Watchdog schlägt zu</li>
+<li>Spin: H bleibt Running, L ist nur Ready und gibt nicht frei</li>
+<li>IRQs können trotzdem laufen</li>
+<li><code>osThreadYield</code> in H gibt L <strong>nicht</strong> die CPU, solange H höher und Ready bleibt</li>
+<li>Blockieren: H wird nach erfolglosem Acquire Blocked, L kann weiterrechnen</li>
+<li>Das löst noch nicht die spätere Störung durch Medium</li>
 </ul>
+<p><img data-src="../_livefigures/inline-plantuml-928e7379.svg" class="livefigure"></p>
 <aside class="notes">
-<p>OS sieht Spinning als Arbeit. High-Prio spinnt, Low-Prio kommt nie zum Entsperren — klassischer Deadlock auf Single-Core.</p>
+<p>„Blocked = keine eigenen Befehle“ ist richtig. „CPU-Last 0 %“ ist falsch, sobald Idle, Tick oder eine andere Aufgabe rechnet. Frage: Hilft Yield im hohen Spin? Nein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -618,25 +686,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="schutzidee-2-interrupts-sperren" class="slide level2">
 <h2>Schutzidee 2: Interrupts sperren</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
 <ul>
-<li>Präemption kommt von Hardware-IRQs — also IRQs abschalten?</li>
-<li>Cortex-M: <code>__disable_irq()</code> / <code>__enable_irq()</code></li>
-<li>In FreeRTOS: <code>taskENTER_CRITICAL()</code> / <code>taskEXIT_CRITICAL()</code></li>
-<li>Ist das eine gute Idee?</li>
+<li>Eine kurze, budgetierte Sperre kann zu harten Fristen passen</li>
+<li>Gezählt wird die Dauer des Abschnitts plus Ein- und Austritt, nicht „ein Takt“</li>
+<li>Lehrwerte: 2 µs bei Frist 100 µs kann passen; 5 ms bei derselben Frist nicht</li>
+<li>Im ungünstigen Fall kommt die restliche Maskierungszeit zur übrigen Latenz hinzu</li>
+<li><code>__disable_irq</code> / <code>__enable_irq</code> (PRIMASK) nicht mit den FreeRTOS-Makros gleichsetzen</li>
+<li>Der CM4F-Port maskiert über <strong>BASEPRI</strong> bis zu einer Schwelle und hebt den vorigen Stand wieder auf</li>
 </ul>
-</div><div class="column" style="width:50%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> Task_A<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>    __disable_irq<span class="op">();</span></span>
-<span id="cb4-3"><a aria-label="3"></a></span>
-<span id="cb4-4"><a aria-label="4"></a>    error_counter<span class="op">++;</span> <span class="co">// atomar</span></span>
-<span id="cb4-5"><a aria-label="5"></a></span>
-<span id="cb4-6"><a aria-label="6"></a>    __enable_irq<span class="op">();</span></span>
-<span id="cb4-7"><a aria-label="7"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Ohne Interrupts keine Präemption — <code>counter++</code> sicher. FreeRTOS bietet fertige Critical-Makros. Klingt perfekt — ist es nicht.</p>
+<p><code>__enable_irq</code> löscht eine frühere Maske nicht sauber, wenn jemand anderes PRIMASK gesetzt hat. NMI, HardFault und nicht maskierte höhere IRQs fallen nicht unter denselben Schutz. Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit, nicht die Taskskala.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -651,20 +710,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-grenzen-der-interrupt-sperre" class="slide level2">
 <h2>Die Grenzen der Interrupt-Sperre</h2>
+<p><img data-src="../_livefigures/inline-plantuml-1c9642b2.svg" class="livefigure"></p>
 <ul>
-<li>Vorteil: extrem schnell (oft 1 Taktzyklus)</li>
-<li>Nachteil: zerstört harte Echtzeit
-<ul>
-<li>5 ms IRQ-Sperre: kein UART-RX, kein Motor-Timer, kein Not-Halt</li>
-</ul></li>
-<li>Best Practice:
-<ul>
-<li>Nur für extrem kurze Zugriffe (eine Variable)</li>
-<li>Niemals für lange <code>printf()</code> oder Delays</li>
-</ul></li>
+<li>Pending heißt: die IRQ wartet, DMA muss damit nicht stehen</li>
+<li>In der maskierten Sektion kein Delay, kein <code>printf</code>, kein blockierendes API</li>
+<li>Task- und ISR-Makros des Ports nicht vertauschen</li>
 </ul>
 <aside class="notes">
-<p>Nuklearoption: Welt steht still, Latenzgarantien weg. Erlaubt: drei Werte kopieren oder Zähler++. <code>printf</code> mit gesperrten IRQs = No-Go.</p>
+<p>Synthetische 2 µs und 5 ms, keine Boardmessung. Andere Latenzanteile bleiben außerhalb dieses Balkens.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -680,15 +733,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-richtige-lösung-os-blocking" class="slide level2">
 <h2>Die „richtige“ Lösung: OS-Blocking</h2>
 <ul>
-<li>Nicht <code>while()</code> und nicht Hardware-Sperren</li>
-<li>Lösung über den RTOS-Scheduler</li>
-<li>An das OS: „Schloss belegt? Dann blockiere mich, bis es frei ist.“</li>
-<li>Wartende Task → Blocked (<span class="math inline">\(0\%\)</span> CPU)</li>
-<li>Freigabe weckt die wartende Task</li>
-<li>Werkzeuge: Semaphoren und Mutexe</li>
+<li>Für Thread gegen Thread: blockieren statt polieren</li>
+<li>Der Besitzer muss laufen dürfen, sonst gibt er nicht frei</li>
+<li>PIP kommt erst, wenn ein höherer Thread <strong>am selben Mutex</strong> wartet</li>
+<li>Vorher hat L nur seine eigene Priorität</li>
 </ul>
 <aside class="notes">
-<p>Schloss vom Scheduler verwalten lassen. Blocked statt Spinning: keine CPU-Verschwendung, kein Spinlock-Deadlock, Interrupts laufen weiter.</p>
+<p>OS-Blocking ist die passende Idee für das Labor, kein Universalschloss.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -704,15 +755,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-block-1" class="slide level2">
 <h2>Zusammenfassung Block 1</h2>
 <ul>
-<li>Asynchrone Präemption + Shared Variables → Race Conditions</li>
-<li>C-Befehl wird zu <code>LDR</code>/<code>ADD</code>/<code>STR</code> — Datenverlust möglich</li>
-<li>Critical Sections müssen atomar abgesichert sein</li>
-<li>Spinlocks: CPU-Brand und Deadlocks</li>
-<li>Interrupt-Sperren: Latenzgarantien zerstört</li>
-<li>Saubere Lösung: OS-Blocking (nächster Block: Semaphoren)</li>
+<li>Verlorenes Update: Endwert 6 statt 7</li>
+<li>Spin kann den Besitzer verdrängen</li>
+<li>IRQ-Sperre ist ein Latenzbudget, kein Tabu und kein Freifahrtschein</li>
+<li>Mutex: beteiligte Threads, nicht der ganze Chip</li>
 </ul>
 <aside class="notes">
-<p>Heisenbugs auf Assembler-Ebene verstanden. Spinlocks und lange IRQ-Sperren sind Gift. Fragen zur Hardware-Ebene, bevor Block 2 (Semaphoren) beginnt?</p>
+<p>Nächster Block: Token und Ownership.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -728,16 +777,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="was-ist-ein-semaphor" class="slide level2">
 <h2>Was ist ein Semaphor?</h2>
 <ul>
-<li>Griechisch: „Zeichenträger“ (<em>sema</em> = Zeichen, <em>pherein</em> = tragen)</li>
-<li>Historisch: Eisenbahn-Signalflügel (frei / Halt)</li>
-<li>IT (Edsger W. Dijkstra, 1965):
-<ul>
-<li>Vom OS verwaltete Integer-Variable (Zähler)</li>
-<li>Zwei atomare Operationen: Acquire (Nehmen) und Release (Freigeben)</li>
-</ul></li>
+<li>Zähler von 0 bis <code>max_count</code></li>
+<li><code>Acquire</code> verringert, <code>Release</code> erhöht</li>
+<li>Kein gespeicherter Owner: ein anderer Thread darf <code>Release</code> rufen</li>
+<li>ISR: <code>osSemaphoreRelease</code> ist vorgesehen; <code>Acquire</code> nur mit Timeout 0</li>
+<li>Zusätzlich muss die NVIC-Priorität die Syscall-Schwelle einhalten</li>
+<li>„ISR-safe“ heißt nicht „aus jeder Priorität“</li>
 </ul>
 <aside class="notes">
-<p>Semaphor = Zeichenträger, Eisenbahn-Analogie. Dijkstra 1965: Zähler mit Acquire/Release, exklusiv vom Scheduler verwaltet.</p>
+<p>CMSIS-Spezifikation und FreeRTOS-Adapter können abweichen. Die Datei <code>cmsis_os2.c</code> im Projekt ist maßgeblich. Version hier nicht erfunden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -752,16 +800,49 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="typ-1-counting-semaphore-zähl-semaphor" class="slide level2">
 <h2>Typ 1: Counting Semaphore (Zähl-Semaphor)</h2>
+<p>Pool mit <code>osSemaphoreNew(3, 3, NULL)</code>:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Aktion</th>
+<th style="text-align: right;">count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Start</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr class="even">
+<td>A nimmt</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="odd">
+<td>B nimmt</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="even">
+<td>C nimmt</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="odd">
+<td>D mit <code>timeout = 0</code></td>
+<td style="text-align: right;">0, Fehler, kein Zugriff</td>
+</tr>
+<tr class="even">
+<td>B gibt frei</td>
+<td style="text-align: right;">1, ein Wartender kann nehmen</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Zähler von <span class="math inline">\(0\)</span> bis <span class="math inline">\(N\)</span></li>
-<li>Analogie: Parkhaus mit <span class="math inline">\(N = 50\)</span> Plätzen</li>
-<li>Acquire: Auto rein <span class="math inline">\(\rightarrow\)</span> Zähler sinkt</li>
-<li>Zähler <span class="math inline">\(= 0\)</span>: Schranke zu, weitere Tasks Blocked</li>
-<li>Release: Auto raus <span class="math inline">\(\rightarrow\)</span> Zähler steigt, Wartende werden geweckt</li>
-<li>Einsatz: begrenzte Ressourcen (z. B. Pool aus 3 Verbindungen)</li>
+<li>Es entsteht kein zweiter freier Platz</li>
+<li>Der Zähler ist Verfügbarkeit, nicht die Identität eines Platzes</li>
+<li>Höchste Priorität unter den Wartenden, soweit das Backend so wählt; keine Fairnessgarantie</li>
+<li><code>Release</code> bei vollem Zähler kann <code>osErrorResource</code> liefern und erzeugt kein weiteres Token</li>
 </ul>
 <aside class="notes">
-<p>Parkhaus-Analogie: Acquire = einfahren, Release = ausfahren. Bei 0 blockiert das OS die nächste Task, bis wieder Platz ist.</p>
+<p>Parkhaus bleibt Bild. Die Bilanz ist die Aussage. „95 % binär“ ohne Quelle streichen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -777,13 +858,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="typ-2-binary-semaphore-binärer-semaphor" class="slide level2">
 <h2>Typ 2: Binary Semaphore (Binärer Semaphor)</h2>
 <ul>
-<li>Spezialfall mit Max-Wert <span class="math inline">\(N = 1\)</span></li>
-<li>Zähler nur <span class="math inline">\(0\)</span> (belegt) oder <span class="math inline">\(1\)</span> (frei)</li>
-<li>Analogie: Toilettenschlüssel an der Tankstelle</li>
-<li>In FreeRTOS/CMSIS meist binär genutzt</li>
+<li><code>max_count = 1</code></li>
+<li>Ressource anfangs da: <code>osSemaphoreNew(1, 1, NULL)</code></li>
+<li>Ereignis, noch nichts passiert: <code>osSemaphoreNew(1, 0, NULL)</code></li>
+<li>Zwei Releases vor dem nächsten Acquire: der zweite scheitert am vollen Zähler</li>
+<li>Zwei Hardwareereignisse werden damit nicht automatisch zweimal bearbeitet</li>
 </ul>
 <aside class="notes">
-<p>Parkhaus mit einem Platz / ein Schlüssel. In der Mikrocontroller-Praxis ~95 % binäre Semaphoren.</p>
+<p>Tokenbedeutung festlegen: „Arbeit da“, „ein Ereignis“ oder „Puffer frei“. Sonst Queue oder größerer Zähler, jeweils mit Überlaufregel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -798,17 +880,21 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="cmsis-api-für-semaphoren" class="slide level2">
 <h2>CMSIS-API für Semaphoren</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="co">// 1. Definition &amp; Initialisierung</span></span>
-<span id="cb5-2"><a aria-label="2"></a>osSemaphoreId_t mySemHandle<span class="op">;</span></span>
-<span id="cb5-3"><a aria-label="3"></a>mySemHandle <span class="op">=</span> osSemaphoreNew<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> NULL<span class="op">);</span> <span class="co">// (Max-Count, Initial-Count)</span></span>
-<span id="cb5-4"><a aria-label="4"></a></span>
-<span id="cb5-5"><a aria-label="5"></a><span class="co">// 2. Warten (Acquire)</span></span>
-<span id="cb5-6"><a aria-label="6"></a>osSemaphoreAcquire<span class="op">(</span>mySemHandle<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb5-7"><a aria-label="7"></a></span>
-<span id="cb5-8"><a aria-label="8"></a><span class="co">// 3. Freigeben (Release)</span></span>
-<span id="cb5-9"><a aria-label="9"></a>osSemaphoreRelease<span class="op">(</span>mySemHandle<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a>osSemaphoreId_t sem <span class="op">=</span></span>
+<span id="cb3-2"><a aria-label="2"></a>    osSemaphoreNew<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> NULL<span class="op">);</span> <span class="co">/* Ereignis, anfangs leer */</span></span>
+<span id="cb3-3"><a aria-label="3"></a><span class="cf">if</span> <span class="op">(</span>sem <span class="op">==</span> NULL<span class="op">)</span> <span class="op">{</span> Error_Handler<span class="op">();</span> <span class="op">}</span></span>
+<span id="cb3-4"><a aria-label="4"></a></span>
+<span id="cb3-5"><a aria-label="5"></a>osStatus_t st <span class="op">=</span> osSemaphoreAcquire<span class="op">(</span>sem<span class="op">,</span> <span class="dv">10</span><span class="op">);</span></span>
+<span id="cb3-6"><a aria-label="6"></a><span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-7"><a aria-label="7"></a>    <span class="co">/* Timeout oder Parameter: Ressource nicht anfassen */</span></span>
+<span id="cb3-8"><a aria-label="8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>timeout = 0</code>: sofortiger Status, kein Blockieren</li>
+<li>endliche Tickzahl: Fehlerpfad Pflicht</li>
+<li><code>osWaitForever</code>: kann dauern; das ist eine Entwurfsentscheidung</li>
+</ul>
 <aside class="notes">
-<p><code>osSemaphoreNew(1, 1, NULL)</code>: binär, Schlüssel frei. Timeout: <code>osWaitForever</code> oder z. B. 100 Ticks. Danach <code>osSemaphoreRelease</code>.</p>
+<p>Status nicht ignorieren. Ein binärer Semaphor ist kein Mutex mit Owner.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -823,24 +909,34 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="was-exakt-passiert-bei-acquire-release" class="slide level2">
 <h2>Was exakt passiert bei Acquire / Release?</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<p>Acquire (Schlüssel holen)</p>
-<ul>
-<li>OS prüft Zähler</li>
-<li><span class="math inline">\(\ge 1\)</span>: Zähler <span class="math inline">\(-1\)</span>, Task läuft weiter</li>
-<li><span class="math inline">\(== 0\)</span>: Task Running <span class="math inline">\(\rightarrow\)</span> Blocked</li>
-</ul>
-</div><div class="column" style="width:50%;">
-<p>Release (Schlüssel zurück)</p>
-<ul>
-<li>OS erhöht Zähler um 1</li>
-<li>Wartende Task in Blocked-Liste?</li>
-<li>Ja: höchstpriore <span class="math inline">\(\rightarrow\)</span> Ready (ggf. Präemption)</li>
-</ul>
-</div></div>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: right;">count</th>
+<th>Acquire</th>
+<th>Release</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">&gt; 0</td>
+<td>zählt herunter, <code>osOK</code></td>
+<td>zählt hoch, bis max</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">0, Warten</td>
+<td>Thread Blocked</td>
+<td>weckt einen Wartenden oder zählt auf 1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">= max</td>
+<td>—</td>
+<td><code>osErrorResource</code>, Zähler bleibt</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Acquire: Zähler &gt; 0 → abziehen und weiter; sonst Blocked. Release: erhöhen, ggf. Ready und sofortiger Kontextwechsel.</p>
+<p>Nicht jedes Acquire bei 0 blockiert. Timeout 0 kehrt sofort zurück.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -855,18 +951,22 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-hauptanwendungsfall-signalisierung" class="slide level2">
 <h2>Der Hauptanwendungsfall: Signalisierung</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="co">/* ISR, Priorität erlaubt, Handle gültig, Kernel läuft */</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="cf">if</span> <span class="op">(</span>osSemaphoreRelease<span class="op">(</span>sem<span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    <span class="co">/* voll: Ereignis geht in diesem Tokenmodell verloren */</span></span>
+<span id="cb4-4"><a aria-label="4"></a><span class="op">}</span></span>
+<span id="cb4-5"><a aria-label="5"></a></span>
+<span id="cb4-6"><a aria-label="6"></a><span class="co">/* Worker */</span></span>
+<span id="cb4-7"><a aria-label="7"></a><span class="cf">if</span> <span class="op">(</span>osSemaphoreAcquire<span class="op">(</span>sem<span class="op">,</span> osWaitForever<span class="op">)</span> <span class="op">==</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-8"><a aria-label="8"></a>    bearbeite_ein_token<span class="op">();</span></span>
+<span id="cb4-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li>Binärer Semaphor in FreeRTOS selten zur Absicherung</li>
-<li>Primär: Signalisierung (Einweg-Kommunikation)</li>
-<li>Deferred Interrupt Processing:
-<ul>
-<li>ISR muss kurz bleiben</li>
-<li>ISR ruft nur <code>Release()</code></li>
-<li>Wartende Task (<code>Acquire</code>) übernimmt die Arbeit</li>
-</ul></li>
+<li>Kein <code>printf</code>, kein Mutex, kein blockierendes Warten in der ISR</li>
+<li>Der Worker läuft erst, wenn die ISR fertig ist und seine Priorität ihn wählen lässt</li>
+<li>Die CPU muss vor dem Ereignis nicht Idle gewesen sein</li>
 </ul>
 <aside class="notes">
-<p>Zur Variablenabsicherung kommt der Mutex. Semaphoren: Signal aus ISR an Task. Deferred Interrupt Processing = zeitversetzte Verarbeitung in Task-Kontext.</p>
+<p>Thread-Flags können dasselbe Bit ebenfalls zusammenfassen. Beides ist keine verlustfreie Ereigniswarteschlange.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -881,25 +981,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="sequenzdiagramm-signalisierung-aus-der-isr" class="slide level2">
 <h2>Sequenzdiagramm: Signalisierung aus der ISR</h2>
-<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell" data-reveal="true" data-fig-width="6.4" data-layout-align="default">
 <div class="cell-output-display">
 <div>
 <p></p><figure class=""><p></p>
 <div>
-<pre class="mermaid mermaid-js">sequenceDiagram
-    participant Hardware as SPI Hardware
-    participant ISR as Hardware ISR
-    participant OS as OS Scheduler
-    participant Task as Verarbeitung (Task)
-
-    Note over Task: Blocked (Wartet auf Acquire)
-    Hardware-&gt;&gt;ISR: Interrupt (Daten da!)
-    ISR-&gt;&gt;OS: osSemaphoreRelease()
-    Note over OS: Zähler = 1
-    OS-&gt;&gt;Task: Task wird Ready
-    Note over Task: Task wird Running (Präemption)
-    Task-&gt;&gt;Task: Acquire rutscht durch (Zähler = 0)
-    Note over Task: Verarbeitet die Daten aufwendig!
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'actorBkg': '#FFFFFF', 'actorBorder': '#E5E5EA', 'signalColor': '#86868B'}}}%%
+sequenceDiagram
+  participant HW as Hardware
+  participant ISR as ISR
+  participant K as Kernel
+  participant W as Worker
+  Note over W: wartet, Semaphor leer
+  HW-&gt;&gt;ISR: Ereignis
+  ISR-&gt;&gt;K: osSemaphoreRelease
+  K--&gt;&gt;W: Ready
+  Note over ISR: ISR endet, dann PendSV
+  W-&gt;&gt;K: Acquire ok
+  W-&gt;&gt;W: eine Verarbeitung
 </pre>
 </div>
 <p></p></figure><p></p>
@@ -907,7 +1006,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </div>
 </div>
 <aside class="notes">
-<p>Task wartet, CPU idle. ISR nur Release, dann Task Ready/Running, Acquire setzt Zähler auf 0. Elegante Anbindung asynchroner Hardware ohne lange ISR.</p>
+<p>Kein Thread-Kontext mitten in der noch laufenden ISR. Ein zweites Release bei max 1 kann scheitern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -923,14 +1022,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="semaphoren-haben-kein-ownership" class="slide level2">
 <h2>Semaphoren haben kein „Ownership“</h2>
 <ul>
-<li>Kein Besitzrecht: OS merkt sich nicht, wer Acquire gemacht hat</li>
-<li>Task A: Acquire; Task B: Release — erlaubt!</li>
-<li>Für Signalisierung (ISR <span class="math inline">\(\rightarrow\)</span> Task) genial</li>
-<li>Für Variablen-/UART-Schutz: Sicherheitsrisiko</li>
-<li>Fremdtask kann Schloss versehentlich „aufbrechen“</li>
+<li>Token merkt sich nicht, wer ihn nahm</li>
+<li>B darf ein Release ausführen, auch wenn A genommen hat</li>
+<li>Das ist für Ereignisse nützlich und für eine exklusive Ressource gefährlich</li>
+<li>Deshalb für den UART-Schutz ein Mutex, nicht dieses Token</li>
 </ul>
 <aside class="notes">
-<p>Kein Ownership: ISR darf Release ohne Acquire. Für UART-Schutz gefährlich — wir brauchen ein Schloss mit Besitzer.</p>
+<p>Binärer Semaphor mit Start 1 ist die Laborvariante <strong>ohne</strong> PIP, nicht „derselbe Mutex mit anderem Namen“.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -946,14 +1044,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-rettung-der-mutex-mutual-exclusion" class="slide level2">
 <h2>Die Rettung: Der Mutex (Mutual Exclusion)</h2>
 <ul>
-<li>Mutex = gegenseitiger Ausschluss</li>
-<li>Konzeptionell binärer Semaphor, aber mit Ownership</li>
-<li>Eiserne Regel: nur die sperrende Task darf entsperren</li>
-<li>Fremde Task/ISR wird abgewiesen</li>
-<li>Perfekt für Critical Sections</li>
+<li>Zustände: frei, oder Owner = A</li>
+<li>B kann nicht freigeben: die API liefert einen Fehler</li>
+<li>Das ist keine Hardware-Sperre gegen wilde Speicherzugriffe</li>
+<li>Nach erfolgreichem Acquire zugreifen, genau einmal passend freigeben</li>
+<li>In den gezeigten Abschnitten kein vermeidbares <code>osDelay</code>: der Mutex maskiert keine IRQs, verlängert aber die Sperrdauer</li>
 </ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">const</span> osMutexAttr_t attr <span class="op">=</span> <span class="op">{</span> <span class="op">.</span>attr_bits <span class="op">=</span> osMutexPrioInherit <span class="op">};</span></span>
+<span id="cb5-2"><a aria-label="2"></a>osMutexId_t m <span class="op">=</span> osMutexNew<span class="op">(&amp;</span>attr<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Mutual Exclusion + Ownership im TCB. Falsches Release → Fehlercode, Schloss bleibt zu. Sicher gegen Fremdeinwirkung.</p>
+<p>CMSIS-Default 0 enthält <strong>kein</strong> PIP-Bit. Die dokumentierte CMSIS-FreeRTOS-Anbindung erzeugt native Mutexe trotzdem mit Inheritance und ignoriert dieses Bit. Weglassen schaltet PIP dort nicht ab. Lokal <code>cmsis_os2.c</code> prüfen. <code>osMutexRobust</code> ist in dieser Anbindung nicht die Rettung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -968,24 +1068,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="cmsis-api-für-mutexe" class="slide level2">
 <h2>CMSIS-API für Mutexe</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">// 1. Definition</span></span>
-<span id="cb6-2"><a aria-label="2"></a>osMutexId_t uartMutex<span class="op">;</span></span>
-<span id="cb6-3"><a aria-label="3"></a>uartMutex <span class="op">=</span> osMutexNew<span class="op">(</span>NULL<span class="op">);</span></span>
-<span id="cb6-4"><a aria-label="4"></a></span>
-<span id="cb6-5"><a aria-label="5"></a><span class="dt">void</span> PrintTask<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb6-6"><a aria-label="6"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb6-7"><a aria-label="7"></a>        osMutexAcquire<span class="op">(</span>uartMutex<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb6-8"><a aria-label="8"></a></span>
-<span id="cb6-9"><a aria-label="9"></a>        <span class="co">// --- CRITICAL SECTION ---</span></span>
-<span id="cb6-10"><a aria-label="10"></a>        printf<span class="op">(</span><span class="st">"Temperatur: 22 Grad</span><span class="sc">\n</span><span class="st">"</span><span class="op">);</span></span>
-<span id="cb6-11"><a aria-label="11"></a>        <span class="co">// --- </span><span class="re">END</span><span class="co"> CRITICAL SECTION ---</span></span>
-<span id="cb6-12"><a aria-label="12"></a></span>
-<span id="cb6-13"><a aria-label="13"></a>        osMutexRelease<span class="op">(</span>uartMutex<span class="op">);</span></span>
-<span id="cb6-14"><a aria-label="14"></a>        osDelay<span class="op">(</span><span class="dv">500</span><span class="op">);</span> <span class="co">// Ticks; bei 1000 Hz = 500 ms</span></span>
-<span id="cb6-15"><a aria-label="15"></a>    <span class="op">}</span></span>
-<span id="cb6-16"><a aria-label="16"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">void</span> Task<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb6-3"><a aria-label="3"></a>    <span class="cf">if</span> <span class="op">(</span>osMutexAcquire<span class="op">(</span>m<span class="op">,</span> <span class="dv">5</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-4"><a aria-label="4"></a>        <span class="cf">return</span><span class="op">;</span> <span class="co">/* Hilfs-return, nicht Task-Ende */</span></span>
+<span id="cb6-5"><a aria-label="5"></a>    <span class="op">}</span></span>
+<span id="cb6-6"><a aria-label="6"></a>    <span class="cf">if</span> <span class="op">(</span>sensor_ok<span class="op">())</span> <span class="op">{</span></span>
+<span id="cb6-7"><a aria-label="7"></a>        use_resource<span class="op">();</span></span>
+<span id="cb6-8"><a aria-label="8"></a>    <span class="op">}</span></span>
+<span id="cb6-9"><a aria-label="9"></a>    osMutexRelease<span class="op">(</span>m<span class="op">);</span> <span class="co">/* Normal- und Fehlerpfad */</span></span>
+<span id="cb6-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Acquire-Fehler: Ressource nicht anfassen, nichts freigeben</li>
+<li><code>osMutexAcquire</code> / <code>osMutexRelease</code> sind in CMSIS nicht aus der ISR erlaubt</li>
+<li>Rekursion ist ein <strong>eigenes</strong> Attribut <code>osMutexRecursive</code></li>
+<li>Zweites Acquire ohne Rekursion: bei <code>osWaitForever</code> Self-Deadlock, bei Timeout ein Fehler</li>
+</ul>
 <aside class="notes">
-<p>API ähnlich Semaphor. Vor <code>printf</code>: Acquire; danach Release. Buchstabensalat vom UART-Beispiel ist damit behoben.</p>
+<p>Frühes <code>return</code> aus einer Hilfsfunktion ist erlaubt. <code>return</code> aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1000,26 +1100,43 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="sonderfälle-in-der-c-programmierung" class="slide level2">
 <h2>Sonderfälle in der C-Programmierung</h2>
-<div class="columns">
-<div class="column" style="width:55%;">
+<p>Rekursion, Owner A:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Aktion</th>
+<th style="text-align: right;">Zähler</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>frei</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td>A acquire</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="odd">
+<td>A acquire nochmal</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="even">
+<td>A release</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="odd">
+<td>A release</td>
+<td style="text-align: right;">0, jetzt darf B</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li>Was ist an diesem Code tödlich?</li>
-<li>Antwort: Mutex bleibt für immer verriegelt</li>
-<li>Früher oder später: Deadlock im System</li>
-<li>Achtung bei frühem <code>return</code> / <code>break</code> in Critical Sections</li>
+<li>B kommt erst bei 0 dran</li>
+<li>Ohne <code>osMutexRecursive</code> ist die zweite Zeile kein harmloses Verschachteln</li>
 </ul>
-</div><div class="column" style="width:45%;">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a>osMutexAcquire<span class="op">(</span>myMutex<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb7-2"><a aria-label="2"></a></span>
-<span id="cb7-3"><a aria-label="3"></a><span class="cf">if</span> <span class="op">(</span>sensor_error <span class="op">==</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb7-4"><a aria-label="4"></a>    <span class="cf">return</span><span class="op">;</span> <span class="co">// Release fehlt!</span></span>
-<span id="cb7-5"><a aria-label="5"></a><span class="op">}</span></span>
-<span id="cb7-6"><a aria-label="6"></a></span>
-<span id="cb7-7"><a aria-label="7"></a>error_counter<span class="op">++;</span></span>
-<span id="cb7-8"><a aria-label="8"></a>osMutexRelease<span class="op">(</span>myMutex<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div></div>
 <aside class="notes">
-<p>Klassiker: Acquire, dann früher Return ohne Release — Schlüssel verloren, alle anderen stapeln sich vor der Tür.</p>
+<p>Zähler, Owner und Tokenzahl nicht vermischen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1035,16 +1152,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="best-practices-für-mutexe" class="slide level2">
 <h2>Best Practices für Mutexe</h2>
 <ul>
-<li>So kurz wie möglich in der Critical Section bleiben</li>
-<li>Niemals in einer Critical Section <code>osDelay()</code> aufrufen</li>
-<li>Niemals Mutex-Acquire in einer Hardware-ISR
-<ul>
-<li>verboten / undefiniert bzw. Assert (ISR kann nicht Blocked werden)</li>
-</ul></li>
-<li>In ISRs: Semaphoren oder Queues, keine Mutexe</li>
+<li>Ein Mutex, eine Invariante, ein Name</li>
+<li>Alle konkurrierenden Threadzugriffe, auch die lesenden</li>
+<li>Kurzer Abschnitt; Rechnung vor dem Acquire, Warten dahinter</li>
+<li>Keine zweite Sperre in umgekehrter Reihenfolge</li>
+<li>Kein Mischen von <code>osMutex*</code> und <code>xSemaphore*</code> auf demselben Objekt</li>
 </ul>
 <aside class="notes">
-<p>Kurz halten: sperren, kopieren, entsperren. <code>osDelay</code> im Mutex = Todsünde. ISR darf nicht schlafen — nur Semaphor/Queue. Als Nächstes: Deadlocks, Priority Inversion und Mars Pathfinder.</p>
+<p>Ownership verhindert die falsche Freigabe über die API. Sie verhindert nicht, dass jemand den Puffer direkt beschreibt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1060,18 +1175,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="rekursive-mutexe" class="slide level2">
 <h2>Rekursive Mutexe</h2>
 <ul>
-<li>Was passiert, wenn eine Task eine Funktion aufruft, die einen Mutex sperrt, und diese wiederum denselben Mutex anfordert?</li>
-<li>Normaler Mutex: Self-Deadlock — die Task blockiert sich selbst</li>
-<li>Rekursiver Mutex:
-<ul>
-<li>OS merkt sich den Owner</li>
-<li>Erneutes Acquire durch denselben Owner: <code>count++</code> statt Blockade</li>
-<li>Freigabe erst, wenn <code>Release</code> genauso oft wie <code>Acquire</code> (<code>count == 0</code>)</li>
-</ul></li>
-<li>Nutzen: verschachtelte Bibliotheken (z. B. Dateisysteme)</li>
+<li>Nur wenn dieselbe Aufgabe dasselbe Schloss erneut braucht</li>
+<li>Nicht als Ersatz für eine klare Aufrufstruktur</li>
+<li>Jedes Acquire braucht sein Release</li>
+<li>Prioritätsvererbung und Rekursion sind unabhängig wählbare Bits; der FreeRTOS-Adapter folgt den Bits nicht in jedem Punkt</li>
 </ul>
 <aside class="notes">
-<p>Spezialfall rekursiver Mutex: Bibliotheksfunktion A sperrt, ruft Hilfsfunktion B auf, B sperrt denselben Mutex. Normaler Mutex → Self-Deadlock. Rekursiv: Owner erkannt, Counter hoch; Release muss ebenso oft folgen.</p>
+<p>Im Zweifel nicht rekursiv, sondern die kritische Arbeit in eine Funktion ohne erneutes Acquire legen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1087,48 +1197,43 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="zusammenfassung-mutex-vs.-binärer-semaphor" class="slide level2">
 <h2>Zusammenfassung: Mutex vs.&nbsp;Binärer Semaphor</h2>
 <table class="caption-top">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
 <thead>
 <tr class="header">
-<th style="text-align: left;">Eigenschaft</th>
-<th style="text-align: left;">Binärer Semaphor</th>
-<th style="text-align: left;">Mutex (Mutual Exclusion)</th>
+<th></th>
+<th>Mutex</th>
+<th>Binärer Semaphor</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">Hauptzweck</td>
-<td style="text-align: left;">Signalisierung (ISR <span class="math inline">\(\rightarrow\)</span> Task)</td>
-<td style="text-align: left;">Absicherung (Ressourcenschutz)</td>
+<td>Gegenstand</td>
+<td>Ressource mit Owner</td>
+<td>Token oder Ereignis</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Ownership</td>
-<td style="text-align: left;">Nein</td>
-<td style="text-align: left;">Ja (nur Besitzer entsperrt)</td>
+<td>Release durch anderen</td>
+<td>API-Fehler</td>
+<td>möglich</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Verwendung in ISR?</td>
-<td style="text-align: left;">Ja (<code>Release</code> weckt Task)</td>
-<td style="text-align: left;">Nein (verboten / Assert)</td>
+<td>ISR</td>
+<td>weder Acquire noch Release</td>
+<td>Release ja, Acquire nur Timeout 0</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Priority Inheritance?</td>
-<td style="text-align: left;">Nein</td>
-<td style="text-align: left;">Ja (dazu gleich mehr)</td>
+<td>PIP</td>
+<td>gewünscht und im Adapter oft immer an</td>
+<td>nein</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Gefahr</td>
-<td style="text-align: left;">Fremdtask öffnet Schloss versehentlich</td>
-<td style="text-align: left;">Priority Inversion (ohne OS-Schutz)</td>
+<td>Start</td>
+<td>frei</td>
+<td>0 oder 1, je nach Bedeutung</td>
 </tr>
 </tbody>
 </table>
 <aside class="notes">
-<p>Semaphor: Event aus ISR an Task, kein Ownership. Mutex: persönliches Schloss für Shared Resources. Klausurregel: Array/UART absichern → immer Mutex.</p>
+<p>Folie 50 der alten Fassung gilt für den genannten Adapter, nicht als CMSIS-Gesetz für jedes RTOS.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1144,16 +1249,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-katastrophe-wenn-locks-böse-werden" class="slide level2">
 <h2>Die Katastrophe: Wenn Locks böse werden</h2>
 <ul>
-<li>Mutexe schützen Daten — erzeugen aber zwei gefürchtete Fehlerbilder:
-<ol type="1">
-<li>Deadlocks (Verklemmung)</li>
-<li>Priority Inversion (Prioritätsinversion)</li>
-</ol></li>
-<li>Oft erst nach Wochen im Feldtest sichtbar</li>
-<li>Zerstören das Vertrauen in Echtzeitgarantien</li>
+<li>Deadlock: eine <strong>Gruppe</strong> wartet zyklisch</li>
+<li>Andere Threads und IRQs können weiterlaufen</li>
+<li>„System freeze“ ist eine mögliche Folge, kein Zwang</li>
+<li>Prioritätsinversion ist kein Deadlock: der Besitzer könnte weiterrechnen, wird aber verdrängt</li>
 </ul>
 <aside class="notes">
-<p>Falscher Umgang mit Schlössern: Deadlocks und Prioritätsinversionen. Am Schreibtisch selten, unter Last und asynchronen Interrupts kritisch.</p>
+<p>Starvation aus VL3: High bleibt Ready und gibt die CPU nicht her. Inversion: High ist am Lock blockiert, Low kommt nicht zum Release.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1168,45 +1270,29 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-deadlock-verklemmung" class="slide level2">
 <h2>Der Deadlock (Verklemmung)</h2>
-<ul>
-<li>Deadlock: Tasks warten zirkulär aufeinander — niemand kommt weiter</li>
-<li>Beispiel:
-<ul>
-<li>Task 1 sperrt Mutex A</li>
-<li>Präemption → Task 2 sperrt Mutex B</li>
-<li>Task 2 will Mutex A <span class="math inline">\(\rightarrow\)</span> Blocked</li>
-<li>Task 1 will Mutex B <span class="math inline">\(\rightarrow\)</span> Blocked</li>
-</ul></li>
-<li>Ergebnis: System Freeze</li>
-</ul>
-<div class="cell" data-reveal="true" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">graph TD
-    T1[Task 1]
-    T2[Task 2]
-    M1[Mutex A]
-    M2[Mutex B]
-
-    T1 --&gt;|hält| M1
-    T2 --&gt;|hält| M2
-    T1 --&gt;|wartet| M2
-    T2 --&gt;|wartet| M1
-
-    style T1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style T2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style M1 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
-    style M2 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
+<p>T1 hält A und will B. T2 hält B und will A.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Pfeil</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Task → Ressource</td>
+<td>wartet auf</td>
+</tr>
+<tr class="even">
+<td>Ressource → Task</td>
+<td>zugeteilt an</td>
+</tr>
+</tbody>
+</table>
+<p>Zyklus: T1 → B → T2 → A → T1.</p>
+<p>Ablauf: T1 nimmt A, T2 nimmt B, T2 wartet auf A, T1 wartet auf B. Beide Locks sind gehalten, beide Threads Blocked.</p>
 <aside class="notes">
-<p>Zwei Ressourcen (SPI = Mutex A, Display = Mutex B). Task 1 hält A, Task 2 hält B; beide wollen den anderen Mutex → Zirkelschluss, kein Aufwachen mehr.</p>
+<p>Einzelinstanz-Locks. Ein Zyklus in einem anderen Ressourcenmodell ist nicht automatisch derselbe Beweis.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1221,22 +1307,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-vier-coffman-bedingungen" class="slide level2">
 <h2>Die vier Coffman-Bedingungen</h2>
-<ul>
-<li>Ein Deadlock entsteht nur, wenn <strong>alle vier</strong> gleichzeitig gelten:
 <ol type="1">
-<li><strong>Mutual Exclusion</strong> — Ressource nicht teilbar</li>
-<li><strong>Hold-and-Wait</strong> — Task hält A und wartet auf B</li>
-<li><strong>No Preemption</strong> — gehaltene Locks werden nicht entzogen</li>
-<li><strong>Circular Wait</strong> — zyklische Warteschlange</li>
-</ol></li>
-<li>Unsere Regeln brechen genau diese Kette:
-<ul>
-<li>Regel 1 (keine Schachtelung) <span class="math inline">\(\rightarrow\)</span> kein Hold-and-Wait</li>
-<li>Regel 2 (globale Reihenfolge) <span class="math inline">\(\rightarrow\)</span> kein Circular Wait</li>
-</ul></li>
-</ul>
+<li>Mutual exclusion: die Ressource gehört einem</li>
+<li>Hold and wait: halten und auf die nächste warten</li>
+<li>No preemption: <strong>niemand nimmt die Ressource zwangsweise weg</strong> — das ist nicht „keine CPU-Präemption“</li>
+<li>Circular wait: der Zyklus oben</li>
+</ol>
+<p>Alle vier zusammen, in diesem Lockmodell.</p>
 <aside class="notes">
-<p>Coffman et al.&nbsp;(1971): Deadlock nur bei allen vier Bedingungen. In der Praxis genügt es, eine zu brechen — deshalb die beiden Vermeidungsregeln der nächsten Folie.</p>
+<p>CPU-Präemption läuft weiter und verhindert den Deadlock nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1251,19 +1330,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="vermeidung-von-deadlocks" class="slide level2">
 <h2>Vermeidung von Deadlocks</h2>
+<p>Globale Ordnung: immer A vor B.</p>
 <ul>
-<li>Regel 1: Keine geschachtelten Mutexe (bricht Hold-and-Wait)
-<ul>
-<li>Niemals einen zweiten Mutex anfordern, solange einer gehalten wird</li>
-</ul></li>
-<li>Regel 2: Strikte Anforderungsreihenfolge (bricht Circular Wait)
-<ul>
-<li>Wenn Schachtelung unvermeidbar: alle Tasks fordern Mutexe in derselben globalen Reihenfolge an (erst A, dann B)</li>
-</ul></li>
-<li>So kann Task 2 niemals B sperren, solange A schon belegt ist</li>
+<li>T2 wartet auf A und besitzt B noch nicht</li>
+<li>T1 kann B nehmen, dann beide freigeben</li>
+<li>Rang auch für Sperren, die eine Bibliothek innen nimmt</li>
+<li>Timeout nur mit Rollback; allein verhindert er keine inkonsistenten Daten und keinen Livelock</li>
+<li>PIP öffnet keinen Zyklus</li>
 </ul>
 <aside class="notes">
-<p>Beste Praxis: ein Schloss, Critical Section, freigeben, dann nächstes. Bei zwei Schlössern: globale Hierarchie. Task 2 scheitert an A und geht Blocked, bevor sie B berührt — Task 1 hat freie Bahn.</p>
+<p>Freigabe in umgekehrter Reihenfolge ist eine gute Konvention, die Ordnung beim Nehmen ist die Regel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1278,23 +1354,16 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="der-subtile-feind-priority-inversion" class="slide level2">
 <h2>Der subtile Feind: Priority Inversion</h2>
+<p>Lehrmodell, ein Kern, Kosten der API vernachlässigt, H &gt; M &gt; L, keine weiteren Threads:</p>
 <ul>
-<li>Deadlock: System steht — offensichtlich</li>
-<li>Priority Inversion: System läuft weiter, aber Echtzeitgarantien der wichtigsten Task sind zerstört</li>
-<li><strong>Abgrenzung Starvation vs.&nbsp;Priority Inversion:</strong>
-<ul>
-<li><em>Starvation:</em> Scheduler gewährt der Task nie CPU (reine Prioritäts-/Ready-Problematik)</li>
-<li><em>Priority Inversion:</em> High blockiert indirekt über Mutex + mittelpriore Task</li>
-</ul></li>
-<li>Setup:
-<ul>
-<li>Task L (Low), Task M (Medium), Task H (High)</li>
-<li>Ein Mutex, den nur L und H teilen</li>
-<li>M braucht den Mutex nicht</li>
-</ul></li>
+<li>L ab <span class="math inline">\(t = 0\)</span>, nimmt den Lock, braucht <span class="math inline">\(5\,\mathrm{ms}\)</span> CPU bis zum Release</li>
+<li>H ab <span class="math inline">\(t = 1\)</span>, will denselben Lock, danach <span class="math inline">\(1\,\mathrm{ms}\)</span> CPU; <span class="math inline">\(D_H = 10\,\mathrm{ms}\)</span>, absolut <span class="math inline">\(t = 11\,\mathrm{ms}\)</span></li>
+<li>M ab <span class="math inline">\(t = 2\)</span>, <span class="math inline">\(20\,\mathrm{ms}\)</span> CPU, fasst den Lock nicht an</li>
+<li>Vorher sind H und M nicht Ready</li>
+<li>Der kurze Acquire-Versuch von H zählt nicht als CPU-Zeit</li>
 </ul>
 <aside class="notes">
-<p>Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Starvation braucht keinen Mutex — nur den Scheduler. Inversion braucht Mutex + Mittelprio.</p>
+<p>Dieselben Jobs in beiden Bildern. M hat denselben CPU-Bedarf, nicht dieselbe Busy-Wait-Dauer aus der Wanduhr.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1309,15 +1378,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-anatomie-der-inversion-schritt-1-und-2" class="slide level2">
 <h2>Die Anatomie der Inversion (Schritt 1 und 2)</h2>
+<p>Ohne PIP, binärer Semaphor als Ressourcentoken:</p>
 <ul>
-<li>Task L ist Running und sperrt den Mutex (Critical Section)</li>
-<li>Task H wacht auf und präemptiert L</li>
-<li>Task H: Acquire scheitert <span class="math inline">\(\rightarrow\)</span> Blocked (L hält das Schloss)</li>
-<li>Scheduler gibt CPU an L zurück, damit L freigeben kann</li>
-<li>Bis hierhin: normale, gewollte Blockade</li>
+<li><span class="math inline">\(0\)</span>–<span class="math inline">\(2\,\mathrm{ms}\)</span>: L läuft und hält; bei <span class="math inline">\(1\,\mathrm{ms}\)</span> blockiert H</li>
+<li><span class="math inline">\(2\)</span>–<span class="math inline">\(22\,\mathrm{ms}\)</span>: M läuft, L ist nur Ready</li>
+<li><span class="math inline">\(22\)</span>–<span class="math inline">\(25\,\mathrm{ms}\)</span>: L restliche <span class="math inline">\(3\,\mathrm{ms}\)</span>, Release</li>
+<li><span class="math inline">\(25\)</span>–<span class="math inline">\(26\,\mathrm{ms}\)</span>: H rechnet</li>
 </ul>
+<p>Wartezeit von H auf den Lock: <span class="math inline">\(24\,\mathrm{ms}\)</span>. Antwortzeit <span class="math inline">\(R_H = 25\,\mathrm{ms}\)</span>. Fertig bei <span class="math inline">\(26\,\mathrm{ms}\)</span>, nach der Deadline <span class="math inline">\(11\,\mathrm{ms}\)</span>.</p>
+<p>Medium ist das anschauliche Extra, nicht die Bedingung jeder Inversion. „Unbegrenzt“ gilt, wenn Medium dauerhaft Ready bleibt. Bei diesem begrenzten Job ist die Zeit endlich und trotzdem zu lang.</p>
 <aside class="notes">
-<p>High will den Bus, Low hält ihn → High geht Blocked, Low rechnet weiter. Physikalisch korrekt: Low muss fertig werden dürfen.</p>
+<p>Direkte Blockierung durch L und zusätzliche Verdrängung durch M getrennt benennen. Gesamt-CPU-Arbeit: <span class="math inline">\(5+1+20 = 26\,\mathrm{ms}\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1332,19 +1403,18 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-anatomie-der-inversion-schritt-3-und-4" class="slide level2">
 <h2>Die Anatomie der Inversion (Schritt 3 und 4)</h2>
+<p>Mit PIP, ein Mutex, nur dieser Lock:</p>
 <ul>
-<li>Task L rechnet noch (hält den Mutex)</li>
-<li>Task M wacht auf und präemptiert L (<span class="math inline">\(Prio_M &gt; Prio_L\)</span>)</li>
-<li>Task M braucht den Mutex nicht — lange Berechnung</li>
-<li>Drama:
-<ul>
-<li>M blockiert L</li>
-<li>L kann den Mutex nicht freigeben</li>
-<li>H (wichtigste Task!) wartet unbegrenzt in der Queue</li>
-</ul></li>
+<li><span class="math inline">\(0\)</span>–<span class="math inline">\(1\,\mathrm{ms}\)</span>: L mit eigener Priorität</li>
+<li>ab <span class="math inline">\(1\,\mathrm{ms}\)</span>: H blockiert, L <strong>erbt</strong> H</li>
+<li><span class="math inline">\(1\)</span>–<span class="math inline">\(5\,\mathrm{ms}\)</span>: L rechnet weiter, obwohl M bei <span class="math inline">\(2\,\mathrm{ms}\)</span> Ready wird</li>
+<li>Release bei <span class="math inline">\(5\,\mathrm{ms}\)</span>, H rechnet <span class="math inline">\(5\)</span>–<span class="math inline">\(6\,\mathrm{ms}\)</span></li>
+<li>M danach <span class="math inline">\(6\)</span>–<span class="math inline">\(26\,\mathrm{ms}\)</span></li>
 </ul>
+<p>Wartezeit <span class="math inline">\(4\,\mathrm{ms}\)</span>, <span class="math inline">\(R_H = 5\,\mathrm{ms}\)</span>, fertig bei <span class="math inline">\(6\,\mathrm{ms}\)</span>, vor <span class="math inline">\(t = 11\,\mathrm{ms}\)</span>.</p>
+<p>Die Erbschaft beginnt bei Hs Warten, nicht schon ab <span class="math inline">\(t = 0\)</span>. PIP kürzt die Medium-Lücke. Es streicht nicht Ls restliche kritische Sektion.</p>
 <aside class="notes">
-<p>Medium verdrängt Low nach prioritätsbasiertem Scheduling. High hängt Blocked auf Lows Schloss — eine mittelpriore Task blockiert indirekt die höchstpriore. Das ist Priority Inversion, nicht bloßes Verhungern.</p>
+<p>FreeRTOS vereinfacht die Vererbung bei mehreren gehaltenen Mutexen: L fällt nicht nach jedem einzelnen Release zwingend sofort auf die Basispriorität. Das Ein-Mutex-Bild nicht dafür ausgeben. Anbindung an VL2: Blocking gehört in die Antwortzeit.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1359,9 +1429,35 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-der-priority-inversion" class="slide level2">
 <h2>Visualisierung der Priority Inversion</h2>
-<p><img data-src="../_livefigures/inline-plantuml-4ec4d356.svg" class="livefigure"></p>
+<p><img data-src="../_livefigures/inline-plantuml-729653e6.svg" class="livefigure"></p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th></th>
+<th>ohne PIP</th>
+<th>mit PIP</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>H wartet auf den Lock</td>
+<td>24 ms</td>
+<td>4 ms</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(R_H\)</span></td>
+<td>25 ms</td>
+<td>5 ms</td>
+</tr>
+<tr class="odd">
+<td>fertig</td>
+<td>26 ms, zu spät</td>
+<td>6 ms, rechtzeitig</td>
+</tr>
+</tbody>
+</table>
 <aside class="notes">
-<p>Von T=4 bis T=7 rechnet Medium; High bleibt Blocked. Prioritäten logisch umgekehrt: Medium agiert de facto als Höchstprio. Latenz von High hängt von unbeteiligter Task ab — Albtraum für harte Echtzeit.</p>
+<p>Pro Kern eine laufende Aufgabe. Nach dem einmaligen Job ist Ende, keine unendliche Ready-Schleife. Deadline ist ein Lehrwert. Synthetisches Diagramm.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1377,13 +1473,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="warum-ist-das-so-katastrophal" class="slide level2">
 <h2>Warum ist das so katastrophal?</h2>
 <ul>
-<li>Verzögerung von Task H ist nicht mehr durch eine WCET begrenzt</li>
-<li>Jede aufwachende Medium-Prio-Task verlängert die Wartezeit von H</li>
-<li>Harte Echtzeitgarantien brechen (Deadline Miss)</li>
-<li>Genau dieses Muster trat 1997 auf dem Mars auf</li>
+<li>H hält seine angenommene Frist nicht, obwohl H die höchste Basispriorität hat</li>
+<li>Die Ursache ist der Lock plus die Verdrängung von L, nicht „der Scheduler ignoriert H“</li>
+<li>Bei unbeschränktem Medium gibt es keine endliche Schranke mehr</li>
+<li>Bei bekanntem Medium bleibt die Zeit endlich und kann trotzdem die Deadline verfehlen</li>
 </ul>
 <aside class="notes">
-<p>Normale Blockade: WCET der Critical Section planbar. Inversion: Rechenzeiten aller Medium-Tasks addieren sich zur Wartezeit von High — Latenz ungebunden. Kein akademisches Konstrukt: NASA Pathfinder 1997.</p>
+<p>PIP ist kein Beweis, dass jede Frist hält. Die restlichen 4 ms von L bleiben in <span class="math inline">\(R_H\)</span>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1399,19 +1495,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-reale-katastrophe-mars-pathfinder-1997" class="slide level2">
 <h2>Die reale Katastrophe: Mars Pathfinder (1997)</h2>
 <ul>
-<li><ol start="4" type="1">
-<li>Juli 1997: Pathfinder landet mit Rover Sojourner auf dem Mars</li>
-</ol></li>
-<li>Wenige Tage später:
-<ul>
-<li>Bordcomputer friert ein</li>
-<li>Hardware-Watchdogs lösen aus</li>
-<li>Wiederholte Resets (Reset-Loop)</li>
-</ul></li>
-<li>Ein Totalverlust drohte</li>
+<li>Didaktische Vereinfachung, keine Boardmessung und kein Patchlisting</li>
+<li>Quelle: Glenn E. Reeves, Bericht vom 15.12.1997</li>
+<li>VxWorks-„mutex semaphore“ nicht mit einem FreeRTOS-Binary-Semaphore gleichsetzen</li>
+<li>Keine belegte Funkstrecke und kein „Schutz war generell aus“ als ganze Geschichte</li>
 </ul>
 <aside class="notes">
-<p>Euphorie nach erfolgreicher Landung, dann Panik im JPL: sporadische Freezes, Watchdog-Resets. Bug-Jagd im Simulator auf der Erde für ein System 300 Millionen km entfernt.</p>
+<p>Die Fallstudie erklärt Abhängigkeit und Tracing, nicht einen neuen Mars-Vortrag.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1427,17 +1517,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-architektur-des-pathfinder" class="slide level2">
 <h2>Die Architektur des Pathfinder</h2>
 <ul>
-<li>Betriebssystem: VxWorks (präemptives RTOS)</li>
-<li>Tasks (stark vereinfacht):
-<ul>
-<li>Bus-Manager (Task H): höchste Prio, zeitkritischer Informations-Bus</li>
-<li>ASI/MET (Task L): niedrige Prio, Wetter-/Atmosphärendaten auf den Bus</li>
-<li>Kommunikation (Task M): mittlere Prio, formatiert Funkpakete zur Erde</li>
-</ul></li>
-<li>Bus durch Mutex geschützt; M fasst den Mutex nicht an</li>
+<li>Niedrigpriorer ASI/MET-Pfad und der zeitkritische <code>bc_dist</code>-Pfad teilen den Mutex im select/pipe-IPC</li>
+<li>Mittelpriore Arbeit kann ASI/MET verdrängen, während der Mutex gehalten wird</li>
+<li><code>bc_dist</code> verpasst die Frist</li>
+<li><code>bc_sched</code> erkennt das und stößt den Resetpfad an</li>
 </ul>
 <aside class="notes">
-<p>Klassisches L/M/H-Setup: Wetter-Task schreibt über den Bus-Mutex, Bus-Manager braucht denselben Bus blitzschnell, Kommunikations-Task belastet die CPU ohne den Mutex.</p>
+<p>Das L/M/H-Bild ist die Vereinfachung dieser Pfade. Der Mutex lag im IPC, nicht in einer frei erfundenen Hardware.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1452,15 +1538,18 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="was-auf-dem-mars-passierte" class="slide level2">
 <h2>Was auf dem Mars passierte</h2>
+<ol type="1">
+<li>Resets und Fristfehler</li>
+<li>Trace, auf der Erde nachgestellt</li>
+<li>Lock-Abhängigkeit benannt</li>
+<li>Getestete Änderung, wie diese Mutexe erzeugt werden</li>
+</ol>
 <ul>
-<li>ASI/MET (Low) sperrt den Bus-Mutex</li>
-<li>Bus-Manager (High) wacht auf, Acquire scheitert <span class="math inline">\(\rightarrow\)</span> Blocked</li>
-<li>Kommunikation (Medium) präemptiert Low und rechnet lange</li>
-<li>Watchdog: Sicherheits-Timer erwartet regelmäßiges Lebenszeichen des Bus-Managers</li>
-<li>Bus-Manager bleibt Blocked <span class="math inline">\(\rightarrow\)</span> Timer läuft ab <span class="math inline">\(\rightarrow\)</span> Hardware-Reset</li>
+<li>Ein reiner Hardware-Watchdog als einzige Erklärung ist zu grob</li>
+<li>Der valide Patch änderte eine globale Option für die Erzeugung dieser Mutexe</li>
 </ul>
 <aside class="notes">
-<p>Exakt unser Inversions-Szenario. Medium hält Low vom Freigeben ab; Watchdog glaubt das OS tot und resettet hart.</p>
+<p>Keine erfundenen Register und kein erfundener Quelltext des Patches.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1476,13 +1565,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="die-lösung-wie-rettete-die-nasa-die-sonde" class="slide level2">
 <h2>Die Lösung: Wie rettete die NASA die Sonde?</h2>
 <ul>
-<li>VxWorks hatte bereits einen Schutz — standardmäßig deaktiviert (CPU-Overhead sparen)</li>
-<li>NASA lud über <span class="math inline">\(\approx 300\)</span> Millionen km Funkstrecke einen C-Patch hoch</li>
-<li>Patch aktivierte ein Flag bei der Mutex-Erstellung</li>
-<li>Feature-Name: Priority Inheritance Protocol (PIP)</li>
+<li>Priority Inheritance für die betroffenen Mutexe einschalten</li>
+<li>Das kürzt die zusätzliche Verzögerung, analog zum Lehrbild</li>
+<li>Es ist kein Freibrief für beliebige kritische Abschnitte</li>
+<li>Tracing war der Weg zur Ursache, nicht die Vererbung allein</li>
 </ul>
 <aside class="notes">
-<p>PIP war 1997 schon im OS, aber aus Performance-Gründen aus. Ein winziger Config-Patch per Funk — System stabil. Prioritätsvererbung war die Lösung.</p>
+<p>Dieselbe Lehre wie im Labor: ohne Nachweis, dass L den Lock wirklich hielt und H darauf wartete, ist die Geschichte keine Inversion.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1498,15 +1587,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="das-priority-inheritance-protocol-pip" class="slide level2">
 <h2>Das Priority Inheritance Protocol (PIP)</h2>
 <ul>
-<li>Prioritätsvererbung: gezielter Eingriff des RTOS-Schedulers</li>
-<li>Regel: Wenn High einen von Low gehaltenen Mutex anfordert
-<ul>
-<li>dann erbt Low temporär die Priorität von High</li>
-</ul></li>
-<li>Low wird künstlich geboostet, bis <code>Release</code></li>
+<li>H wartet am Mutex, den L hält → L bekommt vorübergehend Hs Dringlichkeit</li>
+<li>M kann L in diesem Fenster nicht mehr verdrängen</li>
+<li>Nach dem Release läuft H, danach M</li>
+<li>Mehrere Mutexe: FreeRTOS-Vererbung vereinfacht; nicht „bei jedem Release sofort Low“ behaupten</li>
+<li>PIP behebt keinen Deadlock und keine allgemeine Starvation</li>
 </ul>
 <aside class="notes">
-<p>OS erkennt: wichtige Task wartet vor dem Schloss. Es boostet den Owner (Low) auf High-Prio, damit die Critical Section so schnell wie möglich endet.</p>
+<p>Wenn Medium nach dem Release dauerhaft Ready bleibt, verhungert L weiter. PIP ist kein Fairnessmechanismus.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1522,14 +1610,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="wie-pip-das-mars-problem-löste" class="slide level2">
 <h2>Wie PIP das Mars-Problem löste</h2>
 <ul>
-<li>Task L hält den Mutex; Task H blockiert bei Acquire</li>
-<li>PIP: L erhält temporär Prio High</li>
-<li>Task M wacht auf — kann L nicht mehr präemptieren (<span class="math inline">\(Prio_L\)</span> jetzt High)</li>
-<li>L beendet Critical Section, ruft Release <span class="math inline">\(\rightarrow\)</span> Prio fällt zurück auf Low</li>
-<li>H übernimmt den Mutex und läuft</li>
+<li>Im Lehrbild: H fertig bei 6 ms statt 26 ms</li>
+<li>Auf dem Pathfinder: die Mutexe des betroffenen Pfads erben, <code>bc_dist</code> wird nicht mehr durch die mittelpriore Verdrängung über die Frist hinaus festgehalten — soweit der Reeves-Bericht die Ursache trägt</li>
+<li>Unbegrenzte mittelpriore Last bliebe ein anderes Problem</li>
 </ul>
 <aside class="notes">
-<p>Wetter-Task erbt Bus-Manager-Prio; Medium prallt ab. Nach Release fällt die geliehene Prio weg, High nimmt den Mutex — Watchdog gerettet.</p>
+<p>Formulierung eng am Bericht halten. Keine Totalverlust-Dramatik ohne Beleg.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1544,9 +1630,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="visualisierung-priority-inheritance-die-prio-beule" class="slide level2">
 <h2>Visualisierung: Priority Inheritance („Die Prio-Beule“)</h2>
-<p><img data-src="../_livefigures/inline-plantuml-3f98e254.svg" class="livefigure"></p>
+<p>Effektive Priorität von L:</p>
+<ul>
+<li><span class="math inline">\(0\)</span>–<span class="math inline">\(1\,\mathrm{ms}\)</span>: Low</li>
+<li><span class="math inline">\(1\)</span>–<span class="math inline">\(5\,\mathrm{ms}\)</span>: geerbt von H</li>
+<li>ab Release: wieder Low, H läuft</li>
+</ul>
+<p>M ist ab <span class="math inline">\(2\,\mathrm{ms}\)</span> Ready und läuft erst ab <span class="math inline">\(6\,\mathrm{ms}\)</span>.</p>
 <aside class="notes">
-<p>Vierte Zeile: Prio-Beule bei T=2. Medium bei T=3 Ready, prallt an geerbter High-Prio ab. Nach Release fällt Prio zurück — Inversion gebannt.</p>
+<p>Die Beule beginnt beim Warten von H, nicht beim Start von L. Frage: Welche Verzögerung bleibt trotz PIP? Die restliche kritische Sektion von L, hier 4 ms ab Hs Versuch.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1562,16 +1654,13 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="achtung-mutex-vs.-semaphore-in-freertos" class="slide level2">
 <h2>Achtung: Mutex vs.&nbsp;Semaphore in FreeRTOS</h2>
 <ul>
-<li>Warum die strikte Trennung Binärer Semaphor vs.&nbsp;Mutex?</li>
-<li>Wichtigste FreeRTOS-/CMSIS-Regel:
-<ul>
-<li><code>osMutexNew</code>: Priority Inheritance automatisch aktiv</li>
-<li><code>osSemaphoreNew</code>: niemals Priority Inheritance (kein Ownership)</li>
-</ul></li>
-<li>Niemals einen Semaphor zur Absicherung von UART oder Arrays nutzen</li>
+<li>Für „ohne PIP“ einen binären Semaphor mit <code>initial_count = 1</code> verwenden</li>
+<li>Für „mit PIP“ einen Mutex mit gesetztem <code>osMutexPrioInherit</code></li>
+<li>Im genannten Adapter das Bit nicht als Abschaltknopf verstehen</li>
+<li>Alle New/Acquire/Release-Aufrufe und Typen wechseln, nicht nur den Handle-Namen</li>
 </ul>
 <aside class="notes">
-<p>Beide wirken wie 0/1-Schalter — der Unterschied ist PIP. Semaphor kennt keinen Owner und kann keine Priorität vererben. UART mit Semaphor = Pathfinder-Risiko auf dem MCU.</p>
+<p>CMSIS-FreeRTOS Technical Data der eingesetzten Version lesen. Öffentliches <code>main</code> belegt die Laborversion nicht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1586,18 +1675,17 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="laborvorbereitung-chaos-am-uart" class="slide level2">
 <h2>Laborvorbereitung: Chaos am UART</h2>
-<ul>
-<li>Ziel: Priority Inversion auf dem STM32 provozieren und heilen</li>
-<li>Schritt 1 — Das Chaos:
-<ul>
-<li>Zwei Tasks (<code>Task1_Normal</code>, <code>Task2_High</code>)</li>
-<li>Beide senden per <code>printf()</code> einen langen String</li>
-<li>Keine Absicherung</li>
-</ul></li>
-<li>Beobachtung: Terminal zeigt zerrissenen String-Salat</li>
-</ul>
+<p>Zwei getrennte Versuche:</p>
+<ol type="1">
+<li>Nachrichtenschutz: überlappende Zeilen ohne und mit Mutex</li>
+<li>Inversion: gleicher CPU-Bedarf, einmal Semaphor, einmal Mutex</li>
+</ol>
+<p>Saubere Zeilen beweisen den Schutz im beobachteten Lauf, keine Deadline.</p>
+<p>115200 Baud, 8N1, 100 Byte, synthetisch:</p>
+<p><span class="math display">\[100 \times 10 / 115200 \approx 8{,}68\,\mathrm{ms}\]</span></p>
+<p>reine Übertragungszeit, plus Software und Warten. Der Lock kann lange gehalten sein, obwohl der C-Code kurz aussieht.</p>
 <aside class="notes">
-<p>Labor wie NASA: ungesicherte UART-Ausgabe, SysTick präemptiert — Buchstabensalat wie im UART-Motivationsbeispiel.</p>
+<p>IT/DMA: die Startfunktion kehrt vor dem Ende zurück. Der Puffer muss bleiben. Die ISR signalisiert; sie gibt keinen CMSIS-Mutex frei. Der Owner released im Thread.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1613,23 +1701,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="labor-schritt-2-die-absicherung" class="slide level2">
 <h2>Labor-Schritt 2: Die Absicherung</h2>
 <ul>
-<li>CMSIS-Mutex anlegen (<code>osMutexNew</code>)</li>
-<li><code>printf()</code> in Acquire/Release-Blöcke packen</li>
-</ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="dt">void</span> Task1_Normal<span class="op">()</span> <span class="op">{</span></span>
-<span id="cb8-2"><a aria-label="2"></a>    <span class="cf">for</span><span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb8-3"><a aria-label="3"></a>        osMutexAcquire<span class="op">(</span>uartMutex<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb8-4"><a aria-label="4"></a>        printf<span class="op">(</span><span class="st">"Task 1 sendet in Ruhe Daten...</span><span class="sc">\n</span><span class="st">"</span><span class="op">);</span></span>
-<span id="cb8-5"><a aria-label="5"></a>        osMutexRelease<span class="op">(</span>uartMutex<span class="op">);</span></span>
-<span id="cb8-6"><a aria-label="6"></a></span>
-<span id="cb8-7"><a aria-label="7"></a>        osDelay<span class="op">(</span><span class="dv">100</span><span class="op">);</span> <span class="co">// Ticks; bei 1000 Hz = 100 ms</span></span>
-<span id="cb8-8"><a aria-label="8"></a>    <span class="op">}</span></span>
-<span id="cb8-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li>Beobachtung: Strings im Terminal sind sauber</li>
+<li>Privater Puffer, dann Acquire, ganze Ausgabe, Abschluss, Release</li>
+<li><code>osDelay</code> außerhalb</li>
+<li>Alle Writer, auch Bibliothekswege, wenn sie denselben UART benutzen</li>
+<li>Status von Acquire und von der Ausgabe prüfen</li>
+<li>Beobachtung offen lassen: Mischtext, <code>HAL_BUSY</code> oder bereits serialisierte Bibliothek</li>
 </ul>
 <aside class="notes">
-<p>Critical Section um printf: Scheduler legt wartende Tasks Blocked. Console wieder lesbar. CMSIS: osDelay in Ticks — analog VL3, nicht pdMS_TO_TICKS.</p>
+<p>Kein „immer Buchstabensalat“ als Sollprotokoll.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1645,17 +1724,15 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="labor-schritt-3-die-sabotage-inversion" class="slide level2">
 <h2>Labor-Schritt 3: Die Sabotage (Inversion)</h2>
 <ul>
-<li>Mutex durch binären Semaphor ersetzen (kein PIP!)</li>
-<li><code>Task3_Medium</code> hinzufügen (Prio zwischen Normal und High)</li>
-<li>Medium: <code>while(1)</code> ohne Delay (CPU-Fresser)</li>
-<li>Beobachtung:
-<ul>
-<li>Terminal verstummt / System hängt</li>
-<li>Medium blockiert Low (hält Semaphor) <span class="math inline">\(\rightarrow\)</span> Priority Inversion: High bleibt ungebunden verzögert</li>
-</ul></li>
+<li>L <code>osPriorityNormal</code>, M <code>osPriorityAboveNormal</code>, H <code>osPriorityHigh</code>, sofern der Wrapper das nicht klemmt</li>
+<li>H und M starten blockiert an <strong>eigenen</strong> Gates, nicht am Test-Lock</li>
+<li>L nimmt den Test-Lock zuerst und meldet das</li>
+<li>Danach ein begrenzter CPU-Abschnitt, kein <code>osDelay</code> als Ersatz für diese Last</li>
+<li>M arbeitet ein begrenztes Pensum und blockiert dann</li>
+<li>Endlosschleife nur als eigener, beendbarer Grenzfall: nach PIP-Release kann L weiter verhungern</li>
 </ul>
 <aside class="notes">
-<p>Semaphor statt Mutex = PIP aus. Heavy-Math-Task aus VL3 in der Mitte: klassische Priority Inversion (nicht Starvation im Scheduler-Sinn) — High wartet auf den Semaphor, Low hält ihn, Medium verdrängt Low.</p>
+<p>Wenn M schon läuft, bevor L den Lock hat, ist das Starvation und keine nachgewiesene Inversion. Frage: War L wirklich Owner, und war H am Lock blockiert?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1671,18 +1748,168 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <section id="labor-schritt-4-die-heilung" class="slide level2">
 <h2>Labor-Schritt 4: Die Heilung</h2>
 <ul>
-<li>Semaphor zurück zu <code>osMutexId_t</code> / <code>osMutexNew</code></li>
-<li>Neu flashen</li>
-<li>Beobachtung:
-<ul>
-<li>Terminal sendet wieder</li>
-<li>OS boostet Low temporär (Priority Inheritance)</li>
-<li>Medium wird beiseitegeschoben, High gerettet</li>
-</ul></li>
-<li>Go für das Labor!</li>
+<li>Dieselben Freigaben und dieselbe CPU-Arbeit</li>
+<li>Mutex statt Semaphor, Attribute gesetzt, API vollständig getauscht</li>
+<li>Erwartung im Lehrsinn: H wartet nur noch auf Ls Rest, nicht auf ganz M</li>
+<li>Messen: L-Acquire, H-Wunsch, M-Start und -Ende, L-Release, H-Erfolg, H-Ende</li>
+<li><code>printf</code> erst nach dem Lauf; GPIO, Trace oder ein geschützter RAM-Puffer</li>
+<li>DWT <code>CYCCNT</code> nur wenn der Zähler läuft und der Takt bekannt ist; er zählt auch fremde Zeit</li>
 </ul>
 <aside class="notes">
-<p>Wie die NASA: eine API-Änderung heilt das System. FreeRTOS-Boost bringt Low durch die Critical Section. Wer das live sieht, hat Synchronisation in Echtzeit verstanden — viel Erfolg!</p>
+<p>Das 24/4-ms-Bild nicht als Boardmessung eintragen. Build ersetzt keine Messung. Kein Projekt im Repo, deshalb hier kein übersetzter Labor-Binary.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="uart-it-und-dma" class="slide level2">
+<h2>UART, IT und DMA</h2>
+<ul>
+<li>Blockierend: Timeout und Release auf jedem Pfad</li>
+<li>IT/DMA: Ende ist nicht die Rückkehr von <code>HAL_UART_Transmit_IT</code></li>
+<li>Abschlusssignal in den Owner-Thread, dort Release</li>
+<li>Ein Logger-Task mit begrenzter Queue ist ein späteres Muster, kein Echtzeitbeweis</li>
+</ul>
+<aside class="notes">
+<p>Queue-Überlauf braucht eine Regel. Das vertieft VL5.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="auswertungsblatt" class="slide level2">
+<h2>Auswertungsblatt</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Feld</th>
+<th>ohne PIP</th>
+<th>mit PIP</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>L Owner vor H?</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>H blockiert am Lock?</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>M-CPU-Bedarf gleich?</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Wartezeit H</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(R_H\)</span></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Deadline gehalten?</td>
+<td>Lehrfrist nur im Modell</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>L nach Release noch verhungert?</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<aside class="notes">
+<p>Fragen: Warum durfte M laufen? Weil L ohne Erbschaft niedriger war. Was bleibt mit PIP? Ls restliche Sektion.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="zusammenfassung-des-tages" class="slide level2">
+<h2>Zusammenfassung des Tages</h2>
+<ul>
+<li>Lost Update: 6 statt 7; <code>volatile</code> genügt nicht</li>
+<li>Semaphor zählt Token; Mutex merkt sich den Owner</li>
+<li>Deadlock ist ein Ressourcenzyklus; Coffman-„No preemption“ meint die Ressource</li>
+<li>Ohne PIP: Wartezeit 24 ms, <span class="math inline">\(R_H = 25\,\mathrm{ms}\)</span>; mit PIP: 4 ms und 5 ms</li>
+<li>Pathfinder: select/pipe-Mutex, Frist von <code>bc_dist</code>, Reset über <code>bc_sched</code>, Reeves 15.12.1997</li>
+</ul>
+<aside class="notes">
+<p>Kontrollen: Token nie negativ und nie über max. Rekursion 0-1-2-1-0. UART-Beispiel 8,68 ms. CPU-Summe beider Varianten 26 ms. Absolute Deadline 11 ms.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="ausblick-auf-termin-5" class="slide level2">
+<h2>Ausblick auf Termin 5</h2>
+<ul>
+<li>Queues transportieren Daten, nicht nur ein Token</li>
+<li>ISR schreibt nicht blockierend in die Queue</li>
+<li>Der Mutex von heute bleibt für den gemeinsamen Puffer zuständig, wenn die Queue ihn nicht ersetzt</li>
+</ul>
+<aside class="notes">
+<p>Mehrkern und DMA bleiben außen vor, bis das Projekt sie wirklich übt.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="quellen" class="slide level2">
+<h2>Quellen</h2>
+<ul>
+<li>Arm CMSIS-RTOS2: Mutex und Semaphore</li>
+<li>CMSIS-FreeRTOS Technical Data der <strong>eingesetzten</strong> Version, nicht blind <code>main</code></li>
+<li>FreeRTOS-Kernel-Book, Ressourcen und Inheritance</li>
+<li>CM4F-<code>portmacro.h</code>: BASEPRI, kritische Sektionen</li>
+<li>CMSIS-Core: PRIMASK und BASEPRI</li>
+<li>GCC <code>__atomic</code>, falls ein Atomic-Beispiel gebaut wird</li>
+<li>Glenn E. Reeves, What really happened on Mars?, 15.12.1997</li>
+</ul>
+<aside class="notes">
+<p>Lehrdiagramme und die Zeiten 2 µs, 5 ms, 8,68 ms sowie 24/4 ms sind synthetisch.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;

@@ -2104,378 +2104,413 @@
     "href": "vorlesungen/04_synchronisation-ressourcen.html#willkommen-auf-der-dunklen-seite-der-echtzeit",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Willkommen auf der dunklen Seite der Echtzeit!",
-    "text": "Willkommen auf der dunklen Seite der Echtzeit!\n\nHerzlich willkommen zum 4. Termin unserer Vorlesung\nLetzte Woche: FreeRTOS installiert und Präemption gefeiert\nHeute: Warum genau diese Präemption das System zerstören kann\nLeitfrage: Was passiert, wenn zwei Tasks gleichzeitig auf dieselbe Hardware zugreifen?\nWerkzeuge: Semaphoren und Mutexe, um das Chaos zu verhindern\n\n\nWillkommen zur vierten Vorlesung! Letzte Woche: FreeRTOS und Präemption als Feature für harte Deadlines. Heute die gefährliche Seite: Asynchronität korrumpiert Daten und kann das System lahmlegen. Fokus: Synchronisation in Echtzeitsystemen."
+    "text": "Willkommen auf der dunklen Seite der Echtzeit!\n\nVierter Termin: geteilte Ressourcen auf einem FreeRTOS-Kern (CM4)\nPräemption ist nützlich und erzeugt konkurrierende Zugriffe\nHeute: Race, Semaphor, Mutex, Deadlock, Prioritätsinversion\nEin Mutex dieses Kernels schützt nicht den CM7, DMA oder fremde ISRs\n\n\nPlattform wie VL3, soweit das Projekt sie bestätigt: NUCLEO-H755ZI-Q, Kernel auf dem CM4. Keine .ioc im Repo — UART, Takt und IRQ-Prioritäten am Cube-Projekt ablesen. Mehrkern nur als Ausblick."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#agenda-für-heute",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#agenda-für-heute",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Agenda für heute",
-    "text": "Agenda für heute\n\nRecap: Die Macht der Präemption\nRace Conditions und geteilte Ressourcen\nAssembler-Ebene: Warum counter++ crasht\nLösungsansätze: Spinlocks vs. Interrupt-Sperren vs. OS-Blocking\nSemaphoren und Mutexe\nDeadlocks, Priority Inversion und Mars Pathfinder (PIP)\n\n\nProblem-Analyse zuerst: Race Conditions und Schuld der Präemption. Dann C auf Assembler-Ebene. Alte Konzepte (Spinlock, IRQ-Sperre) und warum sie im RTOS tödlich sind. Saubere Lösung: Semaphoren und Mutexe. Nach der Pause: Deadlocks und Prioritätsinversion."
+    "text": "Agenda für heute\n\nLost Update und was „atomar“ hier heißt\nSpin, IRQ-Maske, Blockieren\nSemaphor und Mutex, inklusive ISR-Regeln\nDeadlock und Prioritätsinversion mit Zahlen\nPathfinder als belegte Fallstudie, dann Labor\n\n\nDieselben Tasksets nicht mit neuen Zahlen vermischen. Das Inversionsbeispiel gilt für beide Diagramme."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#recap-die-macht-der-präemption",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#recap-die-macht-der-präemption",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Recap: Die Macht der Präemption",
-    "text": "Recap: Die Macht der Präemption\n\nPräemptives Scheduling: Das OS (SysTick) kann einer laufenden Task jederzeit die CPU entreißen\nDie unterbrochene Task merkt davon nichts\nPause exakt am aktuellen Program Counter (PC)\nCPU-Register werden auf den Stack gerettet\nDiese Asynchronität ist gewollt — und extrem gefährlich\n\n\nPräemption: SysTick, PendSV rettet Register, andere Task läuft. Die unterbrochene Task kann nicht sagen „Warte, Satz zu Ende schreiben“. Gefahr: beide Tasks beschreiben dasselbe „Blatt Papier“ — Shared Resource."
+    "text": "Recap: Die Macht der Präemption\n\nWechsel nicht nur am SysTick: auch ein Ereignis oder eine IRQ kann einen Thread bereit machen\nIm üblichen CM4F-Port führt PendSV den Kontextwechsel aus\nAuf einem Kern rechnen nicht zwei Threads gleichzeitig\n„Gleichzeitig“ heißt hier: verschachtelt, mit eigenen Registern\n\n\nAnschluss an VL2/VL3. Hohe Priorität läuft, wenn sie Ready ist. Vor ihrem Release ist sie nicht Ready."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#motivation-der-kampf-um-den-uart",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#motivation-der-kampf-um-den-uart",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Motivation: Der Kampf um den UART",
-    "text": "Motivation: Der Kampf um den UART\n\nSzenario auf dem STM32:\n\nTask_Temp (Prio Normal) sendet: \"Temperatur: 22 Grad\\n\"\nTask_Hum (Prio High) sendet: \"Feuchtigkeit: 40 %\\n\"\n\nBeide rufen printf() auf — byteweise Schreiben auf dasselbe UART-Register\n\n\nAlltäglich: Temperatur- und Feuchtigkeits-Task teilen sich den UART und printf. Feuchtigkeit hat höhere Prio (Timer-getriggert). Was erscheint auf der Konsole?"
+    "text": "Motivation: Der Kampf um den UART\n\nZwei Threads wollen je eine ganze Zeile ausgeben\nprintf schreibt nicht universell Byte für Byte in ein Datenregister\nAbhängig von Retargeting, Puffer, Bibliothekslock, HAL und Transfermodus\nMöglich: vermischte Zeichen, HAL_BUSY, verlorene Ausgabe — nicht „immer Buchstabensalat“\n\n\nDas Motivationsbild ist eine angenommene byteweise Ausgabe. Den echten Pfad im Labor prüfen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#das-visuelle-chaos",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#das-visuelle-chaos",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Das visuelle Chaos",
-    "text": "Das visuelle Chaos\n\nTask_Temp beginnt: &gt; Temp\nSysTick feuert — Task_Hum (High) präemptiert\nTask_Hum schreibt fertig: &gt; TempFeuchtigkeit: 40 %\nTask_Hum schläft; Task_Temp schreibt den Rest\nErgebnis: &gt; TempFeuchtigkeit: 40 %eratur: 22 Grad — Buchstabensalat\n\n\nTemperatur-Task schreibt T-e-m-p, dann präemptiert die Feuchtigkeits-Task und schreibt in dasselbe Register. Danach Rest „eratur“ — Datenstrom korrumpiert."
+    "text": "Das visuelle Chaos\nAngenommene byteweise Retarget-Funktion, ohne gemeinsamen Schutz:\n\n\n\nSchritt\nTemp\nHum\nLeitung\n\n\n\n\n1\nT=21\n\nT=21\n\n\n2\n\nH=40\\n schiebt sich dazwischen\nT=21H=40\n\n\n3\nRest C\\n\n\nZeile zerrissen\n\n\n\nGeschützt: formatieren im privaten Puffer, dann Acquire, ganze Nachricht, Abschluss, Release.\n\nBytes und logische Nachricht trennen. Der Mutex repariert nicht automatisch die C-Bibliothek. Alle Writer müssen denselben Schutz benutzen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#das-problem-geteilter-ressourcen",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#das-problem-geteilter-ressourcen",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Das Problem geteilter Ressourcen",
-    "text": "Das Problem geteilter Ressourcen\n\nUART ist eine Shared Resource (geteilte Ressource)\nUnabgesprochener Zugriff mehrerer Tasks — Datenkorruption\nTypische Shared Resources in Embedded Systems:\n\nPeripherie-Register (UART, SPI, I2C)\nHardware (Displays, Motoren)\nGlobale Variablen (Arrays, Structs, Fehlerzähler)\nDynamischer Speicher (malloc/free)\n\n\n\nBuchstabensalat ist nur die sichtbare Form. Sobald zwei Threads asynchron dieselbe Ressource nutzen: Absturz oder Datenverlust. Auch globale Arrays: halb neu, halb alt — logischer Fehler."
+    "text": "Das Problem geteilter Ressourcen\n\nFehler ist schon ein verlorenes Update, kein nötiger HardFault\nvolatile macht Read-Modify-Write nicht atomar\nEin Mutex schließt die beteiligten Threads aus, nicht jede IRQ\nLesen gehört dazu, wenn mehrere Felder zusammen einen Snapshot bilden\n\n\nFrage: Hilft volatile gegen das verlorene Update? Nein. Es verhindert Wegoptimieren, nicht das Verschränken zweier RMW-Folgen. Data Race im Sprachmodell und der Maschinenablauf sind verwandt, aber nicht dasselbe."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#lernziele-des-heutigen-tages",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#lernziele-des-heutigen-tages",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Lernziele des heutigen Tages",
-    "text": "Lernziele des heutigen Tages\n\nRace Condition auf Assembler-Ebene erklären\nUnterschied Spinlocks vs. OS-Blocking verstehen\nCMSIS-API für Semaphoren und Mutexe kennen\nWissen, warum Mutexe Ownership besitzen und Semaphoren nicht\nPriority Inversion und Priority Inheritance kennen\n\n\nRace Condition auf CPU-Ebene, nicht nur als Buzzword. Semaphor vs. Mutex gezielt einsetzen. Prioritätsinversion: unwichtige Task reißt System mit; FreeRTOS löst mit Priority Inheritance."
+    "text": "Lernziele des heutigen Tages\n\nEin verlorenes Update an Registern und RAM erklären\nSpin, Maskierung und Blockieren nach dem Konkurrenten wählen\nSemaphor-Token und Mutex-Ownership unterscheiden\nDieselbe Inversion ohne und mit PIP nachrechnen\nPathfinder als Vereinfachung einer belegten Ursache einordnen\n\n\nPIP verkürzt die Extra-Verzögerung durch Medium. Es beendet weder Deadlocks noch Starvation."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#was-ist-eine-race-condition",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#was-ist-eine-race-condition",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Was ist eine Race Condition?",
-    "text": "Was ist eine Race Condition?\n\nRace Condition (Wettlaufsituation):\n\nVerhalten hängt unvorhersehbar von der zeitlichen Reihenfolge ab\nCode „funktioniert meistens“, crasht aber selten (Heisenbug)\n\nAuslöser: asynchrone Präemption während einer Datenmanipulation\n\n\nErgebnis hängt davon ab, wer den Wettlauf gewinnt. In 99 % der Fälle zufällig ok. Mit Breakpoints verschwindet der Fehler — klassischer Heisenbug."
+    "text": "Was ist eine Race Condition?\n\nDas Ergebnis hängt von der Verschränkung nicht synchronisierter Zugriffe ab\nAuf einem Kern genügt eine Präemption zwischen Lesen und Schreiben\nBetroffene: Threads untereinander, oder Thread und ISR, oder ein zweiter Busmaster\nDer Mechanismus muss zu diesen Konkurrenten passen\n\n\nErste Frage der Matrix: Wer greift noch zu?"
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#das-simpelste-code-beispiel",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#das-simpelste-code-beispiel",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Das simpelste Code-Beispiel",
-    "text": "Das simpelste Code-Beispiel\n\n\n\nGlobale Variable: volatile uint32_t error_counter = 5;\nTask A (Low) und Task B (High) melden beide einen Fehler\nBeide rufen error_counter++; auf\nWar der Wert 5, erwarten wir danach 7\n\n\n// Globale Variable (Shared Resource)\nvolatile uint32_t error_counter = 5;\n\nvoid Task_A() {\n    // ...\n    error_counter++;\n    // ...\n}\n\nvoid Task_B() {\n    // ...\n    error_counter++;\n    // ...\n}\n\n\nKlassischer Heisenbug: zwei Tasks inkrementieren error_counter von 5. Logik sagt 7 — unter ungünstigem Timing steht am Ende 6. Ein Fehler wurde verschluckt."
+    "text": "Das simpelste Code-Beispiel\nstatic volatile uint32_t counter; /* sichtbar, aber nicht atomar */\n\nvoid bump(void) { counter++; } /* kann ein Update verlieren */\n\nVereinfachtes Compilerbild, keine Garantie für genau drei Befehle\nEin einzelnes atomares Load oder Store ist noch kein atomares ++\n\n\nDas Disassembly des Labor-Builds in die Notiz schreiben, sobald der Build existiert. Heute gibt es kein Firmwareprojekt im Repo."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#der-blick-unter-die-haube-assembler",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#der-blick-unter-die-haube-assembler",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Der Blick unter die Haube (Assembler)",
-    "text": "Der Blick unter die Haube (Assembler)\n\nIn C wirkt counter++ wie ein Befehl\nARM ist Load/Store: kein direktes „Erhöhe-RAM“\nCompiler übersetzt in Read-Modify-Write (3 Befehle):\n\nLDR: Wert aus RAM in Register (\\(R0 = 5\\))\nADD: Register in der ALU erhöhen (\\(R0 = 6\\))\nSTR: Register zurück in den RAM schreiben\n\nWas, wenn Präemption genau zwischen LDR und STR zuschlägt?\n\n\nC ist eine Illusion: Load/Store-Architektur. Interrupt nach jedem Assembler-Befehl möglich. Kritisch: PendSV zwischen ADD und STR."
+    "text": "Der Blick unter die Haube (Assembler)\nLehrbild, nicht das universelle Listing:\n\nLDR: RAM nach Register\nADD: nur das Register\nSTR: Register nach RAM\n\nZwischen den Befehlen kann der Kern wechseln. Das Register von A bleibt in As Kontext, nicht in Bs.\n\nPendSV sichert As Register. B startet mit eigenen Registern und liest den RAM erneut."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-der-datenkorruption",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-der-datenkorruption",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Visualisierung der Datenkorruption",
-    "text": "Visualisierung der Datenkorruption\n\n\nTask B schreibt 6; Task A überschreibt danach mit veralteter 6 — die 7 ist verloren\n\n\nTask A: LDR 5, ADD \\(R0=6\\), dann SysTick. Register auf Stack. Task B liest RAM noch 5, speichert 6. Task A setzt mit STR seine 6 — Erhöhung von B vernichtet."
+    "text": "Visualisierung der Datenkorruption\nStart counter = 5. Zwei Inkremente, erwartet 7.\n\n\n\nZeit\naktiv\nRegister A\nRegister B\nRAM\n\n\n\n\n1\nA liest\n5\n—\n5\n\n\n2\nA addiert\n6\n—\n5\n\n\n3\nWechsel, B liest\n6 (gesichert)\n5\n5\n\n\n4\nB schreibt\n6\n6\n6\n\n\n5\nA schreibt\n6\n—\n6\n\n\n\nGeschützt, gleiche Starts: A liest und schreibt fertig (RAM 6), danach B schreibt 7.\n\nSynthetisches Maschinenmodell. Die 6 von A wandert nicht in Bs Register. volatile ändert diese Tabelle nicht."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#atomarität-die-lösung-des-problems",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#atomarität-die-lösung-des-problems",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Atomarität (Die Lösung des Problems)",
-    "text": "Atomarität (Die Lösung des Problems)\n\nEin Code-Block muss atomar ausgeführt werden\nAtomar (griech. atomos = unteilbar): keine Unterbrechung, kein sichtbarer Zwischenzustand\nSobald Task A ausliest, darf keine andere Task lesen/schreiben, bis Task A gespeichert hat\nFrage: Wie erzwingen wir Atomarität in C?\n\n\nRead-Modify-Write wurde zerrissen. Atomarität: LDR/ADD/STR unteilbar. Mehrere Wege in C — nächste Folien."
+    "text": "Atomarität (Die Lösung des Problems)\n\n„Atomar gegenüber den relevanten Zugriffen“ heißt: kein sichtbarer Zwischenstand für diese Konkurrenten\nDas ist nicht „keine Unterbrechung überhaupt“\nUnter einem Mutex dürfen fremde Threads und IRQs weiterlaufen\nEine kurze IRQ-Maske ist ein anderes Werkzeug mit anderem Schutzradius\n\n\nGegenseitiger Ausschluss und Interruptfreiheit nicht gleichsetzen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#definition-der-begriffe",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#definition-der-begriffe",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Definition der Begriffe",
-    "text": "Definition der Begriffe\n\n\n\nKritische Variable (Shared Resource): Daten, die geschützt werden müssen\nKritischer Abschnitt (Critical Section): Code, der atomar auf die Ressource zugreift\nZiel: nur die Critical Section absichern — nicht die ganze Task\n\n\nvoid Task_A() {\n    // ... Unkritischer Code ...\n\n    // --- START CRITICAL SECTION ---\n    error_counter++;\n    // --- END CRITICAL SECTION ---\n\n    // ... Unkritischer Code ...\n}\n\n\nDaten vs. Code trennen: Shared Resource = Variable/Register; Critical Section = zugreifender Code. Nicht die ganze Task atomar machen — sonst kein Multitasking."
+    "text": "Definition der Begriffe\n\n\n\nBegriff\nhier\n\n\n\n\nKritischer Abschnitt\nZugriffe, die zusammenpassen müssen\n\n\nMutex\nAusschluss von Threads, mit Owner\n\n\nSemaphor\nTokenzahl, ohne Owner\n\n\nSpin\naktiv pollen, bleibt Running\n\n\nBlocked\nkeine eigenen Threadbefehle; der Kern kostet weiter Zeit\n\n\n\nEntscheidung, kurz:\n\n\n\nKonkurrent\nMittel\n\n\n\n\nThread/Thread, Ressource\nMutex\n\n\nISR signalisiert Thread\nSemaphor oder Thread-Flag\n\n\nein Zähler, geprüft\nAtomic oder sehr kurze Sektion\n\n\nmehrere gleiche Plätze\nCounting Semaphore\n\n\nNachricht mit Daten\nQueue (nächster Termin)\n\n\n\n\nEin Mutex wirkt nur, wenn jeder beteiligte Threadzugriff dieselbe Vereinbarung einhält. Atomics: Typ, Alignment und erzeugter Code prüfen; keine Peripherieregister „nebenbei“ atomar machen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#schutzidee-1-der-spinlock-polling",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#schutzidee-1-der-spinlock-polling",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Schutzidee 1: Der Spinlock (Polling)",
-    "text": "Schutzidee 1: Der Spinlock (Polling)\n\n\n\nIdee aus der Bare-Metal-Welt: Flag lock\nVor Zugriff: prüfen, ob lock == 0, dann auf 1 setzen\nAchtung: Check-then-Set auf lock selbst ist eine Race Condition (benötigt atomares Test-and-Set / LDREX/STREX)\nFrage: Warum ist das im RTOS trotzdem eine Katastrophe?\n\n\nvolatile int lock = 0;\n\nvoid Task_A() {\n    while(lock == 1); // Spinning\n    lock = 1;\n\n    error_counter++;\n\n    lock = 0;\n}\n\n\nSpinlock: while-Schleife bis frei, dann sperren. Wartende Task „dreht sich im Kreis“. Warum in Single-Core-RTOS Garantie für Totalausfall?"
+    "text": "Schutzidee 1: Der Spinlock (Polling)\nAbsichtlich falsch:\nwhile (lock) { }\nlock = 1; /* Check-then-Set ist selbst eine Race */\n\nEin korrektes Test-and-Set beseitigt diese Race\nEs beseitigt nicht das Fortschrittsproblem auf einem präemptiven Kern\nFür den Laborfall (H wartet auf L) ist Spin die falsche Wahl\nNicht jedes SMP- oder Bare-Metal-Szenario ist damit verboten\n\n\nZwei Ursachen getrennt halten: nicht-atomares Flag und „der Besitzer bekommt keine CPU“."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#warum-spinlocks-im-rtos-crashen",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#warum-spinlocks-im-rtos-crashen",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Warum Spinlocks im RTOS crashen",
-    "text": "Warum Spinlocks im RTOS crashen\n\nSpinlocks verstoßen gegen RTOS-Regeln\nCPU verbrennen: wartende Task bleibt Running (nicht Blocked), \\(100\\%\\) Last\nDeadlock-Szenario:\n\nTask L (Low) setzt lock = 1\nTask H (High) präemptiert und spinnt auf lock\nH gibt CPU nie ab — L kommt nie zu lock = 0\n\nSystem friert ein; Watchdog schlägt zu\n\n\nOS sieht Spinning als Arbeit. High-Prio spinnt, Low-Prio kommt nie zum Entsperren — klassischer Deadlock auf Single-Core."
+    "text": "Warum Spinlocks im RTOS crashen\nL hält den Lock. H wird bereit und pollt.\n\nSpin: H bleibt Running, L ist nur Ready und gibt nicht frei\nIRQs können trotzdem laufen\nosThreadYield in H gibt L nicht die CPU, solange H höher und Ready bleibt\nBlockieren: H wird nach erfolglosem Acquire Blocked, L kann weiterrechnen\nDas löst noch nicht die spätere Störung durch Medium\n\n\n\n„Blocked = keine eigenen Befehle“ ist richtig. „CPU-Last 0 %“ ist falsch, sobald Idle, Tick oder eine andere Aufgabe rechnet. Frage: Hilft Yield im hohen Spin? Nein."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#schutzidee-2-interrupts-sperren",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#schutzidee-2-interrupts-sperren",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Schutzidee 2: Interrupts sperren",
-    "text": "Schutzidee 2: Interrupts sperren\n\n\n\nPräemption kommt von Hardware-IRQs — also IRQs abschalten?\nCortex-M: __disable_irq() / __enable_irq()\nIn FreeRTOS: taskENTER_CRITICAL() / taskEXIT_CRITICAL()\nIst das eine gute Idee?\n\n\nvoid Task_A() {\n    __disable_irq();\n\n    error_counter++; // atomar\n\n    __enable_irq();\n}\n\n\nOhne Interrupts keine Präemption — counter++ sicher. FreeRTOS bietet fertige Critical-Makros. Klingt perfekt — ist es nicht."
+    "text": "Schutzidee 2: Interrupts sperren\n\nEine kurze, budgetierte Sperre kann zu harten Fristen passen\nGezählt wird die Dauer des Abschnitts plus Ein- und Austritt, nicht „ein Takt“\nLehrwerte: 2 µs bei Frist 100 µs kann passen; 5 ms bei derselben Frist nicht\nIm ungünstigen Fall kommt die restliche Maskierungszeit zur übrigen Latenz hinzu\n__disable_irq / __enable_irq (PRIMASK) nicht mit den FreeRTOS-Makros gleichsetzen\nDer CM4F-Port maskiert über BASEPRI bis zu einer Schwelle und hebt den vorigen Stand wieder auf\n\n\n__enable_irq löscht eine frühere Maske nicht sauber, wenn jemand anderes PRIMASK gesetzt hat. NMI, HardFault und nicht maskierte höhere IRQs fallen nicht unter denselben Schutz. Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit, nicht die Taskskala."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-grenzen-der-interrupt-sperre",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-grenzen-der-interrupt-sperre",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Grenzen der Interrupt-Sperre",
-    "text": "Die Grenzen der Interrupt-Sperre\n\nVorteil: extrem schnell (oft 1 Taktzyklus)\nNachteil: zerstört harte Echtzeit\n\n5 ms IRQ-Sperre: kein UART-RX, kein Motor-Timer, kein Not-Halt\n\nBest Practice:\n\nNur für extrem kurze Zugriffe (eine Variable)\nNiemals für lange printf() oder Delays\n\n\n\nNuklearoption: Welt steht still, Latenzgarantien weg. Erlaubt: drei Werte kopieren oder Zähler++. printf mit gesperrten IRQs = No-Go."
+    "text": "Die Grenzen der Interrupt-Sperre\n\n\nPending heißt: die IRQ wartet, DMA muss damit nicht stehen\nIn der maskierten Sektion kein Delay, kein printf, kein blockierendes API\nTask- und ISR-Makros des Ports nicht vertauschen\n\n\nSynthetische 2 µs und 5 ms, keine Boardmessung. Andere Latenzanteile bleiben außerhalb dieses Balkens."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-richtige-lösung-os-blocking",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-richtige-lösung-os-blocking",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die „richtige“ Lösung: OS-Blocking",
-    "text": "Die „richtige“ Lösung: OS-Blocking\n\nNicht while() und nicht Hardware-Sperren\nLösung über den RTOS-Scheduler\nAn das OS: „Schloss belegt? Dann blockiere mich, bis es frei ist.“\nWartende Task → Blocked (\\(0\\%\\) CPU)\nFreigabe weckt die wartende Task\nWerkzeuge: Semaphoren und Mutexe\n\n\nSchloss vom Scheduler verwalten lassen. Blocked statt Spinning: keine CPU-Verschwendung, kein Spinlock-Deadlock, Interrupts laufen weiter."
+    "text": "Die „richtige“ Lösung: OS-Blocking\n\nFür Thread gegen Thread: blockieren statt polieren\nDer Besitzer muss laufen dürfen, sonst gibt er nicht frei\nPIP kommt erst, wenn ein höherer Thread am selben Mutex wartet\nVorher hat L nur seine eigene Priorität\n\n\nOS-Blocking ist die passende Idee für das Labor, kein Universalschloss."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-block-1",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-block-1",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Zusammenfassung Block 1",
-    "text": "Zusammenfassung Block 1\n\nAsynchrone Präemption + Shared Variables → Race Conditions\nC-Befehl wird zu LDR/ADD/STR — Datenverlust möglich\nCritical Sections müssen atomar abgesichert sein\nSpinlocks: CPU-Brand und Deadlocks\nInterrupt-Sperren: Latenzgarantien zerstört\nSaubere Lösung: OS-Blocking (nächster Block: Semaphoren)\n\n\nHeisenbugs auf Assembler-Ebene verstanden. Spinlocks und lange IRQ-Sperren sind Gift. Fragen zur Hardware-Ebene, bevor Block 2 (Semaphoren) beginnt?"
+    "text": "Zusammenfassung Block 1\n\nVerlorenes Update: Endwert 6 statt 7\nSpin kann den Besitzer verdrängen\nIRQ-Sperre ist ein Latenzbudget, kein Tabu und kein Freifahrtschein\nMutex: beteiligte Threads, nicht der ganze Chip\n\n\nNächster Block: Token und Ownership."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#was-ist-ein-semaphor",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#was-ist-ein-semaphor",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Was ist ein Semaphor?",
-    "text": "Was ist ein Semaphor?\n\nGriechisch: „Zeichenträger“ (sema = Zeichen, pherein = tragen)\nHistorisch: Eisenbahn-Signalflügel (frei / Halt)\nIT (Edsger W. Dijkstra, 1965):\n\nVom OS verwaltete Integer-Variable (Zähler)\nZwei atomare Operationen: Acquire (Nehmen) und Release (Freigeben)\n\n\n\nSemaphor = Zeichenträger, Eisenbahn-Analogie. Dijkstra 1965: Zähler mit Acquire/Release, exklusiv vom Scheduler verwaltet."
+    "text": "Was ist ein Semaphor?\n\nZähler von 0 bis max_count\nAcquire verringert, Release erhöht\nKein gespeicherter Owner: ein anderer Thread darf Release rufen\nISR: osSemaphoreRelease ist vorgesehen; Acquire nur mit Timeout 0\nZusätzlich muss die NVIC-Priorität die Syscall-Schwelle einhalten\n„ISR-safe“ heißt nicht „aus jeder Priorität“\n\n\nCMSIS-Spezifikation und FreeRTOS-Adapter können abweichen. Die Datei cmsis_os2.c im Projekt ist maßgeblich. Version hier nicht erfunden."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#typ-1-counting-semaphore-zähl-semaphor",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#typ-1-counting-semaphore-zähl-semaphor",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Typ 1: Counting Semaphore (Zähl-Semaphor)",
-    "text": "Typ 1: Counting Semaphore (Zähl-Semaphor)\n\nZähler von \\(0\\) bis \\(N\\)\nAnalogie: Parkhaus mit \\(N = 50\\) Plätzen\nAcquire: Auto rein \\(\\rightarrow\\) Zähler sinkt\nZähler \\(= 0\\): Schranke zu, weitere Tasks Blocked\nRelease: Auto raus \\(\\rightarrow\\) Zähler steigt, Wartende werden geweckt\nEinsatz: begrenzte Ressourcen (z. B. Pool aus 3 Verbindungen)\n\n\nParkhaus-Analogie: Acquire = einfahren, Release = ausfahren. Bei 0 blockiert das OS die nächste Task, bis wieder Platz ist."
+    "text": "Typ 1: Counting Semaphore (Zähl-Semaphor)\nPool mit osSemaphoreNew(3, 3, NULL):\n\n\n\nAktion\ncount\n\n\n\n\nStart\n3\n\n\nA nimmt\n2\n\n\nB nimmt\n1\n\n\nC nimmt\n0\n\n\nD mit timeout = 0\n0, Fehler, kein Zugriff\n\n\nB gibt frei\n1, ein Wartender kann nehmen\n\n\n\n\nEs entsteht kein zweiter freier Platz\nDer Zähler ist Verfügbarkeit, nicht die Identität eines Platzes\nHöchste Priorität unter den Wartenden, soweit das Backend so wählt; keine Fairnessgarantie\nRelease bei vollem Zähler kann osErrorResource liefern und erzeugt kein weiteres Token\n\n\nParkhaus bleibt Bild. Die Bilanz ist die Aussage. „95 % binär“ ohne Quelle streichen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#typ-2-binary-semaphore-binärer-semaphor",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#typ-2-binary-semaphore-binärer-semaphor",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Typ 2: Binary Semaphore (Binärer Semaphor)",
-    "text": "Typ 2: Binary Semaphore (Binärer Semaphor)\n\nSpezialfall mit Max-Wert \\(N = 1\\)\nZähler nur \\(0\\) (belegt) oder \\(1\\) (frei)\nAnalogie: Toilettenschlüssel an der Tankstelle\nIn FreeRTOS/CMSIS meist binär genutzt\n\n\nParkhaus mit einem Platz / ein Schlüssel. In der Mikrocontroller-Praxis ~95 % binäre Semaphoren."
+    "text": "Typ 2: Binary Semaphore (Binärer Semaphor)\n\nmax_count = 1\nRessource anfangs da: osSemaphoreNew(1, 1, NULL)\nEreignis, noch nichts passiert: osSemaphoreNew(1, 0, NULL)\nZwei Releases vor dem nächsten Acquire: der zweite scheitert am vollen Zähler\nZwei Hardwareereignisse werden damit nicht automatisch zweimal bearbeitet\n\n\nTokenbedeutung festlegen: „Arbeit da“, „ein Ereignis“ oder „Puffer frei“. Sonst Queue oder größerer Zähler, jeweils mit Überlaufregel."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#cmsis-api-für-semaphoren",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#cmsis-api-für-semaphoren",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "CMSIS-API für Semaphoren",
-    "text": "CMSIS-API für Semaphoren\n// 1. Definition & Initialisierung\nosSemaphoreId_t mySemHandle;\nmySemHandle = osSemaphoreNew(1, 1, NULL); // (Max-Count, Initial-Count)\n\n// 2. Warten (Acquire)\nosSemaphoreAcquire(mySemHandle, osWaitForever);\n\n// 3. Freigeben (Release)\nosSemaphoreRelease(mySemHandle);\n\nosSemaphoreNew(1, 1, NULL): binär, Schlüssel frei. Timeout: osWaitForever oder z. B. 100 Ticks. Danach osSemaphoreRelease."
+    "text": "CMSIS-API für Semaphoren\nosSemaphoreId_t sem =\n    osSemaphoreNew(1, 0, NULL); /* Ereignis, anfangs leer */\nif (sem == NULL) { Error_Handler(); }\n\nosStatus_t st = osSemaphoreAcquire(sem, 10);\nif (st != osOK) {\n    /* Timeout oder Parameter: Ressource nicht anfassen */\n}\n\ntimeout = 0: sofortiger Status, kein Blockieren\nendliche Tickzahl: Fehlerpfad Pflicht\nosWaitForever: kann dauern; das ist eine Entwurfsentscheidung\n\n\nStatus nicht ignorieren. Ein binärer Semaphor ist kein Mutex mit Owner."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#was-exakt-passiert-bei-acquire-release",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#was-exakt-passiert-bei-acquire-release",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Was exakt passiert bei Acquire / Release?",
-    "text": "Was exakt passiert bei Acquire / Release?\n\n\nAcquire (Schlüssel holen)\n\nOS prüft Zähler\n\\(\\ge 1\\): Zähler \\(-1\\), Task läuft weiter\n\\(== 0\\): Task Running \\(\\rightarrow\\) Blocked\n\n\nRelease (Schlüssel zurück)\n\nOS erhöht Zähler um 1\nWartende Task in Blocked-Liste?\nJa: höchstpriore \\(\\rightarrow\\) Ready (ggf. Präemption)\n\n\n\nAcquire: Zähler &gt; 0 → abziehen und weiter; sonst Blocked. Release: erhöhen, ggf. Ready und sofortiger Kontextwechsel."
+    "text": "Was exakt passiert bei Acquire / Release?\n\n\n\ncount\nAcquire\nRelease\n\n\n\n\n&gt; 0\nzählt herunter, osOK\nzählt hoch, bis max\n\n\n0, Warten\nThread Blocked\nweckt einen Wartenden oder zählt auf 1\n\n\n= max\n—\nosErrorResource, Zähler bleibt\n\n\n\n\nNicht jedes Acquire bei 0 blockiert. Timeout 0 kehrt sofort zurück."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#der-hauptanwendungsfall-signalisierung",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#der-hauptanwendungsfall-signalisierung",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Der Hauptanwendungsfall: Signalisierung",
-    "text": "Der Hauptanwendungsfall: Signalisierung\n\nBinärer Semaphor in FreeRTOS selten zur Absicherung\nPrimär: Signalisierung (Einweg-Kommunikation)\nDeferred Interrupt Processing:\n\nISR muss kurz bleiben\nISR ruft nur Release()\nWartende Task (Acquire) übernimmt die Arbeit\n\n\n\nZur Variablenabsicherung kommt der Mutex. Semaphoren: Signal aus ISR an Task. Deferred Interrupt Processing = zeitversetzte Verarbeitung in Task-Kontext."
+    "text": "Der Hauptanwendungsfall: Signalisierung\n/* ISR, Priorität erlaubt, Handle gültig, Kernel läuft */\nif (osSemaphoreRelease(sem) != osOK) {\n    /* voll: Ereignis geht in diesem Tokenmodell verloren */\n}\n\n/* Worker */\nif (osSemaphoreAcquire(sem, osWaitForever) == osOK) {\n    bearbeite_ein_token();\n}\n\nKein printf, kein Mutex, kein blockierendes Warten in der ISR\nDer Worker läuft erst, wenn die ISR fertig ist und seine Priorität ihn wählen lässt\nDie CPU muss vor dem Ereignis nicht Idle gewesen sein\n\n\nThread-Flags können dasselbe Bit ebenfalls zusammenfassen. Beides ist keine verlustfreie Ereigniswarteschlange."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#sequenzdiagramm-signalisierung-aus-der-isr",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#sequenzdiagramm-signalisierung-aus-der-isr",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Sequenzdiagramm: Signalisierung aus der ISR",
-    "text": "Sequenzdiagramm: Signalisierung aus der ISR\n\n\n\n\n\nsequenceDiagram\n    participant Hardware as SPI Hardware\n    participant ISR as Hardware ISR\n    participant OS as OS Scheduler\n    participant Task as Verarbeitung (Task)\n\n    Note over Task: Blocked (Wartet auf Acquire)\n    Hardware-&gt;&gt;ISR: Interrupt (Daten da!)\n    ISR-&gt;&gt;OS: osSemaphoreRelease()\n    Note over OS: Zähler = 1\n    OS-&gt;&gt;Task: Task wird Ready\n    Note over Task: Task wird Running (Präemption)\n    Task-&gt;&gt;Task: Acquire rutscht durch (Zähler = 0)\n    Note over Task: Verarbeitet die Daten aufwendig!\n\n\n\n\n\n\n\nTask wartet, CPU idle. ISR nur Release, dann Task Ready/Running, Acquire setzt Zähler auf 0. Elegante Anbindung asynchroner Hardware ohne lange ISR."
+    "text": "Sequenzdiagramm: Signalisierung aus der ISR\n\n\n\n\n\n%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'actorBkg': '#FFFFFF', 'actorBorder': '#E5E5EA', 'signalColor': '#86868B'}}}%%\nsequenceDiagram\n  participant HW as Hardware\n  participant ISR as ISR\n  participant K as Kernel\n  participant W as Worker\n  Note over W: wartet, Semaphor leer\n  HW-&gt;&gt;ISR: Ereignis\n  ISR-&gt;&gt;K: osSemaphoreRelease\n  K--&gt;&gt;W: Ready\n  Note over ISR: ISR endet, dann PendSV\n  W-&gt;&gt;K: Acquire ok\n  W-&gt;&gt;W: eine Verarbeitung\n\n\n\n\n\n\n\nKein Thread-Kontext mitten in der noch laufenden ISR. Ein zweites Release bei max 1 kann scheitern."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#semaphoren-haben-kein-ownership",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#semaphoren-haben-kein-ownership",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Semaphoren haben kein „Ownership“",
-    "text": "Semaphoren haben kein „Ownership“\n\nKein Besitzrecht: OS merkt sich nicht, wer Acquire gemacht hat\nTask A: Acquire; Task B: Release — erlaubt!\nFür Signalisierung (ISR \\(\\rightarrow\\) Task) genial\nFür Variablen-/UART-Schutz: Sicherheitsrisiko\nFremdtask kann Schloss versehentlich „aufbrechen“\n\n\nKein Ownership: ISR darf Release ohne Acquire. Für UART-Schutz gefährlich — wir brauchen ein Schloss mit Besitzer."
+    "text": "Semaphoren haben kein „Ownership“\n\nToken merkt sich nicht, wer ihn nahm\nB darf ein Release ausführen, auch wenn A genommen hat\nDas ist für Ereignisse nützlich und für eine exklusive Ressource gefährlich\nDeshalb für den UART-Schutz ein Mutex, nicht dieses Token\n\n\nBinärer Semaphor mit Start 1 ist die Laborvariante ohne PIP, nicht „derselbe Mutex mit anderem Namen“."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-rettung-der-mutex-mutual-exclusion",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-rettung-der-mutex-mutual-exclusion",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Rettung: Der Mutex (Mutual Exclusion)",
-    "text": "Die Rettung: Der Mutex (Mutual Exclusion)\n\nMutex = gegenseitiger Ausschluss\nKonzeptionell binärer Semaphor, aber mit Ownership\nEiserne Regel: nur die sperrende Task darf entsperren\nFremde Task/ISR wird abgewiesen\nPerfekt für Critical Sections\n\n\nMutual Exclusion + Ownership im TCB. Falsches Release → Fehlercode, Schloss bleibt zu. Sicher gegen Fremdeinwirkung."
+    "text": "Die Rettung: Der Mutex (Mutual Exclusion)\n\nZustände: frei, oder Owner = A\nB kann nicht freigeben: die API liefert einen Fehler\nDas ist keine Hardware-Sperre gegen wilde Speicherzugriffe\nNach erfolgreichem Acquire zugreifen, genau einmal passend freigeben\nIn den gezeigten Abschnitten kein vermeidbares osDelay: der Mutex maskiert keine IRQs, verlängert aber die Sperrdauer\n\nconst osMutexAttr_t attr = { .attr_bits = osMutexPrioInherit };\nosMutexId_t m = osMutexNew(&attr);\n\nCMSIS-Default 0 enthält kein PIP-Bit. Die dokumentierte CMSIS-FreeRTOS-Anbindung erzeugt native Mutexe trotzdem mit Inheritance und ignoriert dieses Bit. Weglassen schaltet PIP dort nicht ab. Lokal cmsis_os2.c prüfen. osMutexRobust ist in dieser Anbindung nicht die Rettung."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#cmsis-api-für-mutexe",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#cmsis-api-für-mutexe",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "CMSIS-API für Mutexe",
-    "text": "CMSIS-API für Mutexe\n// 1. Definition\nosMutexId_t uartMutex;\nuartMutex = osMutexNew(NULL);\n\nvoid PrintTask() {\n    for(;;) {\n        osMutexAcquire(uartMutex, osWaitForever);\n\n        // --- CRITICAL SECTION ---\n        printf(\"Temperatur: 22 Grad\\n\");\n        // --- END CRITICAL SECTION ---\n\n        osMutexRelease(uartMutex);\n        osDelay(500); // Ticks; bei 1000 Hz = 500 ms\n    }\n}\n\nAPI ähnlich Semaphor. Vor printf: Acquire; danach Release. Buchstabensalat vom UART-Beispiel ist damit behoben."
+    "text": "CMSIS-API für Mutexe\nvoid Task(void *argument) {\n    (void)argument;\n    if (osMutexAcquire(m, 5) != osOK) {\n        return; /* Hilfs-return, nicht Task-Ende */\n    }\n    if (sensor_ok()) {\n        use_resource();\n    }\n    osMutexRelease(m); /* Normal- und Fehlerpfad */\n}\n\nAcquire-Fehler: Ressource nicht anfassen, nichts freigeben\nosMutexAcquire / osMutexRelease sind in CMSIS nicht aus der ISR erlaubt\nRekursion ist ein eigenes Attribut osMutexRecursive\nZweites Acquire ohne Rekursion: bei osWaitForever Self-Deadlock, bei Timeout ein Fehler\n\n\nFrühes return aus einer Hilfsfunktion ist erlaubt. return aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#sonderfälle-in-der-c-programmierung",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#sonderfälle-in-der-c-programmierung",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Sonderfälle in der C-Programmierung",
-    "text": "Sonderfälle in der C-Programmierung\n\n\n\nWas ist an diesem Code tödlich?\nAntwort: Mutex bleibt für immer verriegelt\nFrüher oder später: Deadlock im System\nAchtung bei frühem return / break in Critical Sections\n\n\nosMutexAcquire(myMutex, osWaitForever);\n\nif (sensor_error == 1) {\n    return; // Release fehlt!\n}\n\nerror_counter++;\nosMutexRelease(myMutex);\n\n\nKlassiker: Acquire, dann früher Return ohne Release — Schlüssel verloren, alle anderen stapeln sich vor der Tür."
+    "text": "Sonderfälle in der C-Programmierung\nRekursion, Owner A:\n\n\n\nAktion\nZähler\n\n\n\n\nfrei\n0\n\n\nA acquire\n1\n\n\nA acquire nochmal\n2\n\n\nA release\n1\n\n\nA release\n0, jetzt darf B\n\n\n\n\nB kommt erst bei 0 dran\nOhne osMutexRecursive ist die zweite Zeile kein harmloses Verschachteln\n\n\nZähler, Owner und Tokenzahl nicht vermischen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#best-practices-für-mutexe",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#best-practices-für-mutexe",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Best Practices für Mutexe",
-    "text": "Best Practices für Mutexe\n\nSo kurz wie möglich in der Critical Section bleiben\nNiemals in einer Critical Section osDelay() aufrufen\nNiemals Mutex-Acquire in einer Hardware-ISR\n\nverboten / undefiniert bzw. Assert (ISR kann nicht Blocked werden)\n\nIn ISRs: Semaphoren oder Queues, keine Mutexe\n\n\nKurz halten: sperren, kopieren, entsperren. osDelay im Mutex = Todsünde. ISR darf nicht schlafen — nur Semaphor/Queue. Als Nächstes: Deadlocks, Priority Inversion und Mars Pathfinder."
+    "text": "Best Practices für Mutexe\n\nEin Mutex, eine Invariante, ein Name\nAlle konkurrierenden Threadzugriffe, auch die lesenden\nKurzer Abschnitt; Rechnung vor dem Acquire, Warten dahinter\nKeine zweite Sperre in umgekehrter Reihenfolge\nKein Mischen von osMutex* und xSemaphore* auf demselben Objekt\n\n\nOwnership verhindert die falsche Freigabe über die API. Sie verhindert nicht, dass jemand den Puffer direkt beschreibt."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#rekursive-mutexe",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#rekursive-mutexe",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Rekursive Mutexe",
-    "text": "Rekursive Mutexe\n\nWas passiert, wenn eine Task eine Funktion aufruft, die einen Mutex sperrt, und diese wiederum denselben Mutex anfordert?\nNormaler Mutex: Self-Deadlock — die Task blockiert sich selbst\nRekursiver Mutex:\n\nOS merkt sich den Owner\nErneutes Acquire durch denselben Owner: count++ statt Blockade\nFreigabe erst, wenn Release genauso oft wie Acquire (count == 0)\n\nNutzen: verschachtelte Bibliotheken (z. B. Dateisysteme)\n\n\nSpezialfall rekursiver Mutex: Bibliotheksfunktion A sperrt, ruft Hilfsfunktion B auf, B sperrt denselben Mutex. Normaler Mutex → Self-Deadlock. Rekursiv: Owner erkannt, Counter hoch; Release muss ebenso oft folgen."
+    "text": "Rekursive Mutexe\n\nNur wenn dieselbe Aufgabe dasselbe Schloss erneut braucht\nNicht als Ersatz für eine klare Aufrufstruktur\nJedes Acquire braucht sein Release\nPrioritätsvererbung und Rekursion sind unabhängig wählbare Bits; der FreeRTOS-Adapter folgt den Bits nicht in jedem Punkt\n\n\nIm Zweifel nicht rekursiv, sondern die kritische Arbeit in eine Funktion ohne erneutes Acquire legen."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-mutex-vs.-binärer-semaphor",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-mutex-vs.-binärer-semaphor",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Zusammenfassung: Mutex vs. Binärer Semaphor",
-    "text": "Zusammenfassung: Mutex vs. Binärer Semaphor\n\n\n\n\n\n\n\n\nEigenschaft\nBinärer Semaphor\nMutex (Mutual Exclusion)\n\n\n\n\nHauptzweck\nSignalisierung (ISR \\(\\rightarrow\\) Task)\nAbsicherung (Ressourcenschutz)\n\n\nOwnership\nNein\nJa (nur Besitzer entsperrt)\n\n\nVerwendung in ISR?\nJa (Release weckt Task)\nNein (verboten / Assert)\n\n\nPriority Inheritance?\nNein\nJa (dazu gleich mehr)\n\n\nGefahr\nFremdtask öffnet Schloss versehentlich\nPriority Inversion (ohne OS-Schutz)\n\n\n\n\nSemaphor: Event aus ISR an Task, kein Ownership. Mutex: persönliches Schloss für Shared Resources. Klausurregel: Array/UART absichern → immer Mutex."
+    "text": "Zusammenfassung: Mutex vs. Binärer Semaphor\n\n\n\n\nMutex\nBinärer Semaphor\n\n\n\n\nGegenstand\nRessource mit Owner\nToken oder Ereignis\n\n\nRelease durch anderen\nAPI-Fehler\nmöglich\n\n\nISR\nweder Acquire noch Release\nRelease ja, Acquire nur Timeout 0\n\n\nPIP\ngewünscht und im Adapter oft immer an\nnein\n\n\nStart\nfrei\n0 oder 1, je nach Bedeutung\n\n\n\n\nFolie 50 der alten Fassung gilt für den genannten Adapter, nicht als CMSIS-Gesetz für jedes RTOS."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-katastrophe-wenn-locks-böse-werden",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-katastrophe-wenn-locks-böse-werden",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Katastrophe: Wenn Locks böse werden",
-    "text": "Die Katastrophe: Wenn Locks böse werden\n\nMutexe schützen Daten — erzeugen aber zwei gefürchtete Fehlerbilder:\n\nDeadlocks (Verklemmung)\nPriority Inversion (Prioritätsinversion)\n\nOft erst nach Wochen im Feldtest sichtbar\nZerstören das Vertrauen in Echtzeitgarantien\n\n\nFalscher Umgang mit Schlössern: Deadlocks und Prioritätsinversionen. Am Schreibtisch selten, unter Last und asynchronen Interrupts kritisch."
+    "text": "Die Katastrophe: Wenn Locks böse werden\n\nDeadlock: eine Gruppe wartet zyklisch\nAndere Threads und IRQs können weiterlaufen\n„System freeze“ ist eine mögliche Folge, kein Zwang\nPrioritätsinversion ist kein Deadlock: der Besitzer könnte weiterrechnen, wird aber verdrängt\n\n\nStarvation aus VL3: High bleibt Ready und gibt die CPU nicht her. Inversion: High ist am Lock blockiert, Low kommt nicht zum Release."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#der-deadlock-verklemmung",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#der-deadlock-verklemmung",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Der Deadlock (Verklemmung)",
-    "text": "Der Deadlock (Verklemmung)\n\nDeadlock: Tasks warten zirkulär aufeinander — niemand kommt weiter\nBeispiel:\n\nTask 1 sperrt Mutex A\nPräemption → Task 2 sperrt Mutex B\nTask 2 will Mutex A \\(\\rightarrow\\) Blocked\nTask 1 will Mutex B \\(\\rightarrow\\) Blocked\n\nErgebnis: System Freeze\n\n\n\n\n\n\ngraph TD\n    T1[Task 1]\n    T2[Task 2]\n    M1[Mutex A]\n    M2[Mutex B]\n\n    T1 --&gt;|hält| M1\n    T2 --&gt;|hält| M2\n    T1 --&gt;|wartet| M2\n    T2 --&gt;|wartet| M1\n\n    style T1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style T2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important\n    style M1 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important\n    style M2 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important\n\n\n\n\n\n\n\nZwei Ressourcen (SPI = Mutex A, Display = Mutex B). Task 1 hält A, Task 2 hält B; beide wollen den anderen Mutex → Zirkelschluss, kein Aufwachen mehr."
+    "text": "Der Deadlock (Verklemmung)\nT1 hält A und will B. T2 hält B und will A.\n\n\n\nPfeil\nBedeutung\n\n\n\n\nTask → Ressource\nwartet auf\n\n\nRessource → Task\nzugeteilt an\n\n\n\nZyklus: T1 → B → T2 → A → T1.\nAblauf: T1 nimmt A, T2 nimmt B, T2 wartet auf A, T1 wartet auf B. Beide Locks sind gehalten, beide Threads Blocked.\n\nEinzelinstanz-Locks. Ein Zyklus in einem anderen Ressourcenmodell ist nicht automatisch derselbe Beweis."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-vier-coffman-bedingungen",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-vier-coffman-bedingungen",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die vier Coffman-Bedingungen",
-    "text": "Die vier Coffman-Bedingungen\n\nEin Deadlock entsteht nur, wenn alle vier gleichzeitig gelten:\n\nMutual Exclusion — Ressource nicht teilbar\nHold-and-Wait — Task hält A und wartet auf B\nNo Preemption — gehaltene Locks werden nicht entzogen\nCircular Wait — zyklische Warteschlange\n\nUnsere Regeln brechen genau diese Kette:\n\nRegel 1 (keine Schachtelung) \\(\\rightarrow\\) kein Hold-and-Wait\nRegel 2 (globale Reihenfolge) \\(\\rightarrow\\) kein Circular Wait\n\n\n\nCoffman et al. (1971): Deadlock nur bei allen vier Bedingungen. In der Praxis genügt es, eine zu brechen — deshalb die beiden Vermeidungsregeln der nächsten Folie."
+    "text": "Die vier Coffman-Bedingungen\n\nMutual exclusion: die Ressource gehört einem\nHold and wait: halten und auf die nächste warten\nNo preemption: niemand nimmt die Ressource zwangsweise weg — das ist nicht „keine CPU-Präemption“\nCircular wait: der Zyklus oben\n\nAlle vier zusammen, in diesem Lockmodell.\n\nCPU-Präemption läuft weiter und verhindert den Deadlock nicht."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#vermeidung-von-deadlocks",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#vermeidung-von-deadlocks",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Vermeidung von Deadlocks",
-    "text": "Vermeidung von Deadlocks\n\nRegel 1: Keine geschachtelten Mutexe (bricht Hold-and-Wait)\n\nNiemals einen zweiten Mutex anfordern, solange einer gehalten wird\n\nRegel 2: Strikte Anforderungsreihenfolge (bricht Circular Wait)\n\nWenn Schachtelung unvermeidbar: alle Tasks fordern Mutexe in derselben globalen Reihenfolge an (erst A, dann B)\n\nSo kann Task 2 niemals B sperren, solange A schon belegt ist\n\n\nBeste Praxis: ein Schloss, Critical Section, freigeben, dann nächstes. Bei zwei Schlössern: globale Hierarchie. Task 2 scheitert an A und geht Blocked, bevor sie B berührt — Task 1 hat freie Bahn."
+    "text": "Vermeidung von Deadlocks\nGlobale Ordnung: immer A vor B.\n\nT2 wartet auf A und besitzt B noch nicht\nT1 kann B nehmen, dann beide freigeben\nRang auch für Sperren, die eine Bibliothek innen nimmt\nTimeout nur mit Rollback; allein verhindert er keine inkonsistenten Daten und keinen Livelock\nPIP öffnet keinen Zyklus\n\n\nFreigabe in umgekehrter Reihenfolge ist eine gute Konvention, die Ordnung beim Nehmen ist die Regel."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#der-subtile-feind-priority-inversion",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#der-subtile-feind-priority-inversion",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Der subtile Feind: Priority Inversion",
-    "text": "Der subtile Feind: Priority Inversion\n\nDeadlock: System steht — offensichtlich\nPriority Inversion: System läuft weiter, aber Echtzeitgarantien der wichtigsten Task sind zerstört\nAbgrenzung Starvation vs. Priority Inversion:\n\nStarvation: Scheduler gewährt der Task nie CPU (reine Prioritäts-/Ready-Problematik)\nPriority Inversion: High blockiert indirekt über Mutex + mittelpriore Task\n\nSetup:\n\nTask L (Low), Task M (Medium), Task H (High)\nEin Mutex, den nur L und H teilen\nM braucht den Mutex nicht\n\n\n\nPrioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Starvation braucht keinen Mutex — nur den Scheduler. Inversion braucht Mutex + Mittelprio."
+    "text": "Der subtile Feind: Priority Inversion\nLehrmodell, ein Kern, Kosten der API vernachlässigt, H &gt; M &gt; L, keine weiteren Threads:\n\nL ab \\(t = 0\\), nimmt den Lock, braucht \\(5\\,\\mathrm{ms}\\) CPU bis zum Release\nH ab \\(t = 1\\), will denselben Lock, danach \\(1\\,\\mathrm{ms}\\) CPU; \\(D_H = 10\\,\\mathrm{ms}\\), absolut \\(t = 11\\,\\mathrm{ms}\\)\nM ab \\(t = 2\\), \\(20\\,\\mathrm{ms}\\) CPU, fasst den Lock nicht an\nVorher sind H und M nicht Ready\nDer kurze Acquire-Versuch von H zählt nicht als CPU-Zeit\n\n\nDieselben Jobs in beiden Bildern. M hat denselben CPU-Bedarf, nicht dieselbe Busy-Wait-Dauer aus der Wanduhr."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-anatomie-der-inversion-schritt-1-und-2",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-anatomie-der-inversion-schritt-1-und-2",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Anatomie der Inversion (Schritt 1 und 2)",
-    "text": "Die Anatomie der Inversion (Schritt 1 und 2)\n\nTask L ist Running und sperrt den Mutex (Critical Section)\nTask H wacht auf und präemptiert L\nTask H: Acquire scheitert \\(\\rightarrow\\) Blocked (L hält das Schloss)\nScheduler gibt CPU an L zurück, damit L freigeben kann\nBis hierhin: normale, gewollte Blockade\n\n\nHigh will den Bus, Low hält ihn → High geht Blocked, Low rechnet weiter. Physikalisch korrekt: Low muss fertig werden dürfen."
+    "text": "Die Anatomie der Inversion (Schritt 1 und 2)\nOhne PIP, binärer Semaphor als Ressourcentoken:\n\n\\(0\\)–\\(2\\,\\mathrm{ms}\\): L läuft und hält; bei \\(1\\,\\mathrm{ms}\\) blockiert H\n\\(2\\)–\\(22\\,\\mathrm{ms}\\): M läuft, L ist nur Ready\n\\(22\\)–\\(25\\,\\mathrm{ms}\\): L restliche \\(3\\,\\mathrm{ms}\\), Release\n\\(25\\)–\\(26\\,\\mathrm{ms}\\): H rechnet\n\nWartezeit von H auf den Lock: \\(24\\,\\mathrm{ms}\\). Antwortzeit \\(R_H = 25\\,\\mathrm{ms}\\). Fertig bei \\(26\\,\\mathrm{ms}\\), nach der Deadline \\(11\\,\\mathrm{ms}\\).\nMedium ist das anschauliche Extra, nicht die Bedingung jeder Inversion. „Unbegrenzt“ gilt, wenn Medium dauerhaft Ready bleibt. Bei diesem begrenzten Job ist die Zeit endlich und trotzdem zu lang.\n\nDirekte Blockierung durch L und zusätzliche Verdrängung durch M getrennt benennen. Gesamt-CPU-Arbeit: \\(5+1+20 = 26\\,\\mathrm{ms}\\)."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-anatomie-der-inversion-schritt-3-und-4",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-anatomie-der-inversion-schritt-3-und-4",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Anatomie der Inversion (Schritt 3 und 4)",
-    "text": "Die Anatomie der Inversion (Schritt 3 und 4)\n\nTask L rechnet noch (hält den Mutex)\nTask M wacht auf und präemptiert L (\\(Prio_M &gt; Prio_L\\))\nTask M braucht den Mutex nicht — lange Berechnung\nDrama:\n\nM blockiert L\nL kann den Mutex nicht freigeben\nH (wichtigste Task!) wartet unbegrenzt in der Queue\n\n\n\nMedium verdrängt Low nach prioritätsbasiertem Scheduling. High hängt Blocked auf Lows Schloss — eine mittelpriore Task blockiert indirekt die höchstpriore. Das ist Priority Inversion, nicht bloßes Verhungern."
+    "text": "Die Anatomie der Inversion (Schritt 3 und 4)\nMit PIP, ein Mutex, nur dieser Lock:\n\n\\(0\\)–\\(1\\,\\mathrm{ms}\\): L mit eigener Priorität\nab \\(1\\,\\mathrm{ms}\\): H blockiert, L erbt H\n\\(1\\)–\\(5\\,\\mathrm{ms}\\): L rechnet weiter, obwohl M bei \\(2\\,\\mathrm{ms}\\) Ready wird\nRelease bei \\(5\\,\\mathrm{ms}\\), H rechnet \\(5\\)–\\(6\\,\\mathrm{ms}\\)\nM danach \\(6\\)–\\(26\\,\\mathrm{ms}\\)\n\nWartezeit \\(4\\,\\mathrm{ms}\\), \\(R_H = 5\\,\\mathrm{ms}\\), fertig bei \\(6\\,\\mathrm{ms}\\), vor \\(t = 11\\,\\mathrm{ms}\\).\nDie Erbschaft beginnt bei Hs Warten, nicht schon ab \\(t = 0\\). PIP kürzt die Medium-Lücke. Es streicht nicht Ls restliche kritische Sektion.\n\nFreeRTOS vereinfacht die Vererbung bei mehreren gehaltenen Mutexen: L fällt nicht nach jedem einzelnen Release zwingend sofort auf die Basispriorität. Das Ein-Mutex-Bild nicht dafür ausgeben. Anbindung an VL2: Blocking gehört in die Antwortzeit."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-der-priority-inversion",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-der-priority-inversion",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Visualisierung der Priority Inversion",
-    "text": "Visualisierung der Priority Inversion\n\n\nVon T=4 bis T=7 rechnet Medium; High bleibt Blocked. Prioritäten logisch umgekehrt: Medium agiert de facto als Höchstprio. Latenz von High hängt von unbeteiligter Task ab — Albtraum für harte Echtzeit."
+    "text": "Visualisierung der Priority Inversion\n\n\n\n\n\nohne PIP\nmit PIP\n\n\n\n\nH wartet auf den Lock\n24 ms\n4 ms\n\n\n\\(R_H\\)\n25 ms\n5 ms\n\n\nfertig\n26 ms, zu spät\n6 ms, rechtzeitig\n\n\n\n\nPro Kern eine laufende Aufgabe. Nach dem einmaligen Job ist Ende, keine unendliche Ready-Schleife. Deadline ist ein Lehrwert. Synthetisches Diagramm."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#warum-ist-das-so-katastrophal",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#warum-ist-das-so-katastrophal",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Warum ist das so katastrophal?",
-    "text": "Warum ist das so katastrophal?\n\nVerzögerung von Task H ist nicht mehr durch eine WCET begrenzt\nJede aufwachende Medium-Prio-Task verlängert die Wartezeit von H\nHarte Echtzeitgarantien brechen (Deadline Miss)\nGenau dieses Muster trat 1997 auf dem Mars auf\n\n\nNormale Blockade: WCET der Critical Section planbar. Inversion: Rechenzeiten aller Medium-Tasks addieren sich zur Wartezeit von High — Latenz ungebunden. Kein akademisches Konstrukt: NASA Pathfinder 1997."
+    "text": "Warum ist das so katastrophal?\n\nH hält seine angenommene Frist nicht, obwohl H die höchste Basispriorität hat\nDie Ursache ist der Lock plus die Verdrängung von L, nicht „der Scheduler ignoriert H“\nBei unbeschränktem Medium gibt es keine endliche Schranke mehr\nBei bekanntem Medium bleibt die Zeit endlich und kann trotzdem die Deadline verfehlen\n\n\nPIP ist kein Beweis, dass jede Frist hält. Die restlichen 4 ms von L bleiben in \\(R_H\\)."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-reale-katastrophe-mars-pathfinder-1997",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-reale-katastrophe-mars-pathfinder-1997",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die reale Katastrophe: Mars Pathfinder (1997)",
-    "text": "Die reale Katastrophe: Mars Pathfinder (1997)\n\n\nJuli 1997: Pathfinder landet mit Rover Sojourner auf dem Mars\n\nWenige Tage später:\n\nBordcomputer friert ein\nHardware-Watchdogs lösen aus\nWiederholte Resets (Reset-Loop)\n\nEin Totalverlust drohte\n\n\nEuphorie nach erfolgreicher Landung, dann Panik im JPL: sporadische Freezes, Watchdog-Resets. Bug-Jagd im Simulator auf der Erde für ein System 300 Millionen km entfernt."
+    "text": "Die reale Katastrophe: Mars Pathfinder (1997)\n\nDidaktische Vereinfachung, keine Boardmessung und kein Patchlisting\nQuelle: Glenn E. Reeves, Bericht vom 15.12.1997\nVxWorks-„mutex semaphore“ nicht mit einem FreeRTOS-Binary-Semaphore gleichsetzen\nKeine belegte Funkstrecke und kein „Schutz war generell aus“ als ganze Geschichte\n\n\nDie Fallstudie erklärt Abhängigkeit und Tracing, nicht einen neuen Mars-Vortrag."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-architektur-des-pathfinder",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-architektur-des-pathfinder",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Architektur des Pathfinder",
-    "text": "Die Architektur des Pathfinder\n\nBetriebssystem: VxWorks (präemptives RTOS)\nTasks (stark vereinfacht):\n\nBus-Manager (Task H): höchste Prio, zeitkritischer Informations-Bus\nASI/MET (Task L): niedrige Prio, Wetter-/Atmosphärendaten auf den Bus\nKommunikation (Task M): mittlere Prio, formatiert Funkpakete zur Erde\n\nBus durch Mutex geschützt; M fasst den Mutex nicht an\n\n\nKlassisches L/M/H-Setup: Wetter-Task schreibt über den Bus-Mutex, Bus-Manager braucht denselben Bus blitzschnell, Kommunikations-Task belastet die CPU ohne den Mutex."
+    "text": "Die Architektur des Pathfinder\n\nNiedrigpriorer ASI/MET-Pfad und der zeitkritische bc_dist-Pfad teilen den Mutex im select/pipe-IPC\nMittelpriore Arbeit kann ASI/MET verdrängen, während der Mutex gehalten wird\nbc_dist verpasst die Frist\nbc_sched erkennt das und stößt den Resetpfad an\n\n\nDas L/M/H-Bild ist die Vereinfachung dieser Pfade. Der Mutex lag im IPC, nicht in einer frei erfundenen Hardware."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#was-auf-dem-mars-passierte",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#was-auf-dem-mars-passierte",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Was auf dem Mars passierte",
-    "text": "Was auf dem Mars passierte\n\nASI/MET (Low) sperrt den Bus-Mutex\nBus-Manager (High) wacht auf, Acquire scheitert \\(\\rightarrow\\) Blocked\nKommunikation (Medium) präemptiert Low und rechnet lange\nWatchdog: Sicherheits-Timer erwartet regelmäßiges Lebenszeichen des Bus-Managers\nBus-Manager bleibt Blocked \\(\\rightarrow\\) Timer läuft ab \\(\\rightarrow\\) Hardware-Reset\n\n\nExakt unser Inversions-Szenario. Medium hält Low vom Freigeben ab; Watchdog glaubt das OS tot und resettet hart."
+    "text": "Was auf dem Mars passierte\n\nResets und Fristfehler\nTrace, auf der Erde nachgestellt\nLock-Abhängigkeit benannt\nGetestete Änderung, wie diese Mutexe erzeugt werden\n\n\nEin reiner Hardware-Watchdog als einzige Erklärung ist zu grob\nDer valide Patch änderte eine globale Option für die Erzeugung dieser Mutexe\n\n\nKeine erfundenen Register und kein erfundener Quelltext des Patches."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#die-lösung-wie-rettete-die-nasa-die-sonde",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#die-lösung-wie-rettete-die-nasa-die-sonde",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Die Lösung: Wie rettete die NASA die Sonde?",
-    "text": "Die Lösung: Wie rettete die NASA die Sonde?\n\nVxWorks hatte bereits einen Schutz — standardmäßig deaktiviert (CPU-Overhead sparen)\nNASA lud über \\(\\approx 300\\) Millionen km Funkstrecke einen C-Patch hoch\nPatch aktivierte ein Flag bei der Mutex-Erstellung\nFeature-Name: Priority Inheritance Protocol (PIP)\n\n\nPIP war 1997 schon im OS, aber aus Performance-Gründen aus. Ein winziger Config-Patch per Funk — System stabil. Prioritätsvererbung war die Lösung."
+    "text": "Die Lösung: Wie rettete die NASA die Sonde?\n\nPriority Inheritance für die betroffenen Mutexe einschalten\nDas kürzt die zusätzliche Verzögerung, analog zum Lehrbild\nEs ist kein Freibrief für beliebige kritische Abschnitte\nTracing war der Weg zur Ursache, nicht die Vererbung allein\n\n\nDieselbe Lehre wie im Labor: ohne Nachweis, dass L den Lock wirklich hielt und H darauf wartete, ist die Geschichte keine Inversion."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#das-priority-inheritance-protocol-pip",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#das-priority-inheritance-protocol-pip",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Das Priority Inheritance Protocol (PIP)",
-    "text": "Das Priority Inheritance Protocol (PIP)\n\nPrioritätsvererbung: gezielter Eingriff des RTOS-Schedulers\nRegel: Wenn High einen von Low gehaltenen Mutex anfordert\n\ndann erbt Low temporär die Priorität von High\n\nLow wird künstlich geboostet, bis Release\n\n\nOS erkennt: wichtige Task wartet vor dem Schloss. Es boostet den Owner (Low) auf High-Prio, damit die Critical Section so schnell wie möglich endet."
+    "text": "Das Priority Inheritance Protocol (PIP)\n\nH wartet am Mutex, den L hält → L bekommt vorübergehend Hs Dringlichkeit\nM kann L in diesem Fenster nicht mehr verdrängen\nNach dem Release läuft H, danach M\nMehrere Mutexe: FreeRTOS-Vererbung vereinfacht; nicht „bei jedem Release sofort Low“ behaupten\nPIP behebt keinen Deadlock und keine allgemeine Starvation\n\n\nWenn Medium nach dem Release dauerhaft Ready bleibt, verhungert L weiter. PIP ist kein Fairnessmechanismus."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#wie-pip-das-mars-problem-löste",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#wie-pip-das-mars-problem-löste",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Wie PIP das Mars-Problem löste",
-    "text": "Wie PIP das Mars-Problem löste\n\nTask L hält den Mutex; Task H blockiert bei Acquire\nPIP: L erhält temporär Prio High\nTask M wacht auf — kann L nicht mehr präemptieren (\\(Prio_L\\) jetzt High)\nL beendet Critical Section, ruft Release \\(\\rightarrow\\) Prio fällt zurück auf Low\nH übernimmt den Mutex und läuft\n\n\nWetter-Task erbt Bus-Manager-Prio; Medium prallt ab. Nach Release fällt die geliehene Prio weg, High nimmt den Mutex — Watchdog gerettet."
+    "text": "Wie PIP das Mars-Problem löste\n\nIm Lehrbild: H fertig bei 6 ms statt 26 ms\nAuf dem Pathfinder: die Mutexe des betroffenen Pfads erben, bc_dist wird nicht mehr durch die mittelpriore Verdrängung über die Frist hinaus festgehalten — soweit der Reeves-Bericht die Ursache trägt\nUnbegrenzte mittelpriore Last bliebe ein anderes Problem\n\n\nFormulierung eng am Bericht halten. Keine Totalverlust-Dramatik ohne Beleg."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-priority-inheritance-die-prio-beule",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#visualisierung-priority-inheritance-die-prio-beule",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Visualisierung: Priority Inheritance („Die Prio-Beule“)",
-    "text": "Visualisierung: Priority Inheritance („Die Prio-Beule“)\n\n\nVierte Zeile: Prio-Beule bei T=2. Medium bei T=3 Ready, prallt an geerbter High-Prio ab. Nach Release fällt Prio zurück — Inversion gebannt."
+    "text": "Visualisierung: Priority Inheritance („Die Prio-Beule“)\nEffektive Priorität von L:\n\n\\(0\\)–\\(1\\,\\mathrm{ms}\\): Low\n\\(1\\)–\\(5\\,\\mathrm{ms}\\): geerbt von H\nab Release: wieder Low, H läuft\n\nM ist ab \\(2\\,\\mathrm{ms}\\) Ready und läuft erst ab \\(6\\,\\mathrm{ms}\\).\n\nDie Beule beginnt beim Warten von H, nicht beim Start von L. Frage: Welche Verzögerung bleibt trotz PIP? Die restliche kritische Sektion von L, hier 4 ms ab Hs Versuch."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#achtung-mutex-vs.-semaphore-in-freertos",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#achtung-mutex-vs.-semaphore-in-freertos",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Achtung: Mutex vs. Semaphore in FreeRTOS",
-    "text": "Achtung: Mutex vs. Semaphore in FreeRTOS\n\nWarum die strikte Trennung Binärer Semaphor vs. Mutex?\nWichtigste FreeRTOS-/CMSIS-Regel:\n\nosMutexNew: Priority Inheritance automatisch aktiv\nosSemaphoreNew: niemals Priority Inheritance (kein Ownership)\n\nNiemals einen Semaphor zur Absicherung von UART oder Arrays nutzen\n\n\nBeide wirken wie 0/1-Schalter — der Unterschied ist PIP. Semaphor kennt keinen Owner und kann keine Priorität vererben. UART mit Semaphor = Pathfinder-Risiko auf dem MCU."
+    "text": "Achtung: Mutex vs. Semaphore in FreeRTOS\n\nFür „ohne PIP“ einen binären Semaphor mit initial_count = 1 verwenden\nFür „mit PIP“ einen Mutex mit gesetztem osMutexPrioInherit\nIm genannten Adapter das Bit nicht als Abschaltknopf verstehen\nAlle New/Acquire/Release-Aufrufe und Typen wechseln, nicht nur den Handle-Namen\n\n\nCMSIS-FreeRTOS Technical Data der eingesetzten Version lesen. Öffentliches main belegt die Laborversion nicht."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#laborvorbereitung-chaos-am-uart",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#laborvorbereitung-chaos-am-uart",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Laborvorbereitung: Chaos am UART",
-    "text": "Laborvorbereitung: Chaos am UART\n\nZiel: Priority Inversion auf dem STM32 provozieren und heilen\nSchritt 1 — Das Chaos:\n\nZwei Tasks (Task1_Normal, Task2_High)\nBeide senden per printf() einen langen String\nKeine Absicherung\n\nBeobachtung: Terminal zeigt zerrissenen String-Salat\n\n\nLabor wie NASA: ungesicherte UART-Ausgabe, SysTick präemptiert — Buchstabensalat wie im UART-Motivationsbeispiel."
+    "text": "Laborvorbereitung: Chaos am UART\nZwei getrennte Versuche:\n\nNachrichtenschutz: überlappende Zeilen ohne und mit Mutex\nInversion: gleicher CPU-Bedarf, einmal Semaphor, einmal Mutex\n\nSaubere Zeilen beweisen den Schutz im beobachteten Lauf, keine Deadline.\n115200 Baud, 8N1, 100 Byte, synthetisch:\n\\[100 \\times 10 / 115200 \\approx 8{,}68\\,\\mathrm{ms}\\]\nreine Übertragungszeit, plus Software und Warten. Der Lock kann lange gehalten sein, obwohl der C-Code kurz aussieht.\n\nIT/DMA: die Startfunktion kehrt vor dem Ende zurück. Der Puffer muss bleiben. Die ISR signalisiert; sie gibt keinen CMSIS-Mutex frei. Der Owner released im Thread."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-2-die-absicherung",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-2-die-absicherung",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Labor-Schritt 2: Die Absicherung",
-    "text": "Labor-Schritt 2: Die Absicherung\n\nCMSIS-Mutex anlegen (osMutexNew)\nprintf() in Acquire/Release-Blöcke packen\n\nvoid Task1_Normal() {\n    for(;;) {\n        osMutexAcquire(uartMutex, osWaitForever);\n        printf(\"Task 1 sendet in Ruhe Daten...\\n\");\n        osMutexRelease(uartMutex);\n\n        osDelay(100); // Ticks; bei 1000 Hz = 100 ms\n    }\n}\n\nBeobachtung: Strings im Terminal sind sauber\n\n\nCritical Section um printf: Scheduler legt wartende Tasks Blocked. Console wieder lesbar. CMSIS: osDelay in Ticks — analog VL3, nicht pdMS_TO_TICKS."
+    "text": "Labor-Schritt 2: Die Absicherung\n\nPrivater Puffer, dann Acquire, ganze Ausgabe, Abschluss, Release\nosDelay außerhalb\nAlle Writer, auch Bibliothekswege, wenn sie denselben UART benutzen\nStatus von Acquire und von der Ausgabe prüfen\nBeobachtung offen lassen: Mischtext, HAL_BUSY oder bereits serialisierte Bibliothek\n\n\nKein „immer Buchstabensalat“ als Sollprotokoll."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-3-die-sabotage-inversion",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-3-die-sabotage-inversion",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Labor-Schritt 3: Die Sabotage (Inversion)",
-    "text": "Labor-Schritt 3: Die Sabotage (Inversion)\n\nMutex durch binären Semaphor ersetzen (kein PIP!)\nTask3_Medium hinzufügen (Prio zwischen Normal und High)\nMedium: while(1) ohne Delay (CPU-Fresser)\nBeobachtung:\n\nTerminal verstummt / System hängt\nMedium blockiert Low (hält Semaphor) \\(\\rightarrow\\) Priority Inversion: High bleibt ungebunden verzögert\n\n\n\nSemaphor statt Mutex = PIP aus. Heavy-Math-Task aus VL3 in der Mitte: klassische Priority Inversion (nicht Starvation im Scheduler-Sinn) — High wartet auf den Semaphor, Low hält ihn, Medium verdrängt Low."
+    "text": "Labor-Schritt 3: Die Sabotage (Inversion)\n\nL osPriorityNormal, M osPriorityAboveNormal, H osPriorityHigh, sofern der Wrapper das nicht klemmt\nH und M starten blockiert an eigenen Gates, nicht am Test-Lock\nL nimmt den Test-Lock zuerst und meldet das\nDanach ein begrenzter CPU-Abschnitt, kein osDelay als Ersatz für diese Last\nM arbeitet ein begrenztes Pensum und blockiert dann\nEndlosschleife nur als eigener, beendbarer Grenzfall: nach PIP-Release kann L weiter verhungern\n\n\nWenn M schon läuft, bevor L den Lock hat, ist das Starvation und keine nachgewiesene Inversion. Frage: War L wirklich Owner, und war H am Lock blockiert?"
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-4-die-heilung",
     "href": "vorlesungen/04_synchronisation-ressourcen.html#labor-schritt-4-die-heilung",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "Labor-Schritt 4: Die Heilung",
-    "text": "Labor-Schritt 4: Die Heilung\n\nSemaphor zurück zu osMutexId_t / osMutexNew\nNeu flashen\nBeobachtung:\n\nTerminal sendet wieder\nOS boostet Low temporär (Priority Inheritance)\nMedium wird beiseitegeschoben, High gerettet\n\nGo für das Labor!\n\n\nWie die NASA: eine API-Änderung heilt das System. FreeRTOS-Boost bringt Low durch die Critical Section. Wer das live sieht, hat Synchronisation in Echtzeit verstanden — viel Erfolg!"
+    "text": "Labor-Schritt 4: Die Heilung\n\nDieselben Freigaben und dieselbe CPU-Arbeit\nMutex statt Semaphor, Attribute gesetzt, API vollständig getauscht\nErwartung im Lehrsinn: H wartet nur noch auf Ls Rest, nicht auf ganz M\nMessen: L-Acquire, H-Wunsch, M-Start und -Ende, L-Release, H-Erfolg, H-Ende\nprintf erst nach dem Lauf; GPIO, Trace oder ein geschützter RAM-Puffer\nDWT CYCCNT nur wenn der Zähler läuft und der Takt bekannt ist; er zählt auch fremde Zeit\n\n\nDas 24/4-ms-Bild nicht als Boardmessung eintragen. Build ersetzt keine Messung. Kein Projekt im Repo, deshalb hier kein übersetzter Labor-Binary."
+  },
+  {
+    "objectID": "vorlesungen/04_synchronisation-ressourcen.html#uart-it-und-dma",
+    "href": "vorlesungen/04_synchronisation-ressourcen.html#uart-it-und-dma",
+    "title": "04 · Synchronisation und Ressourcenverwaltung",
+    "section": "UART, IT und DMA",
+    "text": "UART, IT und DMA\n\nBlockierend: Timeout und Release auf jedem Pfad\nIT/DMA: Ende ist nicht die Rückkehr von HAL_UART_Transmit_IT\nAbschlusssignal in den Owner-Thread, dort Release\nEin Logger-Task mit begrenzter Queue ist ein späteres Muster, kein Echtzeitbeweis\n\n\nQueue-Überlauf braucht eine Regel. Das vertieft VL5."
+  },
+  {
+    "objectID": "vorlesungen/04_synchronisation-ressourcen.html#auswertungsblatt",
+    "href": "vorlesungen/04_synchronisation-ressourcen.html#auswertungsblatt",
+    "title": "04 · Synchronisation und Ressourcenverwaltung",
+    "section": "Auswertungsblatt",
+    "text": "Auswertungsblatt\n\n\n\nFeld\nohne PIP\nmit PIP\n\n\n\n\nL Owner vor H?\n\n\n\n\nH blockiert am Lock?\n\n\n\n\nM-CPU-Bedarf gleich?\n\n\n\n\nWartezeit H\n\n\n\n\n\\(R_H\\)\n\n\n\n\nDeadline gehalten?\nLehrfrist nur im Modell\n\n\n\nL nach Release noch verhungert?\n\n\n\n\n\n\nFragen: Warum durfte M laufen? Weil L ohne Erbschaft niedriger war. Was bleibt mit PIP? Ls restliche Sektion."
+  },
+  {
+    "objectID": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-des-tages",
+    "href": "vorlesungen/04_synchronisation-ressourcen.html#zusammenfassung-des-tages",
+    "title": "04 · Synchronisation und Ressourcenverwaltung",
+    "section": "Zusammenfassung des Tages",
+    "text": "Zusammenfassung des Tages\n\nLost Update: 6 statt 7; volatile genügt nicht\nSemaphor zählt Token; Mutex merkt sich den Owner\nDeadlock ist ein Ressourcenzyklus; Coffman-„No preemption“ meint die Ressource\nOhne PIP: Wartezeit 24 ms, \\(R_H = 25\\,\\mathrm{ms}\\); mit PIP: 4 ms und 5 ms\nPathfinder: select/pipe-Mutex, Frist von bc_dist, Reset über bc_sched, Reeves 15.12.1997\n\n\nKontrollen: Token nie negativ und nie über max. Rekursion 0-1-2-1-0. UART-Beispiel 8,68 ms. CPU-Summe beider Varianten 26 ms. Absolute Deadline 11 ms."
+  },
+  {
+    "objectID": "vorlesungen/04_synchronisation-ressourcen.html#ausblick-auf-termin-5",
+    "href": "vorlesungen/04_synchronisation-ressourcen.html#ausblick-auf-termin-5",
+    "title": "04 · Synchronisation und Ressourcenverwaltung",
+    "section": "Ausblick auf Termin 5",
+    "text": "Ausblick auf Termin 5\n\nQueues transportieren Daten, nicht nur ein Token\nISR schreibt nicht blockierend in die Queue\nDer Mutex von heute bleibt für den gemeinsamen Puffer zuständig, wenn die Queue ihn nicht ersetzt\n\n\nMehrkern und DMA bleiben außen vor, bis das Projekt sie wirklich übt."
+  },
+  {
+    "objectID": "vorlesungen/04_synchronisation-ressourcen.html#quellen",
+    "href": "vorlesungen/04_synchronisation-ressourcen.html#quellen",
+    "title": "04 · Synchronisation und Ressourcenverwaltung",
+    "section": "Quellen",
+    "text": "Quellen\n\nArm CMSIS-RTOS2: Mutex und Semaphore\nCMSIS-FreeRTOS Technical Data der eingesetzten Version, nicht blind main\nFreeRTOS-Kernel-Book, Ressourcen und Inheritance\nCM4F-portmacro.h: BASEPRI, kritische Sektionen\nCMSIS-Core: PRIMASK und BASEPRI\nGCC __atomic, falls ein Atomic-Beispiel gebaut wird\nGlenn E. Reeves, What really happened on Mars?, 15.12.1997\n\n\nLehrdiagramme und die Zeiten 2 µs, 5 ms, 8,68 ms sowie 24/4 ms sind synthetisch."
   },
   {
     "objectID": "vorlesungen/06_multicore-echtzeit.html#willkommen-in-der-multicore-königsklasse",
