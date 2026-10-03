@@ -1068,16 +1068,22 @@ sequenceDiagram
 </section>
 <section id="cmsis-api-für-mutexe" class="slide level2">
 <h2>CMSIS-API für Mutexe</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">void</span> Task<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb6-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
-<span id="cb6-3"><a aria-label="3"></a>    <span class="cf">if</span> <span class="op">(</span>osMutexAcquire<span class="op">(</span>m<span class="op">,</span> <span class="dv">5</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb6-4"><a aria-label="4"></a>        <span class="cf">return</span><span class="op">;</span> <span class="co">/* Hilfs-return, nicht Task-Ende */</span></span>
-<span id="cb6-5"><a aria-label="5"></a>    <span class="op">}</span></span>
-<span id="cb6-6"><a aria-label="6"></a>    <span class="cf">if</span> <span class="op">(</span>sensor_ok<span class="op">())</span> <span class="op">{</span></span>
-<span id="cb6-7"><a aria-label="7"></a>        use_resource<span class="op">();</span></span>
-<span id="cb6-8"><a aria-label="8"></a>    <span class="op">}</span></span>
-<span id="cb6-9"><a aria-label="9"></a>    osMutexRelease<span class="op">(</span>m<span class="op">);</span> <span class="co">/* Normal- und Fehlerpfad */</span></span>
-<span id="cb6-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">static</span> <span class="dt">int</span> use_locked<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-2"><a aria-label="2"></a>    <span class="cf">if</span> <span class="op">(</span>osMutexAcquire<span class="op">(</span>m<span class="op">,</span> <span class="dv">5</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span> <span class="co">/* 5 Ticks = 5 ms bei 1 kHz */</span></span>
+<span id="cb6-3"><a aria-label="3"></a>        <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span> <span class="co">/* kein Release: wir besitzen ihn nicht */</span></span>
+<span id="cb6-4"><a aria-label="4"></a>    <span class="dt">int</span> ok <span class="op">=</span> sensor_ok<span class="op">();</span></span>
+<span id="cb6-5"><a aria-label="5"></a>    <span class="cf">if</span> <span class="op">(</span>ok<span class="op">)</span> use_resource<span class="op">();</span></span>
+<span id="cb6-6"><a aria-label="6"></a>    osMutexRelease<span class="op">(</span>m<span class="op">);</span></span>
+<span id="cb6-7"><a aria-label="7"></a>    <span class="cf">return</span> ok<span class="op">;</span></span>
+<span id="cb6-8"><a aria-label="8"></a><span class="op">}</span></span>
+<span id="cb6-9"><a aria-label="9"></a></span>
+<span id="cb6-10"><a aria-label="10"></a><span class="dt">void</span> Worker<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-11"><a aria-label="11"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb6-12"><a aria-label="12"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-13"><a aria-label="13"></a>        <span class="op">(</span><span class="dt">void</span><span class="op">)</span>use_locked<span class="op">();</span></span>
+<span id="cb6-14"><a aria-label="14"></a>        osDelay<span class="op">(</span><span class="dv">10</span><span class="op">);</span></span>
+<span id="cb6-15"><a aria-label="15"></a>    <span class="op">}</span></span>
+<span id="cb6-16"><a aria-label="16"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Acquire-Fehler: Ressource nicht anfassen, nichts freigeben</li>
 <li><code>osMutexAcquire</code> / <code>osMutexRelease</code> sind in CMSIS nicht aus der ISR erlaubt</li>
@@ -1085,7 +1091,7 @@ sequenceDiagram
 <li>Zweites Acquire ohne Rekursion: bei <code>osWaitForever</code> Self-Deadlock, bei Timeout ein Fehler</li>
 </ul>
 <aside class="notes">
-<p>Frühes <code>return</code> aus einer Hilfsfunktion ist erlaubt. <code>return</code> aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat.</p>
+<p><code>use_locked</code> darf zurückkehren. <code>Worker</code> bleibt in der Schleife. Timeout 5 Ticks sind bei 1 kHz 5 ms. Besitzdauer des Beispiels ist nur der Sensorzugriff, nicht das Delay.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;

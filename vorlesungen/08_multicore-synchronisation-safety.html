@@ -557,15 +557,15 @@ flowchart LR
 </section>
 <section id="die-hal-api-für-hsem" class="slide level2">
 <h2>Die HAL-API für HSEM</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>HAL_HSEM_Take<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D37</span><span class="bu">u</span><span class="op">)</span> <span class="op">==</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>HAL_HSEM_Take<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x37</span><span class="bu">u</span><span class="op">)</span> <span class="op">==</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
 <span id="cb1-2"><a aria-label="2"></a>    __DMB<span class="op">();</span></span>
 <span id="cb1-3"><a aria-label="3"></a>    shared_count <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
 <span id="cb1-4"><a aria-label="4"></a>    __DMB<span class="op">();</span></span>
-<span id="cb1-5"><a aria-label="5"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D37</span><span class="bu">u</span><span class="op">);</span></span>
+<span id="cb1-5"><a aria-label="5"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x37</span><span class="bu">u</span><span class="op">);</span></span>
 <span id="cb1-6"><a aria-label="6"></a><span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
 <span id="cb1-7"><a aria-label="7"></a>    <span class="co">/* nicht bekommen, nicht anfassen */</span></span>
 <span id="cb1-8"><a aria-label="8"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Process-ID <code>0x4D37</code> ist ein Lehrwert, keine Task-ID.</p>
+<p>ProcessID <code>0x37</code> ist 8 Bit (0…255), Lehrannahme B, keine Core-ID und keine Task-ID. Der M4 benutzt <code>0x34</code> an derselben HSEM-ID.</p>
 <aside class="notes">
 <p>Unter dem Schloss kein <code>printf</code> und kein Delay. Der Abschnitt bleibt der Zähler.</p>
 <style type="text/css">
@@ -922,11 +922,16 @@ flowchart LR
 </section>
 <section id="pattern-2-best-practice-die-watchdog-task" class="slide level2">
 <h2>Pattern 2 (Best Practice): Die Watchdog-Task</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>epoch_m4 <span class="op">==</span> seen_m4 <span class="op">&amp;&amp;</span> epoch_m7 <span class="op">==</span> seen_m7<span class="op">)</span></span>
-<span id="cb3-2"><a aria-label="2"></a>    kick<span class="op">();</span></span>
-<span id="cb3-3"><a aria-label="3"></a>seen_m4 <span class="op">=</span> epoch_m4<span class="op">;</span></span>
-<span id="cb3-4"><a aria-label="4"></a>seen_m7 <span class="op">=</span> epoch_m7<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Eine Epoche zählt nur nach dem erfolgreichen Schritt. Dieselbe Zahl zweimal ist kein neuer Fortschritt.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="co">/* Lebenszähler, nicht die Sensorsequenz. Start beide 0, seen = 0. */</span></span>
+<span id="cb3-2"><a aria-label="2"></a><span class="dt">uint32_t</span> e4 <span class="op">=</span> epoch_m4<span class="op">;</span> <span class="co">/* je ein lesbarer Wert, kein Paar ohne Protokoll */</span></span>
+<span id="cb3-3"><a aria-label="3"></a><span class="dt">uint32_t</span> e7 <span class="op">=</span> epoch_m7<span class="op">;</span></span>
+<span id="cb3-4"><a aria-label="4"></a><span class="cf">if</span> <span class="op">((</span>e4 <span class="op">!=</span> seen_m4<span class="op">)</span> <span class="op">&amp;&amp;</span> <span class="op">(</span>e7 <span class="op">!=</span> seen_m7<span class="op">))</span></span>
+<span id="cb3-5"><a aria-label="5"></a>    kick<span class="op">();</span>             <span class="co">/* nur frischer Fortschritt beider Worker */</span></span>
+<span id="cb3-6"><a aria-label="6"></a><span class="cf">else</span></span>
+<span id="cb3-7"><a aria-label="7"></a>    fault_no_refresh<span class="op">();</span> <span class="co">/* Fenster läuft aus, kein Kick */</span></span>
+<span id="cb3-8"><a aria-label="8"></a>seen_m4 <span class="op">=</span> e4<span class="op">;</span></span>
+<span id="cb3-9"><a aria-label="9"></a>seen_m7 <span class="op">=</span> e7<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Jeder Worker erhöht seine Epoche einmal pro abgeschlossener Runde, auch wenn kein externes Ereignis kam. Die Sensorsequenz darf dann stehen bleiben. Dieselbe Epoche zweimal ist kein neuer Fortschritt. Die beiden Zähler liegen nicht in einem atomaren Paar: je eine stabile Kopie, Reihenfolge wie in VL6.</p>
 <aside class="notes">
 <p>Der andere Kern braucht einen eigenen, frischen Zähler. Ein lokaler Mutex sieht ihn nicht.</p>
 <style type="text/css">
@@ -964,12 +969,9 @@ flowchart LR
 <p>WWDG1 an APB3, D1. WWDG2 an APB1, D2.</p>
 <p>Das M4-Labor nimmt die Instanz, deren PCLK wir kennen. CPU-Takt ist nicht dieser PCLK.</p>
 <p><span class="math display">\[t_{\mathrm{tick}} = 4096 \times \mathrm{Prescaler} / f_{\mathrm{PCLK}}\]</span></p>
-<p>Illustration, nicht das Projekt: Prescaler 8.</p>
-<ul>
-<li>100 MHz → 0,32768 ms je Tick</li>
-<li>200 MHz → 0,16384 ms je Tick</li>
-</ul>
-<p>Dieselben Zählerschritte, doppelte Millisekunden. Deshalb sind <code>osDelay(15)</code> ohne PCLK keine Einordnung in früh, gut oder spät.</p>
+<p>Lehrannahme B, innerhalb des APB-Maximums: WWDG2, <span class="math inline">\(f_{\mathrm{PCLK}} = 100\,\mathrm{MHz}\)</span>, Prescaler 8. Zum Vergleich 50 MHz, nicht 200 MHz.</p>
+<p><span class="math display">\[t_{\mathrm{tick}}(100\,\mathrm{MHz}) = 4096 \times 8 / 10^{8} = 0{,}32768\,\mathrm{ms}\]</span></p>
+<p>Bei 50 MHz ist der Tick doppelt so lang, 0,65536 ms. Das APB-Maximum hängt von VOS ab und liegt laut Datenblatt bei bis zu 120 MHz. 200 MHz ist kein zulässiger PCLK.</p>
 <aside class="notes">
 <p>Abbildung G braucht die Projekt-PCLK. Solange sie fehlt, bleiben die ms-Achsen als Illustration gekennzeichnet. Tickquantisierung und Jitter extra addieren. Testzeiten mit Abstand zu beiden Grenzen.</p>
 <style type="text/css">
@@ -986,8 +988,15 @@ flowchart LR
 </section>
 <section id="das-fenster-konzept-window-watchdog" class="slide level2">
 <h2>Das Fenster-Konzept (Window Watchdog)</h2>
-<p>Zähler <span class="math inline">\(T\)</span>, Fenster <span class="math inline">\(W\)</span>. EWI bei Erreichen von <code>0x40</code>. Reset beim Übergang <code>0x40</code> → <code>0x3F</code>, nicht beim Lauf bis null.</p>
-<p>Zu früh: Refresh, während der Zähler noch <strong>über</strong> dem Fenster liegt. Ob Gleichheit mit <span class="math inline">\(W\)</span> noch erlaubt ist, steht im RM0399 der Revision. Den Grenzschritt nicht als Labormesspunkt nehmen.</p>
+<p>Lehrwerte: Startzähler <span class="math inline">\(T = 127\)</span>, Fenster <span class="math inline">\(W = 80\)</span>. EWI bei <code>0x40</code>. Reset beim Übergang <code>0x40</code> → <code>0x3F</code>.</p>
+<p>Lehrregel: Refresh ist zu früh, solange der Zähler <strong>größer</strong> als 80 ist. Gleichheit 80 gilt in diesem Beispiel als erlaubt. Den Vergleich im RM0399 gegenlesen; die Bitformel dieser Revision ist hier nicht zeilenweise geprüft.</p>
+<p>Bei 0,32768 ms je Tick: 47 Schritte von 127 auf 80 dauern 15,4 ms (noch zu früh). 16 weitere Schritte von 80 auf <code>0x40</code> dauern 5,2 ms (Fenster). Danach ein Tick bis zum Reset.</p>
+<ul>
+<li>5 ms nach dem Reload: Zähler noch über 80, zu früh, Reset ohne EWI.</li>
+<li>18 ms: Zähler etwa 72, im Fenster, zulässig.</li>
+<li>kein Refresh über 25 ms: Reset nach <code>0x3F</code>.</li>
+</ul>
+<p><code>osDelay</code> rastet auf 1 ms und beweist das Fenster nicht. Marker an Reload und Refresh, Zeitbasis der Lehrkonfiguration.</p>
 <p>Ein ausgelassener Programmschritt löst nicht automatisch einen frühen Refresh aus, wenn eine feste Wartezeit danach immer noch im Fenster liegt.</p>
 <aside class="notes">
 <p>Prescaler 8, Window 80, Reload 120 sind Zählerwerte. Die Millisekunden kommen erst aus <span class="math inline">\(f_{\mathrm{PCLK}}\)</span>.</p>
@@ -1313,26 +1322,18 @@ flowchart LR
 </section>
 <section id="schritt-2-der-asynchrone-multicore-zugriff" class="slide level2">
 <h2>Schritt 2: Der asynchrone Multicore-Zugriff</h2>
-<p>M7, kein <code>osDelay</code>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">uint32_t</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> N<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>    <span class="cf">if</span> <span class="op">(</span>HAL_HSEM_Take<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D37</span><span class="bu">u</span><span class="op">)</span> <span class="op">==</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-3"><a aria-label="3"></a>        __DMB<span class="op">();</span></span>
-<span id="cb4-4"><a aria-label="4"></a>        shared_count <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
-<span id="cb4-5"><a aria-label="5"></a>        __DMB<span class="op">();</span></span>
-<span id="cb4-6"><a aria-label="6"></a>        HAL_HSEM_Release<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D37</span><span class="bu">u</span><span class="op">);</span></span>
-<span id="cb4-7"><a aria-label="7"></a>    <span class="op">}</span></span>
-<span id="cb4-8"><a aria-label="8"></a>    HAL_Delay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">/* außerhalb des Schlosses */</span></span>
-<span id="cb4-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>M4, auch im Erfolgspfad nachgeben:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">uint32_t</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> N<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
-<span id="cb5-2"><a aria-label="2"></a>    <span class="cf">if</span> <span class="op">(</span>HAL_HSEM_Take<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D34</span><span class="bu">u</span><span class="op">)</span> <span class="op">==</span> HAL_OK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb5-3"><a aria-label="3"></a>        __DMB<span class="op">();</span></span>
-<span id="cb5-4"><a aria-label="4"></a>        shared_count <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
-<span id="cb5-5"><a aria-label="5"></a>        __DMB<span class="op">();</span></span>
-<span id="cb5-6"><a aria-label="6"></a>        HAL_HSEM_Release<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x4D34</span><span class="bu">u</span><span class="op">);</span></span>
-<span id="cb5-7"><a aria-label="7"></a>    <span class="op">}</span></span>
-<span id="cb5-8"><a aria-label="8"></a>    osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">/* ein Tick, außerhalb */</span></span>
-<span id="cb5-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>M7 zählt nur erfolgreiche Inkremente. Timeout nach 2 s lokalen <code>HAL_GetTick</code> macht den Lauf ungültig, nicht zu einem Sollwert <span class="math inline">\(2N\)</span>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">uint32_t</span> hits <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> t0 <span class="op">=</span> HAL_GetTick<span class="op">();</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="cf">while</span> <span class="op">(</span>hits <span class="op">&lt;</span> N<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-3"><a aria-label="3"></a>    <span class="cf">if</span> <span class="op">((</span><span class="dt">uint32_t</span><span class="op">)(</span>HAL_GetTick<span class="op">()</span> <span class="op">-</span> t0<span class="op">)</span> <span class="op">&gt;</span> <span class="dv">2000</span><span class="bu">u</span><span class="op">)</span> <span class="op">{</span> fail<span class="op">();</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb4-4"><a aria-label="4"></a>    <span class="cf">if</span> <span class="op">(</span>HAL_HSEM_Take<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x37</span><span class="bu">u</span><span class="op">)</span> <span class="op">!=</span> HAL_OK<span class="op">)</span> <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb4-5"><a aria-label="5"></a>    __DMB<span class="op">();</span></span>
+<span id="cb4-6"><a aria-label="6"></a>    shared_count <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
+<span id="cb4-7"><a aria-label="7"></a>    __DMB<span class="op">();</span></span>
+<span id="cb4-8"><a aria-label="8"></a>    HAL_HSEM_Release<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="bn">0x37</span><span class="bu">u</span><span class="op">);</span></span>
+<span id="cb4-9"><a aria-label="9"></a>    hits<span class="op">++;</span></span>
+<span id="cb4-10"><a aria-label="10"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Der M4 tut dasselbe mit ProcessID <code>0x34</code> und <code>osKernelGetTickCount</code>, und gibt danach die CPU mit <code>osDelay(1)</code> ab. Der Zähler startet einmal bei 0. Gelesen wird er erst, wenn beide <code>hits == N</code> gemeldet haben. HSEM stellt keine Cache-Kohärenz her; die Region bleibt non-cacheable.</p>
 <p>Warten ohne Lost Wakeup ist ein eigener Versuch, nicht diese Zählschleife. Mehrere Tasks an ID 1 brauchen zusätzlich einen lokalen Mutex.</p>
 <aside class="notes">
 <p><span class="math inline">\(N\)</span> endlich. Danach beide fertig und dann erst <span class="math inline">\(2N\)</span> lesen. Sonst liest man einen Zwischenstand.</p>

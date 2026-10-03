@@ -857,9 +857,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-lösung-copy-by-reference-pointer" class="slide level2">
 <h2>Die Lösung: Copy by Reference (Pointer)</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">uint8_t</span> <span class="op">*</span>slot<span class="op">;</span></span>
-<span id="cb5-2"><a aria-label="2"></a><span class="co">/* Elementtyp der Queue: uint8_t * */</span></span>
-<span id="cb5-3"><a aria-label="3"></a>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>slot<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">static</span> <span class="dt">uint8_t</span> buf_a<span class="op">[</span><span class="dv">64</span><span class="op">],</span> buf_b<span class="op">[</span><span class="dv">64</span><span class="op">];</span></span>
+<span id="cb5-2"><a aria-label="2"></a><span class="dt">uint8_t</span> <span class="op">*</span>slot <span class="op">=</span> buf_a<span class="op">;</span> <span class="co">/* gültiges Ziel, nicht ein leerer Zeiger */</span></span>
+<span id="cb5-3"><a aria-label="3"></a><span class="cf">if</span> <span class="op">(</span>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>slot<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">==</span> osOK<span class="op">)</span></span>
+<span id="cb5-4"><a aria-label="4"></a>    slot <span class="op">=</span> buf_b<span class="op">;</span> <span class="co">/* Variable umbiegen, buf_a bleibt belegt */</span></span>
+<span id="cb5-5"><a aria-label="5"></a><span class="cf">else</span></span>
+<span id="cb5-6"><a aria-label="6"></a>    <span class="op">;</span> <span class="co">/* buf_a bleibt beim Producer, kein zweites Put */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Die Adresse wird kopiert, <code>slot</code> darf danach umgebogen werden</li>
 <li>Zwei Arrays A und B allein verhindern das Überschreiben nicht</li>
@@ -1487,12 +1490,17 @@ sequenceDiagram
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">void</span> ButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
 <span id="cb6-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
 <span id="cb6-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb6-4"><a aria-label="4"></a>        <span class="cf">if</span> <span class="op">(</span>osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> osWaitForever<span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
-<span id="cb6-5"><a aria-label="5"></a>            <span class="cf">continue</span><span class="op">;</span></span>
-<span id="cb6-6"><a aria-label="6"></a>        <span class="co">/* kurze Arbeit; UART nur über VL4-Schutz */</span></span>
-<span id="cb6-7"><a aria-label="7"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
-<span id="cb6-8"><a aria-label="8"></a>    <span class="op">}</span></span>
-<span id="cb6-9"><a aria-label="9"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-4"><a aria-label="4"></a>        osStatus_t st<span class="op">;</span></span>
+<span id="cb6-5"><a aria-label="5"></a>        st <span class="op">=</span> osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> osWaitForever<span class="op">);</span></span>
+<span id="cb6-6"><a aria-label="6"></a>        <span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb6-7"><a aria-label="7"></a>        <span class="cf">if</span> <span class="op">(</span>HAL_GPIO_ReadPin<span class="op">(</span>GPIOC<span class="op">,</span> GPIO_PIN_13<span class="op">)</span> <span class="op">!=</span> pressed<span class="op">)</span></span>
+<span id="cb6-8"><a aria-label="8"></a>            <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb6-9"><a aria-label="9"></a>        osDelay<span class="op">(</span><span class="dv">20</span><span class="op">);</span> <span class="co">/* 20 Ticks bei 1 kHz, Pegel erneut prüfen */</span></span>
+<span id="cb6-10"><a aria-label="10"></a>        <span class="cf">if</span> <span class="op">(</span>HAL_GPIO_ReadPin<span class="op">(</span>GPIOC<span class="op">,</span> GPIO_PIN_13<span class="op">)</span> <span class="op">!=</span> pressed<span class="op">)</span></span>
+<span id="cb6-11"><a aria-label="11"></a>            <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb6-12"><a aria-label="12"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
+<span id="cb6-13"><a aria-label="13"></a>    <span class="op">}</span></span>
+<span id="cb6-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Vergleichsvariante, ausdrücklich: <code>HAL_Delay(100)</code> als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.</p>
 <p>Entprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.</p>
 <aside class="notes">

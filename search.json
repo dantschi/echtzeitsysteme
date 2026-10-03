@@ -32,14 +32,14 @@
     "href": "vorlesungen/09_capstone-architekturmuster.html#erkenntnis-2-synchronisation-ist-tödlich",
     "title": "09 · Capstone-Projekt & Architekturmuster",
     "section": "Erkenntnis 2: Synchronisation ist tödlich",
-    "text": "Erkenntnis 2: Synchronisation ist tödlich\nBesser: Synchronisation hat einen Preis und einen Vertrag.\n\nMutex und HSEM halten Konsistenz, nicht jeden alten Wert\nUnter dem Schloss nur der kurze Snapshot\nFilter, UART und printf danach\nVerlorenes Aufwecken aus VL8 bleibt verboten\nMehrere lokale Nutzer brauchen zusätzlich ein lokales Objekt\n\n\nLatest-Value darf Zwischenwerte verlieren, wenn die Sequenz das zeigt. Dann steht „kein Datenverlust“ nicht im Pflichtenheft."
+    "text": "Erkenntnis 2: Synchronisation ist tödlich\nSynchronisation hat einen Preis und einen Vertrag.\n\nMutex und HSEM halten Konsistenz, nicht jeden alten Wert\nUnter dem Schloss nur der kurze Snapshot\nFilter, UART und printf danach\nVerlorenes Aufwecken aus VL8 bleibt verboten\nMehrere lokale Nutzer brauchen zusätzlich ein lokales Objekt\n\n\nLatest-Value darf Zwischenwerte verlieren, wenn die Sequenz das zeigt. Dann steht „kein Datenverlust“ nicht im Pflichtenheft."
   },
   {
     "objectID": "vorlesungen/09_capstone-architekturmuster.html#erkenntnis-3-vertraue-niemals-der-software",
     "href": "vorlesungen/09_capstone-architekturmuster.html#erkenntnis-3-vertraue-niemals-der-software",
     "title": "09 · Capstone-Projekt & Architekturmuster",
     "section": "Erkenntnis 3: Vertraue niemals der Software",
-    "text": "Erkenntnis 3: Vertraue niemals der Software\nBesser: trauen Sie einem Mechanismus nur die Fehler an, die er sehen kann.\n\nWatchdog: Refresh und Fortschritt, nicht die fachliche Wahrheit\nMPU: Region des einen Kerns, nicht DMA und nicht den Nachbarn\nTrace: die Läufe, die vollständig ankamen\n\n\nSensorstille ist kein Fehler. Ein Burst darf den Feed nicht aus dem Fenster schieben."
+    "text": "Erkenntnis 3: Vertraue niemals der Software\nTrauen Sie einem Mechanismus nur die Fehler an, die er sehen kann.\n\nWatchdog: Refresh und Fortschritt, nicht die fachliche Wahrheit\nMPU: Region des einen Kerns, nicht DMA und nicht den Nachbarn\nTrace: die Läufe, die vollständig ankamen\n\n\nSensorstille ist kein Fehler. Ein Burst darf den Feed nicht aus dem Fenster schieben."
   },
   {
     "objectID": "vorlesungen/09_capstone-architekturmuster.html#vom-mikrocontroller-zum-cps",
@@ -179,7 +179,7 @@
     "href": "vorlesungen/09_capstone-architekturmuster.html#das-szenario-der-smart-industrie-sensor",
     "title": "09 · Capstone-Projekt & Architekturmuster",
     "section": "Das Szenario: Der Smart Industrie-Sensor",
-    "text": "Das Szenario: Der Smart Industrie-Sensor\nPC13, wenn das Board ihn dort hat: Funktion, Prellen, kein Hochfrequenz-Beweis. EXTI-Pending fasst Flanken zusammen.\nTimer oder ein Generator: reproduzierbare Einzelevents und Bursts. Input Capture, wenn die Flankenzeit selbst die Messgröße ist. ISR-Eintritt ist nicht die physische Flanke.\nEntprellung in der Task, nicht als Warteschleife in der ISR.\n\nLehrfestlegung, kein Kundenvertrag: Nennrate 100 Hz, Burst höchstens 10 Events in 10 ms, Queue-Tiefe 8, Put mit Timeout 0, Drop zählen. Zwischenwerte auf dem Weg zum M7 dürfen fehlen, die Sequenz zeigt die Lücke."
+    "text": "Das Szenario: Der Smart Industrie-Sensor\nPC13, wenn das Board ihn dort hat: Funktion, Prellen, kein Hochfrequenz-Beweis. EXTI-Pending fasst Flanken zusammen.\nTimer oder ein Generator: reproduzierbare Einzelevents und Bursts. Input Capture, wenn die Flankenzeit selbst die Messgröße ist. ISR-Eintritt ist nicht die physische Flanke.\nEntprellung in der Task, nicht als Warteschleife in der ISR.\n\nLehrfestlegung: 100 Hz heißt Abstand 10 ms. Zehn Events in 10 ms mit Abstand 1 ms sind ein anderer Fall als zehn Events im selben Tick. Tiefe 8 nimmt zehn gleichzeitige Events nicht verlustfrei auf: ohne zwischenzeitliches Get bleiben mindestens zwei vor der Queue. C3 gilt für angenommene Events, nicht für verworfene. Bilanz: erzeugt = angenommen + ISR-Drops. Angenommen = noch in der Queue + publiziert. Mailbox-Überschreiben zählt extra und ist keine Queue-Lücke."
   },
   {
     "objectID": "vorlesungen/09_capstone-architekturmuster.html#system-architektur-gesamtübersicht",
@@ -193,7 +193,7 @@
     "href": "vorlesungen/09_capstone-architekturmuster.html#capstone-pflichtenheft-muss-kriterien",
     "title": "09 · Capstone-Projekt & Architekturmuster",
     "section": "Capstone-Pflichtenheft (Muss-Kriterien)",
-    "text": "Capstone-Pflichtenheft (Muss-Kriterien)\n\n\n\n\n\n\n\n\n\n\nID\nGröße\nGrenze\nMesspunkt\nTest\n\n\n\n\nC1\nEventrate\n100 Hz Nenn, Burst 10/10 ms\nTimer\nGenerator\n\n\nC2\nQueue\nTiefe 8, Drop-Zähler\nM4\nGrenzrate\n\n\nC3\nPublikation\n≤ 1 ms ISR bis Release\nt1, t4, gleiche Sequenz\nEinzelevent\n\n\nC4\nDatenalter\n≤ 50 ms bis Snapshot\nt1, t5\nLeerlauf und M7-Last\n\n\nC5\nSchloss\nBoot-ID frei, Nutz-ID geprüft\nCode, Map\nReview\n\n\nC6\nLock-Zeit\nnur Snapshot\nTrace oder GPIO\nUART aus dem Schloss\n\n\nC7\nWWDG\nFenster aus PCLK, nicht aus dem Taster\nMarker\nfrüh, gültig, spät\n\n\nC8\nVerlust\nSequenzlücken = Drops plus Mailbox\nLog\nBurst\n\n\n\nKein „absolut absturzsicher“. Kein „Timing bewiesen“.\n\nAbbildung J. M4 publiziert Payload, Sequenz, Tick. M7 kopiert unter HSEM und rechnet danach. Put in der ISR nur mit Timeout 0. NVIC-Priorität wie VL5. Shared: ein Initialisierer, NOLOAD löscht nicht zauberhaft, Startup darf nicht zweimal nullen. Non-cacheable ist keine Zugriffsisolation."
+    "text": "Capstone-Pflichtenheft (Muss-Kriterien)\n\n\n\n\n\n\n\n\n\n\nID\nGröße\nGrenze\nMesspunkt\nTest\n\n\n\n\nC1\nEventrate\n100 Hz; 10 Events in 10 ms, Abstand 1 ms\nTimer\nGenerator\n\n\nC2\nQueue\nTiefe 8; 10 gleichzeitige Events: mindestens 2 Drops\nM4\nBurst\n\n\nC3\nPublikation\n≤ 1 ms ISR bis Release\nt1, t4, gleiche Sequenz\nEinzelevent\n\n\nC4\nDatenalter\n≤ 50 ms bis Snapshot\nt1, t5\nLeerlauf und M7-Last\n\n\nC5\nSchloss\nBoot-ID frei, Nutz-ID geprüft\nCode, Map\nReview\n\n\nC6\nLock-Zeit\n≤ 50 µs, Lehrannahme, nur Snapshot\nGPIO um Take/Release\nUART draußen\n\n\nC7\nWWDG\nFenster aus PCLK, nicht aus dem Taster\nMarker\nfrüh, gültig, spät\n\n\nC8\nVerlust\nangenommen = Drops + noch in Queue + letzter Snapshot\nLog\nBurst\n\n\n\nKein „absolut absturzsicher“. Kein „Timing bewiesen“.\n\nAbbildung J. M4 publiziert Payload, Sequenz, Tick. M7 kopiert unter HSEM und rechnet danach. Put in der ISR nur mit Timeout 0. NVIC-Priorität wie VL5. Shared: ein Initialisierer, NOLOAD löscht nicht zauberhaft, Startup darf nicht zweimal nullen. Non-cacheable ist keine Zugriffsisolation."
   },
   {
     "objectID": "vorlesungen/09_capstone-architekturmuster.html#abnahmekriterien-definition-of-done",
@@ -336,11 +336,11 @@
     "text": "Modul 3: Das ETM (Embedded Trace)\n\nKomprimierter Kontrollfluss, plus Sync, Ausnahme, manchmal Zeit\nNicht „ein Bit pro Sprung“\n400 MHz sind 400 Millionen Takte, nicht Instruktionen\nHypothetisches Modell: 400e6 Ereignisse mal 4 Byte = 1,6 GB/s, nicht die echte ETM-Rate und nicht Gbit/s\n\nRekonstruktion braucht das passende Maschinenbild, die Protokollversion und einen vollständigen Abschnitt. Eine Lücke ist ein unbekannter Abschnitt, keine erfundene Gerade.\n\nInstruction Trace ist nicht automatisch ein Zeitstempel je Befehl. Cycle-Accurate und Timestamp extra prüfen. Keine zyklusgenaue C-Pfad-Rechnung inklusive beliebiger Stalls versprechen."
   },
   {
-    "objectID": "vorlesungen/07_tracing-timing-analyse.html#die-etm-kompression-nur-sprünge",
-    "href": "vorlesungen/07_tracing-timing-analyse.html#die-etm-kompression-nur-sprünge",
+    "objectID": "vorlesungen/07_tracing-timing-analyse.html#etm-komprimiert-den-kontrollfluss",
+    "href": "vorlesungen/07_tracing-timing-analyse.html#etm-komprimiert-den-kontrollfluss",
     "title": "07 · Tracing und Timing-Analyse",
-    "section": "Die ETM-Kompression: Nur Sprünge!",
-    "text": "Die ETM-Kompression: Nur Sprünge!\nSchema, kein echtes Paketformat:\nC-Zweig → mehrere Thumb-Befehle → komprimierte Traceereignisse → Decoder mit ELF.\nEine C-Zeile kann mehreren Befehlen entsprechen. Ohne das ELF des denselben Builds rekonstruiert das Tool den Pfad nicht.\nSync-Verlust: Strecke grau lassen.\n\n-g liefert Debuginfo, kein Eins-zu-eins zur Zeile. Optimierung, Inlining und entfernte Variablen bleiben. -g und -O2 gehen zusammen. Den optimierten Lauf analysieren, nicht einen anderen Debug-Build. Beide Kerne: ihre eigene ELF."
+    "section": "ETM komprimiert den Kontrollfluss",
+    "text": "ETM komprimiert den Kontrollfluss\nSchema, kein echtes Paketformat:\nC-Zweig → mehrere Thumb-Befehle → komprimierte Traceereignisse → Decoder mit ELF.\nEine C-Zeile kann mehreren Befehlen entsprechen. Ohne das ELF des denselben Builds rekonstruiert das Tool den Pfad nicht.\nSync-Verlust: Strecke grau lassen.\n\n-g liefert Debuginfo, kein Eins-zu-eins zur Zeile. Optimierung, Inlining und entfernte Variablen bleiben. -g und -O2 gehen zusammen. Den optimierten Lauf analysieren, nicht einen anderen Debug-Build. Beide Kerne: ihre eigene ELF."
   },
   {
     "objectID": "vorlesungen/07_tracing-timing-analyse.html#die-tpiu-und-der-physikalische-stecker",
@@ -473,7 +473,7 @@
     "href": "vorlesungen/07_tracing-timing-analyse.html#laborvorbereitung-tracing-im-einsatz",
     "title": "07 · Tracing und Timing-Analyse",
     "section": "Laborvorbereitung: Tracing im Einsatz",
-    "text": "Laborvorbereitung: Tracing im Einsatz\nVersuch A: eine bekannte Variable, bekannte Adresse, bekannte Anzahl Ereignisse. Fehlendes Anfangspaket ist nicht der Wert 0.\nVersuch B: non-cacheable Ping-Pong aus VL6. Druck 1, 3, 5. Die 500 ms liegen außerhalb der IPC-Messung.\nVersuch C: separates Image, D-Cache an, Region nachweislich Write-Back. Hypothese, kein Drehbuch: M7-Store 1 kann da sein, M4 liest weiter 0. Kein garantierter Freeze. Timeout und Abbruch wie in VL6.\nVersuch D: ein Job mit definierten Kanten. Min, Max, Anzahl, Auflösung, Bedingungen. Verluste machen die Summe ungültig.\n\nZeitquellen: M7 400 MHz nur wenn der Tree so steht, dann 1000 Takte = 2,5 µs. M4 200 MHz: 1000 Takte = 5 µs. Trace- und Capture-Zeit sind weitere Uhren. Ein Feld „400 MHz“ füllt nicht jede Achse."
+    "text": "Laborvorbereitung: Tracing im Einsatz\nOhne Spezialhardware: GPIO um die Funktion oder CYCCNT desselben Kerns. 1000 Takte sind als Lehrumrechnung 2,5 µs am M7 (400 MHz) und 5 µs am M4 (200 MHz), keine Boardmessung. Den Zähler des anderen Kerns nicht subtrahieren. Versuch A bleibt die bekannte Variable; ein fehlendes Anfangspaket ist nicht der Wert 0.\nVersuch B: non-cacheable Ping-Pong aus VL6. Druck 1, 3, 5. Die 500 ms liegen außerhalb der IPC-Messung.\nVersuch C: separates Image, D-Cache an, Region nachweislich Write-Back. Hypothese, kein Drehbuch: M7-Store 1 kann da sein, M4 liest weiter 0. Kein garantierter Freeze. Timeout und Abbruch wie in VL6.\nVersuch D: ein Job mit definierten Kanten. Min, Max, Anzahl, Auflösung, Bedingungen. Verluste machen die Summe ungültig.\n\nZeitquellen: M7 400 MHz nur wenn der Tree so steht, dann 1000 Takte = 2,5 µs. M4 200 MHz: 1000 Takte = 5 µs. Trace- und Capture-Zeit sind weitere Uhren. Ein Feld „400 MHz“ füllt nicht jede Achse."
   },
   {
     "objectID": "vorlesungen/07_tracing-timing-analyse.html#schritt-34-freertos-awareness-profiler",
@@ -648,7 +648,7 @@
     "href": "vorlesungen/05_inter-task-kommunikation.html#die-lösung-copy-by-reference-pointer",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Die Lösung: Copy by Reference (Pointer)",
-    "text": "Die Lösung: Copy by Reference (Pointer)\nuint8_t *slot;\n/* Elementtyp der Queue: uint8_t * */\nosMessageQueuePut(q, &slot, 0, 0);\n\nDie Adresse wird kopiert, slot darf danach umgebogen werden\nZwei Arrays A und B allein verhindern das Überschreiben nicht\nFehlgeschlagenes Put: Puffer bleibt beim Producer\nZu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern\n\n\nEin Deskriptor mit Länge und Sequenz ist größer als 4 Byte. Das auf der Folie sagen, nicht stillschweigend „vier Byte“ für den Deskriptor."
+    "text": "Die Lösung: Copy by Reference (Pointer)\nstatic uint8_t buf_a[64], buf_b[64];\nuint8_t *slot = buf_a; /* gültiges Ziel, nicht ein leerer Zeiger */\nif (osMessageQueuePut(q, &slot, 0, 0) == osOK)\n    slot = buf_b; /* Variable umbiegen, buf_a bleibt belegt */\nelse\n    ; /* buf_a bleibt beim Producer, kein zweites Put */\n\nDie Adresse wird kopiert, slot darf danach umgebogen werden\nZwei Arrays A und B allein verhindern das Überschreiben nicht\nFehlgeschlagenes Put: Puffer bleibt beim Producer\nZu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern\n\n\nEin Deskriptor mit Länge und Sequenz ist größer als 4 Byte. Das auf der Folie sagen, nicht stillschweigend „vier Byte“ für den Deskriptor."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#gefahren-von-copy-by-reference",
@@ -809,7 +809,7 @@
     "href": "vorlesungen/05_inter-task-kommunikation.html#schritt-2-die-bottom-half-task-in-c",
     "title": "05 · Inter-Task-Kommunikation und Interrupts",
     "section": "Schritt 2: Die Bottom-Half (Task) in C",
-    "text": "Schritt 2: Die Bottom-Half (Task) in C\nvoid ButtonTask(void *argument) {\n    (void)argument;\n    for (;;) {\n        if (osSemaphoreAcquire(ButtonSem, osWaitForever) != osOK)\n            continue;\n        /* kurze Arbeit; UART nur über VL4-Schutz */\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    }\n}\nVergleichsvariante, ausdrücklich: HAL_Delay(100) als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.\nEntprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.\n\nPE1 nur, wenn LD2 dort wirklich anliegt. Burst: mehrere Releases vor dem Acquire zeigen das Zusammenfassen. Eine Event-Queue mit Timeout 0 ist die Zählvariante, ebenfalls endlich."
+    "text": "Schritt 2: Die Bottom-Half (Task) in C\nvoid ButtonTask(void *argument) {\n    (void)argument;\n    for (;;) {\n        osStatus_t st;\n        st = osSemaphoreAcquire(ButtonSem, osWaitForever);\n        if (st != osOK) continue;\n        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)\n            continue;\n        osDelay(20); /* 20 Ticks bei 1 kHz, Pegel erneut prüfen */\n        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)\n            continue;\n        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);\n    }\n}\nVergleichsvariante, ausdrücklich: HAL_Delay(100) als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.\nEntprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.\n\nPE1 nur, wenn LD2 dort wirklich anliegt. Burst: mehrere Releases vor dem Acquire zeigen das Zusammenfassen. Eine Event-Queue mit Timeout 0 ist die Zählvariante, ebenfalls endlich."
   },
   {
     "objectID": "vorlesungen/05_inter-task-kommunikation.html#was-werden-wir-im-labor-beobachten",
@@ -1218,6 +1218,13 @@
     "text": "Willkommen zur Vorlesung Echtzeitsysteme!\n\nNeun Termine: je 4 Stunden Theorie und Praxis / Übungen\nKlausur am Ende des Semesters\nFokus: moderne Multicore-Architekturen in der Industrie\nHardware: STM32H755 (Dual-Core Cortex-M7/M4)\n\n\nHerzlich willkommen zur Vorlesung Echtzeitsysteme. In den nächsten neun Terminen verbinden wir Theorie mit Praxis an Industrie-Hardware. Der STM32H755 dient als Dual-Core-Plattform für Echtzeit und Multicore-Synchronisation."
   },
   {
+    "objectID": "vorlesungen/01_was-ist-echtzeit.html#lehrkonfiguration-der-reihe",
+    "href": "vorlesungen/01_was-ist-echtzeit.html#lehrkonfiguration-der-reihe",
+    "title": "01 · Was ist Echtzeit",
+    "section": "Lehrkonfiguration der Reihe",
+    "text": "Lehrkonfiguration der Reihe\nGilt für VL1–VL9, sofern eine Folie nicht ausdrücklich abweicht. Kein Firmwareprojekt im Repository. Messungen bleiben ausstehend.\n\n\n\n\n\n\n\n\nGröße\nWert\nArt\n\n\n\n\nBoard / MCU\nNUCLEO-H755ZI-Q, STM32H755ZIT6\nA, UM2408 / DS12919\n\n\nLED / Taster\nLD2 = PE1, User-Button PC13\nA, UM2408\n\n\nKerne\nM7 Bare-Metal, M4 FreeRTOS, CMSIS-RTOS2\nB\n\n\nCPU-Takte\nM7 400 MHz, M4 200 MHz, unter den Maxima 480/240\nB, Maxima A\n\n\nRTOS-Tick\n1 kHz, also 1 ms\nB\n\n\nUART\n115200 Baud, 8N1\nB\n\n\nSRAM4\n0x38000000, 64 KiB, non-cacheable für M7\nA Adresse, B Attribut\n\n\nHSEM\n0 Boot, 1 Nutzdaten; ProcessID M7 0x37, M4 0x34\nB\n\n\nWWDG2\nAPB1 = 100 MHz, Prescaler 8\nB, APB-Maximum je VOS bis 120 MHz ist A\n\n\n\nA ist dokumentierte Hardware. B ist eine didaktische Annahme, keine Messung. C wäre ein Messwert; den gibt es in dieser Reihe nicht.\n\n200 MHz ist kein APB-Takt. ProcessIDs sind 8 Bit, nicht die Core-ID. Abweichende Rechenbeispiele, etwa die Millisekunden der Scheduling-Folien, bleiben als eigene Lehrstücke gekennzeichnet."
+  },
+  {
     "objectID": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
     "href": "vorlesungen/01_was-ist-echtzeit.html#agenda-für-heute",
     "title": "01 · Was ist Echtzeit",
@@ -1474,7 +1481,7 @@
     "href": "vorlesungen/01_was-ist-echtzeit.html#exception-entry-nicht-voller-taskwechsel",
     "title": "01 · Was ist Echtzeit",
     "section": "Exception Entry (nicht „voller Taskwechsel“)",
-    "text": "Exception Entry (nicht „voller Taskwechsel“)\n\nInterrupt unterbricht den laufenden Thread\nHardwaregesteuerter einfacher Stackframe (ohne FPU):\n\n\n\n\nOffset\nInhalt\n\n\n\n\n0…7\nR0, R1, R2, R3, R12, LR, PC, xPSR\n\n\n\n\nGrundgröße: \\(8 \\times 4 = 32\\,\\mathrm{Byte}\\) (plus ggf. Alignment)\nR4–R11: bei Bedarf durch Compiler/Software (nicht automatisch)\nLR im Handler enthält typisch EXC_RETURN — kein gewöhnlicher Funktionsrücksprung\n\n\nLehrannahme: einfaches Stacking ohne FP-Frame, idealisierte Speicherbedingungen. Exception Entry ≠ RTOS-Taskwechsel: dieselbe unterbrochene Arbeit kann fortgesetzt werden, ohne einen anderen Task zu wählen. Quelle: PM0214 / Arm Exception Model."
+    "text": "Exception Entry (nicht „voller Taskwechsel“)\n\nInterrupt unterbricht den laufenden Thread\nHardwaregesteuerter einfacher Stackframe (ohne FPU):\n\n\n\n\nWortindex\nByteoffset\nInhalt\n\n\n\n\n0…7\n0, 4, …, 28\nR0, R1, R2, R3, R12, LR, PC, xPSR\n\n\n\n\nGrundgröße: \\(8 \\times 4 = 32\\,\\mathrm{Byte}\\) (plus ggf. Alignment)\nR4–R11: bei Bedarf durch Compiler/Software (nicht automatisch)\nLR im Handler enthält typisch EXC_RETURN — kein gewöhnlicher Funktionsrücksprung\n\n\nLehrannahme: einfaches Stacking ohne FP-Frame, idealisierte Speicherbedingungen. Exception Entry ≠ RTOS-Taskwechsel: dieselbe unterbrochene Arbeit kann fortgesetzt werden, ohne einen anderen Task zu wählen. Quelle: PM0214 / Arm Exception Model."
   },
   {
     "objectID": "vorlesungen/01_was-ist-echtzeit.html#von-der-pin-flanke-zum-hal-callback",
@@ -2321,7 +2328,7 @@
     "href": "vorlesungen/04_synchronisation-ressourcen.html#cmsis-api-für-mutexe",
     "title": "04 · Synchronisation und Ressourcenverwaltung",
     "section": "CMSIS-API für Mutexe",
-    "text": "CMSIS-API für Mutexe\nvoid Task(void *argument) {\n    (void)argument;\n    if (osMutexAcquire(m, 5) != osOK) {\n        return; /* Hilfs-return, nicht Task-Ende */\n    }\n    if (sensor_ok()) {\n        use_resource();\n    }\n    osMutexRelease(m); /* Normal- und Fehlerpfad */\n}\n\nAcquire-Fehler: Ressource nicht anfassen, nichts freigeben\nosMutexAcquire / osMutexRelease sind in CMSIS nicht aus der ISR erlaubt\nRekursion ist ein eigenes Attribut osMutexRecursive\nZweites Acquire ohne Rekursion: bei osWaitForever Self-Deadlock, bei Timeout ein Fehler\n\n\nFrühes return aus einer Hilfsfunktion ist erlaubt. return aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat."
+    "text": "CMSIS-API für Mutexe\nstatic int use_locked(void) {\n    if (osMutexAcquire(m, 5) != osOK) /* 5 Ticks = 5 ms bei 1 kHz */\n        return 0; /* kein Release: wir besitzen ihn nicht */\n    int ok = sensor_ok();\n    if (ok) use_resource();\n    osMutexRelease(m);\n    return ok;\n}\n\nvoid Worker(void *argument) {\n    (void)argument;\n    for (;;) {\n        (void)use_locked();\n        osDelay(10);\n    }\n}\n\nAcquire-Fehler: Ressource nicht anfassen, nichts freigeben\nosMutexAcquire / osMutexRelease sind in CMSIS nicht aus der ISR erlaubt\nRekursion ist ein eigenes Attribut osMutexRecursive\nZweites Acquire ohne Rekursion: bei osWaitForever Self-Deadlock, bei Timeout ein Fehler\n\n\nuse_locked darf zurückkehren. Worker bleibt in der Schleife. Timeout 5 Ticks sind bei 1 kHz 5 ms. Besitzdauer des Beispiels ist nur der Sensorzugriff, nicht das Delay."
   },
   {
     "objectID": "vorlesungen/04_synchronisation-ressourcen.html#sonderfälle-in-der-c-programmierung",
@@ -2594,7 +2601,7 @@
     "href": "vorlesungen/06_multicore-echtzeit.html#warum-smp-für-harte-echtzeit-oft-scheitert",
     "title": "06 · Multicore-Echtzeit",
     "section": "Warum SMP für harte Echtzeit oft scheitert",
-    "text": "Warum SMP für harte Echtzeit oft scheitert\nBesser: Echtzeit-Herausforderungen bei SMP\n\nWer darf wohin migrieren?\nGeteilte Caches und Busse erzeugen Interferenz\nSperren müssen kernübergreifend gedacht werden\nDas ist kein Beweis, dass SMP nie hart echtzeitfähig ist\n\n\nGeeignete Affinität, Budgets und ein Interferenzmodell können Fristen tragen. Die Analyse wird nur größer als auf einem Kern."
+    "text": "Warum SMP für harte Echtzeit oft scheitert\nEchtzeit-Herausforderungen bei SMP\n\nWer darf wohin migrieren?\nGeteilte Caches und Busse erzeugen Interferenz\nSperren müssen kernübergreifend gedacht werden\nDas ist kein Beweis, dass SMP nie hart echtzeitfähig ist\n\n\nGeeignete Affinität, Budgets und ein Interferenzmodell können Fristen tragen. Die Analyse wird nur größer als auf einem Kern."
   },
   {
     "objectID": "vorlesungen/06_multicore-echtzeit.html#asymmetrisches-multiprocessing-amp",
@@ -2888,7 +2895,7 @@
     "href": "vorlesungen/06_multicore-echtzeit.html#schritt-7-mpu-im-m7-konfigurieren",
     "title": "06 · Multicore-Echtzeit",
     "section": "Schritt 7: MPU im M7 konfigurieren",
-    "text": "Schritt 7: MPU im M7 konfigurieren\nVor SCB_EnableDCache() und vor dem ersten Shared-Zugriff.\nKonstantennamen aus stm32h7xx_hal_cortex.h der installierten CubeH7-Version. Nicht raten, wenn der Header abweicht.\nVersuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.\n\nOhne aktiven D-Cache zeigt Versuch 2 nichts. CCR lesen."
+    "text": "Schritt 7: MPU im M7 konfigurieren\nVor SCB_EnableDCache() und vor dem ersten Shared-Zugriff.\nLehrregion: Basis 0x38000000, 64 KiB, ausgerichtet, Normal, TEX 001, C 0, B 0, Execute Never, Schreiben erlaubt, Shareability passend zu AN4838. Höhere Regionsnummer gewinnt bei Überlappung. Konstantennamen im HAL-Header können abweichen; die Bitwerte sind die Lehrkonfiguration.\nVersuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.\n\nOhne aktiven D-Cache zeigt Versuch 2 nichts. CCR lesen."
   },
   {
     "objectID": "vorlesungen/06_multicore-echtzeit.html#flashen-debuggen-im-labor",
@@ -3000,7 +3007,7 @@
     "href": "vorlesungen/08_multicore-synchronisation-safety.html#die-hal-api-für-hsem",
     "title": "08 · Multicore-Synchronisation & Safety",
     "section": "Die HAL-API für HSEM",
-    "text": "Die HAL-API für HSEM\nif (HAL_HSEM_Take(1, 0x4D37u) == HAL_OK) {\n    __DMB();\n    shared_count += 1u;\n    __DMB();\n    HAL_HSEM_Release(1, 0x4D37u);\n} else {\n    /* nicht bekommen, nicht anfassen */\n}\nProcess-ID 0x4D37 ist ein Lehrwert, keine Task-ID.\n\nUnter dem Schloss kein printf und kein Delay. Der Abschnitt bleibt der Zähler."
+    "text": "Die HAL-API für HSEM\nif (HAL_HSEM_Take(1, 0x37u) == HAL_OK) {\n    __DMB();\n    shared_count += 1u;\n    __DMB();\n    HAL_HSEM_Release(1, 0x37u);\n} else {\n    /* nicht bekommen, nicht anfassen */\n}\nProcessID 0x37 ist 8 Bit (0…255), Lehrannahme B, keine Core-ID und keine Task-ID. Der M4 benutzt 0x34 an derselben HSEM-ID.\n\nUnter dem Schloss kein printf und kein Delay. Der Abschnitt bleibt der Zähler."
   },
   {
     "objectID": "vorlesungen/08_multicore-synchronisation-safety.html#flowchart-hsem-take",
@@ -3119,7 +3126,7 @@
     "href": "vorlesungen/08_multicore-synchronisation-safety.html#pattern-2-best-practice-die-watchdog-task",
     "title": "08 · Multicore-Synchronisation & Safety",
     "section": "Pattern 2 (Best Practice): Die Watchdog-Task",
-    "text": "Pattern 2 (Best Practice): Die Watchdog-Task\nif (epoch_m4 == seen_m4 && epoch_m7 == seen_m7)\n    kick();\nseen_m4 = epoch_m4;\nseen_m7 = epoch_m7;\nEine Epoche zählt nur nach dem erfolgreichen Schritt. Dieselbe Zahl zweimal ist kein neuer Fortschritt.\n\nDer andere Kern braucht einen eigenen, frischen Zähler. Ein lokaler Mutex sieht ihn nicht."
+    "text": "Pattern 2 (Best Practice): Die Watchdog-Task\n/* Lebenszähler, nicht die Sensorsequenz. Start beide 0, seen = 0. */\nuint32_t e4 = epoch_m4; /* je ein lesbarer Wert, kein Paar ohne Protokoll */\nuint32_t e7 = epoch_m7;\nif ((e4 != seen_m4) && (e7 != seen_m7))\n    kick();             /* nur frischer Fortschritt beider Worker */\nelse\n    fault_no_refresh(); /* Fenster läuft aus, kein Kick */\nseen_m4 = e4;\nseen_m7 = e7;\nJeder Worker erhöht seine Epoche einmal pro abgeschlossener Runde, auch wenn kein externes Ereignis kam. Die Sensorsequenz darf dann stehen bleiben. Dieselbe Epoche zweimal ist kein neuer Fortschritt. Die beiden Zähler liegen nicht in einem atomaren Paar: je eine stabile Kopie, Reihenfolge wie in VL6.\n\nDer andere Kern braucht einen eigenen, frischen Zähler. Ein lokaler Mutex sieht ihn nicht."
   },
   {
     "objectID": "vorlesungen/08_multicore-synchronisation-safety.html#die-schwäche-des-iwdg",
@@ -3133,14 +3140,14 @@
     "href": "vorlesungen/08_multicore-synchronisation-safety.html#typ-2-window-watchdog-wwdg-einführung",
     "title": "08 · Multicore-Synchronisation & Safety",
     "section": "Typ 2: Window Watchdog (WWDG) Einführung",
-    "text": "Typ 2: Window Watchdog (WWDG) Einführung\nWWDG1 an APB3, D1. WWDG2 an APB1, D2.\nDas M4-Labor nimmt die Instanz, deren PCLK wir kennen. CPU-Takt ist nicht dieser PCLK.\n\\[t_{\\mathrm{tick}} = 4096 \\times \\mathrm{Prescaler} / f_{\\mathrm{PCLK}}\\]\nIllustration, nicht das Projekt: Prescaler 8.\n\n100 MHz → 0,32768 ms je Tick\n200 MHz → 0,16384 ms je Tick\n\nDieselben Zählerschritte, doppelte Millisekunden. Deshalb sind osDelay(15) ohne PCLK keine Einordnung in früh, gut oder spät.\n\nAbbildung G braucht die Projekt-PCLK. Solange sie fehlt, bleiben die ms-Achsen als Illustration gekennzeichnet. Tickquantisierung und Jitter extra addieren. Testzeiten mit Abstand zu beiden Grenzen."
+    "text": "Typ 2: Window Watchdog (WWDG) Einführung\nWWDG1 an APB3, D1. WWDG2 an APB1, D2.\nDas M4-Labor nimmt die Instanz, deren PCLK wir kennen. CPU-Takt ist nicht dieser PCLK.\n\\[t_{\\mathrm{tick}} = 4096 \\times \\mathrm{Prescaler} / f_{\\mathrm{PCLK}}\\]\nLehrannahme B, innerhalb des APB-Maximums: WWDG2, \\(f_{\\mathrm{PCLK}} = 100\\,\\mathrm{MHz}\\), Prescaler 8. Zum Vergleich 50 MHz, nicht 200 MHz.\n\\[t_{\\mathrm{tick}}(100\\,\\mathrm{MHz}) = 4096 \\times 8 / 10^{8} = 0{,}32768\\,\\mathrm{ms}\\]\nBei 50 MHz ist der Tick doppelt so lang, 0,65536 ms. Das APB-Maximum hängt von VOS ab und liegt laut Datenblatt bei bis zu 120 MHz. 200 MHz ist kein zulässiger PCLK.\n\nAbbildung G braucht die Projekt-PCLK. Solange sie fehlt, bleiben die ms-Achsen als Illustration gekennzeichnet. Tickquantisierung und Jitter extra addieren. Testzeiten mit Abstand zu beiden Grenzen."
   },
   {
     "objectID": "vorlesungen/08_multicore-synchronisation-safety.html#das-fenster-konzept-window-watchdog",
     "href": "vorlesungen/08_multicore-synchronisation-safety.html#das-fenster-konzept-window-watchdog",
     "title": "08 · Multicore-Synchronisation & Safety",
     "section": "Das Fenster-Konzept (Window Watchdog)",
-    "text": "Das Fenster-Konzept (Window Watchdog)\nZähler \\(T\\), Fenster \\(W\\). EWI bei Erreichen von 0x40. Reset beim Übergang 0x40 → 0x3F, nicht beim Lauf bis null.\nZu früh: Refresh, während der Zähler noch über dem Fenster liegt. Ob Gleichheit mit \\(W\\) noch erlaubt ist, steht im RM0399 der Revision. Den Grenzschritt nicht als Labormesspunkt nehmen.\nEin ausgelassener Programmschritt löst nicht automatisch einen frühen Refresh aus, wenn eine feste Wartezeit danach immer noch im Fenster liegt.\n\nPrescaler 8, Window 80, Reload 120 sind Zählerwerte. Die Millisekunden kommen erst aus \\(f_{\\mathrm{PCLK}}\\)."
+    "text": "Das Fenster-Konzept (Window Watchdog)\nLehrwerte: Startzähler \\(T = 127\\), Fenster \\(W = 80\\). EWI bei 0x40. Reset beim Übergang 0x40 → 0x3F.\nLehrregel: Refresh ist zu früh, solange der Zähler größer als 80 ist. Gleichheit 80 gilt in diesem Beispiel als erlaubt. Den Vergleich im RM0399 gegenlesen; die Bitformel dieser Revision ist hier nicht zeilenweise geprüft.\nBei 0,32768 ms je Tick: 47 Schritte von 127 auf 80 dauern 15,4 ms (noch zu früh). 16 weitere Schritte von 80 auf 0x40 dauern 5,2 ms (Fenster). Danach ein Tick bis zum Reset.\n\n5 ms nach dem Reload: Zähler noch über 80, zu früh, Reset ohne EWI.\n18 ms: Zähler etwa 72, im Fenster, zulässig.\nkein Refresh über 25 ms: Reset nach 0x3F.\n\nosDelay rastet auf 1 ms und beweist das Fenster nicht. Marker an Reload und Refresh, Zeitbasis der Lehrkonfiguration.\nEin ausgelassener Programmschritt löst nicht automatisch einen frühen Refresh aus, wenn eine feste Wartezeit danach immer noch im Fenster liegt.\n\nPrescaler 8, Window 80, Reload 120 sind Zählerwerte. Die Millisekunden kommen erst aus \\(f_{\\mathrm{PCLK}}\\)."
   },
   {
     "objectID": "vorlesungen/08_multicore-synchronisation-safety.html#visualisierung-des-wwdg-fensters",
@@ -3245,7 +3252,7 @@
     "href": "vorlesungen/08_multicore-synchronisation-safety.html#schritt-2-der-asynchrone-multicore-zugriff",
     "title": "08 · Multicore-Synchronisation & Safety",
     "section": "Schritt 2: Der asynchrone Multicore-Zugriff",
-    "text": "Schritt 2: Der asynchrone Multicore-Zugriff\nM7, kein osDelay:\nfor (uint32_t i = 0; i &lt; N; i++) {\n    if (HAL_HSEM_Take(1, 0x4D37u) == HAL_OK) {\n        __DMB();\n        shared_count += 1u;\n        __DMB();\n        HAL_HSEM_Release(1, 0x4D37u);\n    }\n    HAL_Delay(1); /* außerhalb des Schlosses */\n}\nM4, auch im Erfolgspfad nachgeben:\nfor (uint32_t i = 0; i &lt; N; i++) {\n    if (HAL_HSEM_Take(1, 0x4D34u) == HAL_OK) {\n        __DMB();\n        shared_count += 1u;\n        __DMB();\n        HAL_HSEM_Release(1, 0x4D34u);\n    }\n    osDelay(1); /* ein Tick, außerhalb */\n}\nWarten ohne Lost Wakeup ist ein eigener Versuch, nicht diese Zählschleife. Mehrere Tasks an ID 1 brauchen zusätzlich einen lokalen Mutex.\n\n\\(N\\) endlich. Danach beide fertig und dann erst \\(2N\\) lesen. Sonst liest man einen Zwischenstand."
+    "text": "Schritt 2: Der asynchrone Multicore-Zugriff\nM7 zählt nur erfolgreiche Inkremente. Timeout nach 2 s lokalen HAL_GetTick macht den Lauf ungültig, nicht zu einem Sollwert \\(2N\\).\nuint32_t hits = 0, t0 = HAL_GetTick();\nwhile (hits &lt; N) {\n    if ((uint32_t)(HAL_GetTick() - t0) &gt; 2000u) { fail(); return; }\n    if (HAL_HSEM_Take(1, 0x37u) != HAL_OK) continue;\n    __DMB();\n    shared_count += 1u;\n    __DMB();\n    HAL_HSEM_Release(1, 0x37u);\n    hits++;\n}\nDer M4 tut dasselbe mit ProcessID 0x34 und osKernelGetTickCount, und gibt danach die CPU mit osDelay(1) ab. Der Zähler startet einmal bei 0. Gelesen wird er erst, wenn beide hits == N gemeldet haben. HSEM stellt keine Cache-Kohärenz her; die Region bleibt non-cacheable.\nWarten ohne Lost Wakeup ist ein eigener Versuch, nicht diese Zählschleife. Mehrere Tasks an ID 1 brauchen zusätzlich einen lokalen Mutex.\n\n\\(N\\) endlich. Danach beide fertig und dann erst \\(2N\\) lesen. Sonst liest man einen Zwischenstand."
   },
   {
     "objectID": "vorlesungen/08_multicore-synchronisation-safety.html#schritt-3-den-wwdg-integrieren",
