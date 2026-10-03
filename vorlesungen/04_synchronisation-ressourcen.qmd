@@ -3,157 +3,214 @@ title: "04 · Synchronisation und Ressourcenverwaltung"
 subtitle: "Race Conditions, Mutexe, Deadlocks und Priority Inversion · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 # Vortrag:  quarto preview vorlesungen/04_synchronisation-ressourcen.qmd
-#           (Notizen nur mit Taste S)
 # Handout:  quarto render vorlesungen/04_synchronisation-ressourcen.qmd --profile handout --to pdf
-#           → _handout/vorlesungen/04_synchronisation-ressourcen.pdf
 format: revealjs
 ---
 
 ## Willkommen auf der dunklen Seite der Echtzeit!
 
-- Herzlich willkommen zum 4. Termin unserer Vorlesung
-- Letzte Woche: FreeRTOS installiert und Präemption gefeiert
-- Heute: Warum genau diese Präemption das System zerstören kann
-- Leitfrage: Was passiert, wenn zwei Tasks gleichzeitig auf dieselbe Hardware zugreifen?
-- Werkzeuge: Semaphoren und Mutexe, um das Chaos zu verhindern
+- Vierter Termin: geteilte Ressourcen auf **einem** FreeRTOS-Kern (CM4)
+- Präemption ist nützlich und erzeugt konkurrierende Zugriffe
+- Heute: Race, Semaphor, Mutex, Deadlock, Prioritätsinversion
+- Ein Mutex dieses Kernels schützt nicht den CM7, DMA oder fremde ISRs
 
 ::: notes
-Willkommen zur vierten Vorlesung! Letzte Woche: FreeRTOS und Präemption als Feature für harte Deadlines. Heute die gefährliche Seite: Asynchronität korrumpiert Daten und kann das System lahmlegen. Fokus: Synchronisation in Echtzeitsystemen.
+Plattform wie VL3, soweit das Projekt sie bestätigt: NUCLEO-H755ZI-Q, Kernel auf dem CM4. Keine .ioc im Repo — UART, Takt und IRQ-Prioritäten am Cube-Projekt ablesen. Mehrkern nur als Ausblick.
 :::
 
 ## Agenda für heute
 
-1. Recap: Die Macht der Präemption
-2. Race Conditions und geteilte Ressourcen
-3. Assembler-Ebene: Warum `counter++` crasht
-4. Lösungsansätze: Spinlocks vs. Interrupt-Sperren vs. OS-Blocking
-5. Semaphoren und Mutexe
-6. Deadlocks, Priority Inversion und Mars Pathfinder (PIP)
+1. Lost Update und was „atomar“ hier heißt
+2. Spin, IRQ-Maske, Blockieren
+3. Semaphor und Mutex, inklusive ISR-Regeln
+4. Deadlock und Prioritätsinversion mit Zahlen
+5. Pathfinder als belegte Fallstudie, dann Labor
 
 ::: notes
-Problem-Analyse zuerst: Race Conditions und Schuld der Präemption. Dann C auf Assembler-Ebene. Alte Konzepte (Spinlock, IRQ-Sperre) und warum sie im RTOS tödlich sind. Saubere Lösung: Semaphoren und Mutexe. Nach der Pause: Deadlocks und Prioritätsinversion.
+Dieselben Tasksets nicht mit neuen Zahlen vermischen. Das Inversionsbeispiel gilt für beide Diagramme.
 :::
 
 ## Recap: Die Macht der Präemption
 
-- Präemptives Scheduling: Das OS (SysTick) kann einer laufenden Task jederzeit die CPU entreißen
-- Die unterbrochene Task merkt davon nichts
-- Pause exakt am aktuellen Program Counter (PC)
-- CPU-Register werden auf den Stack gerettet
-- Diese Asynchronität ist gewollt — und extrem gefährlich
+- Wechsel nicht nur am SysTick: auch ein Ereignis oder eine IRQ kann einen Thread bereit machen
+- Im üblichen CM4F-Port führt **PendSV** den Kontextwechsel aus
+- Auf einem Kern rechnen nicht zwei Threads gleichzeitig
+- „Gleichzeitig“ heißt hier: verschachtelt, mit eigenen Registern
 
 ::: notes
-Präemption: SysTick, PendSV rettet Register, andere Task läuft. Die unterbrochene Task kann nicht sagen „Warte, Satz zu Ende schreiben“. Gefahr: beide Tasks beschreiben dasselbe „Blatt Papier“ — Shared Resource.
+Anschluss an VL2/VL3. Hohe Priorität läuft, wenn sie Ready ist. Vor ihrem Release ist sie nicht Ready.
 :::
 
 ## Motivation: Der Kampf um den UART
 
-- Szenario auf dem STM32:
-  - `Task_Temp` (Prio Normal) sendet: `"Temperatur: 22 Grad\n"`
-  - `Task_Hum` (Prio High) sendet: `"Feuchtigkeit: 40 %\n"`
-- Beide rufen `printf()` auf — byteweise Schreiben auf dasselbe UART-Register
+- Zwei Threads wollen je eine ganze Zeile ausgeben
+- `printf` schreibt nicht universell Byte für Byte in ein Datenregister
+- Abhängig von Retargeting, Puffer, Bibliothekslock, HAL und Transfermodus
+- Möglich: vermischte Zeichen, `HAL_BUSY`, verlorene Ausgabe — nicht „immer Buchstabensalat“
 
 ::: notes
-Alltäglich: Temperatur- und Feuchtigkeits-Task teilen sich den UART und `printf`. Feuchtigkeit hat höhere Prio (Timer-getriggert). Was erscheint auf der Konsole?
+Das Motivationsbild ist eine angenommene byteweise Ausgabe. Den echten Pfad im Labor prüfen.
 :::
 
 ## Das visuelle Chaos
 
-- `Task_Temp` beginnt: `> Temp`
-- SysTick feuert — `Task_Hum` (High) präemptiert
-- `Task_Hum` schreibt fertig: `> TempFeuchtigkeit: 40 %`
-- `Task_Hum` schläft; `Task_Temp` schreibt den Rest
-- Ergebnis: `> TempFeuchtigkeit: 40 %eratur: 22 Grad` — Buchstabensalat
+Angenommene byteweise Retarget-Funktion, ohne gemeinsamen Schutz:
+
+| Schritt | Temp | Hum | Leitung |
+|--------:|------|-----|---------|
+| 1 | `T=21` | | `T=21` |
+| 2 | | `H=40\n` schiebt sich dazwischen | `T=21H=40` |
+| 3 | Rest ` C\n` | | Zeile zerrissen |
+
+Geschützt: formatieren im privaten Puffer, dann Acquire, **ganze** Nachricht, Abschluss, Release.
 
 ::: notes
-Temperatur-Task schreibt T-e-m-p, dann präemptiert die Feuchtigkeits-Task und schreibt in dasselbe Register. Danach Rest „eratur“ — Datenstrom korrumpiert.
+Bytes und logische Nachricht trennen. Der Mutex repariert nicht automatisch die C-Bibliothek. Alle Writer müssen denselben Schutz benutzen.
 :::
 
 ## Das Problem geteilter Ressourcen
 
-- UART ist eine Shared Resource (geteilte Ressource)
-- Unabgesprochener Zugriff mehrerer Tasks — Datenkorruption
-- Typische Shared Resources in Embedded Systems:
-  - Peripherie-Register (UART, SPI, I2C)
-  - Hardware (Displays, Motoren)
-  - Globale Variablen (Arrays, Structs, Fehlerzähler)
-  - Dynamischer Speicher (`malloc`/`free`)
+- Fehler ist schon ein verlorenes Update, kein nötiger HardFault
+- `volatile` macht Read-Modify-Write nicht atomar
+- Ein Mutex schließt die **beteiligten Threads** aus, nicht jede IRQ
+- Lesen gehört dazu, wenn mehrere Felder zusammen einen Snapshot bilden
 
 ::: notes
-Buchstabensalat ist nur die sichtbare Form. Sobald zwei Threads asynchron dieselbe Ressource nutzen: Absturz oder Datenverlust. Auch globale Arrays: halb neu, halb alt — logischer Fehler.
+Frage: Hilft `volatile` gegen das verlorene Update? Nein. Es verhindert Wegoptimieren, nicht das Verschränken zweier RMW-Folgen. Data Race im Sprachmodell und der Maschinenablauf sind verwandt, aber nicht dasselbe.
 :::
 
 ## Lernziele des heutigen Tages
 
-1. Race Condition auf Assembler-Ebene erklären
-2. Unterschied Spinlocks vs. OS-Blocking verstehen
-3. CMSIS-API für Semaphoren und Mutexe kennen
-4. Wissen, warum Mutexe Ownership besitzen und Semaphoren nicht
-5. Priority Inversion und Priority Inheritance kennen
+1. Ein verlorenes Update an Registern und RAM erklären
+2. Spin, Maskierung und Blockieren nach dem Konkurrenten wählen
+3. Semaphor-Token und Mutex-Ownership unterscheiden
+4. Dieselbe Inversion ohne und mit PIP nachrechnen
+5. Pathfinder als Vereinfachung einer belegten Ursache einordnen
 
 ::: notes
-Race Condition auf CPU-Ebene, nicht nur als Buzzword. Semaphor vs. Mutex gezielt einsetzen. Prioritätsinversion: unwichtige Task reißt System mit; FreeRTOS löst mit Priority Inheritance.
+PIP verkürzt die Extra-Verzögerung durch Medium. Es beendet weder Deadlocks noch Starvation.
 :::
 
 ## Was ist eine Race Condition?
 
-- Race Condition (Wettlaufsituation):
-  - Verhalten hängt unvorhersehbar von der zeitlichen Reihenfolge ab
-  - Code „funktioniert meistens“, crasht aber selten (Heisenbug)
-- Auslöser: asynchrone Präemption während einer Datenmanipulation
+- Das Ergebnis hängt von der Verschränkung nicht synchronisierter Zugriffe ab
+- Auf einem Kern genügt eine Präemption zwischen Lesen und Schreiben
+- Betroffene: Threads untereinander, oder Thread und ISR, oder ein zweiter Busmaster
+- Der Mechanismus muss zu **diesen** Konkurrenten passen
 
 ::: notes
-Ergebnis hängt davon ab, wer den Wettlauf gewinnt. In 99 % der Fälle zufällig ok. Mit Breakpoints verschwindet der Fehler — klassischer Heisenbug.
+Erste Frage der Matrix: Wer greift noch zu?
 :::
 
 ## Das simpelste Code-Beispiel
 
-:::: {.columns}
-::: {.column width="50%"}
-- Globale Variable: `volatile uint32_t error_counter = 5;`
-- Task A (Low) und Task B (High) melden beide einen Fehler
-- Beide rufen `error_counter++;` auf
-- War der Wert `5`, erwarten wir danach `7`
-:::
-::: {.column width="50%"}
 ```c
-// Globale Variable (Shared Resource)
-volatile uint32_t error_counter = 5;
+static volatile uint32_t counter; /* sichtbar, aber nicht atomar */
 
-void Task_A() {
-    // ...
-    error_counter++;
-    // ...
-}
-
-void Task_B() {
-    // ...
-    error_counter++;
-    // ...
-}
+void bump(void) { counter++; } /* kann ein Update verlieren */
 ```
-:::
-::::
+
+- Vereinfachtes Compilerbild, keine Garantie für genau drei Befehle
+- Ein einzelnes atomares Load oder Store ist noch kein atomares `++`
 
 ::: notes
-Klassischer Heisenbug: zwei Tasks inkrementieren `error_counter` von 5. Logik sagt 7 — unter ungünstigem Timing steht am Ende 6. Ein Fehler wurde verschluckt.
+Das Disassembly des Labor-Builds in die Notiz schreiben, sobald der Build existiert. Heute gibt es kein Firmwareprojekt im Repo.
 :::
 
 ## Der Blick unter die Haube (Assembler)
 
-- In C wirkt `counter++` wie ein Befehl
-- ARM ist Load/Store: kein direktes „Erhöhe-RAM“
-- Compiler übersetzt in Read-Modify-Write (3 Befehle):
-  1. `LDR`: Wert aus RAM in Register ($R0 = 5$)
-  2. `ADD`: Register in der ALU erhöhen ($R0 = 6$)
-  3. `STR`: Register zurück in den RAM schreiben
-- Was, wenn Präemption genau zwischen `LDR` und `STR` zuschlägt?
+Lehrbild, nicht das universelle Listing:
+
+1. `LDR`: RAM nach Register
+2. `ADD`: nur das Register
+3. `STR`: Register nach RAM
+
+Zwischen den Befehlen kann der Kern wechseln. Das Register von A bleibt in **As** Kontext, nicht in Bs.
 
 ::: notes
-C ist eine Illusion: Load/Store-Architektur. Interrupt nach jedem Assembler-Befehl möglich. Kritisch: PendSV zwischen `ADD` und `STR`.
+PendSV sichert As Register. B startet mit eigenen Registern und liest den RAM erneut.
 :::
 
 ## Visualisierung der Datenkorruption
+
+Start `counter = 5`. Zwei Inkremente, erwartet 7.
+
+| Zeit | aktiv | Register A | Register B | RAM |
+|------|-------|------------|------------|----:|
+| 1 | A liest | 5 | — | 5 |
+| 2 | A addiert | 6 | — | 5 |
+| 3 | Wechsel, B liest | 6 (gesichert) | 5 | 5 |
+| 4 | B schreibt | 6 | 6 | 6 |
+| 5 | A schreibt | 6 | — | **6** |
+
+Geschützt, gleiche Starts: A liest und schreibt fertig (RAM 6), danach B schreibt **7**.
+
+::: notes
+Synthetisches Maschinenmodell. Die 6 von A wandert nicht in Bs Register. `volatile` ändert diese Tabelle nicht.
+:::
+
+## Atomarität (Die Lösung des Problems)
+
+- „Atomar gegenüber den relevanten Zugriffen“ heißt: kein sichtbarer Zwischenstand **für diese Konkurrenten**
+- Das ist nicht „keine Unterbrechung überhaupt“
+- Unter einem Mutex dürfen fremde Threads und IRQs weiterlaufen
+- Eine kurze IRQ-Maske ist ein anderes Werkzeug mit anderem Schutzradius
+
+::: notes
+Gegenseitiger Ausschluss und Interruptfreiheit nicht gleichsetzen.
+:::
+
+## Definition der Begriffe
+
+| Begriff | hier |
+|---------|------|
+| Kritischer Abschnitt | Zugriffe, die zusammenpassen müssen |
+| Mutex | Ausschluss von Threads, mit Owner |
+| Semaphor | Tokenzahl, ohne Owner |
+| Spin | aktiv pollen, bleibt Running |
+| Blocked | keine eigenen Threadbefehle; der Kern kostet weiter Zeit |
+
+Entscheidung, kurz:
+
+| Konkurrent | Mittel |
+|------------|--------|
+| Thread/Thread, Ressource | Mutex |
+| ISR signalisiert Thread | Semaphor oder Thread-Flag |
+| ein Zähler, geprüft | Atomic oder sehr kurze Sektion |
+| mehrere gleiche Plätze | Counting Semaphore |
+| Nachricht mit Daten | Queue (nächster Termin) |
+
+::: notes
+Ein Mutex wirkt nur, wenn jeder beteiligte Threadzugriff dieselbe Vereinbarung einhält. Atomics: Typ, Alignment und erzeugter Code prüfen; keine Peripherieregister „nebenbei“ atomar machen.
+:::
+
+## Schutzidee 1: Der Spinlock (Polling)
+
+Absichtlich falsch:
+
+```c
+while (lock) { }
+lock = 1; /* Check-then-Set ist selbst eine Race */
+```
+
+- Ein korrektes Test-and-Set beseitigt diese Race
+- Es beseitigt nicht das Fortschrittsproblem auf einem präemptiven Kern
+- Für den Laborfall (H wartet auf L) ist Spin die falsche Wahl
+- Nicht jedes SMP- oder Bare-Metal-Szenario ist damit verboten
+
+::: notes
+Zwei Ursachen getrennt halten: nicht-atomares Flag und „der Besitzer bekommt keine CPU“.
+:::
+
+## Warum Spinlocks im RTOS crashen
+
+L hält den Lock. H wird bereit und pollt.
+
+- Spin: H bleibt Running, L ist nur Ready und gibt nicht frei
+- IRQs können trotzdem laufen
+- `osThreadYield` in H gibt L **nicht** die CPU, solange H höher und Ready bleibt
+- Blockieren: H wird nach erfolglosem Acquire Blocked, L kann weiterrechnen
+- Das löst noch nicht die spätere Störung durch Medium
 
 ```{.plantuml}
 @startuml
@@ -161,540 +218,434 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-
-robust "Task A (Low)" as TA
-robust "Task B (High)" as TB
-concise "RAM Wert" as RAM
-
+concise "Spin" as S
+concise "Block" as B
 @0
-RAM is "5"
-TA is LDR : R0 = 5
-TB is Ready
-
-@1
-TA is ADD : R0 = 6
-TB is Ready
-
+S is "H pollt"
+B is "H blocked"
 @2
-TA is Ready : PRÄEMPTION!
-TB is LDR : R0 = 5
-
-@3
-TA is Ready
-TB is ADD : R0 = 6
-
-@4
-TA is Ready
-TB is STR
-RAM is "6"
-
-@5
-TA is STR : Schreibt 6!
-TB is Blocked
-RAM is "6"
+S is "L wartet"
+B is "L rechnet"
 @enduml
 ```
 
-- Task B schreibt `6`; Task A überschreibt danach mit veralteter `6` — die `7` ist verloren
-
 ::: notes
-Task A: LDR 5, ADD $R0=6$, dann SysTick. Register auf Stack. Task B liest RAM noch 5, speichert 6. Task A setzt mit STR seine 6 — Erhöhung von B vernichtet.
-:::
-
-## Atomarität (Die Lösung des Problems)
-
-- Ein Code-Block muss atomar ausgeführt werden
-- Atomar (griech. *atomos* = unteilbar): keine Unterbrechung, kein sichtbarer Zwischenzustand
-- Sobald Task A ausliest, darf keine andere Task lesen/schreiben, bis Task A gespeichert hat
-- Frage: Wie erzwingen wir Atomarität in C?
-
-::: notes
-Read-Modify-Write wurde zerrissen. Atomarität: LDR/ADD/STR unteilbar. Mehrere Wege in C — nächste Folien.
-:::
-
-## Definition der Begriffe
-
-:::: {.columns}
-::: {.column width="55%"}
-- Kritische Variable (Shared Resource): Daten, die geschützt werden müssen
-- Kritischer Abschnitt (Critical Section): Code, der atomar auf die Ressource zugreift
-- Ziel: nur die Critical Section absichern — nicht die ganze Task
-:::
-::: {.column width="45%"}
-```c
-void Task_A() {
-    // ... Unkritischer Code ...
-
-    // --- START CRITICAL SECTION ---
-    error_counter++;
-    // --- END CRITICAL SECTION ---
-
-    // ... Unkritischer Code ...
-}
-```
-:::
-::::
-
-::: notes
-Daten vs. Code trennen: Shared Resource = Variable/Register; Critical Section = zugreifender Code. Nicht die ganze Task atomar machen — sonst kein Multitasking.
-:::
-
-## Schutzidee 1: Der Spinlock (Polling)
-
-:::: {.columns}
-::: {.column width="50%"}
-- Idee aus der Bare-Metal-Welt: Flag `lock`
-- Vor Zugriff: prüfen, ob `lock == 0`, dann auf `1` setzen
-- Achtung: Check-then-Set auf `lock` selbst ist eine Race Condition (benötigt atomares Test-and-Set / `LDREX`/`STREX`)
-- Frage: Warum ist das im RTOS trotzdem eine Katastrophe?
-:::
-::: {.column width="50%"}
-```c
-volatile int lock = 0;
-
-void Task_A() {
-    while(lock == 1); // Spinning
-    lock = 1;
-
-    error_counter++;
-
-    lock = 0;
-}
-```
-:::
-::::
-
-::: notes
-Spinlock: while-Schleife bis frei, dann sperren. Wartende Task „dreht sich im Kreis“. Warum in Single-Core-RTOS Garantie für Totalausfall?
-:::
-
-## Warum Spinlocks im RTOS crashen
-
-- Spinlocks verstoßen gegen RTOS-Regeln
-- CPU verbrennen: wartende Task bleibt Running (nicht Blocked), $100\%$ Last
-- Deadlock-Szenario:
-  1. Task L (Low) setzt `lock = 1`
-  2. Task H (High) präemptiert und spinnt auf `lock`
-  3. H gibt CPU nie ab — L kommt nie zu `lock = 0`
-- System friert ein; Watchdog schlägt zu
-
-::: notes
-OS sieht Spinning als Arbeit. High-Prio spinnt, Low-Prio kommt nie zum Entsperren — klassischer Deadlock auf Single-Core.
+„Blocked = keine eigenen Befehle“ ist richtig. „CPU-Last 0 %“ ist falsch, sobald Idle, Tick oder eine andere Aufgabe rechnet. Frage: Hilft Yield im hohen Spin? Nein.
 :::
 
 ## Schutzidee 2: Interrupts sperren
 
-:::: {.columns}
-::: {.column width="50%"}
-- Präemption kommt von Hardware-IRQs — also IRQs abschalten?
-- Cortex-M: `__disable_irq()` / `__enable_irq()`
-- In FreeRTOS: `taskENTER_CRITICAL()` / `taskEXIT_CRITICAL()`
-- Ist das eine gute Idee?
-:::
-::: {.column width="50%"}
-```c
-void Task_A() {
-    __disable_irq();
-
-    error_counter++; // atomar
-
-    __enable_irq();
-}
-```
-:::
-::::
+- Eine kurze, budgetierte Sperre kann zu harten Fristen passen
+- Gezählt wird die Dauer des Abschnitts plus Ein- und Austritt, nicht „ein Takt“
+- Lehrwerte: 2 µs bei Frist 100 µs kann passen; 5 ms bei derselben Frist nicht
+- Im ungünstigen Fall kommt die restliche Maskierungszeit zur übrigen Latenz hinzu
+- `__disable_irq` / `__enable_irq` (PRIMASK) nicht mit den FreeRTOS-Makros gleichsetzen
+- Der CM4F-Port maskiert über **BASEPRI** bis zu einer Schwelle und hebt den vorigen Stand wieder auf
 
 ::: notes
-Ohne Interrupts keine Präemption — `counter++` sicher. FreeRTOS bietet fertige Critical-Makros. Klingt perfekt — ist es nicht.
+`__enable_irq` löscht eine frühere Maske nicht sauber, wenn jemand anderes PRIMASK gesetzt hat. NMI, HardFault und nicht maskierte höhere IRQs fallen nicht unter denselben Schutz. Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit, nicht die Taskskala.
 :::
 
 ## Die Grenzen der Interrupt-Sperre
 
-- Vorteil: extrem schnell (oft 1 Taktzyklus)
-- Nachteil: zerstört harte Echtzeit
-  - 5 ms IRQ-Sperre: kein UART-RX, kein Motor-Timer, kein Not-Halt
-- Best Practice:
-  - Nur für extrem kurze Zugriffe (eine Variable)
-  - Niemals für lange `printf()` oder Delays
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+concise "Maske" as M
+concise "IRQ" as I
+@0
+M is offen
+I is idle
+@1
+M is PRIMASK
+@2
+I is pending
+@4
+M is offen
+I is ISR
+@enduml
+```
+
+- Pending heißt: die IRQ wartet, DMA muss damit nicht stehen
+- In der maskierten Sektion kein Delay, kein `printf`, kein blockierendes API
+- Task- und ISR-Makros des Ports nicht vertauschen
 
 ::: notes
-Nuklearoption: Welt steht still, Latenzgarantien weg. Erlaubt: drei Werte kopieren oder Zähler++. `printf` mit gesperrten IRQs = No-Go.
+Synthetische 2 µs und 5 ms, keine Boardmessung. Andere Latenzanteile bleiben außerhalb dieses Balkens.
 :::
 
 ## Die „richtige“ Lösung: OS-Blocking
 
-- Nicht `while()` und nicht Hardware-Sperren
-- Lösung über den RTOS-Scheduler
-- An das OS: „Schloss belegt? Dann blockiere mich, bis es frei ist.“
-- Wartende Task → Blocked ($0\%$ CPU)
-- Freigabe weckt die wartende Task
-- Werkzeuge: Semaphoren und Mutexe
+- Für Thread gegen Thread: blockieren statt polieren
+- Der Besitzer muss laufen dürfen, sonst gibt er nicht frei
+- PIP kommt erst, wenn ein höherer Thread **am selben Mutex** wartet
+- Vorher hat L nur seine eigene Priorität
 
 ::: notes
-Schloss vom Scheduler verwalten lassen. Blocked statt Spinning: keine CPU-Verschwendung, kein Spinlock-Deadlock, Interrupts laufen weiter.
+OS-Blocking ist die passende Idee für das Labor, kein Universalschloss.
 :::
 
 ## Zusammenfassung Block 1
 
-- Asynchrone Präemption + Shared Variables → Race Conditions
-- C-Befehl wird zu `LDR`/`ADD`/`STR` — Datenverlust möglich
-- Critical Sections müssen atomar abgesichert sein
-- Spinlocks: CPU-Brand und Deadlocks
-- Interrupt-Sperren: Latenzgarantien zerstört
-- Saubere Lösung: OS-Blocking (nächster Block: Semaphoren)
+- Verlorenes Update: Endwert 6 statt 7
+- Spin kann den Besitzer verdrängen
+- IRQ-Sperre ist ein Latenzbudget, kein Tabu und kein Freifahrtschein
+- Mutex: beteiligte Threads, nicht der ganze Chip
 
 ::: notes
-Heisenbugs auf Assembler-Ebene verstanden. Spinlocks und lange IRQ-Sperren sind Gift. Fragen zur Hardware-Ebene, bevor Block 2 (Semaphoren) beginnt?
+Nächster Block: Token und Ownership.
 :::
 
 ## Was ist ein Semaphor?
 
-- Griechisch: „Zeichenträger“ (*sema* = Zeichen, *pherein* = tragen)
-- Historisch: Eisenbahn-Signalflügel (frei / Halt)
-- IT (Edsger W. Dijkstra, 1965):
-  - Vom OS verwaltete Integer-Variable (Zähler)
-  - Zwei atomare Operationen: Acquire (Nehmen) und Release (Freigeben)
+- Zähler von 0 bis `max_count`
+- `Acquire` verringert, `Release` erhöht
+- Kein gespeicherter Owner: ein anderer Thread darf `Release` rufen
+- ISR: `osSemaphoreRelease` ist vorgesehen; `Acquire` nur mit Timeout 0
+- Zusätzlich muss die NVIC-Priorität die Syscall-Schwelle einhalten
+- „ISR-safe“ heißt nicht „aus jeder Priorität“
 
 ::: notes
-Semaphor = Zeichenträger, Eisenbahn-Analogie. Dijkstra 1965: Zähler mit Acquire/Release, exklusiv vom Scheduler verwaltet.
+CMSIS-Spezifikation und FreeRTOS-Adapter können abweichen. Die Datei `cmsis_os2.c` im Projekt ist maßgeblich. Version hier nicht erfunden.
 :::
 
 ## Typ 1: Counting Semaphore (Zähl-Semaphor)
 
-- Zähler von $0$ bis $N$
-- Analogie: Parkhaus mit $N = 50$ Plätzen
-- Acquire: Auto rein $\rightarrow$ Zähler sinkt
-- Zähler $= 0$: Schranke zu, weitere Tasks Blocked
-- Release: Auto raus $\rightarrow$ Zähler steigt, Wartende werden geweckt
-- Einsatz: begrenzte Ressourcen (z. B. Pool aus 3 Verbindungen)
+Pool mit `osSemaphoreNew(3, 3, NULL)`:
+
+| Aktion | count |
+|--------|------:|
+| Start | 3 |
+| A nimmt | 2 |
+| B nimmt | 1 |
+| C nimmt | 0 |
+| D mit `timeout = 0` | 0, Fehler, kein Zugriff |
+| B gibt frei | 1, ein Wartender kann nehmen |
+
+- Es entsteht kein zweiter freier Platz
+- Der Zähler ist Verfügbarkeit, nicht die Identität eines Platzes
+- Höchste Priorität unter den Wartenden, soweit das Backend so wählt; keine Fairnessgarantie
+- `Release` bei vollem Zähler kann `osErrorResource` liefern und erzeugt kein weiteres Token
 
 ::: notes
-Parkhaus-Analogie: Acquire = einfahren, Release = ausfahren. Bei 0 blockiert das OS die nächste Task, bis wieder Platz ist.
+Parkhaus bleibt Bild. Die Bilanz ist die Aussage. „95 % binär“ ohne Quelle streichen.
 :::
 
 ## Typ 2: Binary Semaphore (Binärer Semaphor)
 
-- Spezialfall mit Max-Wert $N = 1$
-- Zähler nur $0$ (belegt) oder $1$ (frei)
-- Analogie: Toilettenschlüssel an der Tankstelle
-- In FreeRTOS/CMSIS meist binär genutzt
+- `max_count = 1`
+- Ressource anfangs da: `osSemaphoreNew(1, 1, NULL)`
+- Ereignis, noch nichts passiert: `osSemaphoreNew(1, 0, NULL)`
+- Zwei Releases vor dem nächsten Acquire: der zweite scheitert am vollen Zähler
+- Zwei Hardwareereignisse werden damit nicht automatisch zweimal bearbeitet
 
 ::: notes
-Parkhaus mit einem Platz / ein Schlüssel. In der Mikrocontroller-Praxis ~95 % binäre Semaphoren.
+Tokenbedeutung festlegen: „Arbeit da“, „ein Ereignis“ oder „Puffer frei“. Sonst Queue oder größerer Zähler, jeweils mit Überlaufregel.
 :::
 
 ## CMSIS-API für Semaphoren
 
 ```c
-// 1. Definition & Initialisierung
-osSemaphoreId_t mySemHandle;
-mySemHandle = osSemaphoreNew(1, 1, NULL); // (Max-Count, Initial-Count)
+osSemaphoreId_t sem =
+    osSemaphoreNew(1, 0, NULL); /* Ereignis, anfangs leer */
+if (sem == NULL) { Error_Handler(); }
 
-// 2. Warten (Acquire)
-osSemaphoreAcquire(mySemHandle, osWaitForever);
-
-// 3. Freigeben (Release)
-osSemaphoreRelease(mySemHandle);
+osStatus_t st = osSemaphoreAcquire(sem, 10);
+if (st != osOK) {
+    /* Timeout oder Parameter: Ressource nicht anfassen */
+}
 ```
 
+- `timeout = 0`: sofortiger Status, kein Blockieren
+- endliche Tickzahl: Fehlerpfad Pflicht
+- `osWaitForever`: kann dauern; das ist eine Entwurfsentscheidung
+
 ::: notes
-`osSemaphoreNew(1, 1, NULL)`: binär, Schlüssel frei. Timeout: `osWaitForever` oder z. B. 100 Ticks. Danach `osSemaphoreRelease`.
+Status nicht ignorieren. Ein binärer Semaphor ist kein Mutex mit Owner.
 :::
 
 ## Was exakt passiert bei Acquire / Release?
 
-:::: {.columns}
-::: {.column width="50%"}
-Acquire (Schlüssel holen)
-
-- OS prüft Zähler
-- $\ge 1$: Zähler $-1$, Task läuft weiter
-- $== 0$: Task Running $\rightarrow$ Blocked
-:::
-::: {.column width="50%"}
-Release (Schlüssel zurück)
-
-- OS erhöht Zähler um 1
-- Wartende Task in Blocked-Liste?
-- Ja: höchstpriore $\rightarrow$ Ready (ggf. Präemption)
-:::
-::::
+| count | Acquire | Release |
+|------:|---------|---------|
+| > 0 | zählt herunter, `osOK` | zählt hoch, bis max |
+| 0, Warten | Thread Blocked | weckt einen Wartenden oder zählt auf 1 |
+| = max | — | `osErrorResource`, Zähler bleibt |
 
 ::: notes
-Acquire: Zähler > 0 → abziehen und weiter; sonst Blocked. Release: erhöhen, ggf. Ready und sofortiger Kontextwechsel.
+Nicht jedes Acquire bei 0 blockiert. Timeout 0 kehrt sofort zurück.
 :::
 
 ## Der Hauptanwendungsfall: Signalisierung
 
-- Binärer Semaphor in FreeRTOS selten zur Absicherung
-- Primär: Signalisierung (Einweg-Kommunikation)
-- Deferred Interrupt Processing:
-  - ISR muss kurz bleiben
-  - ISR ruft nur `Release()`
-  - Wartende Task (`Acquire`) übernimmt die Arbeit
+```c
+/* ISR, Priorität erlaubt, Handle gültig, Kernel läuft */
+if (osSemaphoreRelease(sem) != osOK) {
+    /* voll: Ereignis geht in diesem Tokenmodell verloren */
+}
+
+/* Worker */
+if (osSemaphoreAcquire(sem, osWaitForever) == osOK) {
+    bearbeite_ein_token();
+}
+```
+
+- Kein `printf`, kein Mutex, kein blockierendes Warten in der ISR
+- Der Worker läuft erst, wenn die ISR fertig ist und seine Priorität ihn wählen lässt
+- Die CPU muss vor dem Ereignis nicht Idle gewesen sein
 
 ::: notes
-Zur Variablenabsicherung kommt der Mutex. Semaphoren: Signal aus ISR an Task. Deferred Interrupt Processing = zeitversetzte Verarbeitung in Task-Kontext.
+Thread-Flags können dasselbe Bit ebenfalls zusammenfassen. Beides ist keine verlustfreie Ereigniswarteschlange.
 :::
 
 ## Sequenzdiagramm: Signalisierung aus der ISR
 
 ```{mermaid}
+%%| fig-width: 6.4
+%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'actorBkg': '#FFFFFF', 'actorBorder': '#E5E5EA', 'signalColor': '#86868B'}}}%%
 sequenceDiagram
-    participant Hardware as SPI Hardware
-    participant ISR as Hardware ISR
-    participant OS as OS Scheduler
-    participant Task as Verarbeitung (Task)
-
-    Note over Task: Blocked (Wartet auf Acquire)
-    Hardware->>ISR: Interrupt (Daten da!)
-    ISR->>OS: osSemaphoreRelease()
-    Note over OS: Zähler = 1
-    OS->>Task: Task wird Ready
-    Note over Task: Task wird Running (Präemption)
-    Task->>Task: Acquire rutscht durch (Zähler = 0)
-    Note over Task: Verarbeitet die Daten aufwendig!
+  participant HW as Hardware
+  participant ISR as ISR
+  participant K as Kernel
+  participant W as Worker
+  Note over W: wartet, Semaphor leer
+  HW->>ISR: Ereignis
+  ISR->>K: osSemaphoreRelease
+  K-->>W: Ready
+  Note over ISR: ISR endet, dann PendSV
+  W->>K: Acquire ok
+  W->>W: eine Verarbeitung
 ```
 
 ::: notes
-Task wartet, CPU idle. ISR nur Release, dann Task Ready/Running, Acquire setzt Zähler auf 0. Elegante Anbindung asynchroner Hardware ohne lange ISR.
+Kein Thread-Kontext mitten in der noch laufenden ISR. Ein zweites Release bei max 1 kann scheitern.
 :::
 
 ## Semaphoren haben kein „Ownership“
 
-- Kein Besitzrecht: OS merkt sich nicht, wer Acquire gemacht hat
-- Task A: Acquire; Task B: Release — erlaubt!
-- Für Signalisierung (ISR $\rightarrow$ Task) genial
-- Für Variablen-/UART-Schutz: Sicherheitsrisiko
-- Fremdtask kann Schloss versehentlich „aufbrechen“
+- Token merkt sich nicht, wer ihn nahm
+- B darf ein Release ausführen, auch wenn A genommen hat
+- Das ist für Ereignisse nützlich und für eine exklusive Ressource gefährlich
+- Deshalb für den UART-Schutz ein Mutex, nicht dieses Token
 
 ::: notes
-Kein Ownership: ISR darf Release ohne Acquire. Für UART-Schutz gefährlich — wir brauchen ein Schloss mit Besitzer.
+Binärer Semaphor mit Start 1 ist die Laborvariante **ohne** PIP, nicht „derselbe Mutex mit anderem Namen“.
 :::
 
 ## Die Rettung: Der Mutex (Mutual Exclusion)
 
-- Mutex = gegenseitiger Ausschluss
-- Konzeptionell binärer Semaphor, aber mit Ownership
-- Eiserne Regel: nur die sperrende Task darf entsperren
-- Fremde Task/ISR wird abgewiesen
-- Perfekt für Critical Sections
+- Zustände: frei, oder Owner = A
+- B kann nicht freigeben: die API liefert einen Fehler
+- Das ist keine Hardware-Sperre gegen wilde Speicherzugriffe
+- Nach erfolgreichem Acquire zugreifen, genau einmal passend freigeben
+- In den gezeigten Abschnitten kein vermeidbares `osDelay`: der Mutex maskiert keine IRQs, verlängert aber die Sperrdauer
+
+```c
+const osMutexAttr_t attr = { .attr_bits = osMutexPrioInherit };
+osMutexId_t m = osMutexNew(&attr);
+```
 
 ::: notes
-Mutual Exclusion + Ownership im TCB. Falsches Release → Fehlercode, Schloss bleibt zu. Sicher gegen Fremdeinwirkung.
+CMSIS-Default 0 enthält **kein** PIP-Bit. Die dokumentierte CMSIS-FreeRTOS-Anbindung erzeugt native Mutexe trotzdem mit Inheritance und ignoriert dieses Bit. Weglassen schaltet PIP dort nicht ab. Lokal `cmsis_os2.c` prüfen. `osMutexRobust` ist in dieser Anbindung nicht die Rettung.
 :::
 
 ## CMSIS-API für Mutexe
 
 ```c
-// 1. Definition
-osMutexId_t uartMutex;
-uartMutex = osMutexNew(NULL);
-
-void PrintTask() {
-    for(;;) {
-        osMutexAcquire(uartMutex, osWaitForever);
-
-        // --- CRITICAL SECTION ---
-        printf("Temperatur: 22 Grad\n");
-        // --- END CRITICAL SECTION ---
-
-        osMutexRelease(uartMutex);
-        osDelay(500); // Ticks; bei 1000 Hz = 500 ms
+void Task(void *argument) {
+    (void)argument;
+    if (osMutexAcquire(m, 5) != osOK) {
+        return; /* Hilfs-return, nicht Task-Ende */
     }
+    if (sensor_ok()) {
+        use_resource();
+    }
+    osMutexRelease(m); /* Normal- und Fehlerpfad */
 }
 ```
 
+- Acquire-Fehler: Ressource nicht anfassen, nichts freigeben
+- `osMutexAcquire` / `osMutexRelease` sind in CMSIS nicht aus der ISR erlaubt
+- Rekursion ist ein **eigenes** Attribut `osMutexRecursive`
+- Zweites Acquire ohne Rekursion: bei `osWaitForever` Self-Deadlock, bei Timeout ein Fehler
+
 ::: notes
-API ähnlich Semaphor. Vor `printf`: Acquire; danach Release. Buchstabensalat vom UART-Beispiel ist damit behoben.
+Frühes `return` aus einer Hilfsfunktion ist erlaubt. `return` aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat.
 :::
 
 ## Sonderfälle in der C-Programmierung
 
-:::: {.columns}
-::: {.column width="55%"}
-- Was ist an diesem Code tödlich?
-- Antwort: Mutex bleibt für immer verriegelt
-- Früher oder später: Deadlock im System
-- Achtung bei frühem `return` / `break` in Critical Sections
-:::
-::: {.column width="45%"}
-```c
-osMutexAcquire(myMutex, osWaitForever);
+Rekursion, Owner A:
 
-if (sensor_error == 1) {
-    return; // Release fehlt!
-}
+| Aktion | Zähler |
+|--------|-------:|
+| frei | 0 |
+| A acquire | 1 |
+| A acquire nochmal | 2 |
+| A release | 1 |
+| A release | 0, jetzt darf B |
 
-error_counter++;
-osMutexRelease(myMutex);
-```
-:::
-::::
+- B kommt erst bei 0 dran
+- Ohne `osMutexRecursive` ist die zweite Zeile kein harmloses Verschachteln
 
 ::: notes
-Klassiker: Acquire, dann früher Return ohne Release — Schlüssel verloren, alle anderen stapeln sich vor der Tür.
+Zähler, Owner und Tokenzahl nicht vermischen.
 :::
 
 ## Best Practices für Mutexe
 
-- So kurz wie möglich in der Critical Section bleiben
-- Niemals in einer Critical Section `osDelay()` aufrufen
-- Niemals Mutex-Acquire in einer Hardware-ISR
-  - verboten / undefiniert bzw. Assert (ISR kann nicht Blocked werden)
-- In ISRs: Semaphoren oder Queues, keine Mutexe
+- Ein Mutex, eine Invariante, ein Name
+- Alle konkurrierenden Threadzugriffe, auch die lesenden
+- Kurzer Abschnitt; Rechnung vor dem Acquire, Warten dahinter
+- Keine zweite Sperre in umgekehrter Reihenfolge
+- Kein Mischen von `osMutex*` und `xSemaphore*` auf demselben Objekt
 
 ::: notes
-Kurz halten: sperren, kopieren, entsperren. `osDelay` im Mutex = Todsünde. ISR darf nicht schlafen — nur Semaphor/Queue. Als Nächstes: Deadlocks, Priority Inversion und Mars Pathfinder.
+Ownership verhindert die falsche Freigabe über die API. Sie verhindert nicht, dass jemand den Puffer direkt beschreibt.
 :::
 
 ## Rekursive Mutexe
 
-- Was passiert, wenn eine Task eine Funktion aufruft, die einen Mutex sperrt, und diese wiederum denselben Mutex anfordert?
-- Normaler Mutex: Self-Deadlock — die Task blockiert sich selbst
-- Rekursiver Mutex:
-  - OS merkt sich den Owner
-  - Erneutes Acquire durch denselben Owner: `count++` statt Blockade
-  - Freigabe erst, wenn `Release` genauso oft wie `Acquire` (`count == 0`)
-- Nutzen: verschachtelte Bibliotheken (z. B. Dateisysteme)
+- Nur wenn dieselbe Aufgabe dasselbe Schloss erneut braucht
+- Nicht als Ersatz für eine klare Aufrufstruktur
+- Jedes Acquire braucht sein Release
+- Prioritätsvererbung und Rekursion sind unabhängig wählbare Bits; der FreeRTOS-Adapter folgt den Bits nicht in jedem Punkt
 
 ::: notes
-Spezialfall rekursiver Mutex: Bibliotheksfunktion A sperrt, ruft Hilfsfunktion B auf, B sperrt denselben Mutex. Normaler Mutex → Self-Deadlock. Rekursiv: Owner erkannt, Counter hoch; Release muss ebenso oft folgen.
+Im Zweifel nicht rekursiv, sondern die kritische Arbeit in eine Funktion ohne erneutes Acquire legen.
 :::
 
 ## Zusammenfassung: Mutex vs. Binärer Semaphor
 
-| Eigenschaft | Binärer Semaphor | Mutex (Mutual Exclusion) |
-| :--- | :--- | :--- |
-| Hauptzweck | Signalisierung (ISR $\rightarrow$ Task) | Absicherung (Ressourcenschutz) |
-| Ownership | Nein | Ja (nur Besitzer entsperrt) |
-| Verwendung in ISR? | Ja (`Release` weckt Task) | Nein (verboten / Assert) |
-| Priority Inheritance? | Nein | Ja (dazu gleich mehr) |
-| Gefahr | Fremdtask öffnet Schloss versehentlich | Priority Inversion (ohne OS-Schutz) |
+| | Mutex | Binärer Semaphor |
+|--|-------|------------------|
+| Gegenstand | Ressource mit Owner | Token oder Ereignis |
+| Release durch anderen | API-Fehler | möglich |
+| ISR | weder Acquire noch Release | Release ja, Acquire nur Timeout 0 |
+| PIP | gewünscht und im Adapter oft immer an | nein |
+| Start | frei | 0 oder 1, je nach Bedeutung |
 
 ::: notes
-Semaphor: Event aus ISR an Task, kein Ownership. Mutex: persönliches Schloss für Shared Resources. Klausurregel: Array/UART absichern → immer Mutex.
+Folie 50 der alten Fassung gilt für den genannten Adapter, nicht als CMSIS-Gesetz für jedes RTOS.
 :::
 
 ## Die Katastrophe: Wenn Locks böse werden
 
-- Mutexe schützen Daten — erzeugen aber zwei gefürchtete Fehlerbilder:
-  1. Deadlocks (Verklemmung)
-  2. Priority Inversion (Prioritätsinversion)
-- Oft erst nach Wochen im Feldtest sichtbar
-- Zerstören das Vertrauen in Echtzeitgarantien
+- Deadlock: eine **Gruppe** wartet zyklisch
+- Andere Threads und IRQs können weiterlaufen
+- „System freeze“ ist eine mögliche Folge, kein Zwang
+- Prioritätsinversion ist kein Deadlock: der Besitzer könnte weiterrechnen, wird aber verdrängt
 
 ::: notes
-Falscher Umgang mit Schlössern: Deadlocks und Prioritätsinversionen. Am Schreibtisch selten, unter Last und asynchronen Interrupts kritisch.
+Starvation aus VL3: High bleibt Ready und gibt die CPU nicht her. Inversion: High ist am Lock blockiert, Low kommt nicht zum Release.
 :::
 
 ## Der Deadlock (Verklemmung)
 
-- Deadlock: Tasks warten zirkulär aufeinander — niemand kommt weiter
-- Beispiel:
-  - Task 1 sperrt Mutex A
-  - Präemption → Task 2 sperrt Mutex B
-  - Task 2 will Mutex A $\rightarrow$ Blocked
-  - Task 1 will Mutex B $\rightarrow$ Blocked
-- Ergebnis: System Freeze
+T1 hält A und will B. T2 hält B und will A.
 
-```{mermaid}
-graph TD
-    T1[Task 1]
-    T2[Task 2]
-    M1[Mutex A]
-    M2[Mutex B]
+| Pfeil | Bedeutung |
+|-------|-----------|
+| Task → Ressource | wartet auf |
+| Ressource → Task | zugeteilt an |
 
-    T1 -->|hält| M1
-    T2 -->|hält| M2
-    T1 -->|wartet| M2
-    T2 -->|wartet| M1
+Zyklus: T1 → B → T2 → A → T1.
 
-    style T1 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style T2 fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-    style M1 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
-    style M2 fill:#F5F5F7,stroke:#1D1D1F,stroke-width:1px !important
-```
+Ablauf: T1 nimmt A, T2 nimmt B, T2 wartet auf A, T1 wartet auf B. Beide Locks sind gehalten, beide Threads Blocked.
 
 ::: notes
-Zwei Ressourcen (SPI = Mutex A, Display = Mutex B). Task 1 hält A, Task 2 hält B; beide wollen den anderen Mutex → Zirkelschluss, kein Aufwachen mehr.
+Einzelinstanz-Locks. Ein Zyklus in einem anderen Ressourcenmodell ist nicht automatisch derselbe Beweis.
 :::
 
 ## Die vier Coffman-Bedingungen
 
-- Ein Deadlock entsteht nur, wenn **alle vier** gleichzeitig gelten:
-  1. **Mutual Exclusion** — Ressource nicht teilbar
-  2. **Hold-and-Wait** — Task hält A und wartet auf B
-  3. **No Preemption** — gehaltene Locks werden nicht entzogen
-  4. **Circular Wait** — zyklische Warteschlange
-- Unsere Regeln brechen genau diese Kette:
-  - Regel 1 (keine Schachtelung) $\rightarrow$ kein Hold-and-Wait
-  - Regel 2 (globale Reihenfolge) $\rightarrow$ kein Circular Wait
+1. Mutual exclusion: die Ressource gehört einem
+2. Hold and wait: halten und auf die nächste warten
+3. No preemption: **niemand nimmt die Ressource zwangsweise weg** — das ist nicht „keine CPU-Präemption“
+4. Circular wait: der Zyklus oben
+
+Alle vier zusammen, in diesem Lockmodell.
 
 ::: notes
-Coffman et al. (1971): Deadlock nur bei allen vier Bedingungen. In der Praxis genügt es, eine zu brechen — deshalb die beiden Vermeidungsregeln der nächsten Folie.
+CPU-Präemption läuft weiter und verhindert den Deadlock nicht.
 :::
 
 ## Vermeidung von Deadlocks
 
-- Regel 1: Keine geschachtelten Mutexe (bricht Hold-and-Wait)
-  - Niemals einen zweiten Mutex anfordern, solange einer gehalten wird
-- Regel 2: Strikte Anforderungsreihenfolge (bricht Circular Wait)
-  - Wenn Schachtelung unvermeidbar: alle Tasks fordern Mutexe in derselben globalen Reihenfolge an (erst A, dann B)
-- So kann Task 2 niemals B sperren, solange A schon belegt ist
+Globale Ordnung: immer A vor B.
+
+- T2 wartet auf A und besitzt B noch nicht
+- T1 kann B nehmen, dann beide freigeben
+- Rang auch für Sperren, die eine Bibliothek innen nimmt
+- Timeout nur mit Rollback; allein verhindert er keine inkonsistenten Daten und keinen Livelock
+- PIP öffnet keinen Zyklus
 
 ::: notes
-Beste Praxis: ein Schloss, Critical Section, freigeben, dann nächstes. Bei zwei Schlössern: globale Hierarchie. Task 2 scheitert an A und geht Blocked, bevor sie B berührt — Task 1 hat freie Bahn.
+Freigabe in umgekehrter Reihenfolge ist eine gute Konvention, die Ordnung beim Nehmen ist die Regel.
 :::
 
 ## Der subtile Feind: Priority Inversion
 
-- Deadlock: System steht — offensichtlich
-- Priority Inversion: System läuft weiter, aber Echtzeitgarantien der wichtigsten Task sind zerstört
-- **Abgrenzung Starvation vs. Priority Inversion:**
-  - *Starvation:* Scheduler gewährt der Task nie CPU (reine Prioritäts-/Ready-Problematik)
-  - *Priority Inversion:* High blockiert indirekt über Mutex + mittelpriore Task
-- Setup:
-  - Task L (Low), Task M (Medium), Task H (High)
-  - Ein Mutex, den nur L und H teilen
-  - M braucht den Mutex nicht
+Lehrmodell, ein Kern, Kosten der API vernachlässigt, H > M > L, keine weiteren Threads:
+
+- L ab $t = 0$, nimmt den Lock, braucht $5\,\mathrm{ms}$ CPU bis zum Release
+- H ab $t = 1$, will denselben Lock, danach $1\,\mathrm{ms}$ CPU; $D_H = 10\,\mathrm{ms}$, absolut $t = 11\,\mathrm{ms}$
+- M ab $t = 2$, $20\,\mathrm{ms}$ CPU, fasst den Lock nicht an
+- Vorher sind H und M nicht Ready
+- Der kurze Acquire-Versuch von H zählt nicht als CPU-Zeit
 
 ::: notes
-Prioritätsinversion ist subtiler als Deadlock: keine Freeze-Anzeige, aber High wird ausgebremst. Low und High teilen den Bus-Mutex; Medium fasst ihn nie an. Starvation braucht keinen Mutex — nur den Scheduler. Inversion braucht Mutex + Mittelprio.
+Dieselben Jobs in beiden Bildern. M hat denselben CPU-Bedarf, nicht dieselbe Busy-Wait-Dauer aus der Wanduhr.
 :::
 
 ## Die Anatomie der Inversion (Schritt 1 und 2)
 
-- Task L ist Running und sperrt den Mutex (Critical Section)
-- Task H wacht auf und präemptiert L
-- Task H: Acquire scheitert $\rightarrow$ Blocked (L hält das Schloss)
-- Scheduler gibt CPU an L zurück, damit L freigeben kann
-- Bis hierhin: normale, gewollte Blockade
+Ohne PIP, binärer Semaphor als Ressourcentoken:
+
+- $0$–$2\,\mathrm{ms}$: L läuft und hält; bei $1\,\mathrm{ms}$ blockiert H
+- $2$–$22\,\mathrm{ms}$: M läuft, L ist nur Ready
+- $22$–$25\,\mathrm{ms}$: L restliche $3\,\mathrm{ms}$, Release
+- $25$–$26\,\mathrm{ms}$: H rechnet
+
+Wartezeit von H auf den Lock: $24\,\mathrm{ms}$. Antwortzeit $R_H = 25\,\mathrm{ms}$. Fertig bei $26\,\mathrm{ms}$, nach der Deadline $11\,\mathrm{ms}$.
+
+Medium ist das anschauliche Extra, nicht die Bedingung jeder Inversion. „Unbegrenzt“ gilt, wenn Medium dauerhaft Ready bleibt. Bei diesem begrenzten Job ist die Zeit endlich und trotzdem zu lang.
 
 ::: notes
-High will den Bus, Low hält ihn → High geht Blocked, Low rechnet weiter. Physikalisch korrekt: Low muss fertig werden dürfen.
+Direkte Blockierung durch L und zusätzliche Verdrängung durch M getrennt benennen. Gesamt-CPU-Arbeit: $5+1+20 = 26\,\mathrm{ms}$.
 :::
 
 ## Die Anatomie der Inversion (Schritt 3 und 4)
 
-- Task L rechnet noch (hält den Mutex)
-- Task M wacht auf und präemptiert L ($Prio_M > Prio_L$)
-- Task M braucht den Mutex nicht — lange Berechnung
-- Drama:
-  - M blockiert L
-  - L kann den Mutex nicht freigeben
-  - H (wichtigste Task!) wartet unbegrenzt in der Queue
+Mit PIP, ein Mutex, nur dieser Lock:
+
+- $0$–$1\,\mathrm{ms}$: L mit eigener Priorität
+- ab $1\,\mathrm{ms}$: H blockiert, L **erbt** H
+- $1$–$5\,\mathrm{ms}$: L rechnet weiter, obwohl M bei $2\,\mathrm{ms}$ Ready wird
+- Release bei $5\,\mathrm{ms}$, H rechnet $5$–$6\,\mathrm{ms}$
+- M danach $6$–$26\,\mathrm{ms}$
+
+Wartezeit $4\,\mathrm{ms}$, $R_H = 5\,\mathrm{ms}$, fertig bei $6\,\mathrm{ms}$, vor $t = 11\,\mathrm{ms}$.
+
+Die Erbschaft beginnt bei Hs Warten, nicht schon ab $t = 0$. PIP kürzt die Medium-Lücke. Es streicht nicht Ls restliche kritische Sektion.
 
 ::: notes
-Medium verdrängt Low nach prioritätsbasiertem Scheduling. High hängt Blocked auf Lows Schloss — eine mittelpriore Task blockiert indirekt die höchstpriore. Das ist Priority Inversion, nicht bloßes Verhungern.
+FreeRTOS vereinfacht die Vererbung bei mehreren gehaltenen Mutexen: L fällt nicht nach jedem einzelnen Release zwingend sofort auf die Basispriorität. Das Ein-Mutex-Bild nicht dafür ausgeben. Anbindung an VL2: Blocking gehört in die Antwortzeit.
 :::
 
 ## Visualisierung der Priority Inversion
@@ -705,275 +656,264 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-
-robust "Task H (High)" as TH
-robust "Task M (Medium)" as TM
-robust "Task L (Low)" as TL
-concise "Mutex Status" as MX
-
+concise "ohne PIP" as A
+concise "mit PIP" as B
 @0
-TH is Ready
-TM is Ready
-TL is Running
-MX is "Frei"
-
-@1
-TL is Running : Acquire
-MX is "Sperre durch L"
-
+A is L
+B is L
 @2
-TH is Running : Präemptiert L
-TL is Ready
-
-@3
-TH is Blocked : Acquire scheitert
-TL is Running
-
-@4
-TM is Running : Präemptiert L
-TL is Ready
-MX is "Sperre durch L"
-
+A is M
 @5
-TM is Running : Lange Berechnung
-
-@7
-TM is Blocked
-TL is Running
-
-@8
-TL is Ready : Release
-TH is Running
-MX is "Sperre durch H"
+B is H
+@6
+B is M
+@22
+A is L
+@25
+A is H
+@26
+A is Ende
+B is Ende
 @enduml
 ```
 
+| | ohne PIP | mit PIP |
+|--|----------|---------|
+| H wartet auf den Lock | 24 ms | 4 ms |
+| $R_H$ | 25 ms | 5 ms |
+| fertig | 26 ms, zu spät | 6 ms, rechtzeitig |
+
 ::: notes
-Von T=4 bis T=7 rechnet Medium; High bleibt Blocked. Prioritäten logisch umgekehrt: Medium agiert de facto als Höchstprio. Latenz von High hängt von unbeteiligter Task ab — Albtraum für harte Echtzeit.
+Pro Kern eine laufende Aufgabe. Nach dem einmaligen Job ist Ende, keine unendliche Ready-Schleife. Deadline ist ein Lehrwert. Synthetisches Diagramm.
 :::
 
 ## Warum ist das so katastrophal?
 
-- Verzögerung von Task H ist nicht mehr durch eine WCET begrenzt
-- Jede aufwachende Medium-Prio-Task verlängert die Wartezeit von H
-- Harte Echtzeitgarantien brechen (Deadline Miss)
-- Genau dieses Muster trat 1997 auf dem Mars auf
+- H hält seine angenommene Frist nicht, obwohl H die höchste Basispriorität hat
+- Die Ursache ist der Lock plus die Verdrängung von L, nicht „der Scheduler ignoriert H“
+- Bei unbeschränktem Medium gibt es keine endliche Schranke mehr
+- Bei bekanntem Medium bleibt die Zeit endlich und kann trotzdem die Deadline verfehlen
 
 ::: notes
-Normale Blockade: WCET der Critical Section planbar. Inversion: Rechenzeiten aller Medium-Tasks addieren sich zur Wartezeit von High — Latenz ungebunden. Kein akademisches Konstrukt: NASA Pathfinder 1997.
+PIP ist kein Beweis, dass jede Frist hält. Die restlichen 4 ms von L bleiben in $R_H$.
 :::
 
 ## Die reale Katastrophe: Mars Pathfinder (1997)
 
-- 4. Juli 1997: Pathfinder landet mit Rover Sojourner auf dem Mars
-- Wenige Tage später:
-  - Bordcomputer friert ein
-  - Hardware-Watchdogs lösen aus
-  - Wiederholte Resets (Reset-Loop)
-- Ein Totalverlust drohte
+- Didaktische Vereinfachung, keine Boardmessung und kein Patchlisting
+- Quelle: Glenn E. Reeves, Bericht vom 15.12.1997
+- VxWorks-„mutex semaphore“ nicht mit einem FreeRTOS-Binary-Semaphore gleichsetzen
+- Keine belegte Funkstrecke und kein „Schutz war generell aus“ als ganze Geschichte
 
 ::: notes
-Euphorie nach erfolgreicher Landung, dann Panik im JPL: sporadische Freezes, Watchdog-Resets. Bug-Jagd im Simulator auf der Erde für ein System 300 Millionen km entfernt.
+Die Fallstudie erklärt Abhängigkeit und Tracing, nicht einen neuen Mars-Vortrag.
 :::
 
 ## Die Architektur des Pathfinder
 
-- Betriebssystem: VxWorks (präemptives RTOS)
-- Tasks (stark vereinfacht):
-  - Bus-Manager (Task H): höchste Prio, zeitkritischer Informations-Bus
-  - ASI/MET (Task L): niedrige Prio, Wetter-/Atmosphärendaten auf den Bus
-  - Kommunikation (Task M): mittlere Prio, formatiert Funkpakete zur Erde
-- Bus durch Mutex geschützt; M fasst den Mutex nicht an
+- Niedrigpriorer ASI/MET-Pfad und der zeitkritische `bc_dist`-Pfad teilen den Mutex im select/pipe-IPC
+- Mittelpriore Arbeit kann ASI/MET verdrängen, während der Mutex gehalten wird
+- `bc_dist` verpasst die Frist
+- `bc_sched` erkennt das und stößt den Resetpfad an
 
 ::: notes
-Klassisches L/M/H-Setup: Wetter-Task schreibt über den Bus-Mutex, Bus-Manager braucht denselben Bus blitzschnell, Kommunikations-Task belastet die CPU ohne den Mutex.
+Das L/M/H-Bild ist die Vereinfachung dieser Pfade. Der Mutex lag im IPC, nicht in einer frei erfundenen Hardware.
 :::
 
 ## Was auf dem Mars passierte
 
-- ASI/MET (Low) sperrt den Bus-Mutex
-- Bus-Manager (High) wacht auf, Acquire scheitert $\rightarrow$ Blocked
-- Kommunikation (Medium) präemptiert Low und rechnet lange
-- Watchdog: Sicherheits-Timer erwartet regelmäßiges Lebenszeichen des Bus-Managers
-- Bus-Manager bleibt Blocked $\rightarrow$ Timer läuft ab $\rightarrow$ Hardware-Reset
+1. Resets und Fristfehler
+2. Trace, auf der Erde nachgestellt
+3. Lock-Abhängigkeit benannt
+4. Getestete Änderung, wie diese Mutexe erzeugt werden
+
+- Ein reiner Hardware-Watchdog als einzige Erklärung ist zu grob
+- Der valide Patch änderte eine globale Option für die Erzeugung dieser Mutexe
 
 ::: notes
-Exakt unser Inversions-Szenario. Medium hält Low vom Freigeben ab; Watchdog glaubt das OS tot und resettet hart.
+Keine erfundenen Register und kein erfundener Quelltext des Patches.
 :::
 
 ## Die Lösung: Wie rettete die NASA die Sonde?
 
-- VxWorks hatte bereits einen Schutz — standardmäßig deaktiviert (CPU-Overhead sparen)
-- NASA lud über $\approx 300$ Millionen km Funkstrecke einen C-Patch hoch
-- Patch aktivierte ein Flag bei der Mutex-Erstellung
-- Feature-Name: Priority Inheritance Protocol (PIP)
+- Priority Inheritance für die betroffenen Mutexe einschalten
+- Das kürzt die zusätzliche Verzögerung, analog zum Lehrbild
+- Es ist kein Freibrief für beliebige kritische Abschnitte
+- Tracing war der Weg zur Ursache, nicht die Vererbung allein
 
 ::: notes
-PIP war 1997 schon im OS, aber aus Performance-Gründen aus. Ein winziger Config-Patch per Funk — System stabil. Prioritätsvererbung war die Lösung.
+Dieselbe Lehre wie im Labor: ohne Nachweis, dass L den Lock wirklich hielt und H darauf wartete, ist die Geschichte keine Inversion.
 :::
 
 ## Das Priority Inheritance Protocol (PIP)
 
-- Prioritätsvererbung: gezielter Eingriff des RTOS-Schedulers
-- Regel: Wenn High einen von Low gehaltenen Mutex anfordert
-  - dann erbt Low temporär die Priorität von High
-- Low wird künstlich geboostet, bis `Release`
+- H wartet am Mutex, den L hält → L bekommt vorübergehend Hs Dringlichkeit
+- M kann L in diesem Fenster nicht mehr verdrängen
+- Nach dem Release läuft H, danach M
+- Mehrere Mutexe: FreeRTOS-Vererbung vereinfacht; nicht „bei jedem Release sofort Low“ behaupten
+- PIP behebt keinen Deadlock und keine allgemeine Starvation
 
 ::: notes
-OS erkennt: wichtige Task wartet vor dem Schloss. Es boostet den Owner (Low) auf High-Prio, damit die Critical Section so schnell wie möglich endet.
+Wenn Medium nach dem Release dauerhaft Ready bleibt, verhungert L weiter. PIP ist kein Fairnessmechanismus.
 :::
 
 ## Wie PIP das Mars-Problem löste
 
-- Task L hält den Mutex; Task H blockiert bei Acquire
-- PIP: L erhält temporär Prio High
-- Task M wacht auf — kann L nicht mehr präemptieren ($Prio_L$ jetzt High)
-- L beendet Critical Section, ruft Release $\rightarrow$ Prio fällt zurück auf Low
-- H übernimmt den Mutex und läuft
+- Im Lehrbild: H fertig bei 6 ms statt 26 ms
+- Auf dem Pathfinder: die Mutexe des betroffenen Pfads erben, `bc_dist` wird nicht mehr durch die mittelpriore Verdrängung über die Frist hinaus festgehalten — soweit der Reeves-Bericht die Ursache trägt
+- Unbegrenzte mittelpriore Last bliebe ein anderes Problem
 
 ::: notes
-Wetter-Task erbt Bus-Manager-Prio; Medium prallt ab. Nach Release fällt die geliehene Prio weg, High nimmt den Mutex — Watchdog gerettet.
+Formulierung eng am Bericht halten. Keine Totalverlust-Dramatik ohne Beleg.
 :::
 
 ## Visualisierung: Priority Inheritance („Die Prio-Beule“)
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
+Effektive Priorität von L:
 
-robust "Task H (High)" as TH
-robust "Task M (Medium)" as TM
-robust "Task L (Low)" as TL
-concise "Task L Prio" as PL
+- $0$–$1\,\mathrm{ms}$: Low
+- $1$–$5\,\mathrm{ms}$: geerbt von H
+- ab Release: wieder Low, H läuft
 
-@0
-TH is Ready
-TM is Ready
-TL is Running
-PL is "Prio: Low"
-
-@1
-TL is Running : Acquire
-PL is "Prio: Low"
-
-@2
-TH is Running : Präemptiert L
-TL is Ready
-
-@3
-TH is Blocked : Acquire scheitert
-TL is Running : Erbt Prio High
-PL is "Prio: HIGH"
-
-@4
-TM is Ready : Will rechnen
-TL is Running : blockiert TM
-
-@5
-TL is Ready : Release
-PL is "Prio: Low"
-TH is Running : Bekommt Mutex
-
-@7
-TH is Ready
-TM is Running
-@enduml
-```
+M ist ab $2\,\mathrm{ms}$ Ready und läuft erst ab $6\,\mathrm{ms}$.
 
 ::: notes
-Vierte Zeile: Prio-Beule bei T=2. Medium bei T=3 Ready, prallt an geerbter High-Prio ab. Nach Release fällt Prio zurück — Inversion gebannt.
+Die Beule beginnt beim Warten von H, nicht beim Start von L. Frage: Welche Verzögerung bleibt trotz PIP? Die restliche kritische Sektion von L, hier 4 ms ab Hs Versuch.
 :::
 
 ## Achtung: Mutex vs. Semaphore in FreeRTOS
 
-- Warum die strikte Trennung Binärer Semaphor vs. Mutex?
-- Wichtigste FreeRTOS-/CMSIS-Regel:
-  - `osMutexNew`: Priority Inheritance automatisch aktiv
-  - `osSemaphoreNew`: niemals Priority Inheritance (kein Ownership)
-- Niemals einen Semaphor zur Absicherung von UART oder Arrays nutzen
+- Für „ohne PIP“ einen binären Semaphor mit `initial_count = 1` verwenden
+- Für „mit PIP“ einen Mutex mit gesetztem `osMutexPrioInherit`
+- Im genannten Adapter das Bit nicht als Abschaltknopf verstehen
+- Alle New/Acquire/Release-Aufrufe und Typen wechseln, nicht nur den Handle-Namen
 
 ::: notes
-Beide wirken wie 0/1-Schalter — der Unterschied ist PIP. Semaphor kennt keinen Owner und kann keine Priorität vererben. UART mit Semaphor = Pathfinder-Risiko auf dem MCU.
+CMSIS-FreeRTOS Technical Data der eingesetzten Version lesen. Öffentliches `main` belegt die Laborversion nicht.
 :::
 
 ## Laborvorbereitung: Chaos am UART
 
-- Ziel: Priority Inversion auf dem STM32 provozieren und heilen
-- Schritt 1 — Das Chaos:
-  - Zwei Tasks (`Task1_Normal`, `Task2_High`)
-  - Beide senden per `printf()` einen langen String
-  - Keine Absicherung
-- Beobachtung: Terminal zeigt zerrissenen String-Salat
+Zwei getrennte Versuche:
+
+1. Nachrichtenschutz: überlappende Zeilen ohne und mit Mutex
+2. Inversion: gleicher CPU-Bedarf, einmal Semaphor, einmal Mutex
+
+Saubere Zeilen beweisen den Schutz im beobachteten Lauf, keine Deadline.
+
+115200 Baud, 8N1, 100 Byte, synthetisch:
+
+$$100 \times 10 / 115200 \approx 8{,}68\,\mathrm{ms}$$
+
+reine Übertragungszeit, plus Software und Warten. Der Lock kann lange gehalten sein, obwohl der C-Code kurz aussieht.
 
 ::: notes
-Labor wie NASA: ungesicherte UART-Ausgabe, SysTick präemptiert — Buchstabensalat wie im UART-Motivationsbeispiel.
+IT/DMA: die Startfunktion kehrt vor dem Ende zurück. Der Puffer muss bleiben. Die ISR signalisiert; sie gibt keinen CMSIS-Mutex frei. Der Owner released im Thread.
 :::
 
 ## Labor-Schritt 2: Die Absicherung
 
-- CMSIS-Mutex anlegen (`osMutexNew`)
-- `printf()` in Acquire/Release-Blöcke packen
-
-```c
-void Task1_Normal() {
-    for(;;) {
-        osMutexAcquire(uartMutex, osWaitForever);
-        printf("Task 1 sendet in Ruhe Daten...\n");
-        osMutexRelease(uartMutex);
-
-        osDelay(100); // Ticks; bei 1000 Hz = 100 ms
-    }
-}
-```
-
-- Beobachtung: Strings im Terminal sind sauber
+- Privater Puffer, dann Acquire, ganze Ausgabe, Abschluss, Release
+- `osDelay` außerhalb
+- Alle Writer, auch Bibliothekswege, wenn sie denselben UART benutzen
+- Status von Acquire und von der Ausgabe prüfen
+- Beobachtung offen lassen: Mischtext, `HAL_BUSY` oder bereits serialisierte Bibliothek
 
 ::: notes
-Critical Section um printf: Scheduler legt wartende Tasks Blocked. Console wieder lesbar. CMSIS: osDelay in Ticks — analog VL3, nicht pdMS_TO_TICKS.
+Kein „immer Buchstabensalat“ als Sollprotokoll.
 :::
 
 ## Labor-Schritt 3: Die Sabotage (Inversion)
 
-- Mutex durch binären Semaphor ersetzen (kein PIP!)
-- `Task3_Medium` hinzufügen (Prio zwischen Normal und High)
-- Medium: `while(1)` ohne Delay (CPU-Fresser)
-- Beobachtung:
-  - Terminal verstummt / System hängt
-  - Medium blockiert Low (hält Semaphor) $\rightarrow$ Priority Inversion: High bleibt ungebunden verzögert
+- L `osPriorityNormal`, M `osPriorityAboveNormal`, H `osPriorityHigh`, sofern der Wrapper das nicht klemmt
+- H und M starten blockiert an **eigenen** Gates, nicht am Test-Lock
+- L nimmt den Test-Lock zuerst und meldet das
+- Danach ein begrenzter CPU-Abschnitt, kein `osDelay` als Ersatz für diese Last
+- M arbeitet ein begrenztes Pensum und blockiert dann
+- Endlosschleife nur als eigener, beendbarer Grenzfall: nach PIP-Release kann L weiter verhungern
 
 ::: notes
-Semaphor statt Mutex = PIP aus. Heavy-Math-Task aus VL3 in der Mitte: klassische Priority Inversion (nicht Starvation im Scheduler-Sinn) — High wartet auf den Semaphor, Low hält ihn, Medium verdrängt Low.
+Wenn M schon läuft, bevor L den Lock hat, ist das Starvation und keine nachgewiesene Inversion. Frage: War L wirklich Owner, und war H am Lock blockiert?
 :::
 
 ## Labor-Schritt 4: Die Heilung
 
-- Semaphor zurück zu `osMutexId_t` / `osMutexNew`
-- Neu flashen
-- Beobachtung:
-  - Terminal sendet wieder
-  - OS boostet Low temporär (Priority Inheritance)
-  - Medium wird beiseitegeschoben, High gerettet
-- Go für das Labor!
+- Dieselben Freigaben und dieselbe CPU-Arbeit
+- Mutex statt Semaphor, Attribute gesetzt, API vollständig getauscht
+- Erwartung im Lehrsinn: H wartet nur noch auf Ls Rest, nicht auf ganz M
+- Messen: L-Acquire, H-Wunsch, M-Start und -Ende, L-Release, H-Erfolg, H-Ende
+- `printf` erst nach dem Lauf; GPIO, Trace oder ein geschützter RAM-Puffer
+- DWT `CYCCNT` nur wenn der Zähler läuft und der Takt bekannt ist; er zählt auch fremde Zeit
 
 ::: notes
-Wie die NASA: eine API-Änderung heilt das System. FreeRTOS-Boost bringt Low durch die Critical Section. Wer das live sieht, hat Synchronisation in Echtzeit verstanden — viel Erfolg!
+Das 24/4-ms-Bild nicht als Boardmessung eintragen. Build ersetzt keine Messung. Kein Projekt im Repo, deshalb hier kein übersetzter Labor-Binary.
+:::
+
+## UART, IT und DMA
+
+- Blockierend: Timeout und Release auf jedem Pfad
+- IT/DMA: Ende ist nicht die Rückkehr von `HAL_UART_Transmit_IT`
+- Abschlusssignal in den Owner-Thread, dort Release
+- Ein Logger-Task mit begrenzter Queue ist ein späteres Muster, kein Echtzeitbeweis
+
+::: notes
+Queue-Überlauf braucht eine Regel. Das vertieft VL5.
+:::
+
+## Auswertungsblatt
+
+| Feld | ohne PIP | mit PIP |
+|------|----------|---------|
+| L Owner vor H? | | |
+| H blockiert am Lock? | | |
+| M-CPU-Bedarf gleich? | | |
+| Wartezeit H | | |
+| $R_H$ | | |
+| Deadline gehalten? | Lehrfrist nur im Modell | |
+| L nach Release noch verhungert? | | |
+
+::: notes
+Fragen: Warum durfte M laufen? Weil L ohne Erbschaft niedriger war. Was bleibt mit PIP? Ls restliche Sektion.
+:::
+
+## Zusammenfassung des Tages
+
+- Lost Update: 6 statt 7; `volatile` genügt nicht
+- Semaphor zählt Token; Mutex merkt sich den Owner
+- Deadlock ist ein Ressourcenzyklus; Coffman-„No preemption“ meint die Ressource
+- Ohne PIP: Wartezeit 24 ms, $R_H = 25\,\mathrm{ms}$; mit PIP: 4 ms und 5 ms
+- Pathfinder: select/pipe-Mutex, Frist von `bc_dist`, Reset über `bc_sched`, Reeves 15.12.1997
+
+::: notes
+Kontrollen: Token nie negativ und nie über max. Rekursion 0-1-2-1-0. UART-Beispiel 8,68 ms. CPU-Summe beider Varianten 26 ms. Absolute Deadline 11 ms.
+:::
+
+## Ausblick auf Termin 5
+
+- Queues transportieren Daten, nicht nur ein Token
+- ISR schreibt nicht blockierend in die Queue
+- Der Mutex von heute bleibt für den gemeinsamen Puffer zuständig, wenn die Queue ihn nicht ersetzt
+
+::: notes
+Mehrkern und DMA bleiben außen vor, bis das Projekt sie wirklich übt.
+:::
+
+## Quellen
+
+- Arm CMSIS-RTOS2: Mutex und Semaphore
+- CMSIS-FreeRTOS Technical Data der **eingesetzten** Version, nicht blind `main`
+- FreeRTOS-Kernel-Book, Ressourcen und Inheritance
+- CM4F-`portmacro.h`: BASEPRI, kritische Sektionen
+- CMSIS-Core: PRIMASK und BASEPRI
+- GCC `__atomic`, falls ein Atomic-Beispiel gebaut wird
+- Glenn E. Reeves, What really happened on Mars?, 15.12.1997
+
+::: notes
+Lehrdiagramme und die Zeiten 2 µs, 5 ms, 8,68 ms sowie 24/4 ms sind synthetisch.
 :::
