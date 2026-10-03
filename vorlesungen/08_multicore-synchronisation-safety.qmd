@@ -171,17 +171,17 @@ Keine Annahme, die HAL habe alle Barrieren schon eingebaut. Den Treiber der Cube
 ## Die HAL-API für HSEM
 
 ```c
-if (HAL_HSEM_Take(1, 0x4D37u) == HAL_OK) {
+if (HAL_HSEM_Take(1, 0x37u) == HAL_OK) {
     __DMB();
     shared_count += 1u;
     __DMB();
-    HAL_HSEM_Release(1, 0x4D37u);
+    HAL_HSEM_Release(1, 0x37u);
 } else {
     /* nicht bekommen, nicht anfassen */
 }
 ```
 
-Process-ID `0x4D37` ist ein Lehrwert, keine Task-ID.
+ProcessID `0x37` ist 8 Bit (0…255), Lehrannahme B, keine Core-ID und keine Task-ID. Der M4 benutzt `0x34` an derselben HSEM-ID.
 
 ::: notes
 Unter dem Schloss kein `printf` und kein Delay. Der Abschnitt bleibt der Zähler.
@@ -385,13 +385,18 @@ Idle ist der Beweis, dass der Scheduler einen Tick hatte, nicht dass die Anwendu
 ## Pattern 2 (Best Practice): Die Watchdog-Task
 
 ```c
-if (epoch_m4 == seen_m4 && epoch_m7 == seen_m7)
-    kick();
-seen_m4 = epoch_m4;
-seen_m7 = epoch_m7;
+/* Lebenszähler, nicht die Sensorsequenz. Start beide 0, seen = 0. */
+uint32_t e4 = epoch_m4; /* je ein lesbarer Wert, kein Paar ohne Protokoll */
+uint32_t e7 = epoch_m7;
+if ((e4 != seen_m4) && (e7 != seen_m7))
+    kick();             /* nur frischer Fortschritt beider Worker */
+else
+    fault_no_refresh(); /* Fenster läuft aus, kein Kick */
+seen_m4 = e4;
+seen_m7 = e7;
 ```
 
-Eine Epoche zählt nur nach dem erfolgreichen Schritt. Dieselbe Zahl zweimal ist kein neuer Fortschritt.
+Jeder Worker erhöht seine Epoche einmal pro abgeschlossener Runde, auch wenn kein externes Ereignis kam. Die Sensorsequenz darf dann stehen bleiben. Dieselbe Epoche zweimal ist kein neuer Fortschritt. Die beiden Zähler liegen nicht in einem atomaren Paar: je eine stabile Kopie, Reihenfolge wie in VL6.
 
 ::: notes
 Der andere Kern braucht einen eigenen, frischen Zähler. Ein lokaler Mutex sieht ihn nicht.
@@ -415,12 +420,11 @@ Das M4-Labor nimmt die Instanz, deren PCLK wir kennen. CPU-Takt ist nicht dieser
 
 $$t_{\mathrm{tick}} = 4096 \times \mathrm{Prescaler} / f_{\mathrm{PCLK}}$$
 
-Illustration, nicht das Projekt: Prescaler 8.
+Lehrannahme B, innerhalb des APB-Maximums: WWDG2, $f_{\mathrm{PCLK}} = 100\,\mathrm{MHz}$, Prescaler 8. Zum Vergleich 50 MHz, nicht 200 MHz.
 
-- 100 MHz → 0,32768 ms je Tick
-- 200 MHz → 0,16384 ms je Tick
+$$t_{\mathrm{tick}}(100\,\mathrm{MHz}) = 4096 \times 8 / 10^{8} = 0{,}32768\,\mathrm{ms}$$
 
-Dieselben Zählerschritte, doppelte Millisekunden. Deshalb sind `osDelay(15)` ohne PCLK keine Einordnung in früh, gut oder spät.
+Bei 50 MHz ist der Tick doppelt so lang, 0,65536 ms. Das APB-Maximum hängt von VOS ab und liegt laut Datenblatt bei bis zu 120 MHz. 200 MHz ist kein zulässiger PCLK.
 
 ::: notes
 Abbildung G braucht die Projekt-PCLK. Solange sie fehlt, bleiben die ms-Achsen als Illustration gekennzeichnet. Tickquantisierung und Jitter extra addieren. Testzeiten mit Abstand zu beiden Grenzen.
@@ -428,9 +432,17 @@ Abbildung G braucht die Projekt-PCLK. Solange sie fehlt, bleiben die ms-Achsen a
 
 ## Das Fenster-Konzept (Window Watchdog)
 
-Zähler $T$, Fenster $W$. EWI bei Erreichen von `0x40`. Reset beim Übergang `0x40` → `0x3F`, nicht beim Lauf bis null.
+Lehrwerte: Startzähler $T = 127$, Fenster $W = 80$. EWI bei `0x40`. Reset beim Übergang `0x40` → `0x3F`.
 
-Zu früh: Refresh, während der Zähler noch **über** dem Fenster liegt. Ob Gleichheit mit $W$ noch erlaubt ist, steht im RM0399 der Revision. Den Grenzschritt nicht als Labormesspunkt nehmen.
+Lehrregel: Refresh ist zu früh, solange der Zähler **größer** als 80 ist. Gleichheit 80 gilt in diesem Beispiel als erlaubt. Den Vergleich im RM0399 gegenlesen; die Bitformel dieser Revision ist hier nicht zeilenweise geprüft.
+
+Bei 0,32768 ms je Tick: 47 Schritte von 127 auf 80 dauern 15,4 ms (noch zu früh). 16 weitere Schritte von 80 auf `0x40` dauern 5,2 ms (Fenster). Danach ein Tick bis zum Reset.
+
+- 5 ms nach dem Reload: Zähler noch über 80, zu früh, Reset ohne EWI.
+- 18 ms: Zähler etwa 72, im Fenster, zulässig.
+- kein Refresh über 25 ms: Reset nach `0x3F`.
+
+`osDelay` rastet auf 1 ms und beweist das Fenster nicht. Marker an Reload und Refresh, Zeitbasis der Lehrkonfiguration.
 
 Ein ausgelassener Programmschritt löst nicht automatisch einen frühen Refresh aus, wenn eine feste Wartezeit danach immer noch im Fenster liegt.
 
@@ -613,33 +625,22 @@ Abbildung K: Boot-HSEM getrennt vom Zähler-HSEM, Messpins getrennt von der LED.
 
 ## Schritt 2: Der asynchrone Multicore-Zugriff
 
-M7, kein `osDelay`:
+M7 zählt nur erfolgreiche Inkremente. Timeout nach 2 s lokalen `HAL_GetTick` macht den Lauf ungültig, nicht zu einem Sollwert $2N$.
 
 ```c
-for (uint32_t i = 0; i < N; i++) {
-    if (HAL_HSEM_Take(1, 0x4D37u) == HAL_OK) {
-        __DMB();
-        shared_count += 1u;
-        __DMB();
-        HAL_HSEM_Release(1, 0x4D37u);
-    }
-    HAL_Delay(1); /* außerhalb des Schlosses */
+uint32_t hits = 0, t0 = HAL_GetTick();
+while (hits < N) {
+    if ((uint32_t)(HAL_GetTick() - t0) > 2000u) { fail(); return; }
+    if (HAL_HSEM_Take(1, 0x37u) != HAL_OK) continue;
+    __DMB();
+    shared_count += 1u;
+    __DMB();
+    HAL_HSEM_Release(1, 0x37u);
+    hits++;
 }
 ```
 
-M4, auch im Erfolgspfad nachgeben:
-
-```c
-for (uint32_t i = 0; i < N; i++) {
-    if (HAL_HSEM_Take(1, 0x4D34u) == HAL_OK) {
-        __DMB();
-        shared_count += 1u;
-        __DMB();
-        HAL_HSEM_Release(1, 0x4D34u);
-    }
-    osDelay(1); /* ein Tick, außerhalb */
-}
-```
+Der M4 tut dasselbe mit ProcessID `0x34` und `osKernelGetTickCount`, und gibt danach die CPU mit `osDelay(1)` ab. Der Zähler startet einmal bei 0. Gelesen wird er erst, wenn beide `hits == N` gemeldet haben. HSEM stellt keine Cache-Kohärenz her; die Region bleibt non-cacheable.
 
 Warten ohne Lost Wakeup ist ein eigener Versuch, nicht diese Zählschleife. Mehrere Tasks an ID 1 brauchen zusätzlich einen lokalen Mutex.
 

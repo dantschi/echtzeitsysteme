@@ -59,7 +59,7 @@ Abbildung A. Die MPU sieht unerlaubte Regionen eines Kerns, nicht jeden Arrayüb
 
 ## Erkenntnis 2: Synchronisation ist tödlich
 
-Besser: Synchronisation hat einen Preis und einen Vertrag.
+Synchronisation hat einen Preis und einen Vertrag.
 
 - Mutex und HSEM halten Konsistenz, nicht jeden alten Wert
 - Unter dem Schloss nur der kurze Snapshot
@@ -73,7 +73,7 @@ Latest-Value darf Zwischenwerte verlieren, wenn die Sequenz das zeigt. Dann steh
 
 ## Erkenntnis 3: Vertraue niemals der Software
 
-Besser: trauen Sie einem Mechanismus nur die Fehler an, die er sehen kann.
+Trauen Sie einem Mechanismus nur die Fehler an, die er sehen kann.
 
 - Watchdog: Refresh und Fortschritt, nicht die fachliche Wahrheit
 - MPU: Region des einen Kerns, nicht DMA und nicht den Nachbarn
@@ -336,7 +336,7 @@ Timer oder ein Generator: reproduzierbare Einzelevents und Bursts. Input Capture
 Entprellung in der Task, nicht als Warteschleife in der ISR.
 
 ::: notes
-Lehrfestlegung, kein Kundenvertrag: Nennrate 100 Hz, Burst höchstens 10 Events in 10 ms, Queue-Tiefe 8, Put mit Timeout 0, Drop zählen. Zwischenwerte auf dem Weg zum M7 dürfen fehlen, die Sequenz zeigt die Lücke.
+Lehrfestlegung: 100 Hz heißt Abstand 10 ms. Zehn Events in 10 ms mit Abstand 1 ms sind ein anderer Fall als zehn Events im selben Tick. Tiefe 8 nimmt zehn gleichzeitige Events nicht verlustfrei auf: ohne zwischenzeitliches Get bleiben mindestens zwei vor der Queue. C3 gilt für angenommene Events, nicht für verworfene. Bilanz: erzeugt = angenommen + ISR-Drops. Angenommen = noch in der Queue + publiziert. Mailbox-Überschreiben zählt extra und ist keine Queue-Lücke.
 :::
 
 ## System-Architektur (Gesamtübersicht)
@@ -366,14 +366,14 @@ Abbildung I. „Niedriger µs-Bereich“ und „Jitter ≈ 0“ stehen nicht meh
 
 | ID | Größe | Grenze | Messpunkt | Test |
 |----|--------|--------|-----------|------|
-| C1 | Eventrate | 100 Hz Nenn, Burst 10/10 ms | Timer | Generator |
-| C2 | Queue | Tiefe 8, Drop-Zähler | M4 | Grenzrate |
+| C1 | Eventrate | 100 Hz; 10 Events in 10 ms, Abstand 1 ms | Timer | Generator |
+| C2 | Queue | Tiefe 8; 10 gleichzeitige Events: mindestens 2 Drops | M4 | Burst |
 | C3 | Publikation | ≤ 1 ms ISR bis Release | t1, t4, gleiche Sequenz | Einzelevent |
 | C4 | Datenalter | ≤ 50 ms bis Snapshot | t1, t5 | Leerlauf und M7-Last |
 | C5 | Schloss | Boot-ID frei, Nutz-ID geprüft | Code, Map | Review |
-| C6 | Lock-Zeit | nur Snapshot | Trace oder GPIO | UART aus dem Schloss |
+| C6 | Lock-Zeit | ≤ 50 µs, Lehrannahme, nur Snapshot | GPIO um Take/Release | UART draußen |
 | C7 | WWDG | Fenster aus PCLK, nicht aus dem Taster | Marker | früh, gültig, spät |
-| C8 | Verlust | Sequenzlücken = Drops plus Mailbox | Log | Burst |
+| C8 | Verlust | angenommen = Drops + noch in Queue + letzter Snapshot | Log | Burst |
 
 Kein „absolut absturzsicher“. Kein „Timing bewiesen“.
 

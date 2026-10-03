@@ -371,9 +371,12 @@ Keine erfundenen Millionen Zyklen. Kopierzeit messen, wenn ein Build da ist.
 ## Die Lösung: Copy by Reference (Pointer)
 
 ```c
-uint8_t *slot;
-/* Elementtyp der Queue: uint8_t * */
-osMessageQueuePut(q, &slot, 0, 0);
+static uint8_t buf_a[64], buf_b[64];
+uint8_t *slot = buf_a; /* gültiges Ziel, nicht ein leerer Zeiger */
+if (osMessageQueuePut(q, &slot, 0, 0) == osOK)
+    slot = buf_b; /* Variable umbiegen, buf_a bleibt belegt */
+else
+    ; /* buf_a bleibt beim Producer, kein zweites Put */
 ```
 
 - Die Adresse wird kopiert, `slot` darf danach umgebogen werden
@@ -740,9 +743,14 @@ HAL quittiert. Der Callback prüft die Leitung und kehrt zurück.
 void ButtonTask(void *argument) {
     (void)argument;
     for (;;) {
-        if (osSemaphoreAcquire(ButtonSem, osWaitForever) != osOK)
+        osStatus_t st;
+        st = osSemaphoreAcquire(ButtonSem, osWaitForever);
+        if (st != osOK) continue;
+        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)
             continue;
-        /* kurze Arbeit; UART nur über VL4-Schutz */
+        osDelay(20); /* 20 Ticks bei 1 kHz, Pegel erneut prüfen */
+        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)
+            continue;
         HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
     }
 }

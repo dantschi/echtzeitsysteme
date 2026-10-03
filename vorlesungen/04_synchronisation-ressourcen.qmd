@@ -467,15 +467,21 @@ CMSIS-Default 0 enthält **kein** PIP-Bit. Die dokumentierte CMSIS-FreeRTOS-Anbi
 ## CMSIS-API für Mutexe
 
 ```c
-void Task(void *argument) {
+static int use_locked(void) {
+    if (osMutexAcquire(m, 5) != osOK) /* 5 Ticks = 5 ms bei 1 kHz */
+        return 0; /* kein Release: wir besitzen ihn nicht */
+    int ok = sensor_ok();
+    if (ok) use_resource();
+    osMutexRelease(m);
+    return ok;
+}
+
+void Worker(void *argument) {
     (void)argument;
-    if (osMutexAcquire(m, 5) != osOK) {
-        return; /* Hilfs-return, nicht Task-Ende */
+    for (;;) {
+        (void)use_locked();
+        osDelay(10);
     }
-    if (sensor_ok()) {
-        use_resource();
-    }
-    osMutexRelease(m); /* Normal- und Fehlerpfad */
 }
 ```
 
@@ -485,7 +491,7 @@ void Task(void *argument) {
 - Zweites Acquire ohne Rekursion: bei `osWaitForever` Self-Deadlock, bei Timeout ein Fehler
 
 ::: notes
-Frühes `return` aus einer Hilfsfunktion ist erlaubt. `return` aus der Thread-Funktion ist das VL3-Problem. Owner-Tod und Robust-Mutex nur, wenn das Backend sie wirklich hat.
+`use_locked` darf zurückkehren. `Worker` bleibt in der Schleife. Timeout 5 Ticks sind bei 1 kHz 5 ms. Besitzdauer des Beispiels ist nur der Sensorzugriff, nicht das Delay.
 :::
 
 ## Sonderfälle in der C-Programmierung
