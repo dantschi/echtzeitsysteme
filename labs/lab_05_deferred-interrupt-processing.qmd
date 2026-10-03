@@ -11,20 +11,25 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Zielsetzung
 
-In dieser Übung verbinden wir die Hardware-Welt mit der Software-Welt des RTOS. Sie implementieren das in der Automobil- und Industriebranche weit verbreitete Architekturmuster des **Deferred Interrupt Processing** (Top-Half / Bottom-Half). Ein physischer Tasterdruck löst einen Hardware-Interrupt aus, welcher extrem kurz gehalten wird und über Semaphor bzw. Queue eine FreeRTOS-Task aufweckt. Diese Task übernimmt dann die zeitaufwändige Bearbeitung — inklusive einer kurzen Queue-Übung zur Inter-Task-Kommunikation.
+Zwei Versuche auf dem Cortex-M4 (FreeRTOS, CMSIS-RTOS2). Teil A transportiert Nachrichten über eine Queue und zeigt einen definierten Überlauf. Teil B weckt einen Worker aus der EXTI-ISR. Board **NUCLEO-H755ZI-Q** nur, wenn das Cube-Projekt es ist. UM2408: User-Button standardmäßig PC13, alternativ PA0; gelbe LD2 an PE1, Brücken prüfen. Im Kursrepository liegt kein Firmwareprojekt. Tick, NVIC-Grouping und EXTI-Zielkern dort ablesen. Ein Kernel auf dem CM4 ist kein gemeinsamer Scheduler mit dem CM7.
 
 ---
 
-## Aufgabe 1: Hardware- und OS-Konfiguration im CubeMX
+## Aufgabe 1: Queue mit Sequenz
 
-Zuerst richten wir den Hardware-Interrupt (EXTI), die Task und den Signalisierungs-Mechanismus ein.
+1. FreeRTOS nur für den CM4, CMSIS_V2. HAL-Zeitbasis wie in VL3 wählen und begründen, nicht als Naturgesetz.
+2. `osMessageQueueNew` für 8 Elemente `uint32_t` oder dieses Struct:
 
-1. Starten Sie ein Projekt für das Board **STM32H755ZI-Q**. Aktivieren Sie FreeRTOS für den Cortex-M4 (Interface **CMSIS_V2**). Stellen Sie unter *System Core* $\rightarrow$ *SYS* die HAL-Timebase auf **TIM6** um (SysTick bleibt FreeRTOS vorbehalten).
-2. Konfigurieren Sie den blauen User-Button (Pin `PC13`) als `GPIO_EXTI13`.
-3. Gehen Sie im CubeMX in die NVIC-Einstellungen und setzen Sie zwingend den Haken bei `EXTI line[15:10] interrupts` (globaler Interrupt aktivieren).
-4. Legen Sie unter FreeRTOS im Reiter *Timers and Semaphores* einen **binären Semaphor** mit dem Namen `ButtonSem` an.
-5. Legen Sie unter *Tasks and Queues* eine Task namens `ButtonTask` an und geben Sie ihr eine hohe Priorität (`osPriorityHigh`).
-6. Generieren Sie den Code.
+```c
+typedef struct {
+    uint32_t sample;
+    uint32_t seq;
+} SensorMsg;
+```
+
+3. Producer: synthetische Folge `sample = seq`, Put mit `msg_prio = 0`. Das ist im FreeRTOS-Adapter FIFO; der Adapter ignoriert die Nachrichtenpriorität. Bei `osOK` ist die Kopie eingereiht, sonst Drop-Zähler. Get nur bei `osOK` auswerten.
+4. Periode und Queuegröße in Text und Code gleich halten. `osDelay` ist Tickwarte, kein exaktes 1-ms-Raster. Für ein Raster `osDelayUntil` wie in VL3, Überlast nicht still aufholen.
+5. Überlastvariante: Producer schneller als Consumer, Try-Put. Erwartung: Lücken in `seq`, nicht ein stilles Weiterzählen beim Consumer.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -33,19 +38,43 @@ Zuerst richten wir den Hardware-Interrupt (EXTI), die Task und den Signalisierun
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-Die Hardware-Konfiguration ist entscheidend. Ohne den Haken im NVIC wird das EXTI-Peripheriemodul das Interrupt-Signal niemals an den Cortex-M4-Kern (die CPU) weiterleiten. Der **binäre Semaphor** dient als reines Event-Signal ohne Ownership — er eignet sich damit ideal für die Signalisierung von der ISR (Top-Half) an die Task (Bottom-Half). Die `ButtonTask` erhält eine hohe Priorität, da Taster-Eingaben meist zeitkritisch auf die Benutzeroberfläche oder Steuerung durchschlagen sollen.
+```c
+void Producer(void *argument)
+{
+    SensorMsg m = {0, 0};
+    (void)argument;
+    for (;;) {
+        m.seq++;
+        m.sample = m.seq;
+        if (osMessageQueuePut(q, &m, 0, 0) != osOK)
+            drops++;
+        osDelay(10);
+    }
+}
+
+void Consumer(void *argument)
+{
+    SensorMsg m;
+    (void)argument;
+    for (;;) {
+        if (osMessageQueueGet(q, &m, NULL, 50) != osOK)
+            continue;
+        last_seq = m.seq;
+        osDelay(50);
+    }
+}
+```
+
+`osMessageQueueGetCount` nur ansehen, nicht als Reservierung vor Put/Get. Lehrbilanz der Vorlesung (N=10, Put jede ms, Get alle 5 ms) ist ein anderes Modell: erster Fehl-Put bei 13 ms, 13 Erfolge, 7 Verwürfe, 4 Gets, 9 Rest. Nicht als Messung dieses 10/50-ms-Codes eintragen.
 :::
 
 ---
 
-## Aufgabe 2: Die Top-Half (Die Hardware-ISR)
+## Aufgabe 2: Latest-Value ist kein Try-Put
 
-Die ISR (Top-Half) reagiert auf den Hardware-Interrupt. Ihre einzige Aufgabe ist es, das Signal ins RTOS zu werfen und sich sofort zu beenden.
-
-1. Suchen Sie in der `main.c` nach dem Benutzer-Block `USER CODE BEGIN 4`.
-2. Überschreiben Sie dort die schwache (*weak*) HAL-Funktion `HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)`.
-3. Prüfen Sie mit einer `if`-Bedingung, ob der übergebene Pin wirklich der Taster-Pin (`USER_Btn_Pin`) ist.
-4. Rufen Sie die CMSIS-Funktion zur Freigabe des Semaphors auf. Was ist die Besonderheit des CMSIS-Wrappers im Vergleich zur nativen FreeRTOS-API in einer ISR?
+1. Queue der Länge 1. Put 10 mit Blockieren, bis es `osOK` ist.
+2. Put 20 mit Timeout 0. Erwartung: Fehler, gespeichert bleibt 10.
+3. Eine echte Latest-Value-Variante getrennt bauen: native Queue nur in einem kleinen Modul mit `xQueueOverwrite` **oder** ein geschützter Snapshot mit Versionszähler im Task. `osMessageQueueId_t` nicht nach `QueueHandle_t` casten. Kein Get-dann-Put als atomares Overwrite.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -54,34 +83,17 @@ Die ISR (Top-Half) reagiert auf den Hardware-Interrupt. Ihre einzige Aufgabe ist
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 2**
 
-**Code-Implementierung:**
-
-```c
-/* USER CODE BEGIN 4 */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if (GPIO_Pin == USER_Btn_Pin) {
-        /* Wecke die Bottom-Half-Task auf */
-        osSemaphoreRelease(ButtonSemHandle);
-    }
-}
-/* USER CODE END 4 */
-```
-
-**Besonderheit von CMSIS in der ISR:**  
-In der nativen FreeRTOS-API müssten wir hier zwingend `xSemaphoreGiveFromISR()` aufrufen und anschließend das manuelle Yielding über `portYIELD_FROM_ISR` anfordern. Der CMSIS-Wrapper `osSemaphoreRelease()` ist kontextsensitiv: Er liest das IPSR-Hardware-Register (Interrupt Program Status Register) der ARM-CPU. Befinden wir uns im Handler Mode ($\mathrm{IPSR} \neq 0$), leitet CMSIS den Aufruf intern automatisch auf die sichere `...FromISR`-Variante um und fordert bei Bedarf den **PendSV**-Interrupt an, damit nach Beendigung der ISR unmittelbar in die geweckte höherpriore Task gewechselt wird. Im Thread Mode ($\mathrm{IPSR} = 0$) bleibt der normale Task-Pfad.
+Try-Put auf der vollen 1er-Queue lässt 10 stehen. Overwrite ersetzt 10 durch 20. Mehrere Leser per Peek oder Snapshot sehen den Stand; Get würde ihn nur einem Consumer geben.
 :::
 
 ---
 
-## Aufgabe 3: Die Bottom-Half (Die RTOS-Task)
+## Aufgabe 3: EXTI-Priorität und leerer Semaphor
 
-Die `ButtonTask` (Bottom-Half) übernimmt nun die eigentliche, zeitaufwändige Arbeit, ohne den Hardware-Interrupt-Kontext zu blockieren.
-
-1. Suchen Sie die generierte Funktion `StartButtonTask` in Ihrer `main.c`.
-2. Sorgen Sie dafür, dass die Task am Anfang der `for(;;)`-Schleife $0\,\%$ CPU-Zeit verbraucht, bis der Semaphor von der ISR freigegeben wird (`osSemaphoreAcquire(..., osWaitForever)`).
-3. Wenn die Task aufwacht, schalten Sie zur Visualisierung eine LED (z. B. an Pin **PE1**) um und geben Sie via `printf` einen Text aus.
-4. (Optional) Fügen Sie ein blockierendes `HAL_Delay(100)` ein, um eine schwere, $100\,\mathrm{ms}$ dauernde Berechnung zu simulieren. Warum führt dieses Delay hier im RTOS-Kontext nicht zum Systemabsturz, wohl aber, wenn es direkt in der ISR stehen würde?
+1. Button als EXTI auf dem Kern, dessen Vektor das RTOS sieht. Bei CM4-Kernel nicht den CM7-Callback unkoordiniert dieselbe Leitung bedienen lassen.
+2. NVIC: Haken **und** logische Priorität. Kleinere Zahl = höhere IRQ-Dringlichkeit. Die Zahl muss auf der erlaubten Seite von `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` liegen. Den geschobenen Registerwert nicht mit der Cube-Eingabe verwechseln. `__NVIC_PRIO_BITS` und Grouping aus dem Projekt. Nicht „immer Priorität 5“.
+3. `ButtonSem = osSemaphoreNew(1, 0, NULL)` nach `osKernelInitialize`, Handle prüfen. Threads erzeugen, dann `osKernelStart`. EXTI erst aktivieren, wenn der Kernel läuft, zum Beispiel im ersten Thread. Danach hängende Pending-Flags nur nach diesem Vertrag behandeln.
+4. Pfad nicht verdoppeln: `EXTI15_10_IRQHandler` ruft `HAL_GPIO_EXTI_IRQHandler`. Der Callback prüft die Pin-Maske und released. HAL quittiert. Kein zweites Flag-Löschen, kein `printf`, kein Mutex.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -90,44 +102,56 @@ Die `ButtonTask` (Bottom-Half) übernimmt nun die eigentliche, zeitaufwändige A
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 3**
 
-**Code-Implementierung:**
-
 ```c
-/* USER CODE BEGIN Header_StartButtonTask */
-void StartButtonTask(void *argument)
+void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
-  for (;;) {
-    /* 1. Schlafen (0 % CPU), bis die ISR signalisiert */
-    osSemaphoreAcquire(ButtonSemHandle, osWaitForever);
-
-    /* 2. WACH — hier die aufwändige Arbeit (Task-Kontext) */
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    printf("BUTTON PRESSED! Führe komplexe Berechnungen aus...\n");
-
-    /* Demo-Last (Busy-Wait): Task bleibt Running — nur zur Demonstration!
-     * In Produktion: osDelay(100);  // Ticks; bei configTICK_RATE_HZ = 1000 → 100 ms
-     */
-    HAL_Delay(100);
-  }
+    if (pin != GPIO_PIN_13) return;
+    if (osSemaphoreRelease(ButtonSem) != osOK)
+        isr_fail++;
 }
-/* USER CODE END Header_StartButtonTask */
 ```
 
-**Erklärung zum Delay:**  
-Stünde `HAL_Delay(100)` direkt in der ISR (Top-Half), wäre die CPU für $100\,\mathrm{ms}$ auf Hardware-Ebene gebunden. Wichtige RTOS-Interrupts wie der **SysTick** (Herzschlag des Kernels) könnten — je nach NVIC-Priorisierung — verzögert oder faktisch blockiert werden. Das Betriebssystem „friert“ ein: Deadlines verschieben sich, der Scheduler verliert seinen Takt.
+Pin 13 nur, wenn PC13 der aktive User-Button ist. `isr_fail` nicht aus Thread und ISR gleichzeitig mit Read-Modify-Write ohne Vertrag erhöhen; für die Übung einen `volatile`-Zähler nur als Diagnose markieren und die Grenze nennen.
 
-Durch das **Deferred Interrupt Processing** lagern wir die Last in die RTOS-Task (Bottom-Half) aus. Dort läuft der SysTick normal weiter. `HAL_Delay()` ist zwar eine Busy-Wait-Schleife und hält die Task im Zustand *Running* (CPU-Last $\approx 100\,\%$ — in Produktion ungeeignet; dort `osDelay()`, damit die Task in *Blocked* geht). Dennoch könnte eine Realtime-Task mit noch höherer RTOS-Priorität die `ButtonTask` jederzeit präemptieren. Das System bleibt unter Scheduler-Kontrolle und damit stabil.
+Worker:
+
+```c
+void ButtonTask(void *argument)
+{
+    (void)argument;
+    for (;;) {
+        if (osSemaphoreAcquire(ButtonSem, osWaitForever) != osOK)
+            continue;
+        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+    }
+}
+```
+
+PE1 nur nach Prüfung von LD2. UART-Text nur über den Mutex-Pfad aus VL4.
+
+Vergleich, ausdrücklich kennzeichnen: `HAL_Delay(100)` im High-Worker ist Busy-Wait. Niedrigere Threads stocken für diese Last. Eine höhere Task kann trotzdem präemptieren. Die LED beweist keine Deadline.
+
+Drei Releases vor einem Acquire bei max count 1: höchstens ein Token, weitere Releases können scheitern. Das ist Zusammenfassen, kein lückenloser Zähler. Prellen extra behandeln: Pegel stabil lesen, Press und Release merken. 100 ms Wartezeit löscht keine schon gespeicherten Tokens.
+
+Option: Event-Queue, Put aus der ISR mit Timeout 0, Drop-Zähler. Auch die ist endlich.
 :::
 
 ---
 
-## Aufgabe 4: Mini-Queue (ITC aus der Vorlesung)
+## Aufgabe 4: Auswertung
 
-Ergänzen Sie das Semaphor-Muster um eine kurze Queue — so üben Sie die Inter-Task-/ISR-Kommunikation mit Payload.
+| Punkt | Beobachtung |
+|-------|-------------|
+| Semaphor-Startcount 0 | |
+| NVIC-Priorität und Grouping | |
+| Tickrate | |
+| Workerpriorität | |
+| Drop- und ISR-Fehlerzähler | |
+| ISR-Dauer, Startlatenz, Completion | |
+| Heartbeat unter der Busy-Wait-Variante | |
+| Zahl verarbeiteter Ereignisse | |
 
-1. Legen Sie in CubeMX eine Queue `ButtonQueue` an (Message Size: `uint32_t`, Länge $\ge 4$).
-2. In der ISR: schreiben Sie einen Zeitstempel (`HAL_GetTick()`) per `osMessageQueuePut(..., 0)` (Timeout 0!) in die Queue **und** geben Sie weiterhin den Semaphor frei.
-3. In der Task: lesen Sie den Wert per `osMessageQueueGet` und geben Sie ihn mit `printf` aus.
+Die 16 µs der Vorlesung sind synthetisch (Flanke 0, Eintritt 3, Ready 8, ISR-Ende 12, Lauf 16). Nicht als Boardwert eintragen. Messen mit GPIO oder Trace; `printf` danach. Ohne Logic Analyzer die Zeiten leer lassen.
 
 ### Ihre Lösung {.unnumbered}
 
@@ -136,22 +160,5 @@ Ergänzen Sie das Semaphor-Muster um eine kurze Queue — so üben Sie die Inter
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4**
 
-```c
-/* ISR (Top-Half) — zusätzlich zur Semaphor-Signalisierung */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  if (GPIO_Pin == GPIO_PIN_13) {
-    uint32_t ts = HAL_GetTick();
-    osMessageQueuePut(ButtonQueueHandle, &ts, 0, 0); /* Timeout 0 in ISR! */
-    osSemaphoreRelease(ButtonSemHandle);
-  }
-}
-
-/* Task — nach Acquire den Payload holen */
-uint32_t ts = 0;
-osMessageQueueGet(ButtonQueueHandle, &ts, NULL, 0);
-printf("Button @ tick %lu\n", (unsigned long)ts);
-```
-
-Die Queue transportiert Daten (Copy-by-Value), der Semaphor bleibt das reine Wake-up-Signal. In Produktion reicht oft die Queue allein (`Get` mit `osWaitForever`); hier bleiben beide Muster sichtbar.
+Soll ohne Messung: leerer Semaphor weckt erst nach Release; zu dringliche EXTI-Priorität darf die API nicht rufen; voller binärer Semaphor verwirft weitere Flanken; Try-Put auf voller Queue verwirft die neue Nachricht und lässt die alte liegen. Ein erfolgreicher Build ist keine gehaltene Frist.
 :::
