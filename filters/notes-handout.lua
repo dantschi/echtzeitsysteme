@@ -65,10 +65,19 @@ function Pandoc(doc)
       new_blocks:insert(pandoc.RawBlock("latex", "\\end{folienblock}"))
 
       if #note_blocks > 0 then
-        new_blocks:insert(pandoc.RawBlock("latex", "\\begin{notesblock}"))
+        local note_title = string.format(
+          "Notizen\\hfill\\textcolor{mutedgray}{\\mdseries\\normalsize %d\\,/\\,%d}",
+          slide_num,
+          total_slides
+        )
+        local note_cont = string.format(
+          "Notizen, Fortsetzung\\hfill\\textcolor{mutedgray}{\\mdseries\\normalsize %d\\,/\\,%d}",
+          slide_num,
+          total_slides
+        )
         new_blocks:insert(pandoc.RawBlock(
           "latex",
-          "{\\bfseries\\color{dhbwred}Notizen}\\par\\medskip"
+          "\\begin{notesblock}{" .. note_title .. "}{" .. note_cont .. "}"
         ))
         for _, nb in ipairs(note_blocks) do
           new_blocks:insert(nb)
