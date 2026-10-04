@@ -229,7 +229,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Der zweite Kern des H755 verdoppelt dieses Modell nicht automatisch</li>
 </ul>
 <aside class="notes">
-<p>Zeiten und Begriffe wie in VL1: Release, Start, Completion, relative/absolute Deadline, Jitter. Alle Kernbeispiele gelten für genau eine CPU. Bus- und Speicherinterferenz des H755 liegen außerhalb des idealisierten Lehrmodells, sofern nicht im WCET enthalten.</p>
+<p>In Vorlesung 1 (VL1) der Echtzeitsysteme (EZS) an der Dualen Hochschule Baden-Württemberg (DHBW) Stuttgart hieß Rechtzeitigkeit: ein Ergebnis ist erst dann brauchbar, wenn es vor seiner Frist fertig ist. Release ist der Zeitpunkt, ab dem ein Job rechnen darf. Start ist der erste Moment, in dem die CPU ihn ausführt. Completion ist die Fertigstellung. Die relative Deadline ist die Frist ab Release, die absolute Deadline ein Zeitpunkt auf der Uhr. Jitter ist die Schwankung eines Zeitabstands, nicht schon jede konstante Verspätung.</p>
+<p>Heute bleibt die Analyse bei genau einer CPU (Central Processing Unit, der Prozessor). Der Mikrocontroller STM32H755ZIT6 auf dem Board NUCLEO-H755ZI-Q hat zusätzlich einen Cortex-M7. Der zweite Kern verdoppelt die Formeln nicht, weil Busse und Speicher sich stören können. Diese Störung steckt nur dann in der WCET (Worst-Case Execution Time, obere Schranke der eigenen Ausführungszeit), wenn das Modell sie ausdrücklich enthält.</p>
+<p>RMS (Rate Monotonic Scheduling) vergibt feste Prioritäten nach der Aktivierungsrate. RTA (Response-Time Analysis) rechnet die maximale Antwortzeit. EDF (Earliest Deadline First) wählt den bereiten Job mit der frühesten absoluten Deadline. Das Labor baut keinen Registerwechsel, sondern einen kooperativen Dispatcher: kurze Funktionen kehren zurück.</p>
+<p>Welche Stationen verbinden dieses Ein-CPU-Modell mit dem späteren Laborcode?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -252,7 +255,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>SysTick/PendSV und Labor-Dispatcher</li>
 </ol>
 <aside class="notes">
-<p>Durchgängige Tasksets: 75 % (Präemption), 85 % (RTA oberhalb der Schranke), 97 % (RMS scheitert, EDF hält).</p>
+<p>Die Agenda ist eine Argumentationskette, keine Themenliste. Zuerst beschreiben wir eine wiederkehrende Aufgabe durch Bedarf, Periode und Frist. Danach fragen wir, welchen Anteil der CPU das langfristig ausmacht. Erst dann legen wir fest, welcher bereite Job die einzige CPU erhält, und prüfen, ob die Fristen halten. Am Ende sehen wir, wie ein Zeitgeber und ein aufgeschobener Wechsel einen Thread fortsetzen, und wie das Labor denselben Gedanken ohne eigenen Task-Stack vereinfacht.</p>
+<p>Drei Zahlenbeispiele bleiben dieselben. 75 % zeigt Präemption. 85 % liegt über der einfachen Schranke und wird mit der Antwortzeitanalyse nachgewiesen. 97 % scheitert unter RMS und hält unter idealem EDF. Sie sind Lehrstücke, keine Messungen am Board.</p>
+<p>Was sollen Sie am Ende selbst rechnen können?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -275,7 +280,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Den Labor-Dispatcher ohne rekursive Tasks erklären</li>
 </ol>
 <aside class="notes">
-<p>Am Ende: <span class="math inline">\(R \le D\)</span> unter benannten Annahmen nachweisen, Liu-Layland von einem exakten Test unterscheiden, und den Callback-Scheduler vom RTOS-Thread trennen.</p>
+<p>Nach dieser Vorlesung können Sie eine Aufgabe und ihre einzelnen Jobs auf einer Zeitachse benennen. <span class="math inline">\(C\)</span> ist der eigene CPU-Bedarf, <span class="math inline">\(T\)</span> der Abstand der Freigaben, <span class="math inline">\(D\)</span> die relative Frist, <span class="math inline">\(R\)</span> die Antwortzeit von der Freigabe bis zur Fertigstellung. Nachweis heißt <span class="math inline">\(R \le D\)</span> unter genannten Annahmen, nicht „die CPU ist schnell“.</p>
+<p>Sie trennen die langfristige Auslastung <span class="math inline">\(U\)</span> von der Frage, ob ein kurzes Fenster die Frist hält. Kooperativ bedeutet freiwillige Rückgabe der CPU, präemptiv eine erzwungene Unterbrechung durch den Scheduler. Fixed Priority ist eine feste Rangfolge. EDF ist eine andere Regel. Ein Callback ist eine Funktion, die zurückkehrt. Ein RTOS-Thread kann mitten in seinem Code pausieren, weil Register und Stack gesichert werden.</p>
+<p>Warum reicht eine Super-Loop nicht als allgemeine Lösung, obwohl sie bei kurzer Arbeit Fristen halten kann?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -305,7 +312,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div></div>
 <aside class="notes">
-<p>Polling ist nicht grundsätzlich ungeeignet. Interrupts stellen keinen automatischen Determinismus her — Anschluss an VL1.</p>
+<p>Polling heißt: die Schleife fragt selbst nach, ob etwas zu tun ist. Eine Super-Loop ist die Endlosschleife <code>while (1)</code>, die ihre Arbeiten nacheinander aufruft. Im Beispiel dauert <code>Sensor_Auswerten()</code> 50 ms. Erst danach kommt <code>LED_Blinken()</code>. Liegt das LED-Budget darunter, ist die Schleife zu lang, nicht weil Polling grundsätzlich falsch wäre.</p>
+<p>Ein Interrupt ist eine Hardwareanforderung (IRQ, Interrupt Request). Die Interrupt Service Routine (ISR) ist die kurze Behandlungsfunktion. Sie kann eine Reaktion vorziehen, verbraucht aber selbst Zeit. Ist die ISR maskiert, also gesperrt, bleibt die Anforderung liegen. Interrupts stellen deshalb keinen automatischen Determinismus her.</p>
+<p>Wie wird die Main-Schleife unlesbar, wenn Sensor, Kommunikation und Aktor jeweils ein eigenes Merkbit setzen?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -326,7 +335,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ein RTOS strukturiert Tasks — es beweist Fristen nicht von selbst</li>
 </ul>
 <aside class="notes">
-<p>Flag-Suppe ist ein Strukturproblem. Der spätere Scheduler arbeitet mit Zuständen und Prioritäten, nicht mit einem automatischen WCET-Wächter.</p>
+<p>Ein Flag ist ein gespeichertes Merkmal: „Sensorwert da“, „Paket angekommen“, „Aktor darf stellen“. Jede ISR setzt ihr Flag, die Main-Schleife muss alle in der richtigen Ordnung abfragen. Bei drei Quellen sieht man die Reihenfolge noch. Bei zwanzig Flags ist nicht mehr offensichtlich, welche Frist zuerst verletzt wird.</p>
+<p>Ein RTOS (Real-Time Operating System, Echtzeitbetriebssystem) kann daraus getrennte Aufgaben mit Zustand und Priorität machen. Es beweist die Fristen nicht von selbst. Die Worst-Case Execution Time bleibt eine Annahme der Analyse, kein automatischer Wächter im Betriebssystem.</p>
+<p>Welchen Unterschied macht es, ob eine Aufgabe einen eigenen Stack hat oder nur eine Funktion ist, die zurückkehrt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -348,7 +359,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Das sind unterschiedliche Kontextmodelle</li>
 </ul>
 <aside class="notes">
-<p>Ein Job ist nur bei passend strukturierter Anwendung ein Schleifendurchlauf. FreeRTOS-Threads und die Labor-Callbacks nicht vermischen.</p>
+<p>Ein Kontext sind die Daten, mit denen die CPU später genau dort weiterrechnet: Register und der Stack, also der Stapelspeicher für Rücksprung und lokale Variablen. Ein RTOS-Thread besitzt davon eine eigene Sicherung. Wird er unterbrochen, bleibt sein Stand erhalten. Ein Labor-Callback ist eine kurze Funktion. Sie rechnet, schreibt ihren Fortschritt in Verwaltungsdaten und kehrt zurück. Es gibt keinen pausierten Befehlszähler mitten in ihrer Schleife.</p>
+<p>FreeRTOS ist ein konkretes Echtzeitbetriebssystem. Die heutigen Callbacks sind nicht seine Threads. Ein Schleifendurchlauf wird erst ein modellierter Job, wenn Freigabe und Fertigstellung definiert sind.</p>
+<p>Wer bekommt die einzige CPU, wenn mehrere solche Aufgaben gleichzeitig bereit sind?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -370,7 +383,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Fairness und Deadline-Einhaltung sind verschiedene Ziele</li>
 </ul>
 <aside class="notes">
-<p>Frage: Warum darf eine zweite H755-CPU die heutige Formel <span class="math inline">\(U \le 1\)</span> nicht einfach verdoppeln? Weil das Modell, Busse und der Nachweis sich ändern.</p>
+<p>Scheduling, die Ablaufplanung, beantwortet: welcher bereite Job erhält die CPU. Ein Regler muss seine Stellgröße vor der nächsten Abtastung liefern. Eine Anzeige darf später kommen. Fristtreue und Fairness sind deshalb verschiedene Ziele. Fairness hieße, jeder kommt irgendwann dran. Eine harte Frist kann verlangen, dass die Anzeige wartet.</p>
+<p>Heute gilt das Modell für eine CPU. Der zweite Kern des H755 ist eine zweite Ressource mit eigenen Wartezeiten an gemeinsamen Bussen. Die Formel <span class="math inline">\(U \le 1\)</span> für eine CPU darf man nicht einfach verdoppeln.</p>
+<p>Welche drei Zahlen braucht die Analyse, bevor irgendein Scheduler zur Laufzeit entscheidet?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -410,7 +425,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tbody>
 </table>
 <aside class="notes">
-<p>Der mathematische Fahrplan und der RTOS-Scheduler sind zwei Schichten. Garantien gelten unter den Annahmen der Analyse, nicht für jedes STM32-Programm.</p>
+<p>Aus einer C-Funktion wird ein Modell, indem wir drei Entwurfszahlen festlegen. <span class="math inline">\(C\)</span> ist der eigene Rechenbedarf, <span class="math inline">\(T\)</span> der Abstand der Freigaben, <span class="math inline">\(D\)</span> die relative Frist. Die Analyse prüft damit <span class="math inline">\(R \le D\)</span>. Zur Laufzeit sieht ein Fixed-Priority-Scheduler, ein Scheduler mit fester Priorität, vor allem den Zustand Ready, Running oder Blocked und die konfigurierte Prioritätszahl. Er kennt die bewiesene Antwortzeit nicht und überwacht bei FreeRTOS die Deadline nicht automatisch.</p>
+<p>Die Garantie gilt deshalb nur unter den Annahmen der Rechnung, nicht für jedes Programm auf dem STM32, sobald Interrupts, gemeinsame Daten oder ein zweiter Kern fehlen.</p>
+<p>Was ist der Unterschied zwischen der wiederkehrenden Aufgabe und einer einzelnen Aktivierung?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -432,7 +449,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Labor-Callback: endlicher Schritt, Zustand im TCB, kein pausierter Stack</li>
 </ul>
 <aside class="notes">
-<p>Task <span class="math inline">\(\neq\)</span> Job. Ein <code>while(1)</code>-Durchlauf ist nur dann ein Job, wenn Release und Ende so definiert sind.</p>
+<p>Die Task <span class="math inline">\(\tau_i\)</span> (tau mit Index i) ist die wiederkehrende Aufgabe, zum Beispiel ein Regler, der alle 10 ms einen neuen Job bekommt. Der Job <span class="math inline">\(J_{i,k}\)</span> ist die k-te Aktivierung. Ein RTOS-Thread hat eigene Register und einen eigenen Stack. Der Labor-Callback hat nur einen Funktionszeiger und den Zustand im TCB (Task Control Block, die Verwaltungsdaten). Seinen Fortschritt muss er selbst wegschreiben, bevor er zurückkehrt.</p>
+<p>Ein Schleifendurchlauf ist nur dann dieser Job, wenn klar ist, wann er freigegeben wird und wann er fertig ist. Sonst vermischt man Programmstruktur und Zeitmodell.</p>
+<p>Wie viel eigene CPU-Zeit setzen wir für einen solchen Job an?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -454,7 +473,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ohne dokumentierte Schranke kein Nachweis</li>
 </ul>
 <aside class="notes">
-<p>Messmaximum plus beliebiger Puffer ist kein WCET-Beweis. Anschluss an VL1.</p>
+<p><span class="math inline">\(C_i\)</span> ist der eigene CPU-Bedarf des Jobs, ohne die Zeit, in der er nur wartet oder von jemand anderem unterbrochen wird. Im harten Modell setzen wir dafür eine WCET an, also eine obere Schranke unter genannten Annahmen. Drei Millisekunden eigene Arbeit können trotzdem erst nach sieben Millisekunden fertig sein, wenn zwei Millisekunden Warten und zwei Millisekunden Unterbrechung dazukommen.</p>
+<p>Das größte Ergebnis aus ein paar Messläufen ist ein Messmaximum, keine Schranke für alle noch nicht gesehenen Pfade. Ein willkürlicher Puffer darauf ist eine Entwurfsentscheidung, kein Beweis.</p>
+<p>Wie oft wird dieser Bedarf freigegeben?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -475,7 +496,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Zunächst: kein Release-Jitter</li>
 </ul>
 <aside class="notes">
-<p>Start kann später liegen als Release. <span class="math inline">\(T\)</span> und die relative Deadline <span class="math inline">\(D\)</span> nicht gleichsetzen, außer das Modell sagt <span class="math inline">\(D = T\)</span>.</p>
+<p><span class="math inline">\(T_i\)</span> ist der Abstand der Releases, nicht der Abstand der CPU-Starts. Ein Regler mit <span class="math inline">\(T_i = 10\,\mathrm{ms}\)</span> wird bei 0, 10, 20 ms freigegeben, auch wenn er erst bei 2, 13 und 21 ms zu rechnen beginnt. Der Sollzeitpunkt der Freigabe und der tatsächliche Start sind zwei Marken.</p>
+<p>Release-Jitter wäre die Schwankung dieser Freigabezeitpunkte. In den Kernbeispielen heute ist er null. <span class="math inline">\(T\)</span> und die relative Deadline <span class="math inline">\(D\)</span> sind nur dann dieselbe Zahl, wenn das Modell <span class="math inline">\(D = T\)</span> ausdrücklich setzt.</p>
+<p>Bis wann muss der Job fertig sein, gemessen ab seiner Freigabe?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -498,7 +521,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Completion zum Zeitpunkt <span class="math inline">\(d\)</span> gilt als rechtzeitig</li>
 </ul>
 <aside class="notes">
-<p><span class="math inline">\(R\)</span> enthält Warten und Präemption. <span class="math inline">\(C \le D\)</span> ist nötig, aber bei mehreren Tasks nicht hinreichend.</p>
+<p>Wird ein Job bei <span class="math inline">\(r = 10\,\mathrm{ms}\)</span> freigegeben und ist die relative Deadline <span class="math inline">\(D = 8\,\mathrm{ms}\)</span>, liegt die absolute Deadline bei <span class="math inline">\(d = r + D = 18\,\mathrm{ms}\)</span>. Die Antwortzeit eines Jobs ist <span class="math inline">\(R_{i,k} = f_{i,k} - r_{i,k}\)</span>, also Fertigstellung minus Freigabe. <span class="math inline">\(R_i\)</span> ist die nachgewiesene Worst-Case-Antwortzeit im Modell. Gefordert ist <span class="math inline">\(R_i \le D_i\)</span>. Fertig genau bei <span class="math inline">\(d\)</span> ist noch rechtzeitig.</p>
+<p><span class="math inline">\(R\)</span> enthält Warten und Präemption, <span class="math inline">\(C\)</span> nicht. <span class="math inline">\(C \le D\)</span> ist nötig, aber nicht hinreichend, sobald andere Jobs dazwischenrechnen.</p>
+<p>Die getrennten Zeitparameter sehen wir nun gemeinsam auf einer Zeitachse.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -520,7 +545,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p><img data-src="../_livefigures/inline-plantuml-cc592924.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Beide Laufstücke gehören demselben Job. Im Lehrmodell läuft er mit der angenommenen WCET. Frage: Warum ist <span class="math inline">\(T=10\)</span> nicht der Abstand der Starts?</p>
+<p>Ein Job, Zeiten in Millisekunden. Bei <span class="math inline">\(r = 0\)</span> wird er freigegeben und wartet bis zum Start <span class="math inline">\(s = 2\)</span>. Er rechnet von 2 bis 3, wird von 3 bis 5 unterbrochen und rechnet von 5 bis 7. Fertigstellung <span class="math inline">\(f = 7\)</span>, relative Deadline <span class="math inline">\(D = 8\)</span>, nächster Release bei <span class="math inline">\(T = 10\)</span>. Die eigene CPU-Zeit ist <span class="math inline">\(1 + 2 = 3\,\mathrm{ms}\)</span>. Die Antwortzeit ist <span class="math inline">\(R = 7 - 0 = 7\,\mathrm{ms}\)</span>. Beide Laufstücke gehören demselben Job. Die Unterbrechung zählt nicht zu <span class="math inline">\(C\)</span>. Im Lehrmodell rechnet er mit der angesetzten WCET, nicht mit einer Boardmessung.</p>
+<p><span class="math inline">\(T = 10\)</span> ist nicht der Abstand der Starts. Die Starts lägen bei 2 und irgendwann nach 10. Muss <span class="math inline">\(D\)</span> immer gleich <span class="math inline">\(T\)</span> sein?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -542,7 +568,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Liu-Layland und der einfache EDF-Test heute: <span class="math inline">\(D = T\)</span></li>
 </ul>
 <aside class="notes">
-<p>Die dritte Zeile ist ein Beispiel für arbitrary deadlines, keine Definition. Frage: Warum reicht <span class="math inline">\(U \le 1\)</span> bei <span class="math inline">\(D &lt; T\)</span> nicht?</p>
+<p>Implicit heißt <span class="math inline">\(D = T\)</span>: fertig werden, bevor der eigene nächste Job freigegeben wird. Constrained heißt <span class="math inline">\(D \le T\)</span> und enthält den Fall <span class="math inline">\(D = T\)</span>. Arbitrary heißt, <span class="math inline">\(D\)</span> darf beliebig sein, also auch kürzer oder länger als <span class="math inline">\(T\)</span>. Die dritte Zeile mit <span class="math inline">\(D &gt; T\)</span> ist nur ein Beispiel dafür, nicht die Definition. Überlappende Jobs derselben Aufgabe sind dann möglich und brauchen eine andere Rechnung.</p>
+<p>Liu-Layland und der einfache EDF-Test heute setzen <span class="math inline">\(D = T\)</span>. Warum reicht <span class="math inline">\(U \le 1\)</span> bei kürzerer Deadline nicht? Das zeigt die nächste Folie an einem konkreten Burst.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -568,7 +595,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li><span class="math inline">\(U = 40\,\%\)</span>, aber <span class="math inline">\(4\,\mathrm{ms}\)</span> Arbeit vor <span class="math inline">\(t = 3\,\mathrm{ms}\)</span> — unabhängig vom Algorithmus unmöglich</li>
 </ul>
 <aside class="notes">
-<p>Ein Taster ohne Entprellung hat keine garantierte Mindestreleasezeit. Physikalische Betätigung und modellierte Mindestankunft trennen. Die 40-%-Gegenprobe zeigt, warum <span class="math inline">\(U \le 1\)</span> bei kurzen Deadlines kein EDF-Test ist.</p>
+<p>Periodisch heißt fester Release-Abstand, zum Beispiel eine Sensorabfrage alle 10 ms. Sporadisch heißt: der Abstand ist mindestens <span class="math inline">\(T\)</span>, aber nicht jeder Takt muss ein Job kommen. Ein Taster ohne Entprellung hat diese Garantie nicht. Die physikalische Betätigung und der modellierte Mindestabstand sind zweierlei. Ein Burst ohne Obergrenze erlaubt keine pauschale Frist für jedes Ereignis.</p>
+<p>Die Gegenprobe: zwei Jobs, je <span class="math inline">\(C = 2\,\mathrm{ms}\)</span>, <span class="math inline">\(T = 10\,\mathrm{ms}\)</span>, <span class="math inline">\(D = 3\,\mathrm{ms}\)</span>, beide bei <span class="math inline">\(t = 0\)</span> frei. <span class="math inline">\(U = 2/10 + 2/10 = 0{,}4 = 40\,\%\)</span>. Trotzdem liegen 4 ms Arbeit in einem Fenster von 3 ms. Das ist unmöglich, unabhängig vom Algorithmus. <span class="math inline">\(U \le 1\)</span> ist bei <span class="math inline">\(D &lt; T\)</span> kein EDF-Test.</p>
+<p>Welche dieser freigegebenen Jobs sind gerade ausführbar, und welcher Zustand beschreibt das?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -591,7 +620,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Interruptkontext ist kein vierter Task-Zustand</li>
 </ul>
 <aside class="notes">
-<p>Auf einer CPU höchstens ein Task-Kontext Running. ISRs separat. Idle darf laufen, wenn niemand Ready ist.</p>
+<p>Running heißt: dieser Task-Kontext hat die CPU. Auf einer CPU ist das höchstens einer. Ready heißt: er will rechnen und wartet auf die Zuteilung. Blocked heißt: er wartet auf ein Ereignis oder eine Zeit und führt keine eigenen Befehle aus. Das ist nicht „er rechnet langsam“. Idle, der Leerlauf, darf laufen, wenn niemand Ready ist. Eine ISR ist kein vierter Task-Zustand, sondern Handler-Kontext.</p>
+<p>Ein Sensorjob ist Running, solange er die Stellgröße rechnet. Die Kommunikationsaufgabe ist Blocked, bis das Byte da ist. Danach wird sie Ready, nicht sofort Running.</p>
+<p>Welche Ereignisse verursachen diese Wechsel?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -612,7 +643,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>RTOS: Kontextwechsel; Labor: Funktionsaufruf und Rückkehr</li>
 </ul>
 <aside class="notes">
-<p>Ein geweckter Job wird nicht „magisch Running“, sondern zuerst Ready.</p>
+<p>Die Pfeile: Erzeugen legt die Aufgabe nach Ready. Dispatch, die Umsetzung der Auswahl, macht sie zu Running. Präemption, die erzwungene Unterbrechung durch den Scheduler, legt sie zurück nach Ready. Blockieren oder Delay legt sie nach Blocked. Ereignis oder Timeout macht sie wieder Ready. Der Scheduler wählt, der Dispatcher setzt die Wahl um. Ein geweckter Job wird nicht sofort Running. Erst die Auswahl danach entscheidet, und auf einer CPU kann das sofort sein, wenn er die höchste bereite Priorität hat.</p>
+<p>Welche dieser Zustände sagen etwas über die langfristige Last aus, nicht nur über den augenblicklichen Stand?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -635,7 +667,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Nicht zugewiesene Prozent sind kein Fristpuffer in jedem Fenster</li>
 </ul>
 <aside class="notes">
-<p><span class="math inline">\(U\)</span> ist notwendig für unbegrenzte periodische Pflicht, nicht hinreichend bei <span class="math inline">\(D &lt; T\)</span>.</p>
+<p>Die Auslastung einer Aufgabe ist <span class="math inline">\(U_i = C_i / T_i\)</span>. Beide Größen stehen hier in Millisekunden, der Quotient ist deshalb einheitenlos. <span class="math inline">\(0{,}25\)</span> ist dasselbe wie 25 %. Die Summe <span class="math inline">\(U\)</span> ist der langfristige Pflichtanteil auf einer CPU. Für unbegrenzte periodische Pflicht auf einer CPU ist <span class="math inline">\(U \le 1\)</span> notwendig. Es ist nicht hinreichend, wenn die Deadline kürzer als die Periode ist: die 40-%-Gegenprobe brauchte 4 ms in 3 ms. Nicht vergebene Langfristkapazität ist nicht in jedem kurzen Fenster frei.</p>
+<p>Wie sieht das an den drei Aufgaben mit 85 % aus?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -687,7 +720,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>ISR-, Dispatcher- und Messoverhead getrennt bilanzieren, nicht doppelt und nicht als „Pauschalreserve = Beweis“</li>
 </ul>
 <aside class="notes">
-<p>Die 15 % sind keine Garantie, dass jeder Job 15 % Reserve hat. Overhead nur einrechnen, wenn er nicht schon in <span class="math inline">\(C\)</span> steckt.</p>
+<p><span class="math inline">\(\tau_1\)</span>: <span class="math inline">\(C = 1\,\mathrm{ms}\)</span>, <span class="math inline">\(T = 4\,\mathrm{ms}\)</span>, <span class="math inline">\(U_1 = 1/4 = 0{,}25 = 25\,\%\)</span>. <span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(2/5 = 0{,}40 = 40\,\%\)</span>. <span class="math inline">\(\tau_3\)</span>: <span class="math inline">\(2/10 = 0{,}20 = 20\,\%\)</span>. Summe <span class="math inline">\(U = 0{,}85 = 85\,\%\)</span>. Die restlichen 15 % sind im Langfristmodell nicht zugewiesen. Sie sind keine Reserve in jedem 4-ms-Fenster. Interrupt- und Dispatcheraufwand darf nur einmal in die Bilanz: entweder in <span class="math inline">\(C\)</span> oder als eigene Last, nicht doppelt. Die berechnete Auslastung ist nur so belastbar wie die angesetzten Ausführungszeiten. Deshalb prüfen wir nun, wie <span class="math inline">\(C\)</span> zustande kommt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -712,7 +745,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Statische Analyse braucht Plattform- und Codeannahmen (Cache, Bus, Waitstates)</li>
 </ul>
 <aside class="notes">
-<p>Lehrkurve, keine Boardmessung. H755-Interferenz gehört ins WCET-Modell oder wird als außerhalb des idealen Ein-CPU-Modells gekennzeichnet.</p>
+<p>FFT heißt Fast Fourier Transform, eine schnelle Fourier-Transformation. Sie ist hier nur der rechenintensive Zweig: große Sensordaten brauchen lange, ein kleines Flag fast nichts. Der Mittelwert mischt beide Pfade. Das Messmaximum ist der längste beobachtete Lauf, keine Schranke für einen noch nicht genommenen Pfad. Cache, Buskonflikt und Wartezyklen auf den Speicher ändern die Dauer, auch wenn der Quelltext gleich bleibt. Interferenz des H755 gehört in die WCET oder wird als außerhalb des idealen Ein-CPU-Modells gekennzeichnet. Die Kurve ist Lehre, keine Boardmessung.</p>
+<p>Wie kommt man zu einer belastbaren oberen Schranke?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -743,7 +777,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 </div></div>
 <aside class="notes">
-<p>Beide Wege brauchen ein Modell. „Messen und 20 % drauf“ ist eine Ingenieurpraxis, kein Nachweis.</p>
+<p>Die statische Analyse geht die Pfade des Programms durch und braucht Schleifengrenzen und ein Plattformmodell, sonst ist die Schranke nicht geschlossen. Die Messung liefert das Maximum der durchgeführten Läufe. Ein Zuschlag von 20 % kann eine Entwurfsentscheidung sein. Allein beweist er nicht, dass kein längerer Pfad existiert. Beide Wege brauchen dokumentierte Annahmen: Compiler, Takt, Speicher, Interrupts.</p>
+<p>Das Modell beschreibt die Arbeit, legt aber noch nicht fest, welcher bereite Job zuerst rechnet. Vorher fassen wir Task, Job und die vier Zeiten zusammen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -765,7 +800,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Analysezahlen <span class="math inline">\(\neq\)</span> automatische RTOS-Überwachung</li>
 </ul>
 <aside class="notes">
-<p>Frage: Erfüllt <span class="math inline">\(U = 40\,\%\)</span> mit <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> und zwei Jobs à <span class="math inline">\(2\,\mathrm{ms}\)</span> die Frist? Nein.</p>
+<p>Ein Reglerjob mit <span class="math inline">\(C = 2\,\mathrm{ms}\)</span>, <span class="math inline">\(T = 10\,\mathrm{ms}\)</span> und <span class="math inline">\(D = 8\,\mathrm{ms}\)</span> hat <span class="math inline">\(U_i = 0{,}2\)</span> und die Forderung <span class="math inline">\(R \le 8\,\mathrm{ms}\)</span>. Die Auslastung sagt den langfristigen Anteil, die Antwortzeit die Fertigstellung ab Release. Die Kontrollfrage: zwei solche Jobs mit <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> haben zusammen <span class="math inline">\(U = 40\,\%\)</span>, brauchen aber 4 ms vor <span class="math inline">\(t = 3\,\mathrm{ms}\)</span>. Die Frist ist unmöglich. Antwort: nein, die Auslastung genügt hier nicht.</p>
+<p>Das Modell beschreibt die Arbeit, legt aber noch nicht fest, welcher bereite Job zuerst rechnet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -786,7 +822,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ob Fristen halten, zeigt der Test unter seinen Annahmen</li>
 </ul>
 <aside class="notes">
-<p>Auswahlregel und Beweis nicht vermischen.</p>
+<p>Mehrere Jobs können Ready sein, die CPU ist eine. Ein Regler mit früher Frist und eine Anzeige mit später Frist dürfen nicht beide gleichzeitig rechnen. Die Auswahlregel legt die Reihenfolge fest. Der Test sagt danach, ob die Fristen unter den Annahmen halten. Regel und Beweis sind zwei Schritte. Wer sie vermischt, hält eine Prioritätszahl schon für einen Nachweis.</p>
+<p>Wer trifft die Entscheidung, und wer setzt sie auf der CPU um?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -807,7 +844,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>RTOS-Thread: Register/PSP; Labor: <code>step()</code> aufrufen und Rückkehr abwarten</li>
 </ul>
 <aside class="notes">
-<p>Im Labor gibt es keinen PendSV-Registerwechsel.</p>
+<p>Der Scheduler entscheidet, wer als Nächstes drankommt. Der Dispatcher führt diese Entscheidung aus. Bei zwei Jobs ist die Entscheidung „Regler vor Anzeige“ noch keine ausgeführte Stellgröße. Im RTOS sichert der Kontextwechsel Register und Stack. PendSV ist die aufschiebbare System-Exception, die diesen Wechsel im Cortex-M-Port ausführt, wenn sie pending, also angefordert, und danach aktiv wird. PSP (Process Stack Pointer) ist der Stackzeiger des Taskkontexts. Im Labor ruft der Dispatcher nur <code>step()</code> auf und bekommt die Kontrolle zurück. Es gibt keinen PendSV-Registerwechsel.</p>
+<p>Welche Eigenschaften einer Auswahlregel lassen sich unabhängig voneinander kombinieren?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -852,7 +890,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Die Achsen nicht gleichsetzen: online <span class="math inline">\(\neq\)</span> automatisch ereignisgesteuert</li>
 </ul>
 <aside class="notes">
-<p>Eine offline Tabelle kann zeitgesteuert sein. Ein Fixed-Priority-RTOS kann auf Ereignisse reagieren, nicht nur auf den Tick.</p>
+<p>Offline heißt: der Plan steht vor dem Lauf, oft als Tabelle. Online heißt: die Entscheidung fällt zur Laufzeit. Zeitgesteuert heißt: ein Takt löst den Schritt aus. Ereignisgesteuert heißt: eine Meldung oder IRQ löst ihn aus. Das sind verschiedene Achsen. Eine offline Tabelle kann zeitgesteuert sein. Ein Fixed-Priority-RTOS kann auf ein Ereignis reagieren und muss nicht auf den nächsten Tick warten. Kooperativ und präemptiv sagen nur, wie die CPU abgegeben wird. Fixed Priority und EDF sagen, nach welcher Regel gewählt wird.</p>
+<p>Zwei zulässige Kombinationen: zeitgesteuerte Tabelle ohne Laufzeitauswahl, und online, ereignisgesteuert, präemptiv, feste Priorität. Online ist nicht automatisch präemptiv.</p>
+<p>Wie gibt eine Aufgabe die CPU ab, wenn sie selbst noch Code hätte?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -874,7 +914,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Round-Robin ignoriert Fristen, kann sie aber unter nachgewiesenen Bedingungen erfüllen</li>
 </ul>
 <aside class="notes">
-<p>Prioritätswahl und Art der CPU-Abgabe sind verschiedene Entscheidungen.</p>
+<p>Kooperativ: die laufende Arbeit gibt die CPU frei, durch Rückkehr oder Yield, die freiwillige Abgabe. Präemptiv: der Scheduler entzieht sie. Ein kooperativer Dispatcher kann trotzdem von einer ISR unterbrochen werden. Das ist eine Interrupt-Unterbrechung, kein präemptiver Wechsel zwischen den Callbacks. Die Prioritätsregel und die Art der Abgabe sind getrennte Entscheidungen. Fixed Priority wird nur dann zu RMS, wenn die Prioritäten nach der Periode vergeben sind.</p>
+<p>Wie sieht ein kooperativer Schritt aus, der eine Aktorfrist nicht mitten in der Arbeit zerreißt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -896,7 +937,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li><code>yield</code> dazwischen nicht unkommentiert einbauen</li>
 </ul>
 <aside class="notes">
-<p>Kooperativ kann Fristen erfüllen, wenn jeder Schritt ein nachgewiesenes Budget hat und zurückkehrt.</p>
+<p>PID ist ein Regler mit proportionalem, integralem und differenziellem Anteil. PWM, Pulse-Width Modulation, ist die Pulsweitenmodulation, mit der ein Aktor gestellt wird. Liegt die Aktorfrist über beiden Teilen, gehören <code>Calculate_PID</code> und <code>Apply_PWM</code> in denselben begrenzten Schritt. Ein Yield dazwischen würde die Stellung unnötig verzögern. Kooperativ kann Fristen erfüllen, wenn jeder Schritt ein Budget hat und zurückkehrt. Kehrt er nicht zurück, kommen die anderen Callbacks nicht dran. Interrupts können weiterlaufen.</p>
+<p>Wie sieht die Alternative aus, wenn der Scheduler die CPU auch ohne Rückkehr entziehen darf?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -918,7 +960,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Shared Data: später Mutex; Shared Memory ist nicht pauschal verboten, Abhängigkeiten müssen im Modell stehen</li>
 </ul>
 <aside class="notes">
-<p>„Alle Wechsel passieren am Tick“ ist falsch für ereignisgesteuerte Wechsel. Frage: Warum läuft Low nicht, wenn High nur <code>yield</code> macht, aber Ready bleibt?</p>
+<p>Low rechnet. Eine UART-ISR, die Interruptroutine der seriellen Schnittstelle, macht High Ready. Sie fordert PendSV an. Pending heißt angefordert, noch nicht laufend. Wenn die ISR endet und keine höhere Exception mehr aktiv ist, wechselt PendSV zu High. Das muss nicht der nächste SysTick sein. Der Satz „alle Wechsel passieren am Tick“ ist für diesen Weg falsch.</p>
+<p>Yield ist freiwillige Abgabe. Bleibt High dabei Ready, wählt eine strikte Priorität sofort wieder High. Low hungert. Antwort auf die Frage: weil Ready-bleiben die Auswahl nicht ändert. Geteilte Daten brauchen später einen Schutz. Das ist nicht dasselbe wie die Unterbrechung selbst.</p>
+<p>Wie unterscheidet sich die Dringlichkeit einer Task von der einer IRQ?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -940,7 +984,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>NVIC-IRQ: kleinere Zahl = dringender; native FreeRTOS-Taskpriorität: größere Zahl = höher (CMSIS-RTOS2 separat prüfen)</li>
 </ul>
 <aside class="notes">
-<p>IRQ-Priorität und Task-Priorität nicht vermischen.</p>
+<p>Fixed Priority vergibt eine feste Task-Rangfolge. EDF vergleicht absolute Job-Deadlines, nicht die relative Frist <span class="math inline">\(D\)</span> allein. Beim NVIC (Nested Vectored Interrupt Controller) bedeutet die kleinere Zahl die dringendere IRQ. Bei nativen FreeRTOS-Taskprioritäten bedeutet die größere Zahl die dringendere Task. CMSIS-RTOS2 bildet seine Symbole darauf ab. Die Skalen darf man nicht übereinanderlegen.</p>
+<p>Wenn mehrere Tasks dieselbe Rangstufe haben, braucht es eine zusätzliche Regel für die Reihenfolge untereinander.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -961,7 +1006,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Fairness ersetzt keinen Fristnachweis</li>
 </ul>
 <aside class="notes">
-<p>Zwei Bilder im Laborteil: gleiche Scheiben vs.&nbsp;unterschiedlich lange Schritte.</p>
+<p>Round Robin (RR) ist die zyklische Auswahl. Ein Zeitquantum ist die Scheibe, nach der der laufende Job bei gleicher Stufe weichen muss. Timerpräemptives RR erzwingt gleiche Scheiben. Das Labor später ruft unterschiedlich lange Schritte auf und erzwingt keine 1-ms-Quanten. RR ignoriert Fristen. Es kann sie nur erfüllen, wenn ein eigener Nachweis das zeigt. Allein die Ringordnung ist kein Fristbeweis.</p>
+<p>Wie sieht eine Runde mit drei gleichen Scheiben auf einer CPU aus?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -981,7 +1027,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Genau eine Running-Spur; idealisierte gleiche Scheiben</li>
 </ul>
 <aside class="notes">
-<p>Das ist timerpräemptives RR, nicht der Labor-Dispatcher.</p>
+<p>Von links nach rechts ist immer genau eine Spur Running. Bei 0 läuft A, B und C sind Ready. Der Timer nimmt A die CPU, B läuft, und so weiter im Ring. Das ist timerpräemptives RR mit gleichen Scheiben. Es ist nicht der Labor-Dispatcher, der auf die Rückkehr ungleich langer Schritte wartet. Zwei Running-Marken zur selben Zeit wären auf einer CPU falsch.</p>
+<p>Wer kommt bei strikter Priorität möglicherweise nie dran, wenn die hohe Aufgabe bereit bleibt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1003,7 +1050,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Kooperativ zusätzlich: ein Schritt ohne Rückkehr stoppt die anderen Callbacks</li>
 </ul>
 <aside class="notes">
-<p>Präemption garantiert weder Fairness noch Jitterfreiheit.</p>
+<p>Starvation, das Aushungern, heißt: eine Aufgabe bleibt Ready und erhält dennoch keine CPU, weil immer jemand Dringenderes bereit ist. High und Low sind beide Ready. High macht Yield und bleibt Ready. Die feste Priorität wählt wieder High. Low hungert. Blockieren nimmt High aus der bereiten Menge, Yield nicht. Präemption garantiert weder Fairness noch eine jitterfreie Periode. Jitter wäre die Schwankung der Abstände, nicht schon die Tatsache, dass Low wartet.</p>
+<p>Wie unterscheidet man „kein Algorithmus kann das“ von „dieser Algorithmus kann das nicht“?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1025,7 +1073,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Tests gelten unter ihren Annahmen, nicht für jedes STM32-Programm</li>
 </ul>
 <aside class="notes">
-<p>Die 40-%-Gegenprobe ist infeasible, nicht nur „RMS-ungeeignet“.</p>
+<p>Feasibility heißt: es gibt irgendeinen zulässigen Plan. Schedulability heißt: der gewählte Algorithmus hält die Fristen. Die 40-%-Gegenprobe ist infeasible, also für jeden Algorithmus unmöglich, weil 4 ms Arbeit in 3 ms nicht passen. Das 97-%-Set ist anders: unter RMS scheitert es, unter idealem EDF nicht. Es ist also machbar, aber nicht mit jeder Regel. „Nicht RMS“ ist nicht dasselbe wie „unmöglich“.</p>
+<p>Wie führt man einen solchen Nachweis, ohne jeden denkbaren Plan aufzuzeichnen?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1047,7 +1096,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Allgemeine Scheduling-Probleme können schwer sein — das hier benannte Verfahren nicht damit abtun</li>
 </ul>
 <aside class="notes">
-<p>Liu-Layland ist hinreichend. Darüber RTA, nicht sofort „unschedulable“.</p>
+<p>Hinreichend heißt: besteht der Test, ist das Set im Modell nachgewiesen. Fällt er durch, ist die Frage offen. Notwendig heißt: fällt er durch, ist das Set widerlegt. Exakt heißt beides, aber nur in dem Modell, für das der Test bewiesen ist. Die Liu-Layland-Schranke ist hinreichend. Darüber kommt die Response-Time Analysis, die Antwortzeitanalyse, als konkrete Iteration, nicht der pauschale Satz, exakte Tests seien unberechenbar. Ein Fixpunkt ist ein Wert, den die Wiederholung nicht mehr ändert.</p>
+<p>Zuerst wählen wir eine einfache feste Prioritätsregel. Anschließend prüfen wir, wann sie Fristen garantiert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1068,7 +1118,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ein FP-RTOS ist nicht automatisch RMS, solange die Prioritäten nicht so vergeben sind</li>
 </ul>
 <aside class="notes">
-<p>Keine Branchenzuordnung „Bremse = RMS“. RMS ist eine Prioritätsregel plus Analyse.</p>
+<p>RMS heißt Rate Monotonic Scheduling. Die Rate ist <span class="math inline">\(1/T\)</span>. Je kürzer die Periode, desto höher die Aktivierungsrate und in RMS die feste Priorität. Ein Fixed-Priority-Kernel wird erst dann zu RMS, wenn die Prioritäten so vergeben sind. Eine Bremsenaufgabe ist nicht automatisch RMS, nur weil sie wichtig ist. RMS ist die Regel plus der Nachweis unter ihren Annahmen, keine Branchenzuordnung.</p>
+<p>Unter welchen Voraussetzungen gilt der klassische Auslastungstest überhaupt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1096,7 +1147,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>H755-Businterferenz: im WCET oder außerhalb dieses Idealmodells</li>
 </ul>
 <aside class="notes">
-<p>„Kein Shared Memory“ wäre zu hart. Entscheidend ist, ob die Störung in der Analyse vorkommt.</p>
+<p>Eine CPU, vollständige Präemption und Unabhängigkeit heißen: Jobs stören sich nur, indem sie sich die CPU wegnehmen. Blocking wäre Warten auf eine Sperre. Release-Jitter wäre schwankende Freigabe. Selbstsuspendierung ist eine freiwillige Pause mitten im Job. Zunächst setzen wir den Overhead, also Zusatzaufwand von Tick und Wechsel, auf null. Die Liu-Layland-Schranke und der einfache EDF-Test brauchen <span class="math inline">\(D = T\)</span>. Die einfache RTA erlaubt <span class="math inline">\(D \le T\)</span> bei festen Prioritäten. Geteilter Speicher ist nicht verboten. Er muss als Störung im Modell stehen, sonst gilt der Nachweis nicht dafür.</p>
+<p>Wie vergeben wir die Prioritäten im 75-%-Beispiel?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1118,7 +1170,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Priorität <span class="math inline">\(\tau_1 &gt; \tau_2 &gt; \tau_3\)</span></li>
 </ul>
 <aside class="notes">
-<p>Dieses Set zeigt Präemption von <span class="math inline">\(\tau_3\)</span> bei <span class="math inline">\(t = 4\)</span>.</p>
+<p><span class="math inline">\(U = 1/4 + 2/6 + 2/12 = 0{,}25 + 0{,}333\ldots + 0{,}166\ldots = 0{,}75 = 75\,\%\)</span>. Die Perioden sind 4, 6 und 12 ms, also Priorität <span class="math inline">\(\tau_1 &gt; \tau_2 &gt; \tau_3\)</span>. Alle ersten Jobs sind bei <span class="math inline">\(t = 0\)</span> Ready. Sie starten nicht gleichzeitig: eine CPU führt nur einen aus. Das Set ist dazu da, die Präemption von <span class="math inline">\(\tau_3\)</span> bei <span class="math inline">\(t = 4\,\mathrm{ms}\)</span> zu zeigen.</p>
+<p>Welche Intervalle ergeben sich bis 12 ms?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1140,7 +1193,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p><img data-src="../_livefigures/inline-plantuml-5ef3d365.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Bei <span class="math inline">\(t = 4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> den noch offenen ersten Job von <span class="math inline">\(\tau_3\)</span>. Critical Instant ist der gemeinsame <strong>Release</strong>, nicht ein gemeinsamer CPU-Start — auf einer CPU starten sie nicht gleichzeitig.</p>
+<p>Intervalle sind halboffen: <span class="math inline">\([Start, Ende)\)</span> gehört zum genannten Job, der Zeitpunkt Ende schon zum nächsten. 0–1 <span class="math inline">\(\tau_1\)</span>, 1–3 <span class="math inline">\(\tau_2\)</span>, 3–4 das erste Stück von <span class="math inline">\(\tau_3\)</span>, 4–5 der neue <span class="math inline">\(\tau_1\)</span>, 5–6 das zweite Stück von <span class="math inline">\(\tau_3\)</span>. Damit ist <span class="math inline">\(C_3 = 2\,\mathrm{ms}\)</span> und <span class="math inline">\(R_3 = 6\,\mathrm{ms}\)</span>. Bei <span class="math inline">\(t = 6\)</span> startet der neue <span class="math inline">\(\tau_2\)</span>, 6–8. <span class="math inline">\(\tau_1\)</span> rechnet 8–9, danach Idle bis 12. Bei <span class="math inline">\(t = 4\)</span> unterbricht <span class="math inline">\(\tau_1\)</span> den noch offenen ersten Job von <span class="math inline">\(\tau_3\)</span>. Der gemeinsame Release ist nicht ein gemeinsamer CPU-Start.</p>
+<p>Warum betrachten wir gerade diesen gemeinsamen Release als den schweren Fall?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1161,7 +1215,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Angepasste Analysen, wenn die Annahmen fallen</li>
 </ul>
 <aside class="notes">
-<p>RTA für 75 %: <span class="math inline">\(R_1 = 1\)</span>, <span class="math inline">\(R_2 = 3\)</span>, <span class="math inline">\(R_3 = 6\)</span>.</p>
+<p>Der Critical Instant, der kritische Freigabezeitpunkt, ist hier der gemeinsame Release mit allen höherprioren Aufgaben. Dadurch ist die Störung am größten, solange niemand blockiert, niemand sich selbst aussetzt und die Freigaben nicht zittern. Ein gemeinsamer Release ist kein gemeinsamer Start. Für das 75-%-Set liefert die Antwortzeitanalyse <span class="math inline">\(R = (1, 3, 6)\,\mathrm{ms}\)</span>. Für <span class="math inline">\(\tau_3\)</span> läuft die Iteration <span class="math inline">\(2 \to 5 \to 6 \to 6\)</span>. Hält die Aufgabe diesen Fall, hält sie im genannten Modell auch die anderen. Andere Modelle brauchen eine angepasste Analyse.</p>
+<p>Gibt es einen einfacheren Test, der nicht jede Antwortzeit einzeln rechnet?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1212,7 +1267,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>69,3 % ist <strong>keine</strong> allgemeine RMS-Obergrenze</li>
 </ul>
 <aside class="notes">
-<p>Harmonische Gegenprobe (Anhang in den Notizen): <span class="math inline">\((C=2,T=D=4)\)</span> und <span class="math inline">\((C=4,T=D=8)\)</span>, <span class="math inline">\(U = 100\,\%\)</span>. Ablauf <span class="math inline">\(0\)</span>–<span class="math inline">\(2\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(2\)</span>–<span class="math inline">\(4\)</span> <span class="math inline">\(\tau_2\)</span>, <span class="math inline">\(4\)</span>–<span class="math inline">\(6\)</span> <span class="math inline">\(\tau_1\)</span>, <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> <span class="math inline">\(\tau_2\)</span> hält unter RMS.</p>
+<p><span class="math inline">\(n\)</span> ist die Anzahl der Aufgaben. <span class="math inline">\(U_{LL}(n) = n(2^{1/n}-1)\)</span> ist eine hinreichende Schranke: liegt <span class="math inline">\(U\)</span> darunter, ist das Set unter den Liu-Layland-Annahmen mit RMS nachgewiesen. Für <span class="math inline">\(n = 3\)</span> ist <span class="math inline">\(2^{1/3} \approx 1{,}25992\)</span>, mal 3 minus 3 ergibt etwa <span class="math inline">\(0{,}7798\)</span>, also 77,98 %. <span class="math inline">\(\ln 2 \approx 0{,}693\)</span> ist der natürliche Logarithmus von 2 und der Grenzwert für sehr großes <span class="math inline">\(n\)</span>, keine Obergrenze für jedes Set.</p>
+<p>Gegenprobe: <span class="math inline">\((C,T,D) = (2,4,4)\)</span> und <span class="math inline">\((4,8,8)\)</span>. <span class="math inline">\(U = 2/4 + 4/8 = 1\)</span>. Ablauf 0–2 <span class="math inline">\(\tau_1\)</span>, 2–4 <span class="math inline">\(\tau_2\)</span>, 4–6 <span class="math inline">\(\tau_1\)</span>, 6–8 <span class="math inline">\(\tau_2\)</span>. Beide Fristen halten. 69,3 % ist also nicht das Maximum, das RMS tragen kann.</p>
+<p>Wie liest man die drei Bereiche für <span class="math inline">\(n = 3\)</span>?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1236,7 +1293,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>„Schranke nicht erfüllt“ <span class="math inline">\(\neq\)</span> „nicht schedulbar“</li>
 </ul>
 <aside class="notes">
-<p>Tabelle und Aussage bleiben auf einer Folie. Faustregel <span class="math inline">\(\ln 2\)</span> ist der Grenzwert, kein Verbot höherer Auslastung.</p>
+<p>Für drei Aufgaben: unter etwa 77,98 % ist das Set durch die Schranke nachgewiesen. Zwischen dieser Zahl und 100 % sagt die Schranke nichts. Darüber ist dauerhafte Pflichtlast auf einer CPU unmöglich. Das ist keine Messunsicherheit. Das 75-%-Set liegt im ersten Bereich. Das 85-%-Set liegt im zweiten und braucht die Antwortzeitanalyse. „Schranke nicht erfüllt“ heißt nicht „nicht einplanbar“.</p>
+<p>Wie wendet man das auf die Frage an, ob 85 % schon scheitert?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1257,7 +1315,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Overhead nicht stillschweigend ignorieren, wenn er die Annahmen verletzt</li>
 </ul>
 <aside class="notes">
-<p>Frage: Liegt <span class="math inline">\(U = 85\,\%\)</span> bei drei Tasks unter oder über <span class="math inline">\(U_{LL}(3)\)</span>? Darüber — deshalb RTA, nicht automatisch Fail.</p>
+<p><span class="math inline">\(U = 85\,\%\)</span> liegt über <span class="math inline">\(U_{LL}(3) \approx 77{,}98\,\%\)</span>. Die Schranke weist das Set nicht nach und widerlegt es auch nicht. Ein anderes Set mit derselben Summe kann anders ausgehen, weil die einzelnen Perioden die Störung ändern. Deshalb ist 85 % keine allgemeine RMS-Grenze. Die Auslastungsschranke liefert für unser 85-%-Set keine Entscheidung. Wir bestimmen deshalb die maximale Antwortzeit jeder Aufgabe.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1285,7 +1343,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li><span class="math inline">\(\tau_2\)</span>: <span class="math inline">\(2 \to 3 \to 3\)</span>, <span class="math inline">\(R_2 = 3 \le 5\)</span></li>
 </ul>
 <aside class="notes">
-<p><span class="math inline">\(hp(\tau_2)=\{\tau_1\}\)</span>. <span class="math inline">\(2+\lceil 2/4\rceil\cdot 1 = 3\)</span>, dann stabil.</p>
+<p>Die Auslastungsschranke hat für 85 % keine Entscheidung geliefert. Die Response-Time Analysis (RTA, Antwortzeitanalyse) bestimmt, wie lange ein Job unter festen Prioritäten maximal von der Freigabe bis zur Fertigstellung braucht. <span class="math inline">\(hp(i)\)</span> ist die Menge der höherprioren Aufgaben. Wir starten mit <span class="math inline">\(R_i^{(0)} = C_i\)</span>. <span class="math inline">\(\lceil R/T_j \rceil\)</span> zählt, wie viele Jobs von <span class="math inline">\(j\)</span> in das Fenster fallen. Aufrunden heißt: <span class="math inline">\(\lceil 2/4 \rceil = 1\)</span>, <span class="math inline">\(\lceil 5/4 \rceil = 2\)</span>. Jeder solche Job kostet bis zu <span class="math inline">\(C_j\)</span> Millisekunden. Das neue Fenster kann weitere Jobs enthalten, deshalb wiederholen wir. Ein Fixpunkt ist der Wert, der sich nicht mehr ändert. Ein Job, der genau am rechten Ende fertig ist, wird von einer Freigabe zu diesem Zeitpunkt nicht mehr verzögert.</p>
+<p>Für <span class="math inline">\(\tau_2\)</span> ist <span class="math inline">\(C = 2\)</span>, Störer <span class="math inline">\(\tau_1\)</span> mit <span class="math inline">\(C = 1\)</span>, <span class="math inline">\(T = 4\)</span>. <span class="math inline">\(2 + \lceil 2/4 \rceil \cdot 1 = 3\)</span>, dann <span class="math inline">\(2 + \lceil 3/4 \rceil \cdot 1 = 3\)</span>. Fixpunkt <span class="math inline">\(R_2 = 3 \le 5\)</span>. <span class="math inline">\(\tau_1\)</span> hat keinen Störer, <span class="math inline">\(R_1 = 1 \le 4\)</span>. Die nächste Folie rechnet <span class="math inline">\(\tau_3\)</span> mit zwei Störern.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1344,7 +1403,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Daraus folgt nicht „85 % ist immer sicher“</li>
 </ul>
 <aside class="notes">
-<p>Bei Fenster 5: <span class="math inline">\(2+2+2 = 6\)</span>. Bei Fenster 6: <span class="math inline">\(2+2+4 = 8\)</span>. Releases bei <span class="math inline">\(t = 4\)</span> und <span class="math inline">\(t = 5\)</span>. Quellen: Liu/Layland 1973; Audsley u. a. zur statischen Prioritätsanalyse.</p>
+<p><span class="math inline">\(\tau_3\)</span> startet bei <span class="math inline">\(R = 2\)</span>. Mit <span class="math inline">\(\tau_1\)</span> (<span class="math inline">\(T=4\)</span>, <span class="math inline">\(C=1\)</span>) und <span class="math inline">\(\tau_2\)</span> (<span class="math inline">\(T=5\)</span>, <span class="math inline">\(C=2\)</span>): <span class="math inline">\(2 + \lceil 2/4 \rceil\cdot 1 + \lceil 2/5 \rceil\cdot 2 = 2+1+2 = 5\)</span>. Dann <span class="math inline">\(\lceil 5/4 \rceil = 2\)</span> und <span class="math inline">\(\lceil 5/5 \rceil = 1\)</span>, also <span class="math inline">\(2+2+2 = 6\)</span>. Dann <span class="math inline">\(\lceil 6/4 \rceil = 2\)</span> und <span class="math inline">\(\lceil 6/5 \rceil = 2\)</span>, also <span class="math inline">\(2+2+4 = 8\)</span>. Nochmal: <span class="math inline">\(\lceil 8/4 \rceil = 2\)</span>, <span class="math inline">\(\lceil 8/5 \rceil = 2\)</span>, wieder 8. Fixpunkt <span class="math inline">\(R_3 = 8 \le 10\)</span>. Der konkrete Nachweis gelingt. Die Releases bei 4 ms und 5 ms erklären, warum das Fenster wächst. Ablauf: 0–1 <span class="math inline">\(\tau_1\)</span>, 1–3 <span class="math inline">\(\tau_2\)</span>, 3–4 <span class="math inline">\(\tau_3\)</span>, 4–5 <span class="math inline">\(\tau_1\)</span>, 5–7 <span class="math inline">\(\tau_2\)</span>, 7–8 <span class="math inline">\(\tau_3\)</span>. Daraus folgt nicht, dass 85 % immer sicher wäre. Jetzt betrachten wir, welche Eigenschaften feste Prioritäten im praktischen Entwurf bieten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1366,7 +1425,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Höchstpriore kann die eigene Frist verfehlen (Budget, Maskierung, Sperren)</li>
 </ul>
 <aside class="notes">
-<p>Gegenbeispiel gleich bei der Überlastfolie: <span class="math inline">\(C = 5\)</span>, <span class="math inline">\(T = D = 4\)</span> scheitert allein.</p>
+<p>Feste Prioritäten lassen sich vorab prüfen, und die Auswahl zur Laufzeit ist nur ein Vergleich der Prioritätszahl. Im unabhängigen präemptiven Modell verdrängt zusätzliche Low-Prio-Rechenarbeit eine bereits nachgewiesene höhere Teilmenge nicht. Das ist kein Schutz, wenn die hohe Aufgabe ihr eigenes Budget reißt oder blockiert. Das Gegenbeispiel <span class="math inline">\(C = 5\,\mathrm{ms}\)</span>, <span class="math inline">\(T = D = 4\,\mathrm{ms}\)</span> scheitert allein, ohne jede andere Aufgabe. Eine andere Auswahlregel kann eine längere Periode trotzdem früher berücksichtigen, wenn ihre absolute Jobdeadline früher liegt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1388,7 +1447,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Linux <code>SCHED_DEADLINE</code>: EDF <strong>mit</strong> CBS und Zulassungskontrolle — nicht ungeschütztes Lehrbuch-EDF</li>
 </ul>
 <aside class="notes">
-<p>Gleichstand heute: die <strong>laufende</strong> Aufgabe behält die CPU.</p>
+<p>EDF heißt Earliest Deadline First: unter den bereiten Jobs gewinnt die früheste absolute Deadline <span class="math inline">\(d = r + D\)</span>. Die Regel ist ereignisgesteuert. Sie sortiert nicht bei jedem Tick die ganze Liste neu, nur weil Zeit vergeht. Bei Gleichstand bleibt heute die laufende Aufgabe. Linux SCHED_DEADLINE nutzt EDF zusammen mit CBS (Constant Bandwidth Server, ein Budget zur Isolation) und einer Zulassungskontrolle. Das ist nicht das ungeschützte Lehrbuch-EDF. EDF ist nicht auf weiche Fristen beschränkt.</p>
+<p>Wann ist <span class="math inline">\(U \le 1\)</span> wirklich der genaue Test?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1410,7 +1470,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Gilt nicht automatisch auf dem H755 mit zweitem Kern oder unmodellierter Interferenz</li>
 </ul>
 <aside class="notes">
-<p>Notwendig und hinreichend nur in diesem Idealmodell.</p>
+<p>Notwendig und hinreichend heißt: unter den Voraussetzungen gilt <span class="math inline">\(U \le 1\)</span> genau dann, wenn EDF alle Fristen hält. Die Voraussetzungen sind eine CPU, <span class="math inline">\(D = T\)</span>, unabhängige präemptive Jobs und kein Overhead. Die 40-%-Gegenprobe mit <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> zeigt die Grenze: <span class="math inline">\(U \le 1\)</span> ist dort kein Test. Ein zweiter Kern oder unmodellierte Busstörung fällt ebenfalls heraus.</p>
+<p>Wie entscheidet EDF das 97-%-Set im Vergleich zu RMS?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1434,7 +1495,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p><img data-src="../_livefigures/inline-plantuml-88872e64.svg" class="livefigure"></p>
 <aside class="notes">
-<p><span class="math inline">\(\tau_1/J_2\)</span> ist <span class="math inline">\(5\)</span>–<span class="math inline">\(6\)</span> Ready und <span class="math inline">\(6\)</span>–<span class="math inline">\(8\)</span> Running. Frage: Warum unterbricht <span class="math inline">\(\tau_1\)</span> bei <span class="math inline">\(t = 5\)</span> nicht?</p>
+<p><span class="math inline">\(U = 2/5 + 4/7 = 14/35 + 20/35 = 34/35 \approx 97{,}14\,\%\)</span>. Unter RMS hat <span class="math inline">\(\tau_1\)</span> die höhere Priorität, weil <span class="math inline">\(T = 5 &lt; 7\)</span>. Bis <span class="math inline">\(t = 5\)</span> hat <span class="math inline">\(\tau_2\)</span> nur 3 der 4 ms bekommen. Der neue <span class="math inline">\(\tau_1\)</span> verdrängt ihn, bei <span class="math inline">\(t = 7\)</span> fehlt noch 1 ms, die Deadline ist verletzt. Die RTA läuft <span class="math inline">\(4 \to 6 \to 8 &gt; 7\)</span>. Unter EDF hat der laufende <span class="math inline">\(\tau_2\)</span>-Job die absolute Deadline 7, der neue <span class="math inline">\(\tau_1\)</span>-Job die Deadline 10. 7 ist früher, also keine Unterbrechung. <span class="math inline">\(\tau_1/J_2\)</span> ist 5–6 nur Ready und rechnet 6–8. Antwort: weil die ältere absolute Deadline gewinnt. Die vollständige Ereignisliste steht auf der nächsten Folie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1493,7 +1554,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </table>
 <p>Hyperperiode 35 (Notizen): <span class="math inline">\(14\)</span>–<span class="math inline">\(15\)</span> <span class="math inline">\(\tau_2/J_3\)</span>, <span class="math inline">\(15\)</span>–<span class="math inline">\(17\)</span> <span class="math inline">\(\tau_1/J_4\)</span>, <span class="math inline">\(17\)</span>–<span class="math inline">\(20\)</span> <span class="math inline">\(\tau_2/J_3\)</span>, <span class="math inline">\(20\)</span>–<span class="math inline">\(22\)</span> <span class="math inline">\(\tau_1/J_5\)</span>, <span class="math inline">\(22\)</span>–<span class="math inline">\(26\)</span> <span class="math inline">\(\tau_2/J_4\)</span>, <span class="math inline">\(26\)</span>–<span class="math inline">\(28\)</span> <span class="math inline">\(\tau_1/J_6\)</span>, <span class="math inline">\(28\)</span>–<span class="math inline">\(32\)</span> <span class="math inline">\(\tau_2/J_5\)</span>, <span class="math inline">\(32\)</span>–<span class="math inline">\(34\)</span> <span class="math inline">\(\tau_1/J_7\)</span>, <span class="math inline">\(34\)</span>–<span class="math inline">\(35\)</span> Idle.</p>
 <aside class="notes">
-<p>Bei gleicher absoluter Deadline bleibt die laufende Aufgabe (so bei <span class="math inline">\(t = 30\)</span> in der Hyperperiode). Simulation illustriert; der Nachweis für implizite Deadlines ist <span class="math inline">\(U \le 1\)</span>.</p>
+<p>Bei <span class="math inline">\(t = 0\)</span> ist <span class="math inline">\(d(\tau_1) = 5\)</span> früher als <span class="math inline">\(d(\tau_2) = 7\)</span>. Bei <span class="math inline">\(t = 2\)</span> ist <span class="math inline">\(\tau_1\)</span> fertig. Bei <span class="math inline">\(t = 5\)</span> bleibt <span class="math inline">\(\tau_2\)</span>, weil 7 vor 10 liegt. Bei <span class="math inline">\(t = 6\)</span> ist dieser <span class="math inline">\(\tau_2\)</span>-Job fertig, <span class="math inline">\(\tau_1/J_2\)</span> hat <span class="math inline">\(d = 10\)</span>. Bei <span class="math inline">\(t = 7\)</span> kommt <span class="math inline">\(\tau_2/J_2\)</span> mit <span class="math inline">\(d = 14\)</span> und wartet. Bei <span class="math inline">\(t = 8\)</span> ist <span class="math inline">\(\tau_1\)</span> fertig. Bei <span class="math inline">\(t = 10\)</span> hat der neue <span class="math inline">\(\tau_1\)</span> <span class="math inline">\(d = 15\)</span>, der laufende <span class="math inline">\(\tau_2\)</span> <span class="math inline">\(d = 14\)</span>. Bei <span class="math inline">\(t = 12\)</span> übernimmt <span class="math inline">\(\tau_1\)</span> bis 14. Die Hyperperiode ist das kleinste gemeinsame Vielfache <span class="math inline">\(\mathrm{lcm}(5,7) = 35\,\mathrm{ms}\)</span>. Der weitere Plan mit der Regel „laufende Aufgabe bei gleichem <span class="math inline">\(d\)</span>“ steht in der Folie, inklusive Idle 34–35. Die Tabelle illustriert. Der Nachweis für <span class="math inline">\(D = T\)</span> bleibt <span class="math inline">\(U \le 1\)</span>. Was ändert sich, wenn die Last das Modell verlässt?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1517,7 +1578,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Feste absolute Deadline-Marker bleiben; ein überfälliger Job wird nicht automatisch „wichtiger“ nur weil die Uhr läuft, solange seine absolute Deadline fest ist und die Regel „früheste <span class="math inline">\(d\)</span>“ gilt</li>
 </ul>
 <aside class="notes">
-<p>Keine Empfehlung „Airbag = RMS“. Linux SCHED_DEADLINE schützt per CBS/Admission; das ist keine Garantie bei unzulässiger Gesamtlast. Einen Überlast-Gantt nur mit vollständigen Kosten zeichnen — hier reicht das Einzeljob-Gegenbeispiel.</p>
+<p>Geplantes <span class="math inline">\(C\)</span> und tatsächlich gebrauchter Bedarf sind zweierlei. Ein Job mit 5 ms Bedarf und <span class="math inline">\(T = D = 4\,\mathrm{ms}\)</span> verfehlt die Frist allein. Die Regel bleibt deterministisch und verfehlt die Frist deterministisch. Beenden, verwerfen oder das Budget begrenzen ändert, welche späteren Jobs noch kommen. EDF wird dadurch nicht „chaotisch“. Linux mit CBS und Admission ist ein anderer Vertrag. Eine Branchenparole ersetzt die Rechnung nicht. Die mathematische Auswahl ist geklärt. Nun muss die Hardware einen unterbrochenen Thread später korrekt fortsetzen können.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1574,7 +1635,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </tbody>
 </table>
 <aside class="notes">
-<p>Keine universelle Branchenzuordnung. Beide brauchen das passende Fehlermodell.</p>
+<p>RMS wählt nach fester Priorität aus <span class="math inline">\(T\)</span>. EDF wählt die früheste absolute Deadline. Die Tests gelten für diese Sets: 75 % und 85 % halten unter RMS, 97 % scheitert dort und hält im idealen EDF. Prozent allein sind kein RMS-Nachweis. Bei Überlast verdrängt Low-Prio-Rechnen die hohe Aufgabe im einfachen Modell nicht. Die hohe Aufgabe kann ihr eigenes Budget trotzdem reißen. Beide Regeln brauchen eine festgelegte Behandlung von Misses. Die mathematische Auswahl ist geklärt. Nun muss die Hardware einen unterbrochenen Thread später korrekt fortsetzen können.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1595,7 +1656,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>PendSV ist nicht „von Natur aus“ niedrigprior; der Port setzt die Priorität</li>
 </ul>
 <aside class="notes">
-<p>Öffentliche Referenz: FreeRTOS-Kernel <code>portable/GCC/ARM_CM4F/port.c</code>. Die lokal eingesetzte Version kann abweichen; <code>main</code> allein belegt sie nicht. Keine .ioc im Kursrepo.</p>
+<p>Eine Auswahlregel allein setzt keinen Thread fort. Dafür müssen Register und Stack gesichert werden. Der CM4F-Port ist die FreeRTOS-Anpassung für den Cortex-M4 mit Gleitkommaeinheit, übersetzt mit GCC (GNU Compiler Collection). SysTick ist der Systemtaktgeber, PendSV die aufschiebbare Exception für den Wechsel. Die Datei <code>port.c</code> im öffentlichen Kernel ist die Referenz. Welche Version im Labor steckt, steht erst in einem konkreten Projekt. Im Kursrepository liegt keine solche Projektdatei. Für die Rückkehr brauchen wir die gesicherten Register und einen Weg, den richtigen Taskstack zu finden. Zuerst der Takt, der die periodischen Ereignisse liefert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1617,7 +1678,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Kleinere NVIC-Zahl = höhere IRQ-Dringlichkeit; nicht mit der Taskpriorität verwechseln</li>
 </ul>
 <aside class="notes">
-<p>Keine unbelegte Behauptung „SysTick ist High-Prio“. Taktquelle am Projekt ablesen.</p>
+<p>SysTick ist ein 24-Bit-Abwärtszähler im Cortex-M. Ein Tick ist das Überlaufereignis, das die Betriebssystemzeit fortschaltet. Lehrannahme, nicht die Boardmessung: Quelle 100 MHz, Tick 1 kHz. Dann sind 100000 Zähltakte nötig, das Reload-Register LOAD ist 99999, weil der Zähler die Null mitzählt. 100 MHz sind 100 Millionen Takte je Sekunde, 1 kHz ist 1000 Ereignisse je Sekunde. Der 24-Bit-Bereich muss den Wert fassen. Im üblichen FreeRTOS-Port liegen SysTick und PendSV auf der niedrigsten IRQ-Priorität. Das ist Konfiguration, keine feste Hardwareeigenschaft. Die Quelle des Zählers liest man im Clock-Tree, nicht aus dieser Folie.</p>
+<p>Was tut die Behandlungsroutine bei jedem Tick, und was tut sie bewusst nicht?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1640,7 +1702,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb3-5"><a aria-label="5"></a>    os_request_switch<span class="op">();</span> <span class="co">/* setzt PendSV pending */</span></span>
 <span id="cb3-6"><a aria-label="6"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Entweder nur Ready-Zustände hier aktualisieren oder die Auswahl zuverlässig hinterlegen. Kein unvollständiger Assembler als „der FreeRTOS-Port“.</p>
+<p><code>os_tick_count++</code> erhöht die Systemzeit. <code>os_update_timeouts</code> prüft, welche blockierten Aufgaben fällig werden, und legt sie nach Ready. <code>os_request_switch</code> fordert PendSV an. Die Funktionen mit <code>os_</code> sind Lehrnamen, nicht die API des echten Ports. Pending ist die Anforderung des Wechsels, nicht der schon gelaufene Wechsel. Eine lokale Variable, die den nächsten Task nennt, gilt nur, wenn sie gespeichert wird. Sonst kennt PendSV die Entscheidung nicht. Der Code hier ist kein vollständiger Assembler-Port.</p>
+<p>Warum legt man den eigentlichen Registertausch nicht in diese Tick-Routine?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1664,7 +1727,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p><img data-src="../_livefigures/inline-plantuml-a4e90a90.svg" class="livefigure"></p>
 <aside class="notes">
-<p>Verschachtelte Exceptions: höhere IRQ-Priorität vor PendSV. Maskierung verschiebt den Wechsel zusätzlich.</p>
+<p>Eine UART-ISR kann laufen, Daten aus dem FIFO holen und eine hohe Task Ready machen. FIFO heißt First In, First Out: das zuerst empfangene Byte kommt zuerst heraus. Sie setzt PendSV auf pending. Solange die ISR oder eine dringendere Exception aktiv ist, läuft PendSV nicht. Danach wechselt er, noch vor dem nächsten Tick. Externe IRQs und die Systemexceptions SysTick und PendSV sind verschiedene Quellen, auch wenn der NVIC sie priorisiert. Maskierung schiebt den Wechsel zusätzlich. Für die Rückkehr brauchen wir die gesicherten Register und einen Weg, den richtigen Taskstack zu finden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1686,7 +1749,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Labor-TCB: Funktionszeiger, Zustand, <code>wake_at</code> — <strong>kein</strong> Stackpointer</li>
 </ul>
 <aside class="notes">
-<p>Zwei TCBs nicht vermischen.</p>
+<p>Ein Task Control Block (TCB) ist die Datenstruktur, mit der der Scheduler eine Aufgabe verwaltet. Im präemptiven RTOS kann die Aufgabe an einer zulässigen Stelle unterbrochen werden. Register und Rückkehrinformation bleiben auf dem Taskstack. Der TCB zeigt auf diesen Kontext und merkt Priorität und Zustand. SP ist der Stack Pointer, der Stackzeiger. Der Cortex-M hat den Process Stack Pointer (PSP) und den Main Stack Pointer (MSP). In diesem Port nutzt der Task den PSP, der Handler den MSP. Der Thread-Modus kann architektonisch auch den MSP nutzen. Das ist hier nicht die RTOS-Wahl. Der Program Counter (PC) ist die Adresse, an der es weitergeht, und liegt im gesicherten Frame.</p>
+<p>Der Labor-TCB merkt nur Funktion, Ready oder Blocked und <code>wake_at</code>. Er hat keinen pausierten Registerkontext. Die nächste Folie stellt den RTOS-Kontext über PendSV wieder her.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1715,7 +1779,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Kein lauffähiger Minimal-Port in dieser Vorlesung; Referenz ist der eingesetzte FreeRTOS-Port</li>
 </ul>
 <aside class="notes">
-<p>Bisher fehlte das Setzen des PSP. Ohne EXC_RETURN ist der Rücksprung kein Task-Wechsel. PM0214.</p>
+<p>Die Hardware sichert beim Exception-Eintritt R0 bis R3, R12, das Link Register (LR, die Rückkehrinformation), den PC und xPSR, das kombinierte Statusregister. Das sind acht Worte. R4 bis R11 sichert die Software, weil der Compiler sie über den Aufruf hinweg behält. Die Gleitkommaeinheit (FPU, Floating-Point Unit) kommt nur dazu, wenn der Port den Gleitkommakontext wirklich mitsichert. FP heißt hier Floating Point, nicht Fixed Priority.</p>
+<p>PendSV liest den Kontextzeiger, sichert den alten Stand, wählt den Ziel-TCB, lädt dessen Stack, setzt den PSP auf diesen Stack und kehrt mit EXC_RETURN zurück. Das ist ein Kennwert im LR, keine normale Codeadresse. Ein gewöhnliches BX LR, der Sprung über das Link Register, wirkt nur, wenn dort dieser Kennwert steht. Sonst ist es kein Task-Wechsel. Das Programmierhandbuch dazu ist PM0214 von ST. Der echte Kontextwechsel erklärt präemptive Threads. Unser heutiges Labor vereinfacht die Umsetzung durch kurze zurückkehrende Schritte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1757,7 +1822,7 @@ flowchart LR
 <li>Tick <strong>oder</strong> ISR kann den Wechsel vormerken</li>
 </ul>
 <aside class="notes">
-<p>Nicht mehr die schmale Kette „nur SysTick ist High und schaltet sofort“.</p>
+<p>Ein Ereignis, Tick oder UART, ändert Zustände und fordert den Wechsel an. PendSV läuft, wenn seine Exception-Priorität drankommt. Er sichert den alten Kontext, wählt den neuen TCB, setzt den PSP und kehrt so zurück, dass der Task weiterrechnet. Der Tickzähler allein präemptiert keine Labor-Callbacks. SysTick ist in diesem Port nicht die höchste IRQ. Heute speichern Callbacks ihren Fortsetzungszustand ausdrücklich. Im nächsten Termin übernimmt ein RTOS die Sicherung ganzer Threadkontexte. Zuvor das vereinfachte Labor.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1779,7 +1844,8 @@ flowchart LR
 <li>Zeitbasis: z. B. <code>HAL_GetTick()</code>; der Tick präemptiert die Steps nicht</li>
 </ul>
 <aside class="notes">
-<p>Ohne eigenen Stack kann ein normaler Aufruf keine Endlosschleife mitten im <code>yield</code> fortsetzen. Keine .ioc im Repo — Takt im Cube-Projekt ablesen.</p>
+<p>Das Labor läuft auf dem Cortex-M4 des genannten Boards. Stacklos heißt: kein eigener pausierbarer Taskstack. Der normale C-Aufruf benutzt den gemeinsamen Stack und kehrt zurück. Eine Endlosschleife mit Yield in der Mitte kann so nicht später fortgesetzt werden. Der Fortschritt liegt im TCB, etwa in <code>wake_at</code>. <code>HAL_GetTick</code> liest in der üblichen HAL eine Millisekundenzeit. Der Tick-Interrupt kann diese Zeit erhöhen, ohne den nächsten Callback auszuwählen. Eine Cube-Projektdatei liegt in diesem Repository nicht. Die Lehrzeitbasis ist der 1-kHz-Tick aus VL1.</p>
+<p>Welche Felder muss der TCB dafür enthalten?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1805,7 +1871,8 @@ flowchart LR
 <span id="cb4-9"><a aria-label="9"></a><span class="dt">uint8_t</span> rr_cursor<span class="op">;</span></span>
 <span id="cb4-10"><a aria-label="10"></a><span class="dt">uint8_t</span> running_idx<span class="op">;</span>    <span class="co">/* nur während step() gültig */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Zustand nicht auf einem vermeintlich pausierten Stack.</p>
+<p><code>N</code> ist die Anzahl der Schritte, hier 3. <code>ST_READY</code> und <code>ST_BLOCKED</code> sind Namen im enum, dem Aufzählungstyp. Das Präfix ST markiert den Aufgabenstatus, nicht einen Hardwarezustand des Chips. <code>step</code> ist ein Zeiger auf eine Funktion ohne Argument und ohne Rückgabewert. <code>wake_at</code> ist der Tick, ab dem der Schritt wieder bereit sein darf. <code>rr_cursor</code> ist die nächste Startposition im Ring. <code>running_idx</code> gilt nur, während <code>step</code> läuft. Das enum kennt kein Running: laufend ist genau der aufgerufene Schritt. Der Zustand liegt in diesen Feldern, nicht auf einem pausierten Stack.</p>
+<p>Die Datenstruktur hält den Zustand bereit. Der Dispatcher muss ihn jetzt lesen und in eine Aufrufreihenfolge übersetzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1845,7 +1912,8 @@ flowchart LR
 <li><code>os_delay</code>: <code>wake_at</code> setzen, Zustand Blocked, <strong>sofort return</strong> — kein stackhaltendes <code>os_delay</code> mitten in der Funktion</li>
 </ul>
 <aside class="notes">
-<p>Geschachtelt wäre A→yield→B→yield→C und der Stack wächst. Hier bleibt die Tiefe begrenzt.</p>
+<p><code>HAL_GetTick</code> liefert die lokale Zeit. Jeder blockierte Eintrag mit erreichtem <code>wake_at</code> wird Ready. Der Vergleich <code>(int32_t)(now - wake)</code> gilt für Abstände unter der halben 32-Bit-Spanne. Beispiel: now = 0xFFFFFFF0, wake = 0x00000010 ergibt als vorzeichenbehaftete Differenz −32, also noch nicht fällig. Nach dem Umbruch now = 0x00000020 ergibt +16, also fällig. <code>sel = -1</code> heißt: noch niemand gewählt. Der Ring prüft höchstens N Kandidaten ab <code>rr_cursor</code>, Modulo faltet den Index. Danach zeigt <code>running_idx</code> auf den Aufruf, <code>step</code> kehrt zurück. <code>__WFI</code> (Wait For Interrupt) wartet nur, wenn der Tick wirklich wecken kann. Ein <code>return</code> in einer Hilfsfunktion beendet nicht automatisch den Callback. Der Callback muss selbst zurückkehren, nachdem er Blocked und <code>wake_at</code> gesetzt hat. Rekursion A ruft B wäre der alte Fehler. Hier bleibt die Stapeltiefe begrenzt.</p>
+<p>Der Code definiert die Reihenfolge. Am Oszilloskop prüfen wir Startabstände und Pulsbreiten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1873,7 +1941,8 @@ flowchart LR
 <li>Zahlen erst nach Messung; Pin (z. B. PA0) nach Belegung prüfen</li>
 </ul>
 <aside class="notes">
-<p>„Präemptiv starr, kooperativ mit Jitter“ ersetzen: Jitter nur bei schwankender Last. Konstante Verlängerung ist ein Bias.</p>
+<p><span class="math inline">\(s_k\)</span> ist der Start der k-ten Marke, <span class="math inline">\(f_k\)</span> ihr Ende. Die Pulsbreite <span class="math inline">\(w_k = f_k - s_k\)</span> ist verstrichene Zeit und kann eine ISR enthalten. Sie ist nicht automatisch die WCET. Der Startabstand <span class="math inline">\(P_k = s_{k+1} - s_k\)</span> ist nicht die Releaseperiode <span class="math inline">\(T\)</span>. GPIO ist ein allgemeiner Pin, PA0 wäre Pin 0 von Port A, nur wenn das Board ihn freigibt. Drei Lehrfälle, keine Messung: alle Schritte 1 ms ergeben Starts 0, 3, 6, 9. Konstantes <span class="math inline">\(C_2 = 3\,\mathrm{ms}\)</span> ergibt Abstand 5 ms, noch kein Jitter, nur eine feste Verschiebung. Wechselt <span class="math inline">\(C_2\)</span> zwischen 1 und 3, sind die Starts 0, 3, 8, 11, 16 und die Spanne der Abstände 2 ms. Die Pulsbreite von Task 1 bleibt 1 ms.</p>
+<p>Welche zwei Fehler sehen anders aus, ohne dass der Kern stehen bleiben muss?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1894,7 +1963,7 @@ flowchart LR
 <li>Deshalb Budgets, Blockieren und — ab Termin 3 — präemptives FreeRTOS mit Nachweis, nicht als Automatik</li>
 </ul>
 <aside class="notes">
-<p>Zwei Fehlerbilder nicht zu einem „Crash“ vermischen.</p>
+<p>Erster Fehler, kooperativ: der Schritt kehrt nicht zurück. Weitere Callbacks bleiben aus. IRQs können weiterlaufen. Das ist verlorener Fortschritt, nicht zwingend ein Prozessorabsturz. Zweiter Fehler, präemptiv mit fester Priorität: High bleibt Ready. Low hungert. Yield ändert das nicht. Ein RTOS behebt das nur, wenn High blockiert oder ein Budget greift, und auch dann bleibt der Fristnachweis eine Analyse. Heute speichern Callbacks ihren Fortsetzungszustand ausdrücklich. Im nächsten Termin übernimmt ein RTOS die Sicherung ganzer Threadkontexte. Vorher die Kontrollwerte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1917,7 +1986,7 @@ flowchart LR
 <li>Labor: Dispatcher und endliche Steps</li>
 </ul>
 <aside class="notes">
-<p>Kontrollwerte: <span class="math inline">\(U_{75}=0{,}75\)</span>, <span class="math inline">\(U_{85}=0{,}85\)</span>, <span class="math inline">\(U_{97}=34/35\)</span>. RTA 75 %: <span class="math inline">\(1,3,6\)</span>. RTA 85 %: <span class="math inline">\(1,3,8\)</span>.</p>
+<p>Eine CPU, Aufgaben mit <span class="math inline">\(C\)</span>, <span class="math inline">\(T\)</span> und <span class="math inline">\(D\)</span>, Nachweis <span class="math inline">\(R \le D\)</span>. Das 75-%-Set hat die Antwortzeiten 1, 3 und 6 ms. Das 85-%-Set hat <span class="math inline">\(U = 0{,}85\)</span> und die Antwortzeiten 1, 3 und 8 ms. Die Liu-Layland-Schranke ist hinreichend, für drei Aufgaben etwa 77,98 %. Das 97-%-Set ist <span class="math inline">\(34/35\)</span>. RMS scheitert dort, ideales EDF hält. Zwei Jobs mit je 2 ms und <span class="math inline">\(D = 3\,\mathrm{ms}\)</span> sind trotz 40 % unmöglich. SysTick und PendSV liegen im Port niedrig. Der PSP wird beim Wechsel gesetzt. Das Labor bleibt bei endlichen Schritten. Heute speichern Callbacks ihren Fortsetzungszustand ausdrücklich. Im nächsten Termin übernimmt ein RTOS die Sicherung ganzer Threadkontexte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1939,7 +2008,8 @@ flowchart LR
 <li>Vorbereitung: Funktions- und Strukturzeiger</li>
 </ul>
 <aside class="notes">
-<p>Mutex und Priority Inheritance folgen später, nicht heute.</p>
+<p>Die API (Application Programming Interface) ist die Programmierschnittstelle. CMSIS-RTOS2 ist die standardisierte RTOS-Schnittstelle der Version 2, nicht der FreeRTOS-Kernel darunter. <code>osThreadNew</code> legt einen Thread an. <code>osDelay</code> blockiert ihn für Kernel-Ticks. Bei 1 kHz ist ein Tick eine Millisekunde, das ist die Lehrkonfiguration, keine allgemeine Gleichsetzung. Der Thread setzt später in seinem eigenen Kontext fort. Der Callback muss Zustand selbst speichern und zurückkehren. Eine konfigurierte Priorität ist noch kein RMS-Nachweis. Mutex und Priority Inheritance, die vorübergehende Anhebung des Sperrenbesitzers, folgen später.</p>
+<p>Welche Quellen tragen die Schranke, die Antwortzeit und den Kontextwechsel?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1962,7 +2032,66 @@ flowchart LR
 <li>ST PM0214, Cortex-M4 Exceptions / PSP / EXC_RETURN</li>
 </ul>
 <aside class="notes">
-<p>Keine Branchenstatistiken. Keine Messwerte ohne Oszilloskop-Protokoll.</p>
+<p>Liu und Layland, 1973, tragen die hinreichende RMS-Schranke für das ideale Ein-CPU-Modell. Die Antwortzeitanalyse für feste Prioritäten geht auf die statische Prioritätsanalyse zurück, unter anderem Audsley und Kollegen. Der FreeRTOS-Port GCC/ARM_CM4F zeigt SysTick, PendSV und den Kontextwechsel. Die eingesetzte Kernelversion steht erst in einem Laborprojekt. Linux SCHED_DEADLINE ist EDF mit CBS und Zulassung, nicht das Lehrbeispiel. PM0214 ist das ST-Programmierhandbuch für den Cortex-M4, zuständig für Stackframe, PSP und EXC_RETURN. Lehrzahlen sind Annahmen. Messwerte brauchen ein Protokoll.</p>
+<p>Wiederholung: Warum ist <span class="math inline">\(R_3 = 8\,\mathrm{ms}\)</span> im 85-%-Set ein Fristnachweis, obwohl <span class="math inline">\(U\)</span> über der Drei-Aufgaben-Schranke liegt? Weil die Iteration einen Fixpunkt 8 liefert und <span class="math inline">\(8 \le 10\)</span> ist, im Modell ohne Blocking und Jitter.</p>
+<style type="text/css">
+        span.MJX_Assistive_MathML {
+          position:absolute!important;
+          clip: rect(1px, 1px, 1px, 1px);
+          padding: 1px 0 0 0!important;
+          border: 0!important;
+          height: 1px!important;
+          width: 1px!important;
+          overflow: hidden!important;
+          display:block!important;
+      }</style></aside>
+</section>
+<section id="glossar-und-symbole" class="slide level2">
+<h2>Glossar und Symbole</h2>
+<table class="caption-top">
+<colgroup>
+<col style="width: 42%">
+<col style="width: 57%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Kürzel</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(C, T, D, d, R\)</span></td>
+<td>eigener Bedarf, Periode, relative Frist, absolute Frist, Antwortzeit</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(U\)</span>, RMS, RTA, EDF, RR</td>
+<td>Auslastung, Rate Monotonic, Antwortzeitanalyse, früheste Deadline, Ring</td>
+</tr>
+<tr class="odd">
+<td>Ready, Running, Blocked</td>
+<td>bereit, rechnend, wartend ohne eigene Befehle</td>
+</tr>
+<tr class="even">
+<td>ISR, IRQ, NVIC</td>
+<td>Behandlungsroutine, Anforderungen, Interruptcontroller</td>
+</tr>
+<tr class="odd">
+<td>SysTick, PendSV</td>
+<td>Zeitgeber-Exception, aufgeschobener Wechsel</td>
+</tr>
+<tr class="even">
+<td>PSP, MSP, PC, LR</td>
+<td>Task-Stackzeiger, Handler-Stackzeiger, Programmzähler, Rückkehrregister</td>
+</tr>
+<tr class="odd">
+<td>TCB</td>
+<td>Verwaltungsblock, im RTOS mit Kontextzeiger, im Labor ohne</td>
+</tr>
+</tbody>
+</table>
+<aside class="notes">
+<p>Fixed Priority und Floating Point teilen sich die Buchstaben FP nicht. Im Scheduling heißt die feste Priorität ausgeschrieben Fixed Priority. Bei der Gleitkommaeinheit heißt es Floating Point. <span class="math inline">\(U = C/T\)</span> ist einheitenlos, die Summanden der RTA sind wieder Millisekunden. Lehrwerte sind Annahmen. Messwerte brauchen ein Protokoll.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
