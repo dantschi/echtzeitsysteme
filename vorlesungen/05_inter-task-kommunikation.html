@@ -228,7 +228,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>DMA und der zweite Kern bleiben ein kurzer Anhang</li>
 </ul>
 <aside class="notes">
-<p>Keine .ioc im Kursrepo. UART, EXTI-Zielkern, Tick und NVIC-Gruppierung am Cube-Projekt lesen. CMSIS-Spezifikation, ST-Adapter und native API nicht vermischen.</p>
+<p>Heute geht es nicht mehr nur darum, eine Ressource zu sperren. Eine Nachricht ist ein Datensatz plus ein Vertrag: wer ihn kopiert, wie lange er gültig bleibt und was bei Überlauf geschieht. EZS steht für Echtzeitsysteme. Das RTOS, Real-Time Operating System, ist hier FreeRTOS auf dem Cortex-M4, kurz CM4. Eine Queue ist eine begrenzte Warteschlange in diesem Kernel. DMA, Direct Memory Access, und der zweite Kern CM7 benutzen diese lokale Queue nicht automatisch. Zwei getrennte Kernel teilen weder die Wartelisten noch den Allokator.</p>
+<p>Eine fehlende <code>.ioc</code> bedeutet, dass UART, EXTI-Zielkern, Tick und NVIC-Gruppierung am gestellten Projekt geprüft werden müssen. CMSIS-Spezifikation, ST-Adapter und native API bleiben getrennte Verträge.</p>
+<p>Aus Historie, aktuellem Zustand und Hardwareereignis ergibt sich die Agenda.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -251,7 +253,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Top-Half, zulässige ISR-API, EXTI-Labor</li>
 </ol>
 <aside class="notes">
-<p>Agendanotiz bleibt auf dieser Folie: Put am Tail, Get am Head. Nachrichtenvorrang ist nicht die Taskpriorität.</p>
+<p>Die fünf Punkte sind ein Lernweg. Zuerst entscheiden wir, ob die Anwendung jede Nachricht oder nur den letzten Stand braucht. Danach lesen wir den Ring: Head ist in diesem Lehrmodell der nächste Entnahmeslot, Tail der nächste Einfügeslot, Count die Belegung. Eine Mailbox meint hier einen Latest-Value-Vertrag, nicht jede Queue der Länge eins. Top-Half ist die kurze ISR-Arbeit, Bottom-Half der aufschiebbare Thread. ISR ist die Interruptbehandlungsroutine, EXTI die externe Interruptanbindung des STM32.</p>
+<p>Nachrichtenvorrang, <code>msg_prio</code>, ist nicht die Priorität des Threads. Der Adapter ignoriert den Parameter.</p>
+<p>Zuerst klären wir, welches Problem der Mutex aus Vorlesung 4 schon gelöst hat.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -274,7 +278,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Er liefert keine Historie und keine Ereignisschlange</li>
 </ul>
 <aside class="notes">
-<p>Verlorenes Update endete bei 6 statt 7. Das bleibt wahr, auch wenn der Compiler mehr als drei Befehle erzeugt.</p>
+<p>RMW, Read-Modify-Write, ist Lesen, Ändern und Zurückschreiben. Präemption kann diese Folge unterbrechen. PendSV führt im üblichen Port den Kontextwechsel aus. PIP, Priority Inheritance Protocol, hebt den Mutex-Besitzer an, während ein höherer Thread wartet. Das kürzt die zusätzliche Verdrängung durch Medium, nicht jede Wartezeit. Ein Mutex kann einen konsistenten Snapshot schützen: mehrere Felder passen zusammen. Er speichert ohne weitere Struktur keine früheren Werte und weckt niemanden mit einer Ereignisnachricht.</p>
+<p>Das Maschinenbeispiel endete bei 6 statt 7, auch wenn der Compiler mehr als drei Befehle erzeugt. Der verlorene Update bleibt das Bild.</p>
+<p>Frage: Liefert ein perfekt geschützter Einzelwert automatisch alle fünf bisherigen Samples? Nein. Jeder neue Schreibzugriff überschreibt den alten Speicher. Die früheren Werte sind weg, auch wenn der letzte Stand konsistent ist.</p>
+<p>Die Grenze des Locks motiviert einen geordneten Datentransport.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -297,7 +304,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>44000 Samples/s nicht als belegte Laborzahl verwenden</li>
 </ul>
 <aside class="notes">
-<p>Backpressure kann eine Softwarequelle bremsen. ADC, UART-Empfang oder DMA laufen unter Umständen weiter.</p>
+<p>Ein Sample ist ein Messwert zu einem Zeitpunkt. Der Producer erzeugt sie, der Consumer verarbeitet sie. Schreibt der Producer fünf Werte in dieselbe Variable, bevor der Consumer liest, bleibt nur der letzte. ADC, Analog-Digital-Wandler, UART-Empfang und DMA können weiter Daten liefern, während ein Softwarethread wartet. Backpressure, der Gegendruck durch Blockieren, bremst nur eine Quelle, die warten kann. Die Zahl 44000 Samples je Sekunde ist keine Laborzahl und keine Anforderung dieser Folie.</p>
+<p>Eine Queue kopiert ein Element und kann den Empfänger wecken. Auch das kostet Rechenzeit. Hohe Raten werden oft als Block zusammengefasst, nicht jedes Sample als eigene Nachricht. Ohne Messung bleibt die Kostenaussage qualitativ.</p>
+<p>Ein kleines Beispiel macht Historie gegenüber Zustand konkret.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -338,7 +347,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Die Zeitquelle muss zur Einheit passen</li>
 </ul>
 <aside class="notes">
-<p>Frage: Braucht ein Display jeden Zwischenwert? Oft den letzten gültigen. Braucht ein Tasterzähler jeden Druck? Ja, sonst fehlt ein Ereignis. Die Anforderung entscheidet, nicht die Queue an sich.</p>
+<p>Fünf Samples entstehen bei 1, 2, 3, 4 und 5 ms. Der Leser kommt erst danach. Eine globale Variable enthält dann nur Sample 5. Eine FIFO, First In First Out, mit mindestens fünf freien Plätzen und ohne vorherigen Verlust enthält 1 bis 5. FIFO heißt: die zuerst erfolgreich eingereihte Nachricht wird zuerst entnommen. Das ist keine Garantie, dass jedes Hardwareereignis überhaupt erfasst wurde.</p>
+<p>Ein Display will oft den letzten gültigen Stand. Ein Ereigniszähler braucht die Folge, sonst fehlt ein Druck. Die Sequenznummer <code>seq</code> zeigt Lücken in der erfolgreich erfassten Folge. Der Tickstempel zeigt das Alter in Kernel-Ticks. Verlorene Ereignisse vor der Erfassung lassen sich aus <code>seq</code> allein nicht rekonstruieren.</p>
+<p>Zwei gleich skalierte Vorstellungen gehören zusammen: Einzelwert gegen FIFO, derselbe Producerverlauf.</p>
+<p>Geteilte globale Variablen bleiben für manche Anforderungen geeignet, haben aber klare Grenzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -361,7 +373,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Er macht einen dauerhaft langsameren Consumer nicht schneller</li>
 </ul>
 <aside class="notes">
-<p>Durchsatz <span class="math inline">\(\mu\)</span> unter der Ankunft <span class="math inline">\(\lambda\)</span> füllt jeden endlichen Puffer.</p>
+<p>Geschützt liefert die Variable einen konsistenten Stand. Ungeschützt können Felder zerrissen gelesen werden, wie beim Lost Update. Es gibt kein Warten auf Neuigkeit, keinen Rückstau und keine Reihenfolge. <span class="math inline">\(\lambda\)</span> ist die angebotene mittlere Rate, <span class="math inline">\(\mu\)</span> die mögliche Entnahmerate, beide in Nachrichten je Sekunde. Liegt <span class="math inline">\(\lambda\)</span> dauerhaft über <span class="math inline">\(\mu\)</span>, füllt jeder endliche Puffer. Ein größerer Puffer verschiebt nur den Überlauf. Er macht den Consumer nicht schneller und gleicht nur Bursts aus, solange danach wieder Platz entsteht.</p>
+<p>Frage: Was ändert eine Verdopplung der Kapazität <span class="math inline">\(N\)</span> bei unverändert dauerhaft <span class="math inline">\(\lambda &gt; \mu\)</span>? Die Zeit bis zum ersten Verlust wird länger. Langfristig bleibt der Puffer voll, neue Nachrichten gehen weiter verloren.</p>
+<p>Kommunikation braucht deshalb einen begrenzten, verwalteten Zwischenspeicher und eine explizite Überlaufregel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -385,7 +399,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Sie bekommen nicht alle dieselbe Nachricht</li>
 </ul>
 <aside class="notes">
-<p>GetCount und GetSpace sind Momentaufnahmen, keine Reservierung für den nächsten Aufruf.</p>
+<p>ITC, Inter-Task Communication, ist hier der Datentransport zwischen Tasks desselben Kernels. Eine Queue hat <span class="math inline">\(N\)</span> Slots. Put reiht eine Kopie des Elements ein, Get entnimmt eines. Mehrere Get-Consumer verteilen die Nachrichten. Ein entnommenes Element geht nicht automatisch an alle Leser. <code>GetCount</code> und <code>GetSpace</code> sind Momentaufnahmen. Sie reservieren keinen Platz für den nächsten Put oder Get. Der Rückgabestatus der eigentlichen Operation entscheidet.</p>
+<p>Die Queue synchronisiert ihre eigenen Put- und Get-Aufrufe. Daten, auf die ein Pointer zeigt, brauchen zusätzlich einen Besitzvertrag. Die Abbildung ist ein begrenzter Puffer, kein unendlicher Pfeil.</p>
+<p>Die Lernziele benennen nun, welche Entscheidungen selbstständig getroffen werden sollen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -408,7 +424,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>EXTI nur mit zulässiger NVIC-Priorität an den Kernel hängen</li>
 </ol>
 <aside class="notes">
-<p>Ready nach einem Put ist noch nicht Running.</p>
+<p>Jedes Ziel ist eine Tätigkeit. Sie können sagen, ob eine Anwendung die Folge oder den letzten Stand braucht. Sie können Head, Tail und Count eines Rings ablesen. Sie können Wertkopie, Pointerkopie und Pufferbesitz trennen. Sie können einen fehlgeschlagenen Try-Put von Overwrite unterscheiden. Sie können prüfen, ob eine EXTI-IRQ im Syscall-Bereich des NVIC liegt. EXTI ist die externe Interruptanbindung, der NVIC der Interruptcontroller. Latest-Value heißt: der neueste Stand ersetzt den alten. Ready nach einem erfolgreichen Put heißt ausführungsbereit, nicht schon laufend. Running kommt erst, wenn der Scheduler den Consumer wählt.</p>
+<p>Zuerst legen wir fest, in welcher Reihenfolge Nachrichten die Queue verlassen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -431,7 +448,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>„Immer 0, historisch“ reicht als Erklärung nicht</li>
 </ul>
 <aside class="notes">
-<p>Version im Projekt prüfen. Öffentliches <code>main</code> ist nicht die Laborfassung. Quelle: CMSIS Message Queue und CMSIS-FreeRTOS Technical Data.</p>
+<p>FIFO bedeutet hier: erfolgreich eingereihte Nachrichten verlassen die Queue in derselben Reihenfolge, solange der Puffervertrag hält. CMSIS-RTOS2 ist Version 2 der RTOS-Schnittstelle. Die Spezifikation sortiert zusätzlich nach <code>msg_prio</code>, dem Nachrichtenvorrang. Das ist nicht die Taskpriorität. Der dokumentierte CMSIS-FreeRTOS-Adapter der Referenz 11.2.0 ignoriert <code>msg_prio</code> bei Put und Get. Im gezeigten Adaptermodell bleibt normales Put/Get deshalb FIFO. <code>msg_prio = 0</code> hält die Frage neutral, der Adapter ignoriert den Wert ohnehin. „Historisch immer null“ erklärt das nicht. Ein öffentliches main ist nicht die Laborversion. Die lokale <code>cmsis_os2.c</code> muss am Projekt geprüft werden.</p>
+<p>Die logische Folge wird jetzt auf einen konkreten Ring abgebildet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -450,9 +468,66 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p>Logische Restfolge: <strong>20, 30, 40</strong>.</p>
 <p>Physisch danach: Slots <span class="math inline">\([40,\,20,\,30]\)</span>, Head = Tail = 1, Count = 3.</p>
 <p>Gleiche Indizes können leer oder voll sein. Count entscheidet.</p>
-<p><img data-src="../_livefigures/inline-plantuml-ed4b77f5.svg" class="livefigure"></p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Schritt</th>
+<th>logisch</th>
+<th style="text-align: right;">Head</th>
+<th style="text-align: right;">Tail</th>
+<th style="text-align: right;">Count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Start</td>
+<td>leer</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td>Put 10</td>
+<td>10</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="odd">
+<td>Put 20</td>
+<td>10, 20</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="even">
+<td>Get liefert 10</td>
+<td>20</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="odd">
+<td>Put 30</td>
+<td>20, 30</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr class="even">
+<td>Put 40</td>
+<td>20, 30, 40</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">3</td>
+</tr>
+</tbody>
+</table>
+<p>Physisch nach dem letzten Put: Slots <span class="math inline">\([40,\,20,\,30]\)</span>. Slot 0 ist mit 40 belegt, die logische Folge beginnt bei Head. Head = Tail und Count = 3 heißt voll. Dieselben Indizes mit Count = 0 wären leer.</p>
 <aside class="notes">
-<p>Put am Tail, Get am Head. Wrap ist Absicht. Synthetisches Bild, kein Boardtrace.</p>
+<p>Der Ring hat <span class="math inline">\(N = 3\)</span> Slots. Head ist der nächste Entnahmeindex, Tail der nächste Einfügeindex. Beide laufen modulo 3. Count unterscheidet leer und voll, denn gleiche Indizes können beides bedeuten. Start: Head = Tail = 0, Count = 0.</p>
+<p>Put 10 schreibt Slot 0: [10, leer, leer], Tail 1, Count 1. Put 20 schreibt Slot 1: [10, 20, leer], Tail 2, Count 2. Get liest Slot 0 und liefert 10. Head wird 1, Count 1. Slot 0 ist logisch frei, die alten Bytes dürfen stehen bleiben. Put 30 schreibt Slot 2 und setzt Tail auf 0, Count 2. Belegt sind logisch die Slots 1 und 2, also 20 dann 30. Put 40 schreibt Slot 0. Physisch steht [40, 20, 30], Head = Tail = 1, Count = 3. Die Entnahmefolge ist 20, 30, 40. Mit Count 0 und denselben Indizes wäre der Ring leer. Implementationen dürfen intern andere Zeiger verwenden. Dieses Bild ist die Lehrkonvention.</p>
+<p>Für diese Slots und die Verwaltung wird tatsächlich Speicher benötigt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -477,7 +552,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ein gespeicherter Pointer gibt das Bildarray nicht frei</li>
 </ul>
 <aside class="notes">
-<p>CMSIS-New und <code>xQueueCreateStatic</code> nicht gleichsetzen. Keine universelle Gesamtgröße neben den 40 Byte behaupten.</p>
+<p>Die Nutzdaten, der Kontrollblock, das Alignment und die Allokatorverwaltung sind getrennte Speicheranteile. <span class="math inline">\(N = 10\)</span> und <code>uint32_t</code> ergeben 40 Byte Payloadslots, plus implementationsabhängige Verwaltung. <span class="math inline">\(N\)</span> mal Elementgröße ist keine universelle Gesamtgröße. <code>osMessageQueueNew</code> mit Attribut <code>NULL</code> reserviert dynamisch und kann <code>NULL</code> liefern. Ursachen sind Heap, Parameter, Kontext oder Konfiguration, nicht nur „Heap voll“. Statische Puffer müssen zur konkreten Header- und Adapterforderung passen und in der Linker-Map geprüft werden. CMSIS-New und natives <code>xQueueCreateStatic</code> sind verschiedene Schnittstellen.</p>
+<p>Delete oder Reset darf keine laufende Nutzung zerstören. Ein gespeicherter Pointer gibt das referenzierte Bild nicht frei. Der Kontrollblock räumt den externen Payloadpool nicht auf.</p>
+<p>Der Kernel verwendet die Queue außerdem, um wartende Threads zu verwalten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -501,7 +578,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li><code>osWaitForever</code> macht einen ungültigen Handle nicht gültig</li>
 </ul>
 <aside class="notes">
-<p>Blocked: keine eigenen Befehle. Tick und IRQs kosten weiter. Nicht „CPU 0 %“.</p>
+<p>Blocked heißt: der Consumer führt keine eigenen Befehle aus. Tick und IRQs können weiter CPU-Zeit brauchen. Das ist nicht „CPU 0 %“. Ein Get bei leerer Queue mit Timeout größer 0 setzt den Thread auf Blocked. Timeout 0 kehrt sofort zurück, der Zielpuffer ist keine neue Nachricht. Eine endliche Wartezeit kann mit Timeout enden. <code>osWaitForever</code> wartet ohne eigene Frist und macht einen ungültigen Handle nicht gültig.</p>
+<p>Ein erfolgreiches Put kann den Wartenden Ready setzen. Running wird er erst, wenn der Scheduler ihn wählt. Ready ist nicht schon die Verarbeitung.</p>
+<p>Frage: Darf <code>m</code> nach einem Get-Timeout als frisch empfangen verarbeitet werden? Nein. Nur <code>osOK</code> erfüllt den Vertrag, dass eine neue Kopie im Zielobjekt liegt.</p>
+<p>Auch der Producer kann warten müssen, wenn die Queue voll ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -523,11 +603,12 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Nur bei <code>osOK</code> weiterverarbeiten</li>
 </ul>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a>osStatus_t st <span class="op">=</span> osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>msg<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
-<span id="cb1-2"><a aria-label="2"></a><span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb1-3"><a aria-label="3"></a>    drop_count<span class="op">++;</span> <span class="co">/* nicht eingereiht */</span></span>
-<span id="cb1-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-2"><a aria-label="2"></a><span class="cf">if</span> <span class="op">(</span>st <span class="op">==</span> osErrorResource<span class="op">)</span> drop_count<span class="op">++;</span> <span class="co">/* voll, Timeout 0 */</span></span>
+<span id="cb1-3"><a aria-label="3"></a><span class="cf">else</span> <span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> tech_errors<span class="op">++;</span>      <span class="co">/* anderer Fehler */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <aside class="notes">
-<p>Hält der Producer dabei einen Mutex, den der Consumer vor dem Get braucht, entsteht der Zyklus aus VL4. Queue-Threadsicherheit verhindert den Deadlock nicht.</p>
+<p>Ist die Queue voll und der Timeout größer als 0, wird der Producer Blocked. Er behält seine Nachricht, bis die Kopie gelingt. Platz entsteht durch Get, nicht erst durch die fertige Verarbeitung des Consumers. Try-Put mit Timeout 0 reiht nichts ein. <code>osErrorResource</code> ist die erwartete Ablehnung bei voller Queue. Andere Werte von <code>osStatus_t</code> sind technische Fehler und dürfen nicht in denselben Dropzähler. <code>osOK</code> allein erlaubt die Annahme, dass die Kopie in der Queue liegt.</p>
+<p>Hält der Producer dabei einen Mutex, den der Consumer vor dem nächsten Get braucht, entsteht ein Zyklus: die Queue ist voll, der Producer wartet auf Platz und gibt den Mutex nicht frei, der Consumer kommt nicht zum Get. Die Threadsicherheit der Queue verhindert diesen Anwendungsdeadlock nicht. Der sichere Ablauf nimmt den Mutex nicht über den blockierenden Put hinweg.</p>
+<p>Die Vorteile der Queue gelten nur zusammen mit diesen Warte- und Überlaufverträgen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -550,7 +631,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Kein unendlicher Puffer bei <span class="math inline">\(\lambda &gt; \mu\)</span></li>
 </ul>
 <aside class="notes">
-<p>Vorteil ist Struktur und ein klarer Überlauf, nicht automatische Frist.</p>
+<p>Die Reihenfolge gilt für erfolgreich eingereihte Nachrichten. Warten ersetzt das Pollen, solange der Timeoutvertrag passt. Eine Wertkopie entkoppelt die Stackvariable des Senders, nicht automatisch Daten hinter einem Pointer. ITC und FIFO bleiben die Begriffe dieser Hälfte. Eine normale Queue vererbt nicht die Priorität eines Producers, der auf einen Platz wartet. PIP gilt für den Mutex-Besitzer, nicht für dieses Paar. Reihenfolge und Threadpriorität allein sind keine Fristgarantie. Bei dauerhaft <span class="math inline">\(\lambda &gt; \mu\)</span> hilft auch kein unendlicher Puffer, den es hier nicht gibt.</p>
+<p>Jetzt wird die begrenzte Kapazität mit einer konkreten Dauerlast nachgerechnet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -595,7 +677,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p>Über <span class="math inline">\(1\)</span>–<span class="math inline">\(20\,\mathrm{ms}\)</span>: 20 Versuche, <strong>13</strong> erfolgreiche Puts, <strong>7</strong> verworfen, <strong>4</strong> Gets, <strong>9</strong> bleiben.</p>
 <p><span class="math inline">\(\lambda = 1000/\mathrm{s}\)</span>, <span class="math inline">\(\mu = 200/\mathrm{s}\)</span>: kein endlicher Puffer hält das verlustfrei, wenn jede Entnahme nur eine Nachricht ist. Ein Consumer, der danach einen ganzen Stapel leert, ist ein anderes Modell.</p>
 <aside class="notes">
-<p>Bilanz: <span class="math inline">\(20 = 13 + 7\)</span> und <span class="math inline">\(13 = 4 + 9\)</span>. Der Erfolg bei <span class="math inline">\(t = 16\,\mathrm{ms}\)</span> kommt, weil das Get bei 15 einen Platz gemacht hat und der Put bei 15 selbst noch scheiterte. Synthetisch.</p>
+<p><span class="math inline">\(N = 10\)</span>, anfangs leer, API-Zeit 0. Ein Try-Put bei jeder ganzen Millisekunde ab 1. Ein Get bei 5, 10, 15 und 20 ms. Zur selben Zeit zuerst Put, dann Get. Ein voller Try-Put verwirft den neuen Wert. Jeder Get entnimmt genau eine Nachricht. Der Wert ist die Zeit des Versuchs.</p>
+<p>Nach 5 ms sind vier Nachrichten drin, weil der Put bei 5 noch klappt und das Get danach eine entnimmt: Versuche 1 bis 5, eine Entnahme, Count 4. Nach 10 ms Count 8. Bei 12 ms Count 10. Der erste abgelehnte Put ist 13 ms. Bei 15 ms scheitert der Put noch. Das Get danach macht einen Platz frei, der Put bei 16 ms gelingt. Über 1 bis 20 ms: 20 Versuche, 13 Erfolge, sieben verworfene neue Nachrichten, vier Gets, neun Rest. Die Bilanzen sind <span class="math inline">\(20 = 13 + 7\)</span> und <span class="math inline">\(13 = 4 + 9\)</span>. Verworfen werden 13, 14, 15, 17, 18, 19 und 20. Entnommen werden 1, 2, 3 und 4.</p>
+<p><span class="math inline">\(\lambda = 1000\)</span> Nachrichten je Sekunde und <span class="math inline">\(\mu = 200\)</span> sind Annahmen dieses Modells. Ein größerer endlicher Puffer verschiebt den Verlust, beseitigt die Dauerüberlast nicht. Ein Worker, der später einen ganzen Stapel leert, ist ein anderer Bedienvertrag.</p>
+<p>Frage: Warum klappt der Put bei 16 ms, obwohl der bei 15 ms scheitert? Weil das Get bei 15 erst nach dem gescheiterten Put einen Platz freigibt.</p>
+<p>Aus dem Verlauf lässt sich die nötige Kapazität für ein begrenztes Modell bestimmen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -615,7 +701,7 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <ul>
 <li><span class="math inline">\(A\)</span>: angebotene Nachrichten, <span class="math inline">\(D\)</span>: Entnahmen</li>
 <li>Nicht erst die Puts zählen, die nach Drops noch klappen</li>
-<li>Fünf Nachrichten ohne zwischenzeitliches Get brauchen fünf Plätze</li>
+<li>Für das Intervall 1–20 ms ohne Drops: unmittelbar nach dem Put bei 20 ms sind erst drei Gets erfolgt, also <span class="math inline">\(20 - 3 = 17\)</span> Plätze. Nach dem vierten Get bleiben 16. Das ist eine Lehrübung, keine Dauerlösung.</li>
 <li>Ein schon verarbeiteter Satz liegt außerhalb der Queue</li>
 <li>Payload-Pool extra zählen</li>
 </ul>
@@ -647,7 +733,11 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </table>
 <p>ISR wartet nicht. Ein ADC hält nicht automatisch an.</p>
 <aside class="notes">
-<p>Zeitgleiche Ereignisse und die Belegung vor dem folgenden Get gehören in die Rechnung. Durchschnittsraten allein genügen nicht.</p>
+<p><span class="math inline">\(N\)</span> ist die Kapazität in Elementen, <span class="math inline">\(A(t)\)</span> die Zahl angebotener Nachrichten bis <span class="math inline">\(t\)</span>, <span class="math inline">\(D(t)\)</span> die Entnahmen im verlustfreien Referenzablauf. Die Anfangsbelegung <span class="math inline">\(Q_0\)</span> gehört dazu. Die Formel <span class="math inline">\(N \ge \max(A-D)\)</span> beschreibt die höchste Zwischenbelegung, nicht die erfolgreichen Puts nach Drops. Durchschnittsraten genügen nicht: Bursts, Pausen und zeitgleiche Ereignisse bestimmen die Spitze. Ein schon entnommenes Element liegt nicht mehr in der Queue. Ein Pointerpayload belegt trotzdem weiter seinen externen Puffer.</p>
+<p>Für 1 bis 20 ms ohne Drops sind unmittelbar nach dem Put bei 20 ms erst drei Gets erfolgt, also 17 Plätze. Nach dem vierten Get bleiben 16. Das ist eine Lehrübung für dieses Intervall, keine Dauerlösung bei <span class="math inline">\(\lambda &gt; \mu\)</span>.</p>
+<p>Backpressure bremst nur eine Quelle, die warten kann. Ein blockierter Softwareproducer stoppt ADC, UART-Empfang oder DMA nicht. Die Entscheidung muss benannt sein: drosseln, verwerfen, Latest-Value oder einen sichtbaren Fehler. Ein unbemerkter Zähler ist noch keine Behandlung.</p>
+<p>Frage: Warum sind für den verlustfreien begrenzten Ablauf 17 statt 16 Plätze nötig? Weil der Put bei 20 ms vor dem Get derselben Millisekunde liegt. Die Belegung davor ist 20 minus 3.</p>
+<p>Die gewählte Kapazität wird jetzt beim Erzeugen der Queue festgelegt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -671,19 +761,22 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <span id="cb2-7"><a aria-label="7"></a>osMessageQueueId_t q<span class="op">;</span></span>
 <span id="cb2-8"><a aria-label="8"></a></span>
 <span id="cb2-9"><a aria-label="9"></a><span class="dt">void</span> app_init<span class="op">(</span><span class="dt">void</span><span class="op">)</span> <span class="op">{</span></span>
-<span id="cb2-10"><a aria-label="10"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelInitialize<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
-<span id="cb2-11"><a aria-label="11"></a>    q <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">8</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>SensorMessage<span class="op">),</span> NULL<span class="op">);</span></span>
-<span id="cb2-12"><a aria-label="12"></a>    <span class="cf">if</span> <span class="op">(</span>q <span class="op">==</span> NULL <span class="op">||</span> osThreadNew<span class="op">(</span>Producer<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">)</span> <span class="op">==</span> NULL<span class="op">)</span></span>
-<span id="cb2-13"><a aria-label="13"></a>        Error_Handler<span class="op">();</span></span>
-<span id="cb2-14"><a aria-label="14"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelStart<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
-<span id="cb2-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-10"><a aria-label="10"></a>    <span class="co">/* Lehrgerüst. Im Cube-Projekt Kernel nur einmal initialisieren. */</span></span>
+<span id="cb2-11"><a aria-label="11"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelInitialize<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-12"><a aria-label="12"></a>    q <span class="op">=</span> osMessageQueueNew<span class="op">(</span><span class="dv">8</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>SensorMessage<span class="op">),</span> NULL<span class="op">);</span></span>
+<span id="cb2-13"><a aria-label="13"></a>    <span class="cf">if</span> <span class="op">(</span>q <span class="op">==</span> NULL<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-14"><a aria-label="14"></a>    <span class="cf">if</span> <span class="op">(</span>osThreadNew<span class="op">(</span>Producer<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">)</span> <span class="op">==</span> NULL<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-15"><a aria-label="15"></a>    <span class="cf">if</span> <span class="op">(</span>osThreadNew<span class="op">(</span>Consumer<span class="op">,</span> NULL<span class="op">,</span> NULL<span class="op">)</span> <span class="op">==</span> NULL<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-16"><a aria-label="16"></a>    <span class="cf">if</span> <span class="op">(</span>osKernelStart<span class="op">()</span> <span class="op">!=</span> osOK<span class="op">)</span> Error_Handler<span class="op">();</span></span>
+<span id="cb2-17"><a aria-label="17"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li><code>sizeof</code> und Alignment am Build prüfen</li>
 <li><code>uint32_t</code>-Übung darf bleiben; das Struct ist der Datensatz</li>
 <li>1-ms-Modell und <code>osDelay(10)</code> sind verschiedene Versuche</li>
 </ul>
 <aside class="notes">
-<p><code>osDelay</code> zählt Ticks. Der Thread läuft danach, wenn er dran ist. Periodisch: absolutes Soll und Überlastregel aus VL3.</p>
+<p><code>SensorMessage</code> enthält <code>sample</code>, <code>seq</code> und <code>tick</code>, jeweils <code>uint32_t</code>, ein vorzeichenloser 32-Bit-Typ. <code>sizeof</code> liefert die Elementgröße in Byte. <code>osMessageQueueId_t</code> ist der Handle, <code>NULL</code> das Attribut für die dynamische Anlage. Das Lehrgerüst ruft <code>osKernelInitialize</code> einmal, erzeugt die Queue, dann Producer und Consumer, und startet den Kernel. <code>Error_Handler</code> darf mit einem Null-Handle nicht weiterlaufen. Im Cube-Projekt steht die Initialisierung schon im generierten Boot. Sie wird dort nicht ein zweites Mal gerufen. <code>sizeof</code> und Alignment prüft der Build. Ohne Build gibt es keinen Messnachweis. Die 1-ms-Dauerlast und ein Producer mit anderer Periode sind verschiedene Versuche. <code>osDelay</code> zählt Kernel-Ticks. Der Thread läuft danach, wenn er dran ist.</p>
+<p>Der Producer füllt genau diesen Datensatz und veröffentlicht ihn.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -700,17 +793,19 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>CMSIS-API: Daten schreiben (Put)</h2>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="dt">void</span> Producer<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
 <span id="cb3-2"><a aria-label="2"></a>    SensorMessage m<span class="op">;</span></span>
-<span id="cb3-3"><a aria-label="3"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
-<span id="cb3-4"><a aria-label="4"></a>    m<span class="op">.</span>seq <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb3-5"><a aria-label="5"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb3-6"><a aria-label="6"></a>        m<span class="op">.</span>sample <span class="op">=</span> next_sample<span class="op">();</span> <span class="co">/* oder synthetische Folge */</span></span>
-<span id="cb3-7"><a aria-label="7"></a>        m<span class="op">.</span>seq<span class="op">++;</span></span>
-<span id="cb3-8"><a aria-label="8"></a>        m<span class="op">.</span>tick <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
-<span id="cb3-9"><a aria-label="9"></a>        <span class="cf">if</span> <span class="op">(</span>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>m<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
-<span id="cb3-10"><a aria-label="10"></a>            drops<span class="op">++;</span></span>
-<span id="cb3-11"><a aria-label="11"></a>        osDelayUntil<span class="op">(</span>next_deadline<span class="op">());</span></span>
-<span id="cb3-12"><a aria-label="12"></a>    <span class="op">}</span></span>
-<span id="cb3-13"><a aria-label="13"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-3"><a aria-label="3"></a>    osStatus_t st<span class="op">;</span></span>
+<span id="cb3-4"><a aria-label="4"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb3-5"><a aria-label="5"></a>    m<span class="op">.</span>seq <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-6"><a aria-label="6"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb3-7"><a aria-label="7"></a>        m<span class="op">.</span>sample <span class="op">=</span> next_sample<span class="op">();</span> <span class="co">/* oder synthetische Folge */</span></span>
+<span id="cb3-8"><a aria-label="8"></a>        m<span class="op">.</span>seq<span class="op">++;</span></span>
+<span id="cb3-9"><a aria-label="9"></a>        m<span class="op">.</span>tick <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb3-10"><a aria-label="10"></a>        st <span class="op">=</span> osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>m<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb3-11"><a aria-label="11"></a>        <span class="cf">if</span> <span class="op">(</span>st <span class="op">==</span> osErrorResource<span class="op">)</span> drops<span class="op">++;</span></span>
+<span id="cb3-12"><a aria-label="12"></a>        <span class="cf">else</span> <span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> tech_errors<span class="op">++;</span></span>
+<span id="cb3-13"><a aria-label="13"></a>        osDelayUntil<span class="op">(</span>next_deadline<span class="op">());</span></span>
+<span id="cb3-14"><a aria-label="14"></a>    <span class="op">}</span></span>
+<span id="cb3-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <table class="caption-top">
 <thead>
 <tr class="header">
@@ -739,7 +834,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </table>
 <p><code>msg_prio = 0</code> im Labor: FIFO-Entscheidung, vom FreeRTOS-Adapter ignoriert.</p>
 <aside class="notes">
-<p>Hardware nur anbinden, wenn ADC und Takt schon stimmen. Sonst eine benannte Sequenzquelle.</p>
+<p>Die Schleife erhöht <code>seq</code> je Versuch, auch wenn der Put scheitert. Dann zeigt die Lücke in der erfolgreichen Folge den Verlust. <code>next_sample</code> ist eine benannte synthetische Quelle, kein ADC. <code>tick</code> kommt von <code>osKernelGetTickCount</code> und ist ein Kernel-Tick, keine Millisekunde. <code>&amp;m</code> ist die Adresse der Nachricht für die Kopie. Der dritte Parameter 0 ist <code>msg_prio</code>, der vierte der Timeout 0. <code>osOK</code> heißt, die Kopie liegt in der Queue. <code>osErrorResource</code> bei Timeout 0 heißt voll, nichts eingereiht, und zählt als Drop. Andere Statuswerte sind technische Fehler.</p>
+<p><code>osDelayUntil</code> bekommt einen absoluten Sollzeitpunkt. <code>next_deadline</code> muss den Startwert setzen, die Periode addieren und bei Überlast auf ein zukünftiges Ziel springen, sonst entsteht eine Endlosschleife ohne Warten. Bei 1 kHz sind 20 Ticks nominal 20 ms. Tickphase und Scheduling verändern die beobachtete Dauer. Die 1-ms-Dauerlastrechnung ist ein anderes Experiment als diese Periode.</p>
+<p>Die Consumerseite prüft den Empfang, bevor sie den Datensatz verwendet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -768,7 +865,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>GetCount nur zur Diagnose</li>
 </ul>
 <aside class="notes">
-<p>Frage: Darf Put blockieren, während ein Mutex gehalten wird, den der Consumer braucht? Nur wenn die Reihenfolge aus VL4 das erlaubt.</p>
+<p><code>osMessageQueueGet</code> kopiert ein Element nach <code>&amp;m</code>. <code>NULL</code> heißt, der Nachrichtenvorrang wird nicht ausgegeben. 20 ist die Wartezeit in Kernel-Ticks. Nur <code>osOK</code> erlaubt <code>use</code>. Ein Timeout lässt den alten Inhalt von <code>m</code> stehen. <code>continue</code> überspringt die Verarbeitung. Ein technischer Dauerfehler darf nicht in einer schnellen Schleife ohne Pause stecken bleiben. Dafür braucht der Fehlerpfad eine eigene Behandlung, nicht dasselbe <code>continue</code> wie ein gewöhnlicher Timeout, wenn der Status kein Timeout ist. Entnahme und Verarbeitung sind verschiedene Ereignisse. <code>GetCount</code> ist Diagnose, keine Voraussetzung für einen sicheren Get.</p>
+<p>Die Signatur <code>void Consumer(void *argument)</code> passt zum Kernel. <code>use</code> ist der Lehrvertrag „Werte ansehen“, keine Boardfunktion.</p>
+<p>Frage: Kann ein blockierender Put unter einem Mutex Deadlock erzeugen, den der Consumer vor dem Get braucht? Ja. Der Producer wartet auf Platz und hält den Mutex, der Consumer kommt nicht zum Get. Der sichere Ablauf gibt den Mutex vor dem Warten frei oder nimmt ihn gar nicht über den Put hinweg.</p>
+<p>Ein Blick auf die kopierten Bytes erklärt, warum lokale Objekte hier funktionieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -818,7 +918,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Das Array darf erst nach vereinbarter Freigabe neu beschrieben werden</li>
 </ul>
 <aside class="notes">
-<p><code>osMessageQueuePut(q, &amp;image_ptr, 0, 0)</code> übergibt die Adresse der Pointervariable. Nicht die Bildbytes als Elementspeicher.</p>
+<p>Eine Value-Queue kopiert die festgelegte Elementgröße. Ein Struct ohne Pointer liegt danach vollständig im Slot. Ein enthaltener Pointer wird nur als Adresswert kopiert, nicht als tiefe Kopie der Bildbytes. ABI, Application Binary Interface, legt die Darstellung der Adresse fest. <code>sizeof(uint8_t *)</code> ist im CM4-Modell 4 Byte, keine Garantie für jede ABI. <code>&amp;image_ptr</code> ist die Adresse der Pointervariable und damit das Quellobjekt der Kopie. <code>image_ptr</code> selbst zeigt auf die Bildbytes. Nach erfolgreichem Put darf die Variable woanders hinzeigen. Das Array darf erst nach vereinbarter Freigabe neu beschrieben werden. Es entsteht kein Eigentumsvertrag von selbst.</p>
+<p>Frage: Kann die Queue einen im Struct enthaltenen Pointer in einen unabhängigen Bildinhalt verwandeln? Nein. Die Kopie ist flach. Der Adresswert wird dupliziert, die Bytes dahinter nicht.</p>
+<p>Große Nutzdaten machen die Kosten dieses Kopiermodells sichtbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -842,7 +944,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p>Große Kopien sind teuer, nicht pauschal verboten. Es zählen Größe, Rate, RAM und maskierte Kernelpfade.</p>
 <aside class="notes">
-<p>Keine erfundenen Millionen Zyklen. Kopierzeit messen, wenn ein Build da ist.</p>
+<p>320 mal 240 Pixel mit einem Byte je Pixel sind 76800 Byte, also 76,8 kB mit 1000 Byte je kB und 75 KiB mit 1024 Byte je KiB. Zwei Puffer sind 150 KiB. Zehn Bilder als Value-Queue sind 750 KiB Nutzdaten plus Verwaltung. Zehn Pointerslots zu 4 Byte sind 40 Byte Queuenutzdaten. Die Bilder bleiben extra. RAM, Kopierzeit und Rate sind verschiedene Ressourcen. Eine große Kopie ist nicht generell verboten. Ihr Aufwand und die im Kernel maskierten Bereiche müssen zur Latenz passen. Eine Zykluszahl wird ohne Build nicht erfunden. Die Balken dürfen 40 Byte und 750 KiB nicht als Gesamtbedarf derselben Lösung vergleichen.</p>
+<p>Das nächste Beispiel transportiert deshalb eine Adresse und braucht einen anderen Queuevertrag.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -857,12 +960,14 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </section>
 <section id="die-lösung-copy-by-reference-pointer" class="slide level2">
 <h2>Die Lösung: Copy by Reference (Pointer)</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">static</span> <span class="dt">uint8_t</span> buf_a<span class="op">[</span><span class="dv">64</span><span class="op">],</span> buf_b<span class="op">[</span><span class="dv">64</span><span class="op">];</span></span>
-<span id="cb5-2"><a aria-label="2"></a><span class="dt">uint8_t</span> <span class="op">*</span>slot <span class="op">=</span> buf_a<span class="op">;</span> <span class="co">/* gültiges Ziel, nicht ein leerer Zeiger */</span></span>
-<span id="cb5-3"><a aria-label="3"></a><span class="cf">if</span> <span class="op">(</span>osMessageQueuePut<span class="op">(</span>q<span class="op">,</span> <span class="op">&amp;</span>slot<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">==</span> osOK<span class="op">)</span></span>
-<span id="cb5-4"><a aria-label="4"></a>    slot <span class="op">=</span> buf_b<span class="op">;</span> <span class="co">/* Variable umbiegen, buf_a bleibt belegt */</span></span>
-<span id="cb5-5"><a aria-label="5"></a><span class="cf">else</span></span>
-<span id="cb5-6"><a aria-label="6"></a>    <span class="op">;</span> <span class="co">/* buf_a bleibt beim Producer, kein zweites Put */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a>osMessageQueueId_t pointer_queue<span class="op">;</span> <span class="co">/* Element: uint8_t *, nicht SensorMessage */</span></span>
+<span id="cb5-2"><a aria-label="2"></a><span class="dt">static</span> <span class="dt">uint8_t</span> buf_a<span class="op">[</span><span class="dv">64</span><span class="op">],</span> buf_b<span class="op">[</span><span class="dv">64</span><span class="op">];</span></span>
+<span id="cb5-3"><a aria-label="3"></a><span class="dt">uint8_t</span> <span class="op">*</span>slot <span class="op">=</span> buf_a<span class="op">;</span></span>
+<span id="cb5-4"><a aria-label="4"></a><span class="cf">if</span> <span class="op">(</span>osMessageQueuePut<span class="op">(</span>pointer_queue<span class="op">,</span> <span class="op">&amp;</span>slot<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">==</span> osOK<span class="op">)</span></span>
+<span id="cb5-5"><a aria-label="5"></a>    slot <span class="op">=</span> buf_b<span class="op">;</span> <span class="co">/* Variable neu, buf_a bleibt belegt */</span></span>
+<span id="cb5-6"><a aria-label="6"></a><span class="cf">else</span></span>
+<span id="cb5-7"><a aria-label="7"></a>    <span class="op">;</span> <span class="co">/* Put fehlgeschlagen: buf_a bleibt beim Producer */</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Anlage: <code>osMessageQueueNew(2, sizeof(uint8_t *), NULL)</code>. <code>&amp;slot</code> kopiert den Adresswert. <code>slot</code> selbst wäre die Bildadresse, nicht das Queue-Element.</p>
 <ul>
 <li>Die Adresse wird kopiert, <code>slot</code> darf danach umgebogen werden</li>
 <li>Zwei Arrays A und B allein verhindern das Überschreiben nicht</li>
@@ -870,7 +975,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Zu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern</li>
 </ul>
 <aside class="notes">
-<p>Ein Deskriptor mit Länge und Sequenz ist größer als 4 Byte. Das auf der Folie sagen, nicht stillschweigend „vier Byte“ für den Deskriptor.</p>
+<p><code>pointer_queue</code> ist ein eigener Handle. Die Elementgröße ist <code>sizeof(uint8_t *)</code>, nicht <code>sizeof(SensorMessage)</code>. Dieselbe Queue <code>q</code> aus dem Sensorbeispiel darf den Typ nicht wechseln. <code>slot</code> zeigt erst auf <code>buf_a</code>. <code>&amp;slot</code> übergibt die Adresse der Pointervariable, damit der Adresswert kopiert wird. Nach <code>osOK</code> darf <code>slot</code> auf <code>buf_b</code> zeigen. <code>buf_a</code> bleibt belegt, bis der Consumer es freigibt. Schlägt Put fehl, bleibt der Puffer beim Producer. Es gibt kein zweites Put und keine Rückgabe, die nie entnommen wurde. Zwei Arrays allein sind kein Besitzvertrag. Ein Deskriptor mit Pointer, Länge und Sequenz ist größer als 4 Byte.</p>
+<p>Das Umschalten ist ein einzelner Handoff, kein sicherer Endlos-Ping-Pong.</p>
+<p>Für mehrere Nachrichten braucht die Adresse einen expliziten Lebensdauerkreislauf.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -887,6 +994,24 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <h2>Gefahren von Copy by Reference</h2>
 <p>Lebenszyklus, genau ein Verantwortlicher:</p>
 <p>FREE → FILLING → QUEUED → PROCESSING → FREE</p>
+<div class="cell" data-reveal="true" data-fig-width="5.6" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  FREE[FREE] --&gt; FILL[FILLING]
+  FILL --&gt; QUEUED[QUEUED]
+  QUEUED --&gt; PROC[PROCESSING]
+  PROC --&gt; FREE
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Put erfolgreich: Verantwortung geht an die Consumerseite. Put scheitert: der Puffer bleibt beim Producer.</p>
 <ul>
 <li>Ready-Queue und Free-Pool sind zwei Richtungen</li>
 <li>Put ok: Verantwortung geht weiter</li>
@@ -895,7 +1020,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p>Fehler in den Notizen: Stack der beendeten Funktion, freigegebener Heap, DMA schreibt weiter.</p>
 <aside class="notes">
-<p>H7-DMA und D-Cache nur, wenn der Puffer wirklich im CM7-Cache liegt. Auf dem CM4 keine pauschalen Cache-Aufrufe. AN4839 nur für diesen Fall.</p>
+<p>FREE heißt verfügbar, FILLING wird vom Producer gefüllt, QUEUED wartet in der Ready-Queue, PROCESSING gehört dem Consumer, danach zurück nach FREE. Je Übergang gibt es genau einen Verantwortlichen. <code>free_pool</code> und <code>ready_queue</code> sind zwei Richtungen. Put erfolgreich übergibt den Vertrag. Put gescheitert: der Producer behält den Puffer oder gibt ihn genau einmal zurück. Kein Doppel-Put, keine Doppelrückgabe, kein Wiederbefüllen vor der Freigabe.</p>
+<p>Zehn Pointerplätze und nur zwei Arrays ergeben zwei nutzbare Bilder, nicht zehn. Freie, gefüllte, wartende und bearbeitete Puffer werden zusammengezählt. Reset einer Pointer-Queue räumt die Bilder nicht auf. Stackende, freigegebener Heap, wiederverwendeter Poolslot und noch laufende DMA sind verschiedene Fehler. <code>static</code> verlängert die Lebensdauer und verhindert das Überschreiben nicht.</p>
+<p>Frage: Macht <code>static</code> einen Puffer gegen den Producer sicher? Nein. Die Variable lebt lange, aber der Producer darf sie trotzdem beschreiben, solange der Consumer sie noch liest. DMA darf erst nach vereinbartem Abschluss und passender Sichtbarkeit veröffentlichen. Cacheaufrufe gehören nur zum Kern, der den Puffer wirklich cached. Auf dem CM4 keine pauschalen CM7-Cachebefehle.</p>
+<p>Manchmal soll keine Historie, sondern nur der letzte gültige Stand transportiert werden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -936,7 +1064,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p>Länge 1 ist <strong>keine</strong> Overwrite-Semantik.</p>
 <p>„Timeout 0 als Näherung“ ist falsch: der alte Wert bleibt.</p>
 <aside class="notes">
-<p>Frage: Ist Put mit Timeout 0 ein Overwrite? Nein. Das Gegenbeispiel ist genau 10 gegen 20.</p>
+<p>Start leer, dann 10, 20 und 30. Eine FIFO mit genug Platz bewahrt 10, 20, 30. Eine Länge-1-Queue mit Put und Timeout 0 nimmt 10 und weist 20 und 30 ab. Der alte Wert bleibt. Overwrite ersetzt ihn, am Ende steht 30. Länge eins allein ist kein Latest-Value-Vertrag. „Timeout 0 als Näherung“ ist falsch.</p>
+<p>Frage: Was liest man nach drei Try-Puts auf die nie geleerte 1er-Queue? Den Wert 10. Die Puts von 20 und 30 liefern einen Kapazitätsfehler und ändern den Inhalt nicht.</p>
+<p>Die passende Implementierung hängt von der API ab.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -961,7 +1091,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 </ul>
 <p>CMSIS-only: kurzer geschützter Snapshot mit Version und Zeit, Benachrichtigung <strong>nach</strong> dem Veröffentlichen. Die ISR nimmt keinen Mutex. Nutzdaten kommen über einen erlaubten kurzen Kanal in den Thread.</p>
 <aside class="notes">
-<p>Peek garantiert keinen neuen Wert und weckt nicht alle Leser. Eine Peek-Schleife ist kein Eventwarten.</p>
+<p>Historie braucht die FIFO. Der neueste Zustand braucht Overwrite oder einen geschützten Snapshot. Ein Ereigniszähler braucht eine endliche Queue oder einen Zähler mit Überlaufregel. Nativ, in einem eigenen Modul ohne Cast auf den CMSIS-Handle, kann <code>xQueueCreate(1, ...)</code> mit <code>xQueueOverwrite</code> den letzten Wert setzen. <code>xQueuePeek</code> liest, ohne zu entnehmen. In der ISR gelten die FromISR-Varianten und die Yield-Regel. CMSIS-only hat diese Funktionen nicht automatisch. Dort veröffentlicht ein Thread einen geschützten Snapshot mit Version und Zeitstempel und signalisiert danach. Die ISR nimmt keinen Mutex. Rohdaten kommen über einen erlaubten kurzen Kanal in diesen Thread.</p>
+<p>Peek kann bei leerer Queue warten. Ist schon ein Wert da, garantiert es keine neue Version. Eine Peek-Schleife kann immer denselben Stand liefern. Aus Peek und Overwrite folgt kein Vertrag, dass jeder Pflichtempfänger jede Version genau einmal erhält.</p>
+<p>Mehrere Leser des Zustands sind noch keine garantierte Zustellung an alle.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -984,7 +1116,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ereignisse brauchen die FIFO oder eine Zählung</li>
 </ul>
 <aside class="notes">
-<p>Version beantwortet „noch derselbe Wert?“. Sie ersetzt keine Queue.</p>
+<p>Get gibt ein Element an genau einen Consumer. Das ist Arbeitsverteilung, kein Broadcast. Broadcast hieße, jede Version erreicht jeden Pflichtempfänger. Ein Snapshot kann von mehreren Threads gelesen werden, zu verschiedenen Zeiten in verschiedenen Versionen. Die Version beantwortet „hat sich etwas geändert?“, nicht „habe ich jede Zwischenversion erhalten?“. Für zuverlässige Zustellung braucht jeder Empfänger einen eigenen Vertrag, etwa eine eigene Queue mit Überlaufregel. Ein kompliziertes Bestätigungssystem bauen wir hier nicht.</p>
+<p>Frage: Was fehlt zwischen „alle können den Snapshot lesen“ und „alle bekommen jede Nachricht“? Eine nachvollziehbare Zustellung je Empfänger. Gemeinsame Lesbarkeit speichert keine Historie und weckt niemanden für jede Zwischenversion.</p>
+<p>Die Kommunikationsanforderung entscheidet somit über Queue, Snapshot und Puffervertrag.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1006,7 +1140,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Warten und Fehlerstatus gehören zum Pfad</li>
 </ul>
 <aside class="notes">
-<p>Zweiter Teil: die ISR liefert nur, was sie rechtzeitig retten und erlaubt signalisieren kann.</p>
+<p>Historie heißt FIFO mit explizitem Überlauf. Zustand heißt Overwrite oder Snapshot, nicht die 1er-Queue mit Try-Put. Ein Pointerslot von 4 Byte ist nicht das Bild von 75 KiB. Warten und der Status gehören zum Pfad. <code>GetSpace</code> reserviert nichts. Ein fehlgeschlagenes Get ist keine neue Nachricht.</p>
+<p>Frage: Welche Information fehlt, wenn nur ein Pointer erfolgreich empfangen wurde? Dass der Puffer noch gültig ist, wie lang er ist, wer ihn lesen darf und wer ihn später freigibt. Die Adresse allein ist kein Besitzvertrag.</p>
+<p>Im zweiten Teil tritt die Hardware als Producer auf und setzt zusätzliche Kontext- und Zeitgrenzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1031,7 +1167,8 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Ob Fristen reißen, sagt das Budget, nicht der Satz „alle Deadlines wandern“</li>
 </ul>
 <aside class="notes">
-<p>99 % Blocked und „ISR unter 1 µs“ ohne Messaufbau streichen.</p>
+<p>Eine ISR unterbricht Threads dieses Kerns. Höher dringliche IRQs können sich je nach Maske schachteln. Der andere Kern und DMA können weiterlaufen. „Die CPU steht“ ist falsch. Eine lange ISR verschiebt Threadfortschritt und kann die Tickbehandlung verzögern. Ein Pendingbit speichert keine beliebig lange Liste verpasster Ticks. Ob Fristen reißen, sagt das Budget, nicht der Satz, alle Deadlines wanderten. Eine Behauptung „ISR unter 1 µs“ ohne Messaufbau gibt es hier nicht.</p>
+<p>Diese Unterschiede begründen die Regeln für ISR-Code. Eine ISR ist selbst kein Threadzustand Ready oder Blocked. Sie verdrängt die CPU-Ausführung, ohne den unterbrochenen Thread schon beim Hardwareeintritt wie bei einem Schedulerwechsel nach Ready zu setzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1053,7 +1190,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Falsche Nutzung: Status, Assert, Lockup oder Inkonsistenz, nicht zwingend HardFault</li>
 </ul>
 <aside class="notes">
-<p>IPSR-Prüfung im Wrapper ist ein Implementierungsdetail, keine Garantie für jede API.</p>
+<p>Die ISR bleibt kurz. Kein blockierendes Warten, kein <code>printf</code>, kein <code>osMutexAcquire</code> oder <code>osMutexRelease</code>. Timeout 0 macht eine verbotene Funktion nicht erlaubt. Nicht jede native Funktion hat eine FromISR-Variante. Falsche Nutzung kann Status, Assert, Lockup oder Inkonsistenz erzeugen, nicht zwingend einen HardFault. Die IPSR-Prüfung im Wrapper erkennt den Exceptionkontext. IPSR ist das Interrupt Program Status Register. Sie ersetzt nicht die Prüfung der IRQ-Priorität und gilt nicht als Freibrief für jede API.</p>
+<p>Frage: Ist <code>osMutexAcquire(m, 0)</code> in der ISR zulässig? Nein. Nichtblockieren ist nur eines von drei Kriterien. Mutex-Acquire ist in der gezeigten Tabelle aus der ISR ausgeschlossen.</p>
+<p>Aufschiebbare Arbeit wird deshalb in einen Thread verlagert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1073,7 +1212,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p>Register lesen und Flags löschen in der Reihenfolge des Geräts. „Erst Flag, dann Daten“ gilt nicht überall.</p>
 <p>Im HAL-EXTI-Pfad nicht ein zweites Mal quittieren.</p>
 <aside class="notes">
-<p>Der Worker wird Ready und läuft nach ISR und PendSV, wenn ihn niemand Höherer ausbremst. Die CPU war vorher nicht zwingend Idle.</p>
+<p>Deferred Interrupt Processing heißt aufgeschobene Interruptverarbeitung. Die Top-Half, die ISR, erledigt die sofort nötige Hardwarearbeit und sichert Daten oder ein Signal. Die Bottom-Half, der Worker, erledigt den Rest. Seine Priorität folgt Frist, Last und dem übrigen Taskset. Sie ist nicht automatisch maximal. Die Reihenfolge von Quittung und Datenlesen folgt dem Gerät. „Erst Flag, dann Daten“ gilt nicht überall. Im HAL-EXTI-Pfad ist die Quittung schon erfolgt. Der Callback löscht nicht unbesehen ein zweites Mal.</p>
+<p>Der Worker wird Ready und kann erst nach dem Handler und dem Scheduler laufen. Die CPU muss vorher nicht Idle gewesen sein.</p>
+<p>Welche Daten sofort gesichert werden müssen, zeigt die Top-Half.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1096,7 +1237,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Prellen, Zusammenfassen und Queue-Drop sind drei verschiedene Dinge</li>
 </ul>
 <aside class="notes">
-<p>Liest die Bottom-Half ein Register zu spät, ist das Sample schon weg. Dann muss der Top-Half kopieren oder DMA nutzen.</p>
+<p>Ein Semaphortoken enthält keine Samplebytes. Wird das Register überschrieben, bevor der Worker läuft, muss die ISR das Minimum kopieren oder ein DMA-Puffer den Vertrag tragen. Drei Releases ohne Acquire, Start leer, Maximum 1: der erste gelingt, zwei scheitern am vollen Semaphor. Es bleibt höchstens ein Token. Das ist ein Arbeitsindikator, keine verlustfreie Zählung. Physikalische Flanken, Callbackaufrufe, gespeicherte Tokens und entprellte Betätigungen sind verschiedene Zahlen. GPIO-EXTI kann mehrere Flanken selbst zusammenfassen.</p>
+<p>Frage: Was passiert bei drei Releases ohne Acquire auf einem anfangs leeren binären Semaphor? Ein Erfolg und zwei Kapazitätsfehler. Der Worker sieht später höchstens ein gespeichertes „Arbeit da“.</p>
+<p>Der Worker verarbeitet die geretteten Daten und wartet danach wieder passend.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1120,7 +1263,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Eine weiterblinkende LED ist kein Fristbeweis</li>
 </ul>
 <aside class="notes">
-<p>Die Demo friert nicht den ganzen Chip ein.</p>
+<p>Der Worker prüft den Acquire-Status, arbeitet und wartet wieder auf nötige Arbeit. Mehrere schon gepufferte Datensätze dürfen in einem Aufwachen verarbeitet werden, mit einer Grenze, damit ein Burst nicht endlos wird. UART-Ausgabe nutzt den Schutz aus Vorlesung 4. Ein künstliches Delay ist keine allgemeine Pflicht. Es kann Durchsatz begrenzen und weitere Ereignisse zusammenfassen.</p>
+<p><code>HAL_Delay(100)</code> ist eine separate Vergleichsvariante. In der üblichen HAL ist es aktives Warten auf <code>HAL_GetTick</code>. Die Funktion kann lokal ersetzt sein. Ein höherpriorer Busy-Wait verzögert niedrigere Threads. Höhere Tasks und erlaubte Interrupts laufen weiter. Der Chip friert nicht ein. <code>HAL_Delay</code> und <code>osDelay</code> nutzen nicht automatisch dieselbe Zeitbasis. Eine blinkende LED beweist weder Frist noch quantitative Latenz.</p>
+<p>Ein Sequenzdiagramm trennt jetzt ISR-Aktivität, Ready und Worker-Code.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1160,7 +1305,8 @@ sequenceDiagram
 </div>
 </div>
 <aside class="notes">
-<p>Kein Thread-Code mitten in der ISR. Ein zweiter Release auf dem vollen binären Semaphor kann scheitern.</p>
+<p>Hardware, Top-Half, Kernel und Worker sind die Teilnehmer. Das Ereignis startet die ISR. Sie quittiert nach dem Gerätevertrag und rettet Daten. Signal oder kurzes Queue-Put gehen an den Kernel. Die Notiz am Worker sagt Ready, noch nicht Running. Erst nach ISR-Ende kann PendSV wechseln, wenn die Priorität passt. Danach verarbeitet der Worker und wartet wieder. Thread-Code läuft nicht mitten in der noch fortgesetzten ISR. Ein zweiter Release auf einen vollen binären Semaphor kann scheitern. Signal und Nutzdaten sind getrennte Pfeile.</p>
+<p>Die Wahl des Signals hängt davon ab, ob Arbeit, Ereignis oder neuer Zustand gemeint ist.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1199,7 +1345,8 @@ sequenceDiagram
 </table>
 <p>Der Puffer muss gültig bleiben, bis der Vertrag ihn freigibt.</p>
 <aside class="notes">
-<p>Token ohne gültige Daten weckt den Worker ins Leere.</p>
+<p>„Arbeit vorhanden“ ist ein leerer binärer Semaphor. Jedes Ereignis oder Nutzdaten brauchen eine Queue, Timeout 0 und eine Überlaufbehandlung. Nur der neue Stand braucht Overwrite oder einen Snapshot, nicht Try-Put. Ein Token ohne gerettete Daten weckt den Worker ins Leere, wenn das Register schon überschrieben ist. Pointerdaten brauchen Gültigkeit, Sichtbarkeit und eine spätere Freigabe. Der Puffer bleibt gültig, bis der Vertrag ihn freigibt.</p>
+<p>Jedes ausgewählte Mittel muss zusätzlich die ISR-Aufrufregeln erfüllen. Ein Semaphor sagt nur, dass Arbeit da ist. Eine Queue kann die geretteten Bytes tragen. Overwrite ersetzt den alten Stand und bewahrt nicht die Zwischenwerte.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1251,7 +1398,8 @@ sequenceDiagram
 </tbody>
 </table>
 <aside class="notes">
-<p>Native Namen daneben nur, wenn das Labor sie wirklich ruft. CMSIS-Labor bleibt bei CMSIS.</p>
+<p>Drei Fragen müssen alle ja sein. Ist die Funktion in der ISR erlaubt? Ist der Aufruf nicht blockierend? Liegt die IRQ im Syscall-Bereich? CMSIS Queue Put und Get sowie Semaphor Acquire nur mit Timeout 0. Semaphor Release ist vorgesehen. Mutex Acquire und Release sowie New, Reset und Delete gehören nicht in den Callback. Eine Kontextprüfung macht eine falsche Interruptpriorität nicht gültig. Native Namen stehen nur daneben, wenn das Labor sie wirklich ruft. Das CMSIS-Labor bleibt bei CMSIS.</p>
+<p>Die native FreeRTOS-API benennt die besonderen ISR-Operationen ausdrücklich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1274,7 +1422,8 @@ sequenceDiagram
 <li>Das ist ein Fehlerbild, nicht „der Kernel wartet immer auf den nächsten SysTick“</li>
 </ul>
 <aside class="notes">
-<p>Folie der alten Fassung, die den Tick als Standard nannte, gilt nur für dieses vergessene Yield.</p>
+<p><code>xQueueSendFromISR</code> und <code>xSemaphoreGiveFromISR</code> sind die nativen ISR-Varianten. <code>BaseType_t</code> ist der Port-Typ des Flags. <code>xHigherPriorityTaskWoken</code> startet bei <code>pdFALSE</code> und wird über mehrere Aufrufe nicht wieder gelöscht. Es zeigt, dass eine Schedulerentscheidung nötig ist, nicht dass die Arbeit schon fertig ist. <code>portYIELD_FROM_ISR</code> fordert den Wechsel an. Der Rückgabewert der FromISR-Funktion ist davon getrennt. Ein fehlendes Yield kann die geweckte Task bis zu einem späteren Anlass verzögern. Das muss nicht universell der nächste SysTick sein. Kein blockierender Tickparameter gehört in den FromISR-Aufruf. Das native Objekt wird nicht auf einen CMSIS-Handle gecastet. Im CMSIS-Labor ist dieser Ausschnitt Vergleich, kein zweites Yield.</p>
+<p>CMSIS kapselt diese Schritte in der verwendeten Anbindung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1296,7 +1445,8 @@ sequenceDiagram
 <li>Der Wrapper macht Mutex-Aufrufe dadurch nicht ISR-fähig</li>
 </ul>
 <aside class="notes">
-<p><code>cmsis_os2.c</code> der verwendeten Version lesen, nicht nur die Spezifikation.</p>
+<p>CMSIS-RTOS2 ist die standardisierte Schnittstelle. Der ST-Adapter prüft den Kontext und ruft bei erlaubten Funktionen die native FromISR-Variante. Die Switch-Anforderung sitzt im Wrapper. Im CMSIS-Labor kommt kein zweites manuelles Yield dazu. Der geprüfte Pfad gilt für <code>osMessageQueuePut</code> mit Timeout 0 und für <code>osSemaphoreRelease</code>, nicht für jede CMSIS-Funktion. Mutex-Aufrufe werden dadurch nicht ISR-fähig. Die IRQ-Schwelle bleibt. Die lokale <code>cmsis_os2.c</code> kann von der Referenz 11.2.0 abweichen. Ein öffentliches main ist nicht der Laborstand.</p>
+<p>Die Hardwarepriorität des aufrufenden Interrupts bleibt ausdrücklich zu konfigurieren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1313,10 +1463,12 @@ sequenceDiagram
 <h2>Die eine CMSIS-Regel für ISRs</h2>
 <p>Kleine NVIC-Zahl = höhere IRQ-Dringlichkeit.</p>
 <p>Taskpriorität High repariert eine falsche EXTI-Priorität nicht.</p>
-<p>Beispiel, nur bei bestätigten 4 Priority-Bits und Grenze 5: logisch 0–4 keine Kernel-API, 5–15 bei passender Gruppierung erlaubt.</p>
+<p>Beispiel, nur bei bestätigten 4 Priority-Bits und logischer Grenze 5: logisch 0–4 keine Kernel-API, 5–15 bei passender Gruppierung erlaubt. Der Portwert ist <span class="math inline">\(5 \ll 4 = \mathtt{0x50}\)</span>. CMSIS/HAL erwarten in diesem Modell die unverschobene 5.</p>
 <p><code>configMAX_SYSCALL_INTERRUPT_PRIORITY</code> ist der <strong>geschobene</strong> Registerwert.</p>
 <aside class="notes">
-<p><code>__NVIC_PRIO_BITS</code>, Shift und Grouping aus dem Projekt. „Priorität 5“ nicht universell hinschreiben.</p>
+<p>Drei Regeln: erlaubte Funktion, nicht blockierender Parameter, zulässige IRQ-Dringlichkeit. Eine kleinere NVIC-Zahl bedeutet höhere Interruptdringlichkeit. Das ist nicht die Taskpriorität. Bei vier implementierten Bits und logischer Grenze 5 dürfen 0 bis 4 keine Kernel-API rufen. 5 bis 15 dürfen die erlaubten Aufrufe, wenn die Gruppierung passt. Der Registerwert ist <span class="math inline">\(5 \ll 4 = \mathtt{0x50}\)</span>. CMSIS und HAL bekommen in diesem Modell die unverschobene 5. <code>__NVIC_PRIO_BITS</code>, <code>configPRIO_BITS</code> und der Port werden am Projekt geprüft. „EXTI immer auf 5“ ist keine Anweisung. Eine hohe Workerpriorität repariert die falsche IRQ nicht.</p>
+<p>Frage: Repariert <code>osPriorityHigh</code> beim Worker eine falsch konfigurierte EXTI-IRQ? Nein. Die Skalen sind unabhängig. Liegt die IRQ über der Syscallgrenze, darf der Callback den Kernel nicht rufen, egal wie hoch der Thread ist.</p>
+<p>Ein erlaubter Aufruf macht den Worker bereit. Der nächste Abschnitt erklärt den tatsächlichen Start.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1362,10 +1514,11 @@ sequenceDiagram
 </tr>
 </tbody>
 </table>
-<p>Startlatenz in diesem Modell: <strong>16 µs</strong>.</p>
+<p>Startlatenz des Workers in diesem Modell: <strong>16 µs</strong> vom Ereignis bis zum ersten Workerbefehl. Die Interruptstartlatenz ist 3 µs, die ISR-Dauer 9 µs, Ready bis Running 8 µs. Das sind Lehrzeiten, keine H755-Messung.</p>
 <p>Dazu kommen Maskierung, fremde ISRs und die Worker-Laufzeit bis Completion.</p>
 <aside class="notes">
-<p>Ready vor ISR-Ende ist möglich. Running als Thread davor nicht. PendSV wartet auf höher dringliche Handler.</p>
+<p>Die Spur ist synthetisch, keine H755-Messung. Flanke bei 0 µs, ISR-Eintritt bei 3 µs, Worker Ready bei 8 µs, ISR-Ende bei 12 µs, Workerstart nach PendSV bei 16 µs. Die Interruptstartlatenz ist 3 µs. Die ISR-Dauer ist 12 minus 3 gleich 9 µs. Ready bis Running ist 16 minus 8 gleich 8 µs. Ereignis bis erster Workerbefehl ist 16 µs. Die Spanne 12 bis 16 µs ist der angenommene Übergang einschließlich Kontextwechsel. Maskierung und fremde ISRs, die schon in den Zeitpunkten stecken, werden nicht noch einmal addiert. Ein erweitertes Modell verschiebt die Zeitpunkte selbst. Completion enthält nach dem Start die Workerarbeit, Wartezeiten und weitere Unterbrechungen. Start bei 16 µs beweist keine Deadline der fertigen Verarbeitung.</p>
+<p>PendSV und die unterbrochene Task erklären, wie der angeforderte Wechsel vollzogen wird.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1383,7 +1536,8 @@ sequenceDiagram
 <p><img data-src="../_livefigures/inline-plantuml-5ca5ffc0.svg" class="livefigure"></p>
 <p>Hardware-Unterbrechung macht Task A nicht im selben Sinn Ready wie ein Scheduler-Wechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat.</p>
 <aside class="notes">
-<p>Dieselben Zeitpunkte wie in der Tabelle. Nicht aus t = 1 bis t = 3 auf „minimale Latenz“ schließen.</p>
+<p>Die CPU-Spur zeigt Task A von 0 bis 3 µs, die ISR von 3 bis 12 µs, PendSV von 12 bis 16 µs und den Worker ab 16 µs. Der Worker ist bis 8 µs Blocked, dann Ready, und erst ab 16 µs Running. Die Hardwareunterbrechung macht Task A nicht im selben Sinn Ready wie ein Schedulerwechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat. Die höhere Taskpriorität des Workers verdrängt die noch aktive ISR nicht. Die Zeiten sind dieselben wie in der Tabelle. Aus einem anderen Intervall, etwa 1 bis 3, folgt keine minimale Latenz.</p>
+<p>Beim CMSIS-Code erledigt der Wrapper die dafür nötige Switch-Anforderung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1407,7 +1561,8 @@ sequenceDiagram
 <li>Das ist Anhang, nicht der Tasterversuch</li>
 </ul>
 <aside class="notes">
-<p>Quelle: FreeRTOS-Kernel-Book Kap. 7 und der CM4F-Port <code>port.c</code>.</p>
+<p>Erlaubte CMSIS-ISR-Funktionen nehmen das Yield im Adapter mit. Unerlaubte bleiben unerlaubt. Diagnose nutzt den Status, Assert und Zähler. <code>printf</code> bleibt außerhalb der ISR. Eine IRQ oberhalb der Grenze darf Daten ablegen und eine niedrigere, erlaubte IRQ anstoßen. Sie darf den RTOS-Aufruf nicht selbst erzwingen. Dieser Pfad ist ein Anhang mit eigenem Datenvertrag, nicht der Tasterversuch.</p>
+<p>Die vollständige Reihenfolge wird als Übersicht zusammengeführt. Der Adapter nimmt dem Labor das manuelle Yield ab, nicht die Prüfung von Funktion, Timeout und Interruptpriorität. Ein erfolgreicher Status in der ISR heißt noch nicht, dass der Worker schon läuft.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1426,7 +1581,9 @@ sequenceDiagram
 <p>Nicht: Ereignis → sofortiger Thread.</p>
 <p>Die alte kleine Kurve ohne Einheit ersetzt dieses Bild nicht.</p>
 <aside class="notes">
-<p>Completion ist Start plus Arbeit plus weitere Unterbrechungen.</p>
+<p>Die Folge ist Ereignis, ISR, Ready, ISR-Ende, PendSV, Worker. Nicht Ereignis und sofortiger Thread. Die µs-Werte sind 0, 3, 8, 12 und 16. Completion ist der Abschluss der geforderten Verarbeitung, nicht das erste Workerkommando. Ein weiteres höherpriores Ereignis kann den Lauf noch verschieben. Die Grafik auf der vorherigen Folie trägt dieselben Zeiten. Es entsteht keine neue Boardmessung.</p>
+<p>Frage: Was unterscheiden 3 µs, 9 µs, 8 µs und 16 µs? 3 µs bis zum ISR-Eintritt, 9 µs ISR-Dauer, 8 µs von Ready bis Running, 16 µs vom Ereignis bis zum Workerstart.</p>
+<p>Das Labor erzeugt diese Zustandsfolge mit einem überprüften Button- und EXTI-Pfad.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1445,7 +1602,8 @@ sequenceDiagram
 <p>Teil B: User-Button. UM2408 für NUCLEO-H755ZI-Q / MB1363: Standard PC13, Alternative PA0. Gelbe LD2 an PE1, wenn die Brücken so stehen.</p>
 <p>GPIO-Takt, Ausgangsmodus und EXTI-Zielkern prüfen. Der RTOS-aufrufende Handler muss im CM4-Kontext liegen.</p>
 <aside class="notes">
-<p>Nur den NVIC-Haken zu setzen, reicht nicht. Priorität muss die Syscall-Grenze einhalten.</p>
+<p>Teil A ist eine Datenqueue mit Sequenz und getrennten Drop- und Fehlerzählern. Teil B ist der Taster. GPIO ist der allgemeine Ein- und Ausgang. UM2408 beschreibt das Board MB1363, NUCLEO-H755ZI-Q. Der User-Button liegt standardmäßig an PC13, Port C Pin 13, alternativ an PA0, wenn die Lötbrücken SB das vorsehen. Die gelbe LED LD2 liegt an PE1, Port E Pin 1, wenn die Bestückung das bestätigt. Revision, Brücken, Aktivpegel, EXTI-Zielkern und Priorität werden am Projekt geprüft. GPIO-Takt, Modus, Flanke und Routing gehören zum Pfad. Ein NVIC-Haken allein genügt nicht. Die Priorität muss die Syscallgrenze einhalten.</p>
+<p>Der Startablauf stellt sicher, dass keine frühe IRQ ungültige Kernelobjekte anspricht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1466,13 +1624,16 @@ sequenceDiagram
 <li><code>osKernelInitialize</code></li>
 <li><code>ButtonSem = osSemaphoreNew(1, 0, NULL)</code></li>
 <li>Threads prüfen, <code>osKernelStart</code></li>
-<li>EXTI erst im laufenden Kernel freigeben</li>
+<li>EXTI erst in einem schon laufenden Startthread freigeben. Nach erfolgreichem <code>osKernelStart</code> läuft diese Funktion nicht weiter.</li>
 </ol>
 <p>Ausstehende Flags nach diesem Vertrag löschen, nicht im frühen <code>MX_GPIO_Init</code> einen Callback ins Leere schicken.</p>
 <p>Pfad: <code>EXTI15_10_IRQHandler</code> → <code>HAL_GPIO_EXTI_IRQHandler</code> → Callback → <code>osSemaphoreRelease</code>.</p>
 <p>HAL quittiert. Der Callback prüft die Leitung und kehrt zurück.</p>
 <aside class="notes">
-<p><code>osOK</code>, voller Semaphor und anderer Fehler getrennt zählen. Kein Heap, keine lange Schleife. Diagnosezähler nicht aus zwei Kontexten unsynchronisiert erhöhen, wenn beide schreiben.</p>
+<p>Takt und GPIO kommen zuerst. Der Kernel wird einmal initialisiert. <code>ButtonSem</code> entsteht leer mit Maximum 1. Threads werden geprüft, dann startet der Kernel. Die EXTI-Freigabe steht in einem Thread, der danach läuft, nicht in der Zeile hinter <code>osKernelStart</code>, denn die kehrt bei Erfolg nicht zurück. Alte Pendingflags werden nach diesem Vertrag gelöscht, ohne ein neues Ereignis versehentlich zu verwerfen. Der frühe GPIO-Init darf den Callback nicht vor Handle und Kernelstart erreichen.</p>
+<p>Der Referenzpfad ist <code>EXTI15_10_IRQHandler</code>, dann <code>HAL_GPIO_EXTI_IRQHandler</code>, dann der Callback, dann <code>osSemaphoreRelease</code>. HAL quittiert. Der Callback prüft die Leitung und kehrt zurück. <code>osOK</code>, voller Semaphor und andere Fehler werden getrennt gezählt, und zwar aus einem Kontext. Kein Heap, keine lange Schleife, kein <code>printf</code>.</p>
+<p>Frage: Warum ist Code nach <code>osKernelStart</code> kein verlässlicher Ort für die IRQ-Freigabe? Weil der erfolgreiche Start nicht zum Aufrufer zurückkehrt. Die Freigabe muss in einem schon laufenden Thread stehen.</p>
+<p>Der Worker interpretiert das Signal als Anlass für eine wohldefinierte Tasterverarbeitung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1487,24 +1648,33 @@ sequenceDiagram
 </section>
 <section id="schritt-2-die-bottom-half-task-in-c" class="slide level2">
 <h2>Schritt 2: Die Bottom-Half (Task) in C</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">void</span> ButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb6-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
-<span id="cb6-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb6-4"><a aria-label="4"></a>        osStatus_t st<span class="op">;</span></span>
-<span id="cb6-5"><a aria-label="5"></a>        st <span class="op">=</span> osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> osWaitForever<span class="op">);</span></span>
-<span id="cb6-6"><a aria-label="6"></a>        <span class="cf">if</span> <span class="op">(</span>st <span class="op">!=</span> osOK<span class="op">)</span> <span class="cf">continue</span><span class="op">;</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">/* pressed: aktiver Tasterpegel, am Board prüfen. debounce_ticks: Lehrannahme. */</span></span>
+<span id="cb6-2"><a aria-label="2"></a><span class="dt">void</span> ButtonTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb6-3"><a aria-label="3"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb6-4"><a aria-label="4"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb6-5"><a aria-label="5"></a>        <span class="cf">if</span> <span class="op">(</span>osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> osWaitForever<span class="op">)</span> <span class="op">!=</span> osOK<span class="op">)</span></span>
+<span id="cb6-6"><a aria-label="6"></a>            <span class="cf">continue</span><span class="op">;</span></span>
 <span id="cb6-7"><a aria-label="7"></a>        <span class="cf">if</span> <span class="op">(</span>HAL_GPIO_ReadPin<span class="op">(</span>GPIOC<span class="op">,</span> GPIO_PIN_13<span class="op">)</span> <span class="op">!=</span> pressed<span class="op">)</span></span>
 <span id="cb6-8"><a aria-label="8"></a>            <span class="cf">continue</span><span class="op">;</span></span>
-<span id="cb6-9"><a aria-label="9"></a>        osDelay<span class="op">(</span><span class="dv">20</span><span class="op">);</span> <span class="co">/* 20 Ticks bei 1 kHz, Pegel erneut prüfen */</span></span>
+<span id="cb6-9"><a aria-label="9"></a>        osDelay<span class="op">(</span>debounce_ticks<span class="op">);</span></span>
 <span id="cb6-10"><a aria-label="10"></a>        <span class="cf">if</span> <span class="op">(</span>HAL_GPIO_ReadPin<span class="op">(</span>GPIOC<span class="op">,</span> GPIO_PIN_13<span class="op">)</span> <span class="op">!=</span> pressed<span class="op">)</span></span>
 <span id="cb6-11"><a aria-label="11"></a>            <span class="cf">continue</span><span class="op">;</span></span>
-<span id="cb6-12"><a aria-label="12"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span></span>
-<span id="cb6-13"><a aria-label="13"></a>    <span class="op">}</span></span>
-<span id="cb6-14"><a aria-label="14"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-12"><a aria-label="12"></a>        HAL_GPIO_TogglePin<span class="op">(</span>GPIOE<span class="op">,</span> GPIO_PIN_1<span class="op">);</span> <span class="co">/* eine Aktion je Druck */</span></span>
+<span id="cb6-13"><a aria-label="13"></a>        <span class="cf">do</span> <span class="op">{</span></span>
+<span id="cb6-14"><a aria-label="14"></a>            osDelay<span class="op">(</span>debounce_ticks<span class="op">);</span></span>
+<span id="cb6-15"><a aria-label="15"></a>        <span class="op">}</span> <span class="cf">while</span> <span class="op">(</span>HAL_GPIO_ReadPin<span class="op">(</span>GPIOC<span class="op">,</span> GPIO_PIN_13<span class="op">)</span> <span class="op">==</span> pressed<span class="op">);</span></span>
+<span id="cb6-16"><a aria-label="16"></a>        osDelay<span class="op">(</span>debounce_ticks<span class="op">);</span> <span class="co">/* Release-Kandidat erneut prüfen */</span></span>
+<span id="cb6-17"><a aria-label="17"></a>        <span class="cf">while</span> <span class="op">(</span>osSemaphoreAcquire<span class="op">(</span>ButtonSem<span class="op">,</span> <span class="dv">0</span><span class="op">)</span> <span class="op">==</span> osOK<span class="op">)</span> <span class="op">{</span> <span class="op">}</span></span>
+<span id="cb6-18"><a aria-label="18"></a>    <span class="op">}</span></span>
+<span id="cb6-19"><a aria-label="19"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Zustände: bereit, Press-Kandidat, bestätigt und einmal verarbeitet, warten auf Release, Release-Kandidat, wieder bereit. Ein langer Druck toggelt einmal. Alte Tokens werden danach verworfen. Das ist ein Abtastmodell, kein lückenloser Pegelbeweis.</p>
 <p>Vergleichsvariante, ausdrücklich: <code>HAL_Delay(100)</code> als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.</p>
 <p>Entprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.</p>
 <aside class="notes">
-<p>PE1 nur, wenn LD2 dort wirklich anliegt. Burst: mehrere Releases vor dem Acquire zeigen das Zusammenfassen. Eine Event-Queue mit Timeout 0 ist die Zählvariante, ebenfalls endlich.</p>
+<p><code>pressed</code> ist der aktive Tasterpegel und muss zur Bestückung passen. <code>debounce_ticks</code> ist eine Lehrannahme in Kernel-Ticks, nicht automatisch 20 ms. Der Ablauf ist: Token annehmen, Pegel ist Press-Kandidat, nach <code>osDelay</code> erneut prüfen, bei stabilem Druck einmal toggeln, dann warten, bis der Pegel losgelassen ist, den Release-Kandidaten noch einmal prüfen und alte Tokens mit Timeout 0 verwerfen. Ein langer Druck erzeugt eine Aktion. Eine neue Aktion kommt erst nach bestätigtem Loslassen. Zwei gleiche Pegelproben beweisen nicht, dass der Pegel dazwischen lückenlos stabil war. Das ist ein Abtastmodell. PE1 gilt nur, wenn LD2 dort anliegt.</p>
+<p><code>HAL_Delay(100)</code> bleibt die separate Busy-Wait-Variante. 100 ms Delay löschen keine schon gespeicherten Folgeevents. Deshalb leert der Code die Tokens erst nach dem bestätigten Release. Ein Burst mehrerer Releases vor dem ersten Acquire zeigt die Zusammenfassung des binären Semaphors. Eine Event-Queue mit Timeout 0 ist die Zählvariante und ebenfalls endlich.</p>
+<p>Frage: Warum genügt zweimal „gedrückt“ lesen nicht für Press und Release? Weil das Loslassen nie bestätigt wird. Ein während des Drucks gespeichertes zweites Token kann nach dem ersten Toggle erneut als Druck gelten.</p>
+<p>Das Auswertungsblatt trennt beobachtete Signale, Token und verarbeitete Betätigungen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1564,7 +1734,8 @@ sequenceDiagram
 <p>Augenmaß an der LED ist keine quantitative Frist.</p>
 <p>Messung: GPIO oder vorhandenes Trace, <code>printf</code> danach. Pins nur aus dem Projekt.</p>
 <aside class="notes">
-<p>Ohne Board bleiben die Sollbeobachtungen offen. Ein Build beweist keine Latenz.</p>
+<p>Jede Zeile hat eine Quelle und bleibt leer, bis gemessen wurde. Semaphor anfangs 0, NVIC-Zahl, Gruppierung, Tickfrequenz und Workerpriorität kommen aus dem Projekt. Dropzähler und technische Fehler sind getrennt. Callbackanzahl, erfolgreiche Releases, volle-Semaphor-Ablehnungen, Acquires und entprellte Aktionen sind verschiedene Größen. ISR-Dauer, Workerstart und Completion haben verschiedene Endpunkte. Die Heartbeat-LED ist qualitativ. Eine blinkende LED beweist keine quantitative Deadline. <code>printf</code> kommt nach dem Messlauf. GPIO- oder Tracepins nur aus dem Projekt. Ein Build beweist keine Latenz.</p>
+<p>Die Beobachtungen werden den Daten- und Kontextverträgen zugeordnet.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1589,7 +1760,9 @@ sequenceDiagram
 <li>EXTI-Priorität und leerer Semaphor gehören zur Init</li>
 </ul>
 <aside class="notes">
-<p>Quellen: CMSIS Message Queue und Semaphore, CMSIS-FreeRTOS Tech Data der Projektversion, FreeRTOS-Buch Kap. 5 und 7, CM4F-Port, UM2408.</p>
+<p>Eine Variable hält den letzten Wert. Eine FIFO hält die Folge, bis der Puffer voll ist. Der Ring endet physisch bei [40, 20, 30], logisch bei 20, 30, 40, Head = Tail = 1 und Count = 3. Die Dauerlast hat den ersten Fehl-Put bei 13 ms, 13 Erfolge und 7 Verwürfe. Vier Byte gelten für einen reinen Pointer im bestätigten 32-Bit-Modell, nicht für jeden Deskriptor. Try-Put auf der vollen 1er-Queue behält 10. Die Lehrlatenz bis zum Workerstart ist 16 µs und nicht gemessen. EXTI-Priorität und der leere Semaphor gehören zur Init. Die Freigabe liegt in einem laufenden Thread.</p>
+<p>Frage: Welche drei Verträge müssen bei einer Pointerqueue aus der ISR stimmen? Ein zulässiger Kernelaufruf, eine gültig gesicherte Payload und eine klare spätere Freigabe. Fehlt einer, ist die Adresse in der Queue kein brauchbarer Puffer.</p>
+<p>Ein zweiter Kernel führt weitere Grenzen für diese lokalen Objekte ein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1610,7 +1783,8 @@ sequenceDiagram
 <li>Cache und DMA nur mit dem Kern, der den Puffer cached</li>
 </ul>
 <aside class="notes">
-<p>HSEM und MPU sind nicht diese Vorlesung.</p>
+<p>Zwei Kerne mit getrennten Kerneln teilen nicht automatisch dieselbe Queueverwaltung und nicht denselben Allokator. Gemeinsamer RAM ist etwas anderes als ein gemeinsam verwalteter Heap. „Kein gemeinsamer Heap“ heißt: kein automatisch gemeinsam verwalteter Heap. HSEM, die Hardwaresemaphor, und die MPU, die Speicherschutzeinheit, koordinieren Zugriff und Schutz. Sie ersetzen die heutigen Datenverträge nicht. Cache und DMA brauchen passende Sichtbarkeit. D-Cache betrifft nur den Kern und den Speicherbereich, der ihn wirklich führt. Der nächste Termin ergänzt die kernübergreifende Synchronisation. Die Ownershipregeln von heute bleiben gültig.</p>
+<p>Damit ist der Einkern-Vertrag für Nachrichten, Zeiger und Interrupts abgeschlossen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
