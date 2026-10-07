@@ -228,7 +228,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Nächstes Mal: Tracing, nicht die volle HSEM-Vorlesung</li>
 </ul>
 <aside class="notes">
-<p>Keine .ioc und kein HAL-Baum im Kursrepo. Funktionsnamen, Takte und Boardrevision am generierten Projekt prüfen. NUCLEO-H755ZI-Q nur, wenn Cube dieses Board erzeugt hat.</p>
+<p>Zwei Kerne auf einem Chip rechnen nicht automatisch isoliert. Im Lehrbild regelt der Cortex-M4 einen Motor, der Cortex-M7 bedient Anzeige oder Kommunikation. Das ist eine Aufgabenteilung, keine Messung. Bare Metal heißt: auf dem M7 läuft kein RTOS-Kernel. FreeRTOS ist das Echtzeitbetriebssystem auf dem M4. CMSIS-RTOS2, Common Microcontroller Software Interface Standard in Version 2, ist die Schnittstelle zu diesem Kernel, nicht ein Scheduler über beide Kerne. HSEM, Hardware Semaphore, dient hier als Boot-Benachrichtigung, wenn das Template sie erzeugt. Als Laufzeitsperre kommt sie in Termin 8. Tracing folgt in Termin 7.</p>
+<p>Drei Ziele: gemeinsame Ressourcen erkennen, dasselbe Layout in beiden Programmen vereinbaren und eine Datenübergabe mit Reihenfolge und Besitz erklären. Eine fehlende <code>.ioc</code> heißt: Takte und Boardnamen stehen im generierten Cube-Projekt, nicht in dieser Folie.</p>
+<p>Dafür betrachten wir Architektur, Hardware und Kommunikation nacheinander.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -251,7 +253,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>MPU und Ping-Pong</li>
 </ol>
 <aside class="notes">
-<p>EDF mit <span class="math inline">\(U \le 1\)</span> galt für einen Prozessor, <span class="math inline">\(D = T\)</span>, ohne versteckte Kosten. Zwei Kerne übernehmen diese Formel nicht unverändert.</p>
+<p>Die fünf Blöcke hängen voneinander ab. Ohne die Unterscheidung SMP, Symmetric Multiprocessing, und AMP, Asymmetric Multiprocessing, bleibt unklar, wer die Aufgaben plant. Ohne die Hardwarekarte bleibt unklar, welche Speicherwege geteilt sind. Ohne dasselbe Layout zeigen zwei Programme trotz gleichen Namens verschiedene Variablen. Ohne Cache- und Ordnungsmodell kommt die Übergabe nicht zuverlässig an. MPU, Memory Protection Unit, legt später fest, wie der M7 den gemeinsamen Bereich behandelt.</p>
+<p>Aus Vorlesung 2: EDF, Earliest Deadline First, wählt nach der frühesten Deadline. Die Auslastung ist <span class="math inline">\(U = \sum C_i/T_i\)</span> mit Ausführungsbedarf <span class="math inline">\(C\)</span>, Periode <span class="math inline">\(T\)</span> und relativer Deadline <span class="math inline">\(D\)</span>. <span class="math inline">\(U \le 1\)</span> gilt im idealisierten Einprozessor-Modell mit unabhängigen, präemptiven Aufgaben und <span class="math inline">\(D = T\)</span>. Versteckte Kosten dürfen nicht fehlen. Zwei Kerne übernehmen diese Formel nicht.</p>
+<p>Leitfrage: Wie übergibt der M7 dem M4 einen Wert, den der M4 wirklich sieht? Am Ende soll die Folge 1, 3, 5 das beantworten.</p>
+<p>Warum stößt ein einzelner Kern zunächst an Grenzen?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -293,7 +298,10 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <p><span class="math display">\[P_{\mathrm{dyn}} \approx \alpha\, C\, V^{2}\, f\]</span></p>
 <p>Spannung, Aktivität und Leckstrom kommen dazu. Keine gemessene Kurve.</p>
 <aside class="notes">
-<p>Frage: Welche Kosten bleiben mit einem zweiten Kern? Interferenz, Kopien, Protokoll, Boot. Ein rechnerisches <span class="math inline">\(U = 1\)</span> auf einem Kern hatte keine Reserve für IRQ und OS.</p>
+<p>Auf einem Kern werden gleichzeitig aktive Anforderungen zeitlich verschachtelt. Die Tabelle ist eine mögliche Aufgabenteilung, keine Leistungsmessung. CPU ist der Prozessor, GUI die grafische Bedienung, DMA der direkte Speicherzugriff durch Hardware, IRQ die Interruptanforderung, OS das Betriebssystem. Regelung und Netz teilen sich dieselbe CPU, bis ein zweiter Kern eine der Arbeiten übernimmt. Gemeinsames SRAM, die Brücke und DMA bleiben Störquellen.</p>
+<p>Die dynamische Schaltleistung ist näherungsweise <span class="math inline">\(P_{\mathrm{dyn}} \approx \alpha C V^{2} f\)</span>. Hier ist <span class="math inline">\(C\)</span> eine wirksame Kapazität, nicht der Ausführungsbedarf aus dem Scheduling. <span class="math inline">\(\alpha\)</span> ist der Aktivitätsfaktor, <span class="math inline">\(V\)</span> die Spannung, <span class="math inline">\(f\)</span> die Frequenz. Leckstrom und weitere Kosten kommen dazu. Es gibt keine gemessene Kurve. <span class="math inline">\(U = 1\)</span> im Idealmodell ist keine Reserve für bisher vergessene Arbeit.</p>
+<p>Frage: Welche Kosten bleiben mit einem zweiten Kern? Interferenz auf gemeinsamen Wegen, Kopien und das Protokoll. Der zweite Kern beseitigt sie nicht.</p>
+<p>Eine höhere Frequenz hilft bei manchen Engpässen, hat aber Grenzen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -315,7 +323,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Mehr Takt parallelisiert keine zwei Aufgaben auf einem Kern</li>
 </ul>
 <aside class="notes">
-<p>Die Laborfrequenz nicht aus dem Datenblatt-Maximum abschreiben.</p>
+<p>Ein Megahertz sind eine Million Taktzyklen je Sekunde. Ein Taktzyklus ist nicht schon eine fertige Operation. Im vereinfachten Modell <span class="math inline">\(P_{\mathrm{dyn}} \approx \alpha C V^{2} f\)</span> verdoppelt eine Verdopplung von <span class="math inline">\(f\)</span> bei konstantem <span class="math inline">\(V\)</span> und <span class="math inline">\(\alpha\)</span> die dynamische Leistung. Ändert sich zugleich die Spannung, wirkt ihr Quadrat zusätzlich. VOS ist die herstellerspezifische Stufe der internen Spannungsskalierung. Flash-Wartezyklen gleichen die Speicherzugriffszeit an den schnelleren Kern an. 480 MHz für den M7 und 240 MHz für den M4 sind spezifizierte Höchstwerte, keine schon geprüfte Laborwahl. Ob 400 und 200 MHz legal sind, steht im Clock-Tree des Projekts, nicht auf dieser Folie.</p>
+<p>Mehr Takt verschiebt den Engpass, er teilt die Arbeit nicht auf zwei Kerne.</p>
+<p>Parallelität verändert die Architektur, nicht nur den Takt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -336,7 +346,9 @@ Prof.&nbsp;Dr.-Ing. Daniel Klünder
 <li>Es heißt nicht: der andere Kern ist zeitlich unsichtbar</li>
 </ul>
 <aside class="notes">
-<p>AMP erleichtert die Trennung. Es ist kein Sicherheitsnachweis.</p>
+<p>Zwei Kerne können unabhängige Rechenabschnitte nebeneinander ausführen und danach Daten tauschen. Der Tausch und jeder Zugriff auf dieselbe Speicherbank begrenzen den Gewinn. Partitionierung heißt: Software und Ressourcen sind fest zugeordnet. Zeitliche Isolation hieße, die gegenseitige Störung sei begrenzt. Getrennte Firmware allein liefert diesen Nachweis nicht. Ein konkreter Weg: beide Kerne lesen dieselbe SRAM-Bank, die Busmatrix serialisiert den Konflikt. Eine Speedup-Zahl wird hier nicht behauptet.</p>
+<p>AMP, die asymmetrische Aufteilung, erleichtert die Zuständigkeit. Sie ist kein Sicherheitsnachweis.</p>
+<p>Es gibt verschiedene Organisationsformen. Der nächste Vergleich führt sie ein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -381,7 +393,9 @@ flowchart TB
 <li>Migration verschiebt einen gesicherten Kontext; der Zielcache ist nicht leer versprochen</li>
 </ul>
 <aside class="notes">
-<p>Das rechte Bild ist das Labor. Links ist die Definition, nicht der H755-Zustand heute.</p>
+<p>Links plant ein Betriebssystemkontext Aufgaben für mehrere geeignete Kerne. Die Bereiten können in einer gemeinsamen oder in kernbezogenen Warteschlangen stehen. Das ist SMP, Symmetric Multiprocessing. Rechts laufen getrennte Firmwarekontexte. Das ist AMP, Asymmetric Multiprocessing. OS ist das Betriebssystem. Ready heißt ausführungsbereit. Affinität beschränkt, auf welchen Kernen eine Aufgabe laufen darf. Gleiche Taktfrequenz ist keine SMP-Bedingung. Die Hardware und der Kernel müssen die gemeinsame Planung überhaupt unterstützen.</p>
+<p>Das rechte Bild ist das Labor: M7 ohne RTOS-Kernel, M4 mit FreeRTOS. Links ist die Definition von SMP, nicht der heutige H755-Zustand. Ein gemeinsamer Speicher ersetzt den Kanal nicht.</p>
+<p>Zuerst sehen wir, was ein SMP-Scheduler leisten muss.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -403,7 +417,9 @@ flowchart TB
 <li>Harte Fristen sind unter Annahmen möglich und unter anderen Annahmen schwer</li>
 </ul>
 <aside class="notes">
-<p>Titel der alten Folie „SMP scheitert oft“ wird zur Herausforderung, nicht zum Verbot.</p>
+<p>SMP heißt: ein Scheduler sieht mehrere Kerne. Eine Task kann, wenn die Politik und die Affinität es erlauben, auf einem Kern starten, unterbrochen werden und auf einem anderen weiterlaufen. Migration überträgt den gesicherten Ausführungskontext, also Register und den Verweis auf den Taskstack. Sie setzt den Cache des Zielkerns nicht auf null. Der Cacheinhalt ist ein eigener Speicher. Die Kosten und die Zugriffszeiten können sich ändern. Feste Migrationszeiten werden hier nicht erfunden. Harte Fristen bleiben möglich, wenn die Annahmen und Schranken benannt sind. Sie werden nicht dadurch unmöglich, dass mehr als ein Kern existiert.</p>
+<p>Der Titel dieser Folie beschreibt die Möglichkeit. Die nächste Folie benennt die Analyseprobleme, nicht ein Verbot.</p>
+<p>Wie verteilen verschiedene SMP-Scheduler die bereiten Tasks?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -425,7 +441,9 @@ flowchart TB
 <li>Keine Pflicht zu genau einer Ready-Liste</li>
 </ul>
 <aside class="notes">
-<p>FreeRTOS auf nur dem M4 ist kein SMP über M7 und M4.</p>
+<p>Eine globale Ready-Queue lässt einen freien Kern die höchste passende Aufgabe nehmen. Kernbezogene Queues halten Aufgaben bei einem Kern. Der Scheduler schiebt nur, wenn Affinität und Last das erlauben. Beides bleibt SMP, solange ein Betriebssystemkontext plant. Eine kernbezogene Queue macht das System nicht zu AMP. Zwei Kerne dürfen nicht dieselbe Taskinstanz gleichzeitig ausführen, nur weil sie bereit ist. „Die höchste Aufgabe“ ist ohne Politik, Affinität und gesperrte Schedulerdaten zu ungenau.</p>
+<p>FreeRTOS läuft in diesem Labor nur auf dem M4. Es gibt keine Migration seiner Tasks auf den M7.</p>
+<p>Diese gemeinsame Planung bringt besondere Echtzeitfragen mit sich.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -438,9 +456,8 @@ flowchart TB
           display:block!important;
       }</style></aside>
 </section>
-<section id="warum-smp-für-harte-echtzeit-oft-scheitert" class="slide level2">
-<h2>Warum SMP für harte Echtzeit oft scheitert</h2>
-<p><strong>Echtzeit-Herausforderungen bei SMP</strong></p>
+<section id="echtzeit-herausforderungen-bei-smp" class="slide level2">
+<h2>Echtzeit-Herausforderungen bei SMP</h2>
 <ul>
 <li>Wer darf wohin migrieren?</li>
 <li>Geteilte Caches und Busse erzeugen Interferenz</li>
@@ -448,7 +465,9 @@ flowchart TB
 <li>Das ist kein Beweis, dass SMP nie hart echtzeitfähig ist</li>
 </ul>
 <aside class="notes">
-<p>Geeignete Affinität, Budgets und ein Interferenzmodell können Fristen tragen. Die Analyse wird nur größer als auf einem Kern.</p>
+<p>SMP bleibt möglich. Die Analyse wird größer als auf einem Kern. WCET, Worst-Case Execution Time, ist die obere Schranke der Ausführungszeit unter benannten Annahmen. Störquellen sind gemeinsame Speicherpfade, auf manchen Architekturen geteilte Caches, Migration und kernübergreifende Sperren. Der H755 hat keinen gemeinsamen L1-Cache zwischen M7 und M4. Das allgemeine SMP-Bild darf das nicht suggerieren. Eine Auslastung unter der Kernzahl ist keine universelle Deadlinegarantie für jedes Schedulingmodell. Affinität und Partitionierung vereinfachen manche Rechnung und beseitigen die gemeinsamen Ressourcen nicht.</p>
+<p>Frage: Kann geeignete Affinität Fristen tragen? Ja, wenn Budgets und ein Interferenzmodell dazukommen. Sie ist kein Verbot von SMP.</p>
+<p>AMP macht die Zuständigkeiten expliziter.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -470,7 +489,9 @@ flowchart TB
 <li>Der H755-M7 ist hier kein Linux-Standard</li>
 </ul>
 <aside class="notes">
-<p>Die beiden Beispiele nicht ineinanderzeichnen.</p>
+<p>AMP heißt: getrennte Firmware und oft getrennte Betriebssystemkontexte. Das allgemeine Beispiel, Linux auf einem Cortex-A und ein RTOS auf einem Cortex-M, ist nicht der H755. Auf diesem Chip läuft der M7 Bare Metal und der M4 FreeRTOS. Der M7 ist hier kein Linux-Standard. RTOS ist das Echtzeitbetriebssystem, OS das Betriebssystem, Bare Metal das Programm ohne diesen Kernel. Der gemeinsame Chip hat trotzdem gemeinsame Takte, Speicher und Peripherie. Ein Kern kann dem anderen eine Anfrage stellen, ohne dessen Scheduler oder Heap zu benutzen.</p>
+<p>Die beiden Beispiele dürfen nicht in eine Zeichnung rutschen.</p>
+<p>Die Architektur braucht eine nachvollziehbare Aufteilung der Software.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -492,7 +513,9 @@ flowchart TB
 <li>Der Kanal ist ein vereinbartes Speicherlayout plus Protokoll</li>
 </ul>
 <aside class="notes">
-<p>Frage: Warum darf die Queue-ID nicht auf dem anderen Kern liegen? Weil Handle, Heap und Listen dem einen Kernel gehören.</p>
+<p>Jeder Kern hat eigene Firmware, eigenen Stack, eigenen Heap und, nur der M4, eigene Kernelobjekte. Ein Handle ist ein lokaler Verweis auf eine Struktur, die dieser Kernel verwaltet. <code>osMessageQueueId_t</code> ist der Handle einer CMSIS-RTOS2-Queue. SRAM, Static Random Access Memory, ist der Arbeitsspeicher. Liegt nur die Zahl des Handles im gemeinsamen SRAM, fehlen auf dem M7 die Listen und die Wartelogik. Die vorige Vorlesung behandelte Inter-Task-Kommunikation innerhalb eines Kernels. Hier ist Inter-Prozessor-Kommunikation zwischen zwei Firmwarekontexten gemeint. Der M4 kann eine lokal empfangene Nachricht in das vereinbarte IPC-Format schreiben. IPC ist Inter-Processor Communication. Lokale Zeiger und Handles werden nicht ungeprüft übertragen.</p>
+<p>Frage: Warum darf die Queue-ID nicht der Kanal zum M7 sein? Weil Handle, Heap und Listen dem M4-Kernel gehören. Der M7 führt diesen Kernel nicht aus.</p>
+<p>Welche Kanäle sind dafür geeignet?</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -534,7 +557,9 @@ flowchart TB
 </tbody>
 </table>
 <aside class="notes">
-<p>Shared Memory ist der Ort. Das Protokoll sagt, wer schreiben darf.</p>
+<p>Shared Memory ist der Speicherort, den beide erreichen. Das Protokoll bestimmt Inhalt, Zustand und wer schreiben darf. Eine Hardware-Mailbox oder FIFO, First In First Out, ist eine gerätespezifische Einrichtung. Aus einer allgemeinen Grafik folgt nicht, dass der H755 sie für diesen Ping-Pong hat. HSEM kann benachrichtigen oder später Zugriffe koordinieren. Die Sperre selbst enthält die Nutzdaten nicht. Die lokale RTOS-Queue bleibt im M4-Kernel. RTOS ist das Echtzeitbetriebssystem, IPC die Vereinbarung zwischen den Firmwares. Heute pollen beide Seiten den Zustand. Das ist eine Lehrvereinfachung, kein Leistungsoptimum.</p>
+<p>Datenpfad und Benachrichtigungspfad sind verschieden: SRAM4 trägt die Bytes, HSEM weckt im Boot.</p>
+<p>Die erste Zusammenfassung hält fest, wer plant und was trotzdem stört.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -556,7 +581,9 @@ flowchart TB
 <li>„100 % M7-Last wirkt nie auf den M4“ ist falsch</li>
 </ul>
 <aside class="notes">
-<p>Nächster Block: wo die Last sich trifft.</p>
+<p>In SMP plant ein Scheduler für mehrere Kerne. In AMP plant jeder Firmwarekontext für sich. Im Labor rechnet der M7 ohne RTOS, der M4 mit FreeRTOS. <span class="math inline">\(U \le 1\)</span> bleibt der Ein-Kern-Satz mit den Annahmen aus der Agenda. Er gilt nicht für zwei Kerne. Hundert Prozent Last sind nicht gleich: Code und Daten im lokalen TCM des M7, Tightly Coupled Memory, treffen den M4 weniger als wiederholte Zugriffe auf SRAM4. TCM ist eng an den Kern gekoppelter Speicher. Die Voraussetzung muss genannt sein, etwa keine gemeinsamen SRAM-Zugriffe und keine zusätzlichen Interrupts in diesem qualitativen Bild.</p>
+<p>Frage: Welche Ressource kann trotz getrennter Firmware beide Kerne verzögern? Eine gemeinsam benutzte Speicherbank, Brücke oder Taktkonfiguration.</p>
+<p>Der Hardwareblock zeigt diese gemeinsamen Wege.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -596,7 +623,9 @@ flowchart TB
 </table>
 <p>Nicht jede schnelle Peripherie liegt in D1. Ethernet ist nicht Gigabit.</p>
 <aside class="notes">
-<p>Die Zeichnung ist bewusst grob. Wer ein Blockbild aus dem Referenzhandbuch abzeichnet, prüft die Revision.</p>
+<p>D1, D2 und D3 sind Domänenbezeichnungen des STM32H755, keine Tasknamen. TCM ist der eng gekoppelte Speicher, AXI, Advanced eXtensible Interface, und AHB, Advanced High-performance Bus, sind Busfamilien. SRAM4 liegt in D3. Die Tabelle ist eine Auswahl aus RM0399 der verwendeten Revision, keine vollständige Peripheriekarte. „D3 gleich langsame I/Os“ ist zu grob. Für das Labor zählen SRAM4 und die Low-Power-Funktionen dieser Domäne. Ethernet 10/100 ist kein Gigabit. Nicht jede schnelle Peripherie liegt in D1.</p>
+<p>Wer ein Blockbild aus dem Handbuch übernimmt, prüft die Revision. Die Zeichnung hier bleibt bewusst grob.</p>
+<p>Die beiden Kerne haben unterschiedliche Speicher- und Ausführungseigenschaften.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -618,7 +647,9 @@ flowchart TB
 <li>Labor darf 400 MHz nur nach Clock-Tree-Prüfung sagen</li>
 </ul>
 <aside class="notes">
-<p>TCM in der Shared-Variable wäre für den M4 unerreichbar.</p>
+<p>Der M7 hat einen L1-I-Cache für Instruktionen und einen L1-D-Cache für Daten. L1 ist die erste Cacheebene. ITCM und DTCM sind Instruction und Data Tightly Coupled Memory, also Befehls- und Datenspeicher eng am Kern. Ein Pfad läuft CPU, Cache oder TCM. Ein anderer läuft CPU, Interconnect, SRAM4. Direkte M4-CPU-Zugriffe auf das M7-TCM sind kein geeigneter gemeinsamer Variablenzugriff. AN5617 unterscheidet das von indirekten Wegen über MDMA, Master Direct Memory Access. Diesen Weg benutzt das Basislabor nicht. Schneller lokaler Zugriff und eine veraltete Datenkopie sind verschiedene Probleme. Die Spec nennt bis 480 MHz. 400 MHz darf das Labor nur sagen, wenn der Clock-Tree das zeigt.</p>
+<p>Eine Shared-Variable im TCM wäre für den direkten M4-Zugriff ungeeignet.</p>
+<p>Auch der M4 ohne diesen L1-Cache hat zeitliche Einflussfaktoren.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -641,7 +672,9 @@ flowchart TB
 <li>„Jeder Zugriff gleich viele Takte“ und „auf die Nanosekunde“ streichen</li>
 </ul>
 <aside class="notes">
-<p>Ohne L1-D-Cache ist der M4 nicht automatisch interferenzfrei.</p>
+<p>Der M4 in diesem Chip hat keinen L1-Instruktions- und Datencache wie der M7. ART, Adaptive Real-Time Accelerator, beschleunigt den Flash-Pfad des STM32. Die Einzelheiten stehen in der passenden ST-Dokumentation. Wait States sind zusätzliche Wartezyklen beim Speicherzugriff, kein zweiter Scheduler. IRQ, Bus und die gewählte Speicherregion ändern die Ausführungszeit. Ohne L1-Cache sind weder alle Instruktionen gleich lang noch die Zeiten auf die Nanosekunde fest. 240 MHz ist das spezifizierte Maximum, nicht die schon gewählte Laborfrequenz.</p>
+<p>Ohne L1-D-Cache ist der M4 nicht interferenzfrei. Gemeinsame Busziele treffen ihn trotzdem.</p>
+<p>Entscheidend sind auch die Wege vom Kern zum Speicher.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -663,7 +696,9 @@ flowchart TB
 <li>„AXI-SRAM immer 1 Takt“ ist keine universelle Garantie</li>
 </ul>
 <aside class="notes">
+<p>AHB und AXI sind die Busfamilien auf diesem Chip. Ein Busmaster startet einen Zugriff, ein Ziel, oft Slave genannt, bedient ihn. Eine Brücke verbindet Busbereiche. Arbitration entscheidet, wer bei einem Konflikt zuerst darf. Die Matrix erlaubt gleichzeitige Zugriffe auf verschiedene freie Ziele. Dieselbe begrenzte SRAM-Bank oder dieselbe Brücke serialisiert. Ein Konflikt braucht nicht denselben CPU-Takt. „AXI-SRAM immer ein Takt“ ist keine universelle Garantie. DMA ist ein weiterer Master und kann denselben Port belegen. Die Pfeile zeigen Konkurrenz, keine gemessene Wartezeit.</p>
 <p>Die Matrix beseitigt Interferenz nicht. Sie verschiebt sie auf die gemeinsamen Ziele.</p>
+<p>Diese Wege liegen innerhalb und zwischen den drei Domänen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -699,7 +734,9 @@ flowchart LR
 </div>
 <p>Oben getrennte Rechenkerne, unten gemeinsame Ziele.</p>
 <aside class="notes">
-<p>Eine reine Registerschleife im M7-TCM teilt sich den SRAM4-Port nicht. Sobald der M7 SRAM4, DMA oder RCC anfasst, kann der M4 warten. Qualitativ, ohne WCET-Zahl.</p>
+<p>Die Zeichnung trennt die Rechenkerne von den gemeinsamen Zielen. M7 sitzt in der Darstellung bei D1, M4 bei D2, SRAM4 bei D3. Einen DMA-Block ordnen wir erst einer Domäne zu, wenn die konkrete Instanz im Handbuch geprüft ist. RCC, Reset and Clock Control, konfiguriert Takte. Es ist kein Datenpfad, der alle Nutzbytes transportiert. Power-Domäne, Taktbereich und Zugriffsweg sind drei verschiedene Schnitte. Eine M7-Schleife mit Code im ITCM und Daten im DTCM vermeidet bestimmte SRAM4-Zugriffe, solange keine Interrupts und keine weiteren Master in diesem qualitativen Bild dazukommen. Ob ein Speicher in einem Low-Power-Modus erhalten bleibt, hängt vom Modus ab.</p>
+<p>WCET, die obere Laufzeitschranke, wird hier nicht beziffert. Sobald der M7 SRAM4, DMA oder RCC anfasst, kann der M4 warten.</p>
+<p>Der Taktbaum wird trotzdem gemeinsam konfiguriert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -721,7 +758,9 @@ flowchart LR
 <li>Maxima 480/240 MHz zeichnerisch von der gewählten Laborfrequenz trennen</li>
 </ul>
 <aside class="notes">
-<p>GPIO-Ports teilen Register. Zwei Pins am selben Port sind kein konfliktfreier Read-Modify-Write.</p>
+<p>RCC konfiguriert die Takte zentral. Eine PLL, Phase-Locked Loop, erzeugt aus einer Quelle höhere oder stabilere Takte. Mehrere PLLs im Chip sind nicht automatisch private PLLs je Kern. Eine gemeinsame Quelle kann über Teiler verschiedene Kerntakte ergeben. Den konkreten Baum zeichnet Cube, nicht diese Folie. Der M7 setzt die gemeinsamen Takte, während der M4 im vereinbarten Bootzustand wartet. Zwei Aufrufe von <code>SystemClock_Config</code> schreiben dieselben Register und können sich widersprechen. 480 und 240 MHz bleiben die Spec-Maxima. Die Laborfrequenz steht im erzeugten Baum.</p>
+<p>GPIO-Ports teilen Konfigurationsregister. Das Beispiel dazu gehört zur Pin-Folie. Hier bleibt die Zuständigkeit für den Takt.</p>
+<p>Diese Zuständigkeit erklärt den Boot-Handshake.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -746,7 +785,9 @@ flowchart LR
 <p>Stop, Reset und abgetakteter Kern sind drei Zustände.</p>
 <p>Die konkrete HSEM-ID und die Funktionsnamen stehen in der generierten <code>main</code>. <code>HAL_PWREx_ReleaseCore</code> nicht aus dem Gedächtnis ergänzen.</p>
 <aside class="notes">
-<p>Begrenzte Wartezeit, sonst Diagnose-LED oder UART, keine Endlosschleife ohne Spur. Dieser HSEM-Schritt ist der Boot, nicht die Sperre für jedes Payload-Byte.</p>
+<p>Option Bytes sind die nichtflüchtige Startkonfiguration und gehören zu den zwei Images. Im üblichen CubeMX-Muster führt der M4 zuerst Bootcode aus, richtet die HSEM-Benachrichtigung ein und geht in Stop. Er bleibt nicht einfach in Reset. Der M7 wartet auf diesen Stopzustand, setzt gemeinsame Takte und den Shared-Block und gibt das HSEM frei. Danach setzt der M4 seine Initialisierung und den RTOS-Start fort. HAL, Hardware Abstraction Layer, liefert die Funktionen des Templates. <code>HAL_PWREx_ReleaseCore</code> wird nicht aus dem Gedächtnis ergänzt. Reset heißt noch kein Anwendungscode nach dem Rücksetzen. Stop heißt: Bootcode lief, der Kern wartet auf das Ereignis. Ein abgetakteter Kern ist ein dritter Zustand.</p>
+<p>Die Wartezeit des M7 ist begrenzt. Sonst eine Diagnose, keine stumme Endlosschleife. Dieser HSEM-Schritt ist der Boot, nicht die Sperre für jedes Payload-Byte.</p>
+<p>Das folgende Bild verbindet die Schritte mit den Prüfstellen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -783,7 +824,9 @@ sequenceDiagram
 </div>
 <p>Warten ohne Fortschritt: Diagnosekasten, nicht stiller Reset.</p>
 <aside class="notes">
-<p>Vorlage AN5361 und das eigene Template. Wenn das Projekt eine andere Option-Byte-Variante nutzt, gewinnt das Projekt.</p>
+<p>Das Ablaufbild ist eine Reihenfolge, keine Zeitmessung. Der M4 meldet sich und geht in Stop. Der M7 wartet auf diesen Zustand, initialisiert den Block und gibt das HSEM frei. HSEM-Takt, Benachrichtigung und Freigabe der benutzten Semaphore sind getrennte Schritte. Die ID muss auf beiden Seiten zum generierten Template passen. Register- oder HAL-Namen erklären wir an ihrer Funktion im Template, nicht als erfundenen Vollcode. Der M7-Wartepfad hat ein Pollbudget oder eine lokale Zeitbasis. Ein Timeout ist Diagnose. Er erlaubt nicht, den Block neu zu beschreiben, während die Gegenstelle noch in derselben Phase schreibt. AN5361 und das eigene Template gewinnen, wenn die Option Bytes anders stehen.</p>
+<p>Vorlage und Projekt dürfen auseinanderlaufen. Dann gilt das Projekt, und die Folie bleibt das Lehrbild des üblichen Musters.</p>
+<p>Nach dem Start brauchen auch die Peripherieblöcke feste Besitzer.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -805,7 +848,9 @@ sequenceDiagram
 <li>Gleicher GPIO-Port, verschiedener Pin: immer noch ein Register</li>
 </ul>
 <aside class="notes">
-<p>Beide Kerne dürfen nicht gleichzeitig <code>GPIOE-&gt;MODER</code> lesen-ändern-schreiben.</p>
+<p>GPIO, General-Purpose Input/Output, konfiguriert Pins über gemeinsame Register. Zwei Pins desselben Ports teilen zum Beispiel MODER. Pin Context in CubeMX steuert nur, welcher Kern den Code erzeugt. Es sperrt den anderen Kern nicht in Hardware. Lesen beide denselben alten Wert, ändern verschiedene Felder und schreiben zurück, kann der zweite Schreibzugriff die erste Änderung löschen. Das ist Read-Modify-Write auf dem Konfigurationsregister. Atomare Set- und Reset-Register für Ausgangsdaten sind ein anderer Fall und heben dieses Beispiel nicht auf. Ein Besitzer je gemeinsam zu konfigurierendem Peripherieblock nimmt die Änderung entgegen. „Ein Pin je Kern“ genügt nicht, wenn das Register mehrere Pins enthält.</p>
+<p>Beide Kerne dürfen <code>GPIOE-&gt;MODER</code> nicht gleichzeitig lesen, ändern und zurückschreiben.</p>
+<p>Die Zuständigkeit muss in den zwei Firmwareprojekten sichtbar sein.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -828,7 +873,8 @@ sequenceDiagram
 <li>Eine Launch-Gruppe ist nicht automatisch da</li>
 </ul>
 <aside class="notes">
-<p>Keine erfundenen Menüscreenshots. Die Kursversion am Rechner nachsehen.</p>
+<p>ELF, Executable and Linkable Format, ist das ladbare Image. IDE, Integrated Development Environment, ist hier STM32CubeIDE. GCC, GNU Compiler Collection, übersetzt. Zwei Teilprojekte haben zwei Startup-Dateien, zwei Vektortabellen, zwei Linker-Skripte und einen gemeinsamen Header. Die Vektortabelle enthält lokale Exception- und Interrupt-Einstiege, nicht die IPC-Nachrichten. CM7 in Flashbank 1 und CM4 in Bank 2 ist ein mögliches Layout. Startadressen und Option Bytes müssen dazu passen. AN5361 Rev.&nbsp;5 beschreibt ab CubeIDE 2.0 den Weg über das eigenständige CubeMX und den anschließenden Import. Ein leeres IDE-Projekt ist ein anderer Weg. Menüscreenshots werden nicht erfunden. Die installierte Version steht am Laborrechner.</p>
+<p>Zwei Images brauchen einen abgestimmten Debugstart.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -850,7 +896,9 @@ sequenceDiagram
 <li>Nach dem Halt die HSEM- und Stop-Zustände prüfen, nicht nur den PC</li>
 </ul>
 <aside class="notes">
-<p>Der genaue Klickpfad hängt von der IDE-Version ab. Offen, solange kein Projekt im Repo liegt.</p>
+<p>AMP bleibt die getrennte Firmware. GDB, GNU Debugger, spricht über einen Server mit dem Chip. Im Kurs ist das typischerweise der ST-LINK GDB Server. OpenOCD ist ein anderer Server und wird nicht in denselben Ablauf gemischt, solange er nicht der verwendete ist. Laden beider Images, Reset, Verbindung zum laufenden M4 und das Halten der Kerne sind verschiedene Schritte. AN5361 nennt dafür Einstellungen. Portnummern und Access-Port-Werte sind keine universellen Kurszahlen. „Halt all cores“ kann den M4 hindern, den Stopzustand zu erreichen, auf den der M7 wartet. Cross-Trigger hält weitere Kerne an. Verstrichene Zeit im Halt ist kein Normalbetrieb.</p>
+<p>Der Klickpfad hängt von der IDE-Version ab und bleibt offen, solange kein Projekt im Repository liegt.</p>
+<p>Die Hardwarezusammenfassung führt zum gemeinsamen Speicherlayout.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -872,7 +920,8 @@ sequenceDiagram
 <li>Zwei Images, eine Shared-Adresse</li>
 </ul>
 <aside class="notes">
-<p>Als Nächstes das Layout, das beide Linker meinen.</p>
+<p>Domänen, Buskonflikt, gemeinsamer Takt und der Boot hängen zusammen. D1, D2 und D3 trennen Rechenorte und Ziele. HSEM gibt im Boot dem M4 das Signal weiterzulaufen. ELF ist je Kern ein eigenes Image. Der M7 wartet auf den Stopzustand. Ein Debughalt aller Kerne kann verhindern, dass der M4 diesen Zustand erreicht. Das ist eine Diagnose, kein Cachefehler. Boot und spätere Nutzdaten sind verschiedene Protokollphasen. Nach erfolgreichem Boot haben zwei gleichnamige C-Variablen noch nicht automatisch dieselbe Adresse.</p>
+<p>Als Nächstes stellt der Linker genau diese Übereinstimmung her.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -926,7 +975,8 @@ sequenceDiagram
 </table>
 <p>SRAM4 ist die <strong>Laborentscheidung</strong>, keine Vorschrift für jede Anwendung.</p>
 <aside class="notes">
-<p>Bandbreite, DMA-Erreichbarkeit und Energiemodus können eine andere Bank nahelegen.</p>
+<p>RAM ist Arbeitsspeicher, SRAM die statische Ausführung auf diesem Chip. ITCM und DTCM gehören zum M7 und sind kein allgemeiner Briefkasten. DMA kann je nach Instanz andere Bänke erreichen. Für den betrachteten Baustein liegt SRAM4 bei <code>0x38000000</code> bis einschließlich <code>0x3800FFFF</code>, also 64 KiB. Ein KiB sind 1024 Byte. Adresse, Größe, Erreichbarkeit, Cacheattribut und die Linker-Zuordnung sind verschiedene Eigenschaften. SRAM1 bis SRAM3 sind nicht von der Hardware ausschließlich M4-Heap. Das wäre eine Projektentscheidung. Backup-SRAM ist ein anderer Bereich. Ob er in einem Low-Power-Modus erhalten bleibt, hängt vom Modus ab. Bandbreite und DMA können eine andere Bank nahelegen. Das Basislabor bleibt bei SRAM4.</p>
+<p>Beide Projekte reservieren diesen Bereich ausdrücklich für den Lehrkanal.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -949,7 +999,8 @@ sequenceDiagram
 <li><code>.bss</code>-Zero und <code>.data</code>-Copy beider Images prüfen</li>
 </ul>
 <aside class="notes">
-<p>Nach Reset ist der Inhalt nicht als saubere Null vorauszusetzen. M7 schreibt Zustand und Payload, bevor M4 kommuniziert.</p>
+<p>Jeder Linker platzt ein C-Objekt für sich. Derselbe Name garantiert keine physische Adresse. ELF ist das Image, ABI, Application Binary Interface, die Darstellung der Felder. Der gemeinsame Bereich wird in beiden Images für denselben Zweck reserviert. Dort liegen kein privater Heap, kein Stack und kein weiterer Puffer. NOLOAD kennzeichnet den Abschnitt ohne normale Initialisierungsdaten im Image. Es verhindert nicht jede Zero-Schleife im Startup, nicht jeden Debug-Loader und nicht eine spätere erneute Initialisierung. <code>.data</code> wird kopiert, <code>.bss</code> genullt, jeweils in der eigenen Firmware. Nach Reset ist der Inhalt kein gültiger Protokollzustand, bis der M7 schreibt. Ein zufälliger Nichtnullwert ist kein Startwert 0 und kein Magic.</p>
+<p>Der Linker-Vertrag steht im Skript.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -972,7 +1023,8 @@ sequenceDiagram
 <li>Symbol <code>sd</code> in <strong>beiden</strong> Maps gleich, sonst ist es nicht derselbe Block</li>
 </ul>
 <aside class="notes">
-<p>Die echten <code>.ld</code> erzeugt Cube. Wir fügen eine Sektion ein und duplizieren die Speicherliste nicht. Map-Vergleich ist Pflicht und im Repo noch nicht ausführbar.</p>
+<p>MEMORY nennt Ursprung und Länge einer Region. SECTIONS legt fest, welche Ausgabesektion dort liegt. <code>.ld</code> ist die Dateiendung des Linker-Skripts. ELF ist das Ergebnis. Die SRAM4-Region heißt im echten Skript so, wie Cube sie erzeugt hat. RAM_D3 und SRAM4 dürfen nicht zweimal dieselbe Spanne belegen. Das Lehrschema sammelt <code>.shared</code> mit KEEP und NOLOAD und prüft die Adresse von <code>ipc</code> mit ASSERT. KEEP hält die Eingabesektion, wenn der Linker sonst unreferenzierte Objekte verwirft. Zwei Maps müssen dieselbe <code>ipc</code>-Adresse zeigen. Eine Beispieladresse in der Folie ist synthetisch, solange keine Map im Repository liegt. Cube erzeugt die <code>.ld</code>. Wir fügen die Sektion ein und duplizieren die Speicherliste nicht.</p>
+<p>Die nächste Folie zeigt, welche Eingabesektionen gesammelt werden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -995,7 +1047,8 @@ sequenceDiagram
 <span id="cb1-6"><a aria-label="6"></a>} &gt;RAM_D3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Nur wenn <code>RAM_D3</code> schon die SRAM4-Region ist. Sonst den vorhandenen Namen nehmen.</p>
 <aside class="notes">
-<p><code>KEEP</code> gegen Garbage Collection. Alignment 32 wegen einer späteren Cache-Line, auch wenn die Basisregion non-cacheable ist.</p>
+<p>NOLOAD beschreibt die Ausgabesektion ohne Initialisierungsabbild. ALIGN verschiebt die Platzierung. KEEP schützt die Eingabesektion vor Garbage Collection. <code>&gt;RAM_D3</code> wählt die vorhandene Region. <code>.shared.*</code> nur, wenn die Objekte wirklich so heißen. <code>ipc</code> muss am vereinbarten Anfang liegen. Ein anderes Objekt davor bricht den Vertrag. 32-Byte-Ausrichtung und ein auf 32 Byte gerundeter Abschnitt machen den 12-Byte-Typ nicht 32 Byte groß. Typgröße, Abschnittsreserve und das 64-KiB-MPU-Fenster sind drei Ebenen. Adresse und Größe prüft der Linker-ASSERT. Die 32-Byte-Ausrichtung bleibt sinnvoll, auch wenn die Basisregion nicht cachebar ist, weil eine spätere Wartungsvariante Zeilengrenzen braucht.</p>
+<p>Der Compiler muss das konkrete Objekt in diese Eingabesektion legen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1019,7 +1072,8 @@ sequenceDiagram
 <span id="cb2-7"><a aria-label="7"></a>    __attribute__<span class="op">((</span>section<span class="op">(</span><span class="st">".shared"</span><span class="op">)));</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Das Attribut allein setzt nicht die Adresse. Linker, Alignment und weitere Objekte entscheiden.</p>
 <aside class="notes">
-<p>Dieselbe <code>.c</code> nicht in beide Projekte kopieren und zusätzlich im Header definieren. Einmal pro Image.</p>
+<p>GCC übersetzt, ELF ist das Image, ABI die Feldabbildung. Der gemeinsame Header enthält Typ, Konstanten und <code>extern volatile ipc_block_t ipc</code>. Genau eine <code>.c</code> je Image definiert das Objekt. Ein gemeinsames Quellmodul darf für beide Images gebaut werden, aber je Image nur einmal. Das ist keine doppelte Definition innerhalb eines Images. <code>section(".shared")</code> wählt die Eingabesektion, <code>aligned(32)</code> richtet das Objekt aus und ändert nicht das natürliche Alignment des Typnamens, <code>used</code> hält die Referenz. KEEP im Linker fängt den Fall ab, dass der Linker das Objekt sonst verwirft. Der Header legt keinen Speicher an und setzt keine Adresse. Die Definition nicht zusätzlich im Header ablegen.</p>
+<p>Die Zugriffe brauchen weitere Eigenschaften als nur die Sektion.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1041,7 +1095,9 @@ sequenceDiagram
 <li>Es veröffentlicht nicht „den ganzen Struct auf einmal“</li>
 </ul>
 <aside class="notes">
-<p>GCC-Volatile-Doku. Für die Reihenfolge kommt eine Barriere dazu, für den Cache die MPU oder eine Wartung.</p>
+<p><code>volatile</code> sagt dem Compiler, dass sich der Wert außerhalb des sichtbaren Ablaufs ändern kann. Eine Pollschleife auf <code>ipc.state</code> darf den Vergleich nicht aus dem Register wiederholen, ohne neu zu laden. GCC beschreibt das in der Volatile-Dokumentation. Es verspricht nicht, dass jeder Ausdruck genau einen Buszugriff erzeugt. Der Zugriff kann aus dem D-Cache kommen. <code>volatile</code> ist kein Mutex. <code>ipc.payload += 1</code> ist keine allgemeine atomare Mehrkernoperation und veröffentlicht nicht alle Felder zugleich. Im Lehrprotokoll ist die Statusvariable ein ausgerichtetes <code>uint32_t</code> unter den Annahmen von Armv7-M, Speicherattribut und Toolchain. Das ist keine portable C-Thread-Garantie.</p>
+<p>Für die Reihenfolge kommt eine Barriere dazu, für den Cache die MPU oder eine geprüfte Wartung.</p>
+<p>Die vier Probleme brauchen verschiedene Mittel.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1096,7 +1152,9 @@ sequenceDiagram
 <p><code>DMB</code> ordnet. <code>DSB</code> wartet auf den Abschluss. Keines reinigt den D-Cache.</p>
 <p>Keine Armv8-M-Acquire-Intrinsics ungeprüft auf M4/M7.</p>
 <aside class="notes">
-<p>Frage zur Brücke: Warum reicht non-cacheable nicht? Weil die Reihenfolge Payload vor Zustand und das alleinige Schreibrecht bleiben.</p>
+<p>Vier Fehler, vier Mittel. Der Compiler hält einen Wert: <code>volatile</code> zwingt zum erneuten Zugriff und löst Cache, Reihenfolge und Konflikt nicht. Eine veraltete Cachezeile braucht nicht cachebare Attribute oder Clean und Invalidate und sagt nicht, wer schreiben darf. DMB, Data Memory Barrier, ordnet Speicherzugriffe. DSB, Data Synchronization Barrier, wartet auf den Abschluss relevanter früherer Operationen. Keines schreibt alle Dirty-Zeilen zurück. Ownership legt fest, wer das Datum in dieser Phase schreiben darf. Eine Sperre koordiniert und ersetzt die übrigen Punkte nicht. <code>__ISB</code>, Instruction Synchronization Barrier, gehört zur MPU-Aktivierung, nicht zum Payload. Acquire-Intrinsics von Armv8-M setzen wir auf M4 und M7 nicht ungeprüft ein.</p>
+<p>Frage: Warum reicht nicht cachebar nicht? Weil die Reihenfolge „Payload, dann Zustand“ und das Schreibrecht bleiben. DMB bleibt nötig.</p>
+<p>Das Protokoll beginnt mit einem eindeutigen Layout.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1121,7 +1179,9 @@ sequenceDiagram
 <p><code>_Static_assert</code> auf Größe und Alignment im Zielbuild. Kein <code>packed</code> als Multicore-Trick.</p>
 <p>Nur der Berechtigte schreibt <code>payload</code>. Der Zustand wechselt danach.</p>
 <aside class="notes">
-<p>M7 initialisiert magic, state und payload, solange M4 noch nicht kommuniziert. NOLOAD-Müll ist kein Startwert 0.</p>
+<p><code>uint32_t</code> ist eine vorzeichenlose 32-Bit-Zahl. ABI ist die Abbildung im Zielcompiler. Im gewählten Layout liegen magic bei Offset 0, state bei 4 und payload bei 8. <code>sizeof</code> ist 12, <code>offsetof</code> prüft die Offsets, <code>_Alignof</code> mindestens 4. Eine ältere Variante mit zwei <code>uint8_t</code> und einem <code>uint32_t</code> braucht im üblichen Ziel-ABI oft 8 Byte mit Padding, nicht automatisch 12. Das ist kein Satz für jede ABI. <code>packed</code> ist kein Synchronisationsmittel. <code>TURN_M7</code> ist der Initialisierungszustand, bevor der M4 kommuniziert. Danach wechseln <code>REQUEST_M4</code> und <code>RESPONSE_M7</code>. Nur der Berechtigte der Phase schreibt die Payload. Der Zustand wechselt danach, von beiden Kernen abwechselnd.</p>
+<p>Der M7 schreibt Magic, Zustand und Payload, solange der M4 noch nicht kommuniziert. NOLOAD-Inhalt ist kein Startwert 0.</p>
+<p>Erst Layout plus Initialisierung machen den Block benutzbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1143,7 +1203,9 @@ sequenceDiagram
 <li>Ein gemeinsamer Reset muss den Handshake neu durchlaufen</li>
 </ul>
 <aside class="notes">
-<p>Was steht nach dem Reset vor der Init? Undefiniert, bis M7 schreibt.</p>
+<p>Der Vertrag ist: dieselbe physische Adresse, derselbe Typ und Konstantensatz, eine Definition je Image, keine fremde Belegung der Spanne, explizite Initialisierung durch den M7. ELF ist je Kern ein Image, IPC der Kanal. Beide Programme haben getrennte Startup-Pfade und sprechen dieselben Bytes an. Der M4 darf die Region später nicht wieder nullen. Ein unabhängiger Reset eines Kerns mitten im Dialog braucht ein Wiederanlaufprotokoll und ist aus dem Basislabor ausgeschlossen. Ein gemeinsamer Reset durchläuft die Initialisierung erneut.</p>
+<p>Frage: Was steht nach dem Reset vor der Init? Undefiniert, bis der M7 schreibt. Ein passender Magic-Wert danach ist die Plausibilität des koordinierten Boots, keine Heilung eines einseitigen Resets.</p>
+<p>Ein korrektes Layout garantiert noch nicht, dass beide dieselben aktuellen Werte lesen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1165,7 +1227,9 @@ sequenceDiagram
 <li>Der M4 sieht SRAM, nicht die Dirty-Line des M7</li>
 </ul>
 <aside class="notes">
-<p>Auch Lesen ist ein Kohärenzproblem, nicht nur Schreiben.</p>
+<p>CPU ist der Kern, SRAM der Speicher, den der M4 direkt sieht. Eine Cachezeile des M7 ist hier typisch 32 Byte und kann mehrere Variablen enthalten. Ein Hit liefert Daten aus der Kopie und kann schneller und trotzdem veraltet sein. Ein Miss holt aus dem Speicher. Valid heißt, die Kopie darf benutzt werden. Dirty heißt, sie enthält Schreibdaten, die der SRAM noch nicht hat. Write-Back ändert zuerst die Zeile. Der M4 liest den SRAM, nicht diese Dirty-Line. Der 12-Byte-Block liegt in einer 32-Byte-Zeile. Nachbarbytes werden mitgezogen.</p>
+<p>Auch Lesen ist ein Kohärenzproblem. Eine alte gültige Kopie verdeckt neuere SRAM-Daten.</p>
+<p>Die Schreibpolitik bestimmt, wann geänderte Kopien zurückgehen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1188,7 +1252,8 @@ sequenceDiagram
 <li>Verloren gehen Dirty-Daten, die noch nicht zurückgeschrieben waren</li>
 </ul>
 <aside class="notes">
-<p>Eine alte Line über neue M4-Daten zu cleanen überschreibt die Antwort. Deshalb nicht „ganzes Struct immer clean+invalidate“.</p>
+<p>Write-Through schickt Schreibdaten in Richtung Speicher. Das macht eine neue M7-Schreibung eher im SRAM sichtbar, aktualisiert aber keine alte M7-Lesekopie, nachdem der M4 geschrieben hat. Write-Back schreibt Dirty-Daten bei Verdrängung oder bei einem expliziten Clean zurück, nicht nur „wenn der Cache voll ist“. Clean behält eine gültige Kopie und schreibt Änderungen. Invalidate verwirft die Kopie. Schon im SRAM stehende Nachbarbytes werden dadurch nicht gelöscht. Dirty-Bytes, die noch nicht zurück sind, können verloren gehen. Eine alte Dirty-Zeile über neuere M4-Daten zu cleanen überschreibt die Antwort. Deshalb kein pauschales Clean und Invalidate des gemischten 12-Byte-Blocks.</p>
+<p>Aus diesen Eigenschaften entstehen zwei getrennte Kohärenzfehler.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1209,7 +1274,8 @@ sequenceDiagram
 <li>M4 hat die Antwort ins SRAM geschrieben. M7 liest noch seine alte Kopie.</li>
 </ol>
 <aside class="notes">
-<p>Werte und Pfeile getrennt halten. Keine Zeitachse, solange wir keine Latenzen messen.</p>
+<p>Fall A: der M7 schreibt eine neue Anfrage in eine Write-Back-Zeile. Der SRAM bleibt zunächst alt. Der M4 kann die neue Anfrage nicht zuverlässig sehen. Fall B: der M4 hat die Antwort in den SRAM geschrieben. Der M7 hat noch eine gültige alte Kopie und liest daraus. Beide Fälle betreffen Payload und Zustand, wenn beide cachebar liegen. Protokollzustände wie REQUEST_M4 und Cachezustände wie dirty sind verschiedene Dinge. Die Beispielwerte sind synthetisch und nicht die Laborfolge 1, 3, 5. Es gibt hier keine maßstabsgetreue Zeitachse, weil keine Latenz gemessen wird. Die logische Reihenfolge der zwei Fehler bleibt gültig.</p>
+<p>Die nächste Folie stellt die widersprüchlichen Werte direkt nebeneinander.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1224,29 +1290,37 @@ sequenceDiagram
 </section>
 <section id="visualisierung-cache-coherency-failure" class="slide level2">
 <h2>Visualisierung: Cache Coherency Failure</h2>
-<div class="cell" data-reveal="true" data-fig-width="6.4" data-layout-align="default">
-<div class="cell-output-display">
-<div>
-<p></p><figure class=""><p></p>
-<div>
-<pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  subgraph bad["Zustand 1: M4 sieht Altlast"]
-    C1[M7-Line dirty 1] -.-&gt; S1[SRAM noch 0]
-    S1 --&gt; R1[M4 liest 0]
-  end
-  subgraph bad2["Zustand 2: M7 sieht Altlast"]
-    S2[SRAM schon 1] --&gt; R2[M4 hat geschrieben]
-    C2[M7-Line noch 0] -.-&gt; S2
-  end
-</pre>
-</div>
-<p></p></figure><p></p>
-</div>
-</div>
-</div>
+<p>Zwei Richtungen, synthetische Werte, keine Laborsequenz. Kein Clean ist eingezeichnet.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Ort</th>
+<th>Fall A: M7 schreibt neu</th>
+<th>Fall B: M4 schreibt Antwort</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>M7-D-Cache</td>
+<td>payload = 1, dirty</td>
+<td>payload = 0, valid</td>
+</tr>
+<tr class="even">
+<td>Shared-SRAM</td>
+<td>payload = 0</td>
+<td>payload = 1</td>
+</tr>
+<tr class="odd">
+<td>wer liest</td>
+<td>M4 liest 0 aus SRAM</td>
+<td>M7 liest 0 aus seiner Kopie</td>
+</tr>
+</tbody>
+</table>
+<p>Fall A: die neue 1 liegt nur in der Dirty-Zeile, der SRAM bleibt 0. Fall B: der SRAM hat schon 1, die alte gültige M7-Zeile bleibt 0. Die gestrichelte Kante bedeutet: diese Übertragung findet nicht statt.</p>
 <aside class="notes">
-<p>Synthetisches Bild. Die Laborbasis umgeht den D-Cache per MPU, statt jede Richtung von Hand zu warten.</p>
+<p>Die Tabelle hat zwei Spalten und vier Orte: M7-CPU über den D-Cache, den Shared-SRAM und den M4. Fall A: Cache-Payload 1 und dirty, SRAM-Payload 0, der M4 liest 0. Die neue 1 wurde nicht zurückgeschrieben. Fall B: der M4 hat SRAM-Payload 1 geschrieben, die M7-Zeile bleibt 0 und valid, der M7 liest 0. Die gestrichelte Bedeutung ist: diese Übertragung findet nicht statt. Es ist kein Clean eingezeichnet. Die Zahlen illustrieren den Mechanismus und sind nicht die Ping-Pong-Folge. Ein Cache-Hit kann deshalb der falsche Wert sein.</p>
+<p>Manche größeren Systeme haben dafür zusätzliche Kohärenzhardware.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1268,7 +1342,8 @@ flowchart LR
 <li>Der H755 hat diese Kohärenz zwischen M7-L1 und M4 nicht</li>
 </ul>
 <aside class="notes">
-<p>Konzeptfolie. Keine Register des M7 daraus ableiten.</p>
+<p>HW heißt Hardware, PC Personal Computer. MESI steht für Modified, Exclusive, Shared und Invalid und ist ein vereinfachtes Zustandsmodell kohärenter Caches. Kohärenz kann aktuelle Daten von einer anderen Cacheinstanz liefern. Das RAM muss nicht nach jedem Schreiben sofort aktuell sein. Das Bild ist kein vollständiges Modell aller PCs und kein Echtzeitnachweis. Der STM32H755 hat keine solche Kohärenz zwischen dem M7-L1 und den M4-Zugriffen. Aus MESI folgen keine M7-Registereinstellungen.</p>
+<p>Ohne diese Hardware müssen Software oder Speicherattribute die Kopien behandeln.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1291,7 +1366,8 @@ flowchart LR
 </ul>
 <p>Eine Line mit Payload, Flag und fremder Dirty-Variable ist der Fehlerfall.</p>
 <aside class="notes">
-<p>Alignment der Startadresse genügt nicht. Größe und wer sonst in der Line schreibt, zählen.</p>
+<p>Die Cachewartung ist eine Vertiefung, nicht die Basisimplementierung. CMSIS liefert die D-Cache-Funktionen des M7. SRAM ist der Zielspeicher. Getrennte 32-Byte-Bereiche brauchen je einen Schreiber. Clean betrifft eigene neue Daten vor der Übergabe. Invalidate betrifft eine alte lokale Kopie vor dem Lesen fremder Daten. Kontrollinformationen brauchen dasselbe Modell. Getrennte Payloadzeilen lösen ein cachebares Statusflag nicht. Start, Ende und Nachbarobjekte müssen in den Zeilen liegen, die man wartet. Alignment der Startadresse genügt nicht. Ein pauschales Clean und Invalidate des gemischten 12-Byte-Blocks ist keine korrekte Lösung. Die Signaturen stehen in den eingebundenen Headern, nicht nur in der neuesten Onlinedoku.</p>
+<p>Warum diese Option im Einsteigerlabor fehleranfällig ist, zeigt die nächste Folie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1314,7 +1390,8 @@ flowchart LR
 <li>Das Basislabor macht die Region non-cacheable</li>
 </ul>
 <aside class="notes">
-<p>Zwischen den Varianten neu starten. Attribute nicht umschalten, während beide schreiben.</p>
+<p>Zwei Schäden: Eine Zeile, die noch Dirty-Bytes enthält, wird invalidiert, und eigene Änderungen gehen verloren. Eine alte Dirty-Zeile des M7 wird nach einer M4-Antwort gereinigt und überschreibt neuere SRAM-Daten. Dafür muss die Zeile dirty gewesen sein. Clean einer unveränderten sauberen Kopie ist nicht dasselbe Rückschreiben. Cachewartung ist brauchbar, wenn Besitz und die vollständige Sequenz stimmen. Attribute während laufender Kommunikation umzuschalten ist kein Laborumschalter. Zwischen Basis und Fehlervariante gibt es einen gemeinsamen Neustart.</p>
+<p>Die Basisvariante vermeidet Cachekopien für den kleinen Block.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1331,35 +1408,42 @@ flowchart LR
 <h2>Hardware-Lösung 2 (Best Practice): Die MPU</h2>
 <p>Für SRAM4 im Basislabor, Attribute aus AN4838, Konstanten im HAL-Header prüfen:</p>
 <table class="caption-top">
+<colgroup>
+<col style="width: 11%">
+<col style="width: 25%">
+<col style="width: 62%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Feld</th>
-<th>Wert</th>
+<th>Basisregion</th>
+<th>Fehlerexperiment, eigener Build</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td>Basis / Größe</td>
-<td><code>0x38000000</code>, 64 KiB</td>
+<td><code>0x38000000</code>, 64 KiB, SIZE-Code 15</td>
+<td>dieselbe Spanne, nur zum Vergleich</td>
 </tr>
 <tr class="even">
 <td>Typ</td>
-<td>Normal, TEX = 001, C = 0, B = 0</td>
+<td>Normal, TEX = 001, C = 0, B = 0, S = 1</td>
+<td>TEX = 001, C = 1, B = 1, S = 0</td>
 </tr>
 <tr class="odd">
 <td>Rechte</td>
-<td>Schreiben erlaubt, Execute Never</td>
-</tr>
-<tr class="even">
-<td>Shareability</td>
-<td>passend zur Doku der Region setzen</td>
+<td>Lesen/Schreiben, Execute Never</td>
+<td>gleich, aber cachebares Write-Back</td>
 </tr>
 </tbody>
 </table>
+<p>S = 1 erzeugt kein Snooping. Ein nur geändertes C bei bleibendem S = 1 ist auf dem M7 kein sicherer Nachweis der Cachewirkung. Die Fehlervariante setzt S = 0 und startet gemeinsam neu.</p>
 <p>Reihenfolge: MPU, dann D-Cache an, dann Shared-Zugriff.</p>
 <p>Der Pfeil umgeht den D-Cache. Ownership und <code>DMB</code> bleiben.</p>
 <aside class="notes">
-<p>Überlappende Regionen: die höhere Regionsnummer gewinnt auf dem M7. Eine cacheable Region darüber würde die Absicht kaputtmachen. Das im MPU-Register nachsehen.</p>
+<p>Der Titel meint das Basislabor, nicht jede Bandbreitenanforderung. MPU ist die Speicherschutzeinheit des M7. TEX, Type Extension, ist das Attributfeld, kein Datenpuffer. XN, Execute Never, verbietet das Ausführen von Code aus der Region. AP, Access Permission, sind die Rechte. C, B und S stehen für cacheable, bufferable und shareable. Die Basisregion ist <code>0x38000000</code>, 64 KiB, Normal, TEX 001, C 0, B 0, S 1, Lesen und Schreiben, XN. S gleich 1 erzeugt kein Snooping zwischen M7 und M4. Die MPU ist kernlokal und schützt den M4 und DMA nicht automatisch. Bei Überlappung gewinnt auf Armv7-M die passende Region mit der höheren Nummer. Eine cachebare Region darüber würde die Absicht aufheben. Die Bits stehen im HAL-Header und werden im MPU-Register geprüft.</p>
+<p>Welche Probleme diese Region löst und welche bleiben, zeigt die nächste Folie.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1381,7 +1465,8 @@ flowchart LR
 <li>Weglassen der MPU erzeugt nur dann den Cachefehler, wenn der D-Cache an ist und der Weg cachebar bleibt</li>
 </ul>
 <aside class="notes">
-<p>CCR und die Regionsregister sind der Nachweis, nicht die Hoffnung. Eine eigene Write-Back-Variante nur als Versuch 2.</p>
+<p>Für die Shared-Region benutzt der M7 keine entsprechende D-Cachekopie. Andere Regionen dürfen weiter vom Cache profitieren. CCR, Configuration and Control Register, zeigt, ob der D-Cache an ist. DMB bleibt für die Reihenfolge. Ownership bleibt für das Schreibrecht. „MPU aus“ zeigt den Cachefehler nur, wenn der D-Cache an ist und die effektiven Attribute der benutzten Adresse cachebar sind. Ein einmal erfolgreicher Lauf ohne MPU beweist die Korrektheit nicht. Verdrängung und der Debugger können den Fehler verdecken. Die Write-Back-Variante ist ein eigener Build mit Neustart, nicht ein Umschalten im Dialog.</p>
+<p>Mit dieser Sichtbarkeit lässt sich das Protokoll vollständig erklären.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1401,8 +1486,65 @@ flowchart LR
 <p>M4 macht daraus 1. M7 druckt 1, legt 2 hin, requested wieder.</p>
 <p>M4 antwortet 3. Sichtbar: <strong>1, 3, 5, …</strong> nicht zuerst 0.</p>
 <p>Nach der Übergabe schreibt niemand weiter am Payload.</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th style="text-align: right;">Payload danach</th>
+<th>Zustand danach</th>
+<th>M7 zeigt</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>M7 init</td>
+<td style="text-align: right;">0</td>
+<td>REQUEST_M4</td>
+<td>noch nichts</td>
+</tr>
+<tr class="even">
+<td>M4 auf 0</td>
+<td style="text-align: right;">1</td>
+<td>RESPONSE_M7</td>
+<td>noch nichts</td>
+</tr>
+<tr class="odd">
+<td>M7 liest 1, legt 2</td>
+<td style="text-align: right;">2</td>
+<td>REQUEST_M4</td>
+<td>1</td>
+</tr>
+<tr class="even">
+<td>M4 auf 2</td>
+<td style="text-align: right;">3</td>
+<td>RESPONSE_M7</td>
+<td>noch nichts</td>
+</tr>
+<tr class="odd">
+<td>M7 liest 3, legt 4</td>
+<td style="text-align: right;">4</td>
+<td>REQUEST_M4</td>
+<td>3</td>
+</tr>
+<tr class="even">
+<td>M4 auf 4</td>
+<td style="text-align: right;">5</td>
+<td>RESPONSE_M7</td>
+<td>noch nichts</td>
+</tr>
+<tr class="odd">
+<td>M7 liest 5, legt 6</td>
+<td style="text-align: right;">6</td>
+<td>REQUEST_M4</td>
+<td>5</td>
+</tr>
+</tbody>
+</table>
+<p>Logische Reihenfolge, keine Zeitachse. Vor jedem Zustandswechsel steht ein DMB nach dem Payload-Schreiben. Nach dem beobachteten Zustand steht ein DMB vor dem Payload-Lesen.</p>
 <aside class="notes">
-<p>Die 500-ms-Pause und die UART-Zeit sind die sichtbare Rate, nicht die IPC-Latenz. <code>osDelay(1)</code> ist ein Tick, nicht automatisch 1 ms.</p>
+<p><code>TURN_M7</code> ist der Initialisierungszustand, bevor der M4 kommuniziert. Danach wechseln <code>REQUEST_M4</code> und <code>RESPONSE_M7</code>. Der M7 schreibt vor dem Wecken Payload 0 und veröffentlicht den Request. Der M4 liest 0, schreibt 1 und veröffentlicht die Antwort. Der M7 liest 1 in eine private Variable, gibt 1 aus, schreibt 2 und veröffentlicht den nächsten Request. Danach entstehen 3 und 5. Die Tabelle ist die logische Reihenfolge, keine Uhr. IPC ist der Kanal, UART die Ausgabe des M7. Daten werden vor dem Zustandswechsel geschrieben. Nach der Übergabe schreibt dieser Kern die Payload nicht weiter.</p>
+<p>Die 500-ms-Pause und die UART-Zeit sind die sichtbare Rate, nicht die IPC-Latenz. <code>osDelay(1)</code> ist ein Kernel-Tick, nicht automatisch 1 ms.</p>
+<p>Zuerst werden beide Firmwarekontexte passend erzeugt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1424,7 +1566,9 @@ flowchart LR
 <li>Takt aus dem Cube-Tree abschreiben, nicht aus dieser Folie</li>
 </ul>
 <aside class="notes">
-<p>Stromversorgung und VOS bestimmen, ob 400/480 MHz legal sind. Offen ohne Projekt.</p>
+<p>RTOS und CMSIS-RTOS2 liegen nur auf dem M4. UART, die serielle Schnittstelle, hat einen Besitzer, der <code>printf</code> wirklich bedient. VOS, die Spannungsskalierung, und der Clock-Tree entscheiden, welche Kerntakte legal sind. Das steht im erzeugten Projekt, nicht als Behauptung 400 oder 480 MHz auf dieser Folie. CMSIS_V2 ist die Generatorbezeichnung für die RTOS2-Schnittstelle. NUCLEO-H755ZI-Q nur, wenn Cube dieses Board erzeugt hat. Die Übersicht ersetzt keine Screenshots.</p>
+<p>Stromversorgung und VOS bleiben offen ohne Projekt.</p>
+<p>Die erzeugte Bootsequenz wird bewahrt und um die geordnete Shared-Initialisierung ergänzt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1448,7 +1592,8 @@ flowchart LR
 <li>Fehler: Status ausgeben, nicht den Block löschen, während der andere läuft</li>
 </ul>
 <aside class="notes">
-<p>Keine zweite Wake-Funktion neben dem Template erfinden.</p>
+<p>Der generierte HSEM- und Stop-Code bleibt. HSEM ist die Hardwaresemaphore, HAL die Abstraktionsschicht, IPC der Datenblock. Der HSEM-Takt ist an, die ID wird notiert und muss auf beiden Seiten gleich sein. Der M4 benachrichtigt und geht in Stop. Der M7 wartet begrenzt, initialisiert den Shared-Block und gibt erst dann frei. Die MPU muss vor dem ersten Shared-Zugriff und in der gewählten Folge vor dem D-Cache wirksam sein, auch wenn die MPU-Folie später kommt. Späterer M4-Startup darf die Region nicht löschen. Eine zweite Wake-Funktion neben dem Template wird nicht erfunden. Ein Timeout meldet den Status und beschreibt den Block nicht neu, während die Gegenstelle läuft.</p>
+<p>Dafür brauchen beide Images denselben Datenvertrag.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1464,10 +1609,11 @@ flowchart LR
 <section id="schritt-3-shared-memory-struct-anlegen" class="slide level2">
 <h2>Schritt 3: Shared Memory Struct anlegen</h2>
 <p>Header gemeinsam, Definition je eine <code>.c</code> pro Image.</p>
-<p><code>_Static_assert(sizeof(ipc_block_t) % 4 == 0)</code>.</p>
-<p>Magic ungleich 0, damit M4 uninitialisierten Speicher erkennt und wartet oder den Timeout nimmt.</p>
+<p><code>_Static_assert</code> im Zielbuild: <code>sizeof(ipc_block_t) == 12</code>, Offsets 0, 4 und 8. <code>sizeof % 4 == 0</code> beweist das Layout nicht.</p>
+<p><code>IPC_MAGIC</code> ist die Konstante <code>0x49504336</code>. Der M4 vergleicht <code>ipc.magic</code> mit genau diesem Wert. „Ungleich 0“ erkennt keinen alten oder zufälligen Speicher. Ein passender Magic-Wert kann nach einem unabhängigen Core-Reset veraltet sein. Das Basislabor schließt diesen Reset aus und verlässt sich auf den koordinierten Boot.</p>
 <aside class="notes">
-<p>M4 darf <code>memset</code> auf den Block nicht im Task-Start ausführen.</p>
+<p>Der Header ist die einzige Quelle für Typ, <code>IPC_MAGIC</code> gleich <code>0x49504336</code> und die Zustände. ABI und ELF bestimmen, ob die Asserts im Zielbuild gelten: Größe 12, Offsets 0, 4 und 8. <code>sizeof % 4</code> beweist das nicht. Der M4 vergleicht Magic mit der Konstanten. Ungleich null genügt nicht, weil alter Speicher beliebige Werte haben kann. Ein passender Magic-Wert kann nach einem unabhängigen Core-Reset veraltet sein. Das Basislabor schließt diesen Reset aus. Der koordinierte Boot ist die Frischeannahme. Der M4 führt kein <code>memset</code> auf den Block aus. Die Prüfung sagt etwas über den Wert, nicht über die Aktualität nach einem einseitigen Neustart.</p>
+<p>Der Linker muss den Vertrag an derselben Adresse erfüllen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1483,10 +1629,11 @@ flowchart LR
 <section id="schritt-4-das-linker-script-anpassen" class="slide level2">
 <h2>Schritt 4: Das Linker-Script anpassen</h2>
 <p>Beide Skripte: dieselbe Sektion, kein doppeltes RAM.</p>
-<p>Map: <code>ipc</code> bzw. <code>sd</code> gleiche Adresse.</p>
+<p>Map: Symbol <code>ipc</code> auf beiden Seiten dieselbe Adresse. Nicht <code>sd</code>.</p>
 <p>Startup: der Bereich darf nicht in der Zero-Tabelle liegen, sonst löscht ein Kern den laufenden Dialog.</p>
 <aside class="notes">
-<p>Schema-Snippet, keine behauptete Map aus diesem Repo.</p>
+<p>ELF ist je Image das Ergebnis. Beide Skripte reservieren dieselbe SRAM4-Spanne und legen <code>ipc</code> an dieselbe Adresse. Ein Map-Auszug in der Folie ist synthetisch, solange keine echten Maps vorliegen. Größe, Alignment und Abschnittsgrenzen prüft ASSERT. Im Basislabor bleibt die 64-KiB-Region exklusiv für Shared-Nutzung, weil die MPU sie ganz erfasst. <code>.bss</code>-Zero und <code>.data</code>-Copy beider Startups dürfen die Sektion nicht enthalten. NOLOAD beschreibt das Ladebild und ist kein Beweis gegen Debugger oder Startup. Die erzeugten ELF-Dateien und der Loader werden geprüft, sobald das Projekt existiert.</p>
+<p>Nach Adress- und Initialisierungsprüfung verarbeitet der M4 gültige Requests.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1501,24 +1648,32 @@ flowchart LR
 </section>
 <section id="schritt-5-die-ping-pong-logik-cortex-m4" class="slide level2">
 <h2>Schritt 5: Die Ping-Pong Logik (Cortex-M4)</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="dt">void</span> IpcTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
-<span id="cb4-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
-<span id="cb4-4"><a aria-label="4"></a>        <span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>state <span class="op">!=</span> REQUEST_M4<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-5"><a aria-label="5"></a>            osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">/* ein Tick, Frequenz aus der Config */</span></span>
-<span id="cb4-6"><a aria-label="6"></a>            <span class="cf">continue</span><span class="op">;</span></span>
-<span id="cb4-7"><a aria-label="7"></a>        <span class="op">}</span></span>
-<span id="cb4-8"><a aria-label="8"></a>        __DMB<span class="op">();</span></span>
-<span id="cb4-9"><a aria-label="9"></a>        <span class="dt">uint32_t</span> v <span class="op">=</span> ipc<span class="op">.</span>payload <span class="op">+</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
-<span id="cb4-10"><a aria-label="10"></a>        ipc<span class="op">.</span>payload <span class="op">=</span> v<span class="op">;</span></span>
-<span id="cb4-11"><a aria-label="11"></a>        __DMB<span class="op">();</span></span>
-<span id="cb4-12"><a aria-label="12"></a>        ipc<span class="op">.</span>state <span class="op">=</span> RESPONSE_M7<span class="op">;</span></span>
-<span id="cb4-13"><a aria-label="13"></a>        osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span></span>
-<span id="cb4-14"><a aria-label="14"></a>    <span class="op">}</span></span>
-<span id="cb4-15"><a aria-label="15"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Timeout über einen Zähler der Runden, nicht über <code>HAL_GetTick</code> des anderen Kerns.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="pp">#define IPC_MAGIC     </span>UINT32_C<span class="op">(</span><span class="bn">0x49504336</span><span class="op">)</span></span>
+<span id="cb4-2"><a aria-label="2"></a><span class="pp">#define IPC_WAIT_TICKS </span><span class="dv">2000</span><span class="bu">u</span><span class="pp"> </span><span class="co">/* Lehrbudget, Tickfrequenz prüfen */</span></span>
+<span id="cb4-3"><a aria-label="3"></a></span>
+<span id="cb4-4"><a aria-label="4"></a><span class="dt">void</span> IpcTask<span class="op">(</span><span class="dt">void</span> <span class="op">*</span>argument<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-5"><a aria-label="5"></a>    <span class="dt">uint32_t</span> t0 <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb4-6"><a aria-label="6"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">)</span>argument<span class="op">;</span></span>
+<span id="cb4-7"><a aria-label="7"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb4-8"><a aria-label="8"></a>        <span class="dt">uint32_t</span> waited <span class="op">=</span> osKernelGetTickCount<span class="op">()</span> <span class="op">-</span> t0<span class="op">;</span></span>
+<span id="cb4-9"><a aria-label="9"></a>        <span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>magic <span class="op">!=</span> IPC_MAGIC <span class="op">||</span> ipc<span class="op">.</span>state <span class="op">!=</span> REQUEST_M4<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-10"><a aria-label="10"></a>            <span class="cf">if</span> <span class="op">(</span>waited <span class="op">&gt;</span> IPC_WAIT_TICKS<span class="op">)</span> <span class="op">{</span> ipc_error<span class="op">(</span><span class="st">"m4-wait"</span><span class="op">);</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb4-11"><a aria-label="11"></a>            osDelay<span class="op">(</span><span class="dv">1</span><span class="op">);</span> <span class="co">/* ein Kernel-Tick, nicht zwingend 1 ms */</span></span>
+<span id="cb4-12"><a aria-label="12"></a>            <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb4-13"><a aria-label="13"></a>        <span class="op">}</span></span>
+<span id="cb4-14"><a aria-label="14"></a>        t0 <span class="op">=</span> osKernelGetTickCount<span class="op">();</span></span>
+<span id="cb4-15"><a aria-label="15"></a>        __DMB<span class="op">();</span></span>
+<span id="cb4-16"><a aria-label="16"></a>        <span class="dt">uint32_t</span> v <span class="op">=</span> ipc<span class="op">.</span>payload<span class="op">;</span></span>
+<span id="cb4-17"><a aria-label="17"></a>        ipc<span class="op">.</span>payload <span class="op">=</span> v <span class="op">+</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
+<span id="cb4-18"><a aria-label="18"></a>        __DMB<span class="op">();</span></span>
+<span id="cb4-19"><a aria-label="19"></a>        ipc<span class="op">.</span>state <span class="op">=</span> RESPONSE_M7<span class="op">;</span></span>
+<span id="cb4-20"><a aria-label="20"></a>        <span class="co">/* bis zum nächsten REQUEST_M4 die Payload nicht anfassen */</span></span>
+<span id="cb4-21"><a aria-label="21"></a>    <span class="op">}</span></span>
+<span id="cb4-22"><a aria-label="22"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>ipc_error</code> ist Lehrdiagnose: Zustand merken, Kanal beenden, Shared-Felder nicht neu beschreiben. <code>IPC_WAIT_TICKS</code> ist ein Lehrbudget, keine gemessene Deadline. Die 500-ms-Anzeige des M7 muss in dieses Budget passen.</p>
 <aside class="notes">
-<p>Während <code>osDelay</code> laufen andere M4-Tasks. Ein hängender Handshake ist kein kompletter CPU-Stillstand.</p>
+<p>Die Task wartet auf <code>IPC_MAGIC</code> und auf <code>REQUEST_M4</code>. IPC ist der Block, RTOS die Zeitbasis, DMB die Ordnungsbarriere. <code>osKernelGetTickCount</code> liefert Kernel-Ticks, wenn der Kernel läuft. Die Differenz ist unsigned und übersteht einen Zählerumlauf, solange das Budget kleiner als die halbe Zählerweite bleibt und regelmäßig geprüft wird. <code>IPC_WAIT_TICKS</code> ist ein Lehrbudget, keine gemessene Deadline. Es muss die bewusste Anzeigepause des M7 enthalten. <code>osDelay(1)</code> blockiert diese Task um einen Tick. Andere bereite Tasks und Interrupts laufen. Der M4 steht nicht. Ein Zähler fertiger Runden erkennt eine ausbleibende Antwort nicht, weil dann keine Runde mehr abgeschlossen wird. Nach dem DMB liest die Task die Payload einmal, schreibt den Nachfolger und veröffentlicht <code>RESPONSE_M7</code>. Danach fasst sie die Payload nicht an, bis der nächste Request kommt. <code>ipc_error</code> beendet den Kanal und beschreibt die Shared-Felder nicht neu.</p>
+<p>Die Gegenstelle wartet ebenso strikt auf ihre Schreibberechtigung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1533,19 +1688,30 @@ flowchart LR
 </section>
 <section id="schritt-6-die-ping-pong-logik-cortex-m7" class="slide level2">
 <h2>Schritt 6: Die Ping-Pong Logik (Cortex-M7)</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a>ipc<span class="op">.</span>payload <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
-<span id="cb5-2"><a aria-label="2"></a>__DMB<span class="op">();</span></span>
-<span id="cb5-3"><a aria-label="3"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span>
-<span id="cb5-4"><a aria-label="4"></a><span class="co">/* nach Antwort: */</span></span>
-<span id="cb5-5"><a aria-label="5"></a>__DMB<span class="op">();</span></span>
-<span id="cb5-6"><a aria-label="6"></a>log_u32<span class="op">(</span>ipc<span class="op">.</span>payload<span class="op">);</span> <span class="co">/* 1, dann 3, dann 5 */</span></span>
-<span id="cb5-7"><a aria-label="7"></a>ipc<span class="op">.</span>payload <span class="op">+=</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
-<span id="cb5-8"><a aria-label="8"></a>__DMB<span class="op">();</span></span>
-<span id="cb5-9"><a aria-label="9"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>HAL_Delay(500)</code> nur als sichtbare Pause. Nicht als Latenzmessung.</p>
-<p>Keine Antwort innerhalb weniger Pausen: Fehlerzeile, Zustand stehen lassen, Schleife beenden.</p>
+<p>Einmalig im Boot, bevor der M4 kommuniziert: Payload 0, Magic, DMB, <code>REQUEST_M4</code>, dann HSEM-Freigabe. Die Laufschleife wartet wirklich auf die Antwort:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">static</span> <span class="dt">int</span> wait_response<span class="op">(</span><span class="dt">uint32_t</span> <span class="op">*</span>v<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-2"><a aria-label="2"></a>    <span class="dt">uint32_t</span> t0 <span class="op">=</span> HAL_GetTick<span class="op">();</span> <span class="co">/* lokale M7-Zeit, Tick muss laufen */</span></span>
+<span id="cb5-3"><a aria-label="3"></a>    <span class="cf">for</span> <span class="op">(;;)</span> <span class="op">{</span></span>
+<span id="cb5-4"><a aria-label="4"></a>        <span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>magic <span class="op">!=</span> IPC_MAGIC<span class="op">)</span> <span class="cf">return</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span></span>
+<span id="cb5-5"><a aria-label="5"></a>        <span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>state <span class="op">==</span> RESPONSE_M7<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-6"><a aria-label="6"></a>            __DMB<span class="op">();</span></span>
+<span id="cb5-7"><a aria-label="7"></a>            <span class="op">*</span>v <span class="op">=</span> ipc<span class="op">.</span>payload<span class="op">;</span> <span class="co">/* genau einmal, private Kopie */</span></span>
+<span id="cb5-8"><a aria-label="8"></a>            <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-9"><a aria-label="9"></a>        <span class="op">}</span></span>
+<span id="cb5-10"><a aria-label="10"></a>        <span class="cf">if</span> <span class="op">((</span>HAL_GetTick<span class="op">()</span> <span class="op">-</span> t0<span class="op">)</span> <span class="op">&gt;</span> <span class="dv">2000</span><span class="bu">u</span><span class="op">)</span> <span class="cf">return</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span> <span class="co">/* Lehr-ms, nicht Latenz */</span></span>
+<span id="cb5-11"><a aria-label="11"></a>    <span class="op">}</span></span>
+<span id="cb5-12"><a aria-label="12"></a><span class="op">}</span></span>
+<span id="cb5-13"><a aria-label="13"></a></span>
+<span id="cb5-14"><a aria-label="14"></a><span class="dt">uint32_t</span> v<span class="op">;</span></span>
+<span id="cb5-15"><a aria-label="15"></a><span class="cf">if</span> <span class="op">(</span>wait_response<span class="op">(&amp;</span>v<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span> ipc_error<span class="op">(</span><span class="st">"m7-wait"</span><span class="op">);</span> <span class="cf">return</span><span class="op">;</span> <span class="op">}</span></span>
+<span id="cb5-16"><a aria-label="16"></a>log_u32<span class="op">(</span>v<span class="op">);</span>          <span class="co">/* erste Ausgabe 1, dann 3, dann 5 */</span></span>
+<span id="cb5-17"><a aria-label="17"></a>ipc<span class="op">.</span>payload <span class="op">=</span> v <span class="op">+</span> <span class="dv">1</span><span class="bu">u</span><span class="op">;</span></span>
+<span id="cb5-18"><a aria-label="18"></a>__DMB<span class="op">();</span></span>
+<span id="cb5-19"><a aria-label="19"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Vor <code>RESPONSE_M7</code> liest und überschreibt diese Schleife die Payload nicht. <code>log_u32</code> und <code>ipc_error</code> sind Lehrfunktionen des M7, keine ST-API. <code>HAL_Delay(500)</code> darf danach als sichtbare Pause stehen, solange der M4 genug Wartebudget hat. Die Pause ist keine IPC-Latenz.</p>
 <aside class="notes">
-<p>M7-<code>HAL_Delay</code> ist Busy-Wait auf dem M7. Der M4 kann trotzdem im RTOS weiterlaufen, solange der Bus das erlaubt.</p>
+<p>Die Boot-Initialisierung setzt Payload 0 und den ersten Request genau einmal. Die Laufschleife wartet in <code>wait_response</code> auf <code>RESPONSE_M7</code>. IPC ist der Block, DMB die Barriere, HAL die lokale Tickquelle, UART die Ausgabe. <code>HAL_GetTick</code> ist nur eine Zeit, wenn der HAL-Tick in der Warteschleife fortschreitet. 2000 ist eine Lehrgrenze in diesen Ticks, keine Latenzmessung. Vor der Antwort liest und überschreibt die Schleife die Payload nicht. Nach dem Zustand kommt der DMB, dann genau eine private Kopie. <code>log_u32</code> gibt sie aus. Die erste Ausgabe ist 1. Danach schreibt der M7 den Nachfolger und veröffentlicht <code>REQUEST_M4</code>. <code>HAL_Delay(500)</code> darf als sichtbare Pause folgen und ist Busy-Wait auf dem M7, sofern die Implementierung nicht ersetzt wurde. Der M4 kann im RTOS weiterlaufen. <code>ipc_error</code> meldet und beendet die Kanalbearbeitung, ohne den fremden Besitz zu überschreiben.</p>
+<p>Diese Logik setzt die M7-Speicherattribute der nächsten Folie voraus.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1564,7 +1730,8 @@ flowchart LR
 <p>Lehrregion: Basis <code>0x38000000</code>, 64 KiB, ausgerichtet, Normal, TEX 001, C 0, B 0, Execute Never, Schreiben erlaubt, Shareability passend zu AN4838. Höhere Regionsnummer gewinnt bei Überlappung. Konstantennamen im HAL-Header können abweichen; die Bitwerte sind die Lehrkonfiguration.</p>
 <p>Versuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.</p>
 <aside class="notes">
-<p>Ohne aktiven D-Cache zeigt Versuch 2 nichts. CCR lesen.</p>
+<p>Die MPU steht vor <code>SCB_EnableDCache</code> und vor dem ersten Shared-Zugriff. Die Foliennummer ist nicht die Ausführungsreihenfolge. DSB und ISB gehören zur Aktivierung, wie HAL oder CMSIS sie ausführen. Die Basis ist auf 64 KiB ausgerichtet. Die Größenkodierung von Armv7-M ist <span class="math inline">\(2^{\mathrm{SIZE}+1}\)</span> Byte, also SIZE 15 für 64 KiB. Die HAL-Konstante trägt diese Kodierung, nicht die Bytezahl 65536 als Registerfeld. Regionsnummer und Überlappung werden am vorhandenen Setup geprüft. Eine freie Nummer wird nicht erfunden. Das Hintergrundrecht, etwa privilegierte Default-Zugriffe, muss zum übrigen Programm passen. Die Fehlervariante ist ein eigener Build mit aktivem D-Cache und TEX 001, C 1, B 1, S 0. Ohne aktiven D-Cache zeigt sie nichts. CCR lesen.</p>
+<p>Danach können beide Images gemeinsam gestartet und geprüft werden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1586,7 +1753,8 @@ flowchart LR
 <li>Breakpoints auf beiden Kernen verschieben Timeouts</li>
 </ul>
 <aside class="notes">
-<p>ST-LINK-Ablauf der Kursversion. OpenOCD nicht in denselben Satz mischen, solange er nicht der verwendete Server ist.</p>
+<p>ELF sind die zwei Images, UART die Ausgabe, GDB der Debugger über den ST-LINK-Server der Kursversion. OpenOCD bleibt draußen, solange er nicht der Server ist. Der Ablauf ist: beide Images bauen oder als ungebaut kennzeichnen, Startadressen prüfen, beide laden, gemeinsam zurücksetzen, den Handshake durchlaufen lassen und die ersten drei Ausgaben erwarten. 1, 3 und 5 sind die Protokollvorhersage, kein vorhandenes Messergebnis. Der UART-Besitzer ist der Kern, dessen Retargeting wirklich schreibt. Breakpoints verändern Timeouts. Ein Speicherfenster des Debuggers ist nicht automatisch die Sicht des M7-Caches. Ohne Projekt bleibt der Lauf offen.</p>
+<p>Ein kontrolliertes Fehlerexperiment dient danach der Ursachenanalyse.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1599,8 +1767,8 @@ flowchart LR
           display:block!important;
       }</style></aside>
 </section>
-<section id="mutwilliger-fehler-mpu-deaktivieren" class="slide level2">
-<h2>Mutwilliger Fehler: MPU deaktivieren</h2>
+<section id="kontrolliertes-cachefehler-experiment-und-diagnose" class="slide level2">
+<h2>Kontrolliertes Cachefehler-Experiment und Diagnose</h2>
 <table class="caption-top">
 <thead>
 <tr class="header">
@@ -1644,7 +1812,8 @@ flowchart LR
 </table>
 <p>GPIO oder UART-Status je Symptom, keine erfundene Messung.</p>
 <aside class="notes">
-<p>Ein blockierter M4-Task im <code>osDelay</code> lässt andere Tasks laufen. Das ist kein Beweis, dass der Kern steht.</p>
+<p>Die Tabelle trennt Hypothesen. Startet der M4 nicht, zuerst Stop und HSEM-ID, nicht den Cache. Falsche Adresse: beide Maps. Falsches Magic: Init oder Zero. Alter Wert beim M7: CCR und die MPU-Region. Ein Timeout beweist keine einzelne Ursache. HSEM ist hier das Bootsignal, ELF das geladene Image. Ein M4-Task in <code>osDelay</code> lässt andere Tasks laufen und beweist keinen eingefrorenen Kern. Die Fehlervariante ist ein separater Build mit nachgewiesenem D-Cache und Write-Back, S gleich 0, ohne Wartung. Ein kurzer Erfolg widerlegt das Risiko nicht. Zwischen den Varianten gibt es einen gemeinsamen Neustart.</p>
+<p>Laufzeitsperren mit HSEM kommen später dazu.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1657,8 +1826,8 @@ flowchart LR
           display:block!important;
       }</style></aside>
 </section>
-<section id="die-gefahr-für-nächste-woche-hsem" class="slide level2">
-<h2>Die Gefahr für nächste Woche (HSEM)</h2>
+<section id="ausblick-tracing-in-termin-7-hsem-in-termin-8" class="slide level2">
+<h2>Ausblick: Tracing in Termin 7, HSEM in Termin 8</h2>
 <ul>
 <li>Boot-HSEM ist heute erledigt</li>
 <li>Eine HSEM-Sperre für jeden Zugriff ist Termin 8</li>
@@ -1666,7 +1835,8 @@ flowchart LR
 <li>Ein lokaler FreeRTOS-Mutex sieht den M7 nicht</li>
 </ul>
 <aside class="notes">
-<p>Kursplan: Termin 7 Tracing, Termin 8 HSEM und Safety. „Nächste Woche HSEM“ wäre der falsche Verweis.</p>
+<p>Der Kursplan nennt Tracing für Termin 7 und HSEM als Laufzeitsperre samt Safety für Termin 8. „Nächste Woche HSEM“ wäre der falsche Verweis. HSEM ist heute das Bootsignal. Später kann sie Berechtigung oder Benachrichtigung koordinieren. Sie ersetzt weder die MPU-Attribute noch DMB. Ein FreeRTOS-Mutex gilt nur im M4-Kernel und sieht den M7 nicht. MPU bleibt die Speicherschutzeinheit des M7. Safety heißt hier die spätere Betrachtung sicherheitsbezogener Anforderungen, kein schon erbrachter Nachweis. RTOS und DMB bleiben die heutigen Werkzeuge des M4 und der Reihenfolge.</p>
+<p>Zum Abschluss werden die Bausteine des Protokolls geordnet wiederholt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1684,12 +1854,15 @@ flowchart LR
 <ul>
 <li>AMP partitioniert Firmware, nicht automatisch die Zeit</li>
 <li>Boot: M4 Stop, M7 init, HSEM Release</li>
-<li>Shared: eine Adresse, M7 initialisiert, Zustand vor Payload-Leser</li>
-<li>Cache: beide Richtungen; MPU non-cacheable plus DMB plus ein Schreiber</li>
+<li>Shared: eine Adresse, M7 initialisiert. Reihenfolge: Payload schreiben, DMB, Zustand veröffentlichen; Zustand beobachten, DMB, Payload lesen</li>
+<li>Cache: beide Richtungen; MPU non-cacheable plus DMB plus ein berechtigter Payload-Schreiber je Phase</li>
 <li>Ausgabe 1, 3, 5 ist das Protokoll, nicht eine Messung</li>
 </ul>
 <aside class="notes">
-<p>Quellen: DS12919, RM0399 der Projekt-Revision, AN5361, AN5617, AN4839, AN4838, CMSIS-Cache und Intrinsics, GCC volatile, GNU ld NOLOAD. Offene Punkte: installierte Cube-Version, echte Map, UART-Pin, VOS.</p>
+<p>AMP trennt die Firmware und isoliert die Zeit nicht automatisch. Der Boot ist M4 in Stop, M7 initialisiert, HSEM gibt frei. HSEM ist die Hardwaresemaphore, ELF je ein Image, MPU die nicht cachebare Region, IPC der Block, DMB die Barriere. Die Reihenfolge lautet: Payload schreiben, DMB, Zustand veröffentlichen. Die Gegenstelle beobachtet den Zustand, führt DMB aus und liest danach die Payload. „Ein Schreiber“ meint einen berechtigten Payload-Schreiber je Phase. Den Zustand beschreiben beide Kerne abwechselnd. Die erste Ausgabe ist 1, weil der M4 aus der initialen 0 eine 1 macht. 1, 3 und 5 messen keine Latenz.</p>
+<p>Frage: Warum ersetzt HSEM nicht MPU und DMB? Eine Benachrichtigung koordiniert den Boot. Sie schreibt keine Cachezeile zurück und ordnet Payload und Zustand nicht.</p>
+<p>Quellen bleiben DS12919, RM0399 der Projektrevision, AN5361, AN5617, AN4838 und AN4839, CMSIS-Cache und Intrinsics, GCC volatile und GNU ld zu NOLOAD. Offen ohne Projekt: Cube-Version, Map, UART-Pin, VOS und Tickfrequenz.</p>
+<p>Der nächste Termin betrachtet, wie man solche Zeiten überhaupt sichtbar macht.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
