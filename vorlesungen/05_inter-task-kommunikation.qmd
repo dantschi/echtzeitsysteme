@@ -1,1010 +1,965 @@
 ---
 title: "05 · Inter-Task-Kommunikation und Interrupts"
-subtitle: "Queues, Mailboxes und ISR-Anbindung · EZS · DHBW Stuttgart"
+subtitle: "Queues, Speicherbesitz und aufgeschobene Interruptverarbeitung · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Vortrag:  quarto preview vorlesungen/05_inter-task-kommunikation.qmd
-# Handout:  quarto render vorlesungen/05_inter-task-kommunikation.qmd --profile handout --to pdf
-format: revealjs
+format:
+  revealjs:
+    css: ../assets/styles/lecture05.css
+    title: ""
+    pagetitle: "05 · Inter-Task-Kommunikation und Interrupts"
+center: false
 ---
 
-## Willkommen zurück zu Echtzeitsysteme!
+## 05 · Daten weitergeben und auf Ereignisse reagieren
 
-- Fünfter Termin: Daten transportieren, nicht nur sperren
-- Ein FreeRTOS-Kernel auf dem CM4, wie in VL3/VL4, sofern das Projekt das bestätigt
-- Eine lokale Queue ist kein Kanal zwischen zwei getrennten Kerneln
-- DMA und der zweite Kern bleiben ein kurzer Anhang
-
-::: notes
-Heute geht es nicht mehr nur darum, eine Ressource zu sperren. Eine Nachricht ist ein Datensatz plus ein Vertrag: wer ihn kopiert, wie lange er gültig bleibt und was bei Überlauf geschieht. EZS steht für Echtzeitsysteme. Das RTOS, Real-Time Operating System, ist hier FreeRTOS auf dem Cortex-M4, kurz CM4. Eine Queue ist eine begrenzte Warteschlange in diesem Kernel. DMA, Direct Memory Access, und der zweite Kern CM7 benutzen diese lokale Queue nicht automatisch. Zwei getrennte Kernel teilen weder die Wartelisten noch den Allokator.
-
-Eine fehlende `.ioc` bedeutet, dass UART, EXTI-Zielkern, Tick und NVIC-Gruppierung am gestellten Projekt geprüft werden müssen. CMSIS-Spezifikation, ST-Adapter und native API bleiben getrennte Verträge.
-
-Aus Historie, aktuellem Zustand und Hardwareereignis ergibt sich die Agenda.
-:::
-
-## Agenda für heute
-
-1. Historie gegen aktuellen Wert
-2. Queue: Ring, Warten, Überlauf
-3. Kopie, Pointer, Pufferkreislauf
-4. Mailbox und mehrere Leser
-5. Top-Half, zulässige ISR-API, EXTI-Labor
+- Inter-Task-Kommunikation und Interruptanbindung
+- Ein FreeRTOS-Kernel auf dem Cortex-M4
+- Vom konsistenten Einzelwert zur begrenzten Nachrichtenfolge
+- Übung: Papiermodelle und NUCLEO-H755ZI-Q
 
 ::: notes
-Die fünf Punkte sind ein Lernweg. Zuerst entscheiden wir, ob die Anwendung jede Nachricht oder nur den letzten Stand braucht. Danach lesen wir den Ring: Head ist in diesem Lehrmodell der nächste Entnahmeslot, Tail der nächste Einfügeslot, Count die Belegung. Eine Mailbox meint hier einen Latest-Value-Vertrag, nicht jede Queue der Länge eins. Top-Half ist die kurze ISR-Arbeit, Bottom-Half der aufschiebbare Thread. ISR ist die Interruptbehandlungsroutine, EXTI die externe Interruptanbindung des STM32.
+Dieser Termin verbindet zwei bekannte Ideen: die Zustände eines Threads aus Vorlesung 3 und den Schutz gemeinsamer Daten aus Vorlesung 4. Inter-Task-Kommunikation bedeutet Datenaustausch zwischen Aufgaben eines Betriebssystemkerns. Ein Echtzeitbetriebssystem, englisch Real-Time Operating System oder RTOS, bietet dafür begrenzte Nachrichtenwarteschlangen. FreeRTOS ist der im Labor verwendete Kernel. Der Cortex-M4 ist einer der beiden Prozessorkerne des STM32H755 auf dem Board NUCLEO-H755ZI-Q.
 
-Nachrichtenvorrang, `msg_prio`, ist nicht die Priorität des Threads. Der Adapter ignoriert den Parameter.
-
-Zuerst klären wir, welches Problem der Mutex aus Vorlesung 4 schon gelöst hat.
+Zuerst betrachten wir reine Softwareaufgaben. Danach wird ein Interruptbehandler zum Nachrichtenerzeuger. Beide Teile stellen dieselben Fragen: Welche Information muss erhalten bleiben, wer darf den Speicher benutzen und was geschieht bei fehlendem Platz? Das begleitende Skript erklärt die Voraussetzungen und Beispiele. Es setzt die Vorlesungen 1 bis 4 voraus, aber keine weitere Betriebssystemerfahrung. Eine lokale Queue wird heute innerhalb eines Kernels verwendet. Kommunikation mit dem zweiten Kern wird erst im folgenden Termin vertieft.
 :::
 
-## Recap: Die Lehren aus Termin 4
+## Was wir aus Vorlesung 1–4 mitbringen
 
-- `counter++` ist ein Read-Modify-Write, nicht universell drei Befehle
-- Präemption auch durch Ereignisse, Wechsel im Port über PendSV
-- PIP kürzt die Extra-Zeit durch Medium, nicht jede Verzögerung
-- Ein Mutex kann einen konsistenten Snapshot schützen
-- Er liefert keine Historie und keine Ereignisschlange
+| Bekannt | Heute gebraucht für |
+|---|---|
+| Latenz und Deadline | Ereignis bis fertige Verarbeitung |
+| Scheduling und Prioritäten | Wer nach einer Nachricht läuft |
+| Ready, Running, Blocked | Warten auf Daten oder Platz |
+| Mutex und Semaphor | Datenkonsistenz und Arbeitshinweis |
 
 ::: notes
-RMW, Read-Modify-Write, ist Lesen, Ändern und Zurückschreiben. Präemption kann diese Folge unterbrechen. PendSV führt im üblichen Port den Kontextwechsel aus. PIP, Priority Inheritance Protocol, hebt den Mutex-Besitzer an, während ein höherer Thread wartet. Das kürzt die zusätzliche Verdrängung durch Medium, nicht jede Wartezeit. Ein Mutex kann einen konsistenten Snapshot schützen: mehrere Felder passen zusammen. Er speichert ohne weitere Struktur keine früheren Werte und weckt niemanden mit einer Ereignisnachricht.
+Eine Deadline ist die Frist, bis zu der die geforderte Reaktion abgeschlossen sein muss. Latenz bezeichnet eine Verzögerung, deren Anfang und Ende immer angegeben werden müssen. Scheduling ist die Auswahl einer ausführungsbereiten Aufgabe. Ready heißt ausführungsbereit, Running heißt laufend und Blocked heißt auf ein Ereignis oder eine Wartezeit wartend. Diese Zustände beziehen sich auf Threads, also Aufgaben mit eigenem Ausführungskontext.
 
-Das Maschinenbeispiel endete bei 6 statt 7, auch wenn der Compiler mehr als drei Befehle erzeugt. Der verlorene Update bleibt das Bild.
-
-Frage: Liefert ein perfekt geschützter Einzelwert automatisch alle fünf bisherigen Samples? Nein. Jeder neue Schreibzugriff überschreibt den alten Speicher. Die früheren Werte sind weg, auch wenn der letzte Stand konsistent ist.
-
-Die Grenze des Locks motiviert einen geordneten Datentransport.
+Ein Mutex schützt eine Ressource mit Besitzer: Alle beteiligten Threadzugriffe müssen dieselbe Schutzregel beachten. Ein Semaphor speichert dagegen eine begrenzte Anzahl von Berechtigungen oder Arbeitshinweisen. Er enthält selbst keine Nutzdaten. Diese Unterscheidung ist der Ausgangspunkt: Ein korrekt gesperrter Temperaturwert kann konsistent sein und trotzdem vier frühere Messungen verloren haben. Schutz eines Zugriffs und Speicherung einer Folge sind unterschiedliche Anforderungen. Die neue Warteschlange verbindet Datenspeicherung mit Warten und Aufwecken, ersetzt aber keine Analyse von Last und Fristen.
 :::
 
-## Mutexe schützen, aber transportieren nicht!
+## Was Sie am Ende begründen können
 
-- Viele Samples hintereinander: der letzte Wert überschreibt die früheren
-- „Mehr Zeit am Schloss als beim Rechnen“ nur mit Messung oder als Hypothese
-- Eine Queue kopiert und weckt; auch das kostet
-- Hohe Raten oft als Block, nicht jedes Sample als eigene Nachricht
-- 44000 Samples/s nicht als belegte Laborzahl verwenden
+1. Historie und aktuellen Zustand unterscheiden
+2. Einen Ringpuffer und seine Kapazität nachrechnen
+3. Wertkopie und Speicherbesitz auseinanderhalten
+4. Queue-Status und Wartezustände richtig auswerten
+5. Eine zulässige Interruptübergabe konfigurieren
 
 ::: notes
-Ein Sample ist ein Messwert zu einem Zeitpunkt. Der Producer erzeugt sie, der Consumer verarbeitet sie. Schreibt der Producer fünf Werte in dieselbe Variable, bevor der Consumer liest, bleibt nur der letzte. ADC, Analog-Digital-Wandler, UART-Empfang und DMA können weiter Daten liefern, während ein Softwarethread wartet. Backpressure, der Gegendruck durch Blockieren, bremst nur eine Quelle, die warten kann. Die Zahl 44000 Samples je Sekunde ist keine Laborzahl und keine Anforderung dieser Folie.
+Historie meint hier eine Folge von Nachrichten, deren Zwischenwerte wichtig sind. Ein aktueller Zustand darf dagegen ältere Zustände ersetzen, wenn die Anwendung das ausdrücklich erlaubt. Ein Ringpuffer verwendet ein festes Array zyklisch; die nächsten Lese- und Schreibpositionen laufen am Ende wieder zum Anfang. Kapazität ist die Anzahl speicherbarer Elemente, nicht deren Größe in Byte.
 
-Eine Queue kopiert ein Element und kann den Empfänger wecken. Auch das kostet Rechenzeit. Hohe Raten werden oft als Block zusammengefasst, nicht jedes Sample als eigene Nachricht. Ohne Messung bleibt die Kostenaussage qualitativ.
-
-Ein kleines Beispiel macht Historie gegenüber Zustand konkret.
+Bei einer Wertkopie werden die Bytes einer Nachricht in den Queue-Speicher übernommen. Speicherbesitz beantwortet, wer einen referenzierten Puffer verändern oder wiederverwenden darf. Der Rückgabestatus eines Queue-Aufrufs entscheidet, ob die Übergabe tatsächlich gelungen ist. Bei der Interruptübergabe reicht ein kurzer Aufruf allein nicht: Funktion, Warteparameter und Interruptpriorität müssen passen. Diese Ziele werden mit konkreten Papieraufgaben geprüft. Eine gute Lösung begründet auch einen Fehlerfall, etwa eine volle Queue oder einen noch nicht abgeschlossenen Zugriff. Die Programmierübung macht die Verträge beobachtbar, ohne aus einem erfolgreichen Build automatisch eine gehaltene Frist abzuleiten.
 :::
 
-## Motivation: Producer & Consumer
+## Vier Schulstunden: erklären, rechnen, beobachten
 
-Fünf Samples bei $t = 1,2,3,4,5\,\mathrm{ms}$. Der Leser kommt nach dem fünften.
-
-| Speicher | Inhalt |
-|----------|--------|
-| eine globale Variable | nur Sample 5 |
-| FIFO mit Platz | Folge 1 bis 5, wenn nichts verworfen wurde |
-
-- „Alle Ereignisse in Reihenfolge“: Überschreiben ist Verlust
-- „Aktueller Zustand“: Überschreiben kann gewollt sein
-- Sequenznummer und Zeitstempel machen Lücken und Alter sichtbar
-- Die Zeitquelle muss zur Einheit passen
+| Block | Ablauf in Minuten |
+|---|---|
+| 1 · Queue-Grundlagen | 25 Erklärung + 20 Papieraufgabe 1 |
+| 2 · Last und Speicherbesitz | 25 Erklärung + 20 Papieraufgaben 2–3 |
+| 3 · Interruptübergabe | 25 Erklärung + 10 Papieraufgabe 4 + 10 Integration |
+| 4 · Labor und Rückblick | 25 Versuch + 15 Quiz + 5 Abschluss |
 
 ::: notes
-Fünf Samples entstehen bei 1, 2, 3, 4 und 5 ms. Der Leser kommt erst danach. Eine globale Variable enthält dann nur Sample 5. Eine FIFO, First In First Out, mit mindestens fünf freien Plätzen und ohne vorherigen Verlust enthält 1 bis 5. FIFO heißt: die zuerst erfolgreich eingereihte Nachricht wird zuerst entnommen. Das ist keine Garantie, dass jedes Hardwareereignis überhaupt erfasst wurde.
+Vier Schulstunden entsprechen hier insgesamt 180 Minuten Unterricht. Die Tabelle verteilt 75 Minuten auf Erklärungen, 50 Minuten auf Papieraufgaben, 35 Minuten auf Integration und Versuche sowie 20 Minuten auf Quiz und Abschluss. Pausen liegen außerhalb dieses Modells. Die etwa 50 Folien sind Gesprächs- und Arbeitsstationen; Rechen- und Laborfolien werden länger verwendet als Orientierungsfolien.
 
-Ein Display will oft den letzten gültigen Stand. Ein Ereigniszähler braucht die Folge, sonst fehlt ein Druck. Die Sequenznummer `seq` zeigt Lücken in der erfolgreich erfassten Folge. Der Tickstempel zeigt das Alter in Kernel-Ticks. Verlorene Ereignisse vor der Erfassung lassen sich aus `seq` allein nicht rekonstruieren.
-
-Zwei gleich skalierte Vorstellungen gehören zusammen: Einzelwert gegen FIFO, derselbe Producerverlauf.
-
-Geteilte globale Variablen bleiben für manche Anforderungen geeignet, haben aber klare Grenzen.
+Der Zeitplan setzt für die Programmierphase ein bereits lauffähiges Projekt aus Vorlesung 3 voraus. Das Einrichten einer neuen Entwicklungsumgebung, die Fehlersuche im Dual-Core-Start und die erstmalige Installation der Werkzeuge passen nicht zusätzlich in die 35 Minuten. Die Lehrperson stellt daher eine geprüfte Projektbasis und die beiden Anwendungsdateien bereit. Ohne diese Basis werden die Papieraufgaben und eine gemeinsame Codebesprechung durchgeführt; fehlende Hardwarewerte werden nicht erfunden. Das Quiz dient der begründeten Rückmeldung, insbesondere zu häufigen Verwechslungen zwischen gespeichert, bereit und bereits verarbeitet.
 :::
 
-## Die Falle der globalen Variable
+## Fünf Messungen, ein geschützter Wert
 
-- Geschützt: ein konsistenter Stand
-- Ungeschützt: zerrissene Felder, wie in VL4
-- Kein Warten auf „neue Daten“, kein Rückstau, keine Reihenfolge
-- Ein Puffer gleicht Bursts aus
-- Er macht einen dauerhaft langsameren Consumer nicht schneller
+Messungen bei $t=1,2,3,4,5\,\mathrm{ms}$; Leser erst danach.
+
+| Ablage | Was kann der Leser erhalten? |
+|---|---|
+| Einzelwert mit Mutex | Messung 5 |
+| FIFO mit fünf freien Plätzen | Messungen 1 bis 5 |
+
+Welche Ablage braucht ein Display, welche eine Ereignisstatistik?
 
 ::: notes
-Geschützt liefert die Variable einen konsistenten Stand. Ungeschützt können Felder zerrissen gelesen werden, wie beim Lost Update. Es gibt kein Warten auf Neuigkeit, keinen Rückstau und keine Reihenfolge. $\lambda$ ist die angebotene mittlere Rate, $\mu$ die mögliche Entnahmerate, beide in Nachrichten je Sekunde. Liegt $\lambda$ dauerhaft über $\mu$, füllt jeder endliche Puffer. Ein größerer Puffer verschiebt nur den Überlauf. Er macht den Consumer nicht schneller und gleicht nur Bursts aus, solange danach wieder Platz entsteht.
+Die Zeitpunkte sind didaktische Annahmen und keine Messung am Board. ms steht für Millisekunden. Der Schreiber ersetzt bei jedem Zeitpunkt denselben Einzelwert. Ein Mutex, eine Sperre mit Besitzer, kann dabei verhindern, dass der Leser einen halb aktualisierten Datensatz erhält. Er bewahrt jedoch keine früheren Datensätze. Beim späteren Lesen bleibt nur Messung 5.
 
-Frage: Was ändert eine Verdopplung der Kapazität $N$ bei unverändert dauerhaft $\lambda > \mu$? Die Zeit bis zum ersten Verlust wird länger. Langfristig bleibt der Puffer voll, neue Nachrichten gehen weiter verloren.
-
-Kommunikation braucht deshalb einen begrenzten, verwalteten Zwischenspeicher und eine explizite Überlaufregel.
+FIFO bedeutet First In First Out: Die zuerst erfolgreich eingereihte Nachricht wird zuerst entnommen. Eine solche Warteschlange kann hier alle fünf Messungen erhalten, wenn anfangs fünf Plätze frei sind und keine Nachricht verworfen wird. Ein Display benötigt häufig den jüngsten gültigen Zustand. Eine Statistik über jede Betätigung braucht dagegen die Ereignisfolge oder eine passende Zählung. Beide Antworten hängen von der Anforderung ab. Man kann nicht aus dem Wort Sensor ableiten, dass Überschreiben immer zulässig wäre. Die Speicherwahl beginnt deshalb mit der Bedeutung der Daten, bevor eine konkrete Betriebssystemfunktion ausgewählt wird.
 :::
 
-## Die Lösung: Inter-Task Communication (ITC)
+## Eine Nachricht braucht einen Vertrag
 
-Begrenzter Puffer, nicht nur zwei Kästen:
-
-Producer → Slot → Slot → Slot → Consumer
-
-- Put reiht eine **Kopie** des Elements ein
-- Get entnimmt ein Element
-- Mehrere Consumer teilen sich die Arbeit
-- Sie bekommen nicht alle dieselbe Nachricht
+- Inhalt: Wert, Sequenznummer, Erfassungszeit
+- Reihenfolge: alle Ereignisse oder nur letzter Stand?
+- Kapazität: wie viele Nachrichten dürfen warten?
+- Fehlerpfad: was geschieht bei Überlauf?
+- Besitz: Kopie oder referenzierter Puffer?
 
 ::: notes
-ITC, Inter-Task Communication, ist hier der Datentransport zwischen Tasks desselben Kernels. Eine Queue hat $N$ Slots. Put reiht eine Kopie des Elements ein, Get entnimmt eines. Mehrere Get-Consumer verteilen die Nachrichten. Ein entnommenes Element geht nicht automatisch an alle Leser. `GetCount` und `GetSpace` sind Momentaufnahmen. Sie reservieren keinen Platz für den nächsten Put oder Get. Der Rückgabestatus der eigentlichen Operation entscheidet.
+Ein Vertrag beschreibt die Erwartungen zwischen Sender und Empfänger. Die Sequenznummer ist eine fortlaufende Kennzeichnung der vom Sender erfassten Nachrichten. Wird sie bei jedem Versuch erhöht, lassen spätere Lücken abgelehnte Übergaben erkennen. Sie beweist nicht, dass jedes physikalische Ereignis überhaupt einen Callback erreicht hat. Ein Zeitstempel hält einen definierten Erfassungszeitpunkt fest. Seine Zeitquelle und Einheit müssen dokumentiert werden; ein Kernel-Tick ist nicht automatisch eine Mikrosekunde.
 
-Die Queue synchronisiert ihre eigenen Put- und Get-Aufrufe. Daten, auf die ein Pointer zeigt, brauchen zusätzlich einen Besitzvertrag. Die Abbildung ist ein begrenzter Puffer, kein unendlicher Pfeil.
-
-Die Lernziele benennen nun, welche Entscheidungen selbstständig getroffen werden sollen.
+Kapazität und Fehlerpfad gehören zusammen. Ein begrenzter Speicher kann nicht jede beliebige Last verlustfrei aufnehmen. Der Sender muss erkennen, ob sein Datensatz übernommen wurde. Bei einer Referenz, etwa einer Pufferadresse, ist außerdem festzulegen, wer den Inhalt nach der Übergabe verändern darf und wann er wieder verfügbar wird. Ein erfolgreicher Funktionsaufruf ersetzt diesen Besitzvertrag nicht. Wir beginnen mit kleinen Wertnachrichten, weil dort die Speicherlebensdauer übersichtlich ist. Erst danach übertragen wir dieselben Fragen auf große Puffer.
 :::
 
-## Lernziele des heutigen Tages
+## Producer und Consumer entkoppeln
 
-1. Historie und Latest-Value auseinanderhalten
-2. Einen Ring mit Head, Tail und Count lesen
-3. Wertkopie, Pointerkopie und Pufferbesitz trennen
-4. Put mit Timeout 0 nicht mit Overwrite verwechseln
-5. EXTI nur mit zulässiger NVIC-Priorität an den Kernel hängen
+
+
+Die Queue puffert zeitweise unterschiedliche Arbeitsgeschwindigkeiten.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  P[Producer] -->|Put: Kopie| Q[Queue: N Plätze]
+  Q -->|Get: Kopie| C[Consumer]
+  style Q fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
 
 ::: notes
-Jedes Ziel ist eine Tätigkeit. Sie können sagen, ob eine Anwendung die Folge oder den letzten Stand braucht. Sie können Head, Tail und Count eines Rings ablesen. Sie können Wertkopie, Pointerkopie und Pufferbesitz trennen. Sie können einen fehlgeschlagenen Try-Put von Overwrite unterscheiden. Sie können prüfen, ob eine EXTI-IRQ im Syscall-Bereich des NVIC liegt. EXTI ist die externe Interruptanbindung, der NVIC der Interruptcontroller. Latest-Value heißt: der neueste Stand ersetzt den alten. Ready nach einem erfolgreichen Put heißt ausführungsbereit, nicht schon laufend. Running kommt erst, wenn der Scheduler den Consumer wählt.
+Producer ist der Erzeuger einer Nachricht, Consumer ihr Verbraucher. Die Abbildung wird von oben nach unten gelesen. Der erste Pfeil steht für Put, also Einreihen; der zweite für Get, also Entnehmen. Die rote Umrandung hebt den begrenzten Zwischenspeicher hervor und bezeichnet keine zusätzliche Zeitgarantie. N ist die Kapazität in Elementen. Die Zeichnung zeigt einen Datenfluss, keinen zeitlichen Ablauf einer Präemption.
 
-Zuerst legen wir fest, in welcher Reihenfolge Nachrichten die Queue verlassen.
+Bei kleinen Wertnachrichten erhält die Queue eine Kopie und gibt später eine Kopie an den Consumer weiter. Der Erzeuger muss seine lokale Nachricht nach erfolgreichem Put nicht bis zur Verarbeitung aufbewahren. Der Consumer kann arbeiten, obwohl der Erzeuger inzwischen andere Aufgaben erledigt. Diese Entkopplung ist begrenzt: Sobald alle Plätze belegt sind, braucht der Sender eine Warte- oder Verwerfungsregel. Eine dauerhaft langsamere Verarbeitung wird durch den Speicher nicht schneller. Die Queue verwaltet ihre eigenen Operationen nebenläufigkeitssicher; die Anwendung bleibt für die Bedeutung der Daten und die Last verantwortlich.
 :::
 
-## Die Queue (Warteschlange)
+## FIFO und zwei verschiedene Prioritäten
 
-- Im Adapter mit `msg_prio = 0`: normales Put/Get ist FIFO
-- Die CMSIS-Spezifikation sortiert nach `msg_prio`
-- Der dokumentierte CMSIS-FreeRTOS-Adapter **ignoriert** den Parameter
-- Das ist keine Taskpriorität
-- „Immer 0, historisch“ reicht als Erklärung nicht
+- Im Labor: `msg_prio = 0`, Nachrichten in FIFO-Reihenfolge
+- CMSIS-RTOS2 spezifiziert Nachrichtenvorrang
+- Der betrachtete CMSIS-FreeRTOS-Adapter ignoriert `msg_prio`
+- Threadpriorität bestimmt die Auswahl laufender Aufgaben
+- Lokalen Adapter prüfen: `cmsis_os2.c`
 
 ::: notes
-FIFO bedeutet hier: erfolgreich eingereihte Nachrichten verlassen die Queue in derselben Reihenfolge, solange der Puffervertrag hält. CMSIS-RTOS2 ist Version 2 der RTOS-Schnittstelle. Die Spezifikation sortiert zusätzlich nach `msg_prio`, dem Nachrichtenvorrang. Das ist nicht die Taskpriorität. Der dokumentierte CMSIS-FreeRTOS-Adapter der Referenz 11.2.0 ignoriert `msg_prio` bei Put und Get. Im gezeigten Adaptermodell bleibt normales Put/Get deshalb FIFO. `msg_prio = 0` hält die Frage neutral, der Adapter ignoriert den Wert ohnehin. „Historisch immer null“ erklärt das nicht. Ein öffentliches main ist nicht die Laborversion. Die lokale `cmsis_os2.c` muss am Projekt geprüft werden.
+FIFO steht für First In First Out und beschreibt die Reihenfolge erfolgreich eingereihter Nachrichten. CMSIS-RTOS2 ist die zweite Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. In dieser Spezifikation kann msg_prio einen Nachrichtenvorrang ausdrücken: Nachrichten höheren Vorrangs werden vor solchen niedrigeren Vorrangs angeordnet. Dieser Parameter ist nicht die Priorität des sendenden oder empfangenden Threads.
 
-Die logische Folge wird jetzt auf einen konkreten Ring abgebildet.
+Der öffentlich eingesehene CMSIS-FreeRTOS-Adapter verwirft msg_prio bei Put und bietet diesen Vorrang nicht an. Der Laborcode übergibt deshalb null und arbeitet mit gewöhnlicher FIFO-Semantik. Eine hohe Threadpriorität kann einen Consumer früher laufen lassen, sortiert aber nicht rückwirkend seine Nachrichten. Das öffentliche Referenzprojekt und die im STM32Cube-Paket enthaltene Version können voneinander abweichen. Prüfen Sie die lokale Datei cmsis_os2.c, bevor Sie aus einer Spezifikationsfunktion auf das konkrete Verhalten schließen. Diese Versionsgrenze gehört zur technischen Begründung, sie ist keine zusätzliche Aufgabe zur Einführung in Queue-Grundlagen.
 :::
 
-## Der Lebenszyklus einer Queue
+## Ringpuffer: logische Folge, physische Plätze
 
-Ring $N = 3$. Put 10, Put 20, Get liefert 10, Put 30, Put 40.
 
-Logische Restfolge: **20, 30, 40**.
 
-Physisch danach: Slots $[40,\,20,\,30]$, Head = Tail = 1, Count = 3.
+Lehrkonvention für $N=3$: Indizes laufen modulo $N$.
 
-Gleiche Indizes können leer oder voll sein. Count entscheidet.
+- Head: nächste Entnahme · Tail: nächstes Einfügen
+- Count: Zahl gültiger Elemente, nicht sichtbarer alter Bytes
 
-| Schritt | logisch | Head | Tail | Count |
-|---------|---------|-----:|-----:|------:|
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart LR
+  S0[Slot 0] --> S1[Slot 1]
+  S1 --> S2[Slot 2]
+  S2 --> S0
+```
+
+::: notes
+Ein Ringpuffer ist ein festes Array, das zyklisch benutzt wird. Die Abbildung zeigt die drei Slots, also Elementplätze. Die grauen Pfeile bezeichnen die Reihenfolge der Indexfortschaltung von null über eins und zwei zurück zu null, keine einzelnen Nachrichten oder Zeitdauern. N gleich drei bedeutet drei Plätze mit den Indizes null, eins und zwei. Head bezeichnet in unserer Lehrkonvention die nächste Entnahme, Tail das nächste Einfügen und Count die Zahl gültiger Elemente. Nach dem letzten Index folgt wieder null. Modulo N ist der Rest bei Division durch N; für den nächsten Index ergibt sich etwa aus zwei plus eins modulo drei der Wert null.
+
+Die logische Nachrichtenfolge beginnt am Head und umfasst genau Count Elemente. Sie muss deshalb nicht in der physischen Reihenfolge des Arrays liegen. Nach einem Get können die bisherigen Bytes im nun freien Platz noch sichtbar sein. Sie sind trotzdem kein gültiges Queue-Element mehr. Der Kernel muss sie nicht für die Darstellung löschen. Reale Implementierungen dürfen andere interne Zeiger und Namen verwenden. Wir implementieren keinen eigenen nebenläufigen Ring, sondern verwenden dieses Modell zum Verständnis der Reihenfolge und Belegung.
+:::
+
+## Ein Ring in fünf Operationen
+
+Start leer, $N=3$. Put 10, Put 20, Get, Put 30, Put 40.
+
+| Schritt | Logische Folge | Head | Tail | Count |
+|---|---|---:|---:|---:|
 | Start | leer | 0 | 0 | 0 |
 | Put 10 | 10 | 0 | 1 | 1 |
 | Put 20 | 10, 20 | 0 | 2 | 2 |
-| Get liefert 10 | 20 | 1 | 2 | 1 |
+| Get → 10 | 20 | 1 | 2 | 1 |
 | Put 30 | 20, 30 | 1 | 0 | 2 |
 | Put 40 | 20, 30, 40 | 1 | 1 | 3 |
 
-Physisch nach dem letzten Put: Slots $[40,\,20,\,30]$. Slot 0 ist mit 40 belegt, die logische Folge beginnt bei Head. Head = Tail und Count = 3 heißt voll. Dieselben Indizes mit Count = 0 wären leer.
-
 ::: notes
-Der Ring hat $N = 3$ Slots. Head ist der nächste Entnahmeindex, Tail der nächste Einfügeindex. Beide laufen modulo 3. Count unterscheidet leer und voll, denn gleiche Indizes können beides bedeuten. Start: Head = Tail = 0, Count = 0.
+Die Tabelle verwendet den Ring mit drei Elementplätzen und die zuvor definierte Lehrkonvention. Put reiht ein, Get entnimmt. Die Zahlen zehn bis vierzig sind Nachrichtenwerte, keine Speicheradressen oder Zeitangaben. Alle Operationen gelingen in diesem Ablauf. Put 10 schreibt Platz null, Put 20 Platz eins. Der erste Get liefert zehn und verschiebt Head auf eins. Platz null ist nun logisch frei.
 
-Put 10 schreibt Slot 0: [10, leer, leer], Tail 1, Count 1. Put 20 schreibt Slot 1: [10, 20, leer], Tail 2, Count 2. Get liest Slot 0 und liefert 10. Head wird 1, Count 1. Slot 0 ist logisch frei, die alten Bytes dürfen stehen bleiben. Put 30 schreibt Slot 2 und setzt Tail auf 0, Count 2. Belegt sind logisch die Slots 1 und 2, also 20 dann 30. Put 40 schreibt Slot 0. Physisch steht [40, 20, 30], Head = Tail = 1, Count = 3. Die Entnahmefolge ist 20, 30, 40. Mit Count 0 und denselben Indizes wäre der Ring leer. Implementationen dürfen intern andere Zeiger verwenden. Dieses Bild ist die Lehrkonvention.
-
-Für diese Slots und die Verwaltung wird tatsächlich Speicher benötigt.
+Put 30 schreibt Platz zwei; Tail läuft auf null zurück. Put 40 schreibt den inzwischen freien Platz null. Das physische Array enthält deshalb zuletzt vierzig, zwanzig, dreißig. Die logische Entnahmefolge bleibt zwanzig, dreißig, vierzig, denn sie beginnt bei Head gleich eins. Count ist drei, der Ring ist voll. Die Tabelle zeigt, warum das Array allein nicht genügt, um Nachrichten in Reihenfolge zu lesen. Eine typische Fehlannahme beginnt beim physischen Index null und liest vierzig zuerst. Die Indizes und die gültige Belegung bestimmen gemeinsam den Inhalt.
 :::
 
-## Speichermanagement einer Queue
+## Head gleich Tail: leer oder voll?
 
-- Nutzdaten, Kontrollblock, Alignment, Allokator getrennt zeichnen
-- $N = 10$ und `uint32_t`: **40 Byte** Nutzdaten, plus Verwaltung
-- `osMessageQueueNew` mit Attribut `NULL`: dynamisch, kann `NULL` liefern
-- `NULL` ist nicht nur „Heap voll“: auch Parameter, Kontext, Konfiguration
-- Statische Puffer: Größe aus Header, Adapter und Linker-Map
-- Delete erst, wenn niemand mehr nutzt
-- Ein gespeicherter Pointer gibt das Bildarray nicht frei
+| Zustand bei $N=3$ | Head | Tail | Count |
+|---|---:|---:|---:|
+| leer am Anfang | 0 | 0 | 0 |
+| voll nach drei Puts | 0 | 0 | 3 |
 
-::: notes
-Die Nutzdaten, der Kontrollblock, das Alignment und die Allokatorverwaltung sind getrennte Speicheranteile. $N = 10$ und `uint32_t` ergeben 40 Byte Payloadslots, plus implementationsabhängige Verwaltung. $N$ mal Elementgröße ist keine universelle Gesamtgröße. `osMessageQueueNew` mit Attribut `NULL` reserviert dynamisch und kann `NULL` liefern. Ursachen sind Heap, Parameter, Kontext oder Konfiguration, nicht nur „Heap voll“. Statische Puffer müssen zur konkreten Header- und Adapterforderung passen und in der Linker-Map geprüft werden. CMSIS-New und natives `xQueueCreateStatic` sind verschiedene Schnittstellen.
+Gleiche Indizes reichen in diesem Modell nicht aus.
 
-Delete oder Reset darf keine laufende Nutzung zerstören. Ein gespeicherter Pointer gibt das referenzierte Bild nicht frei. Der Kontrollblock räumt den externen Payloadpool nicht auf.
-
-Der Kernel verwendet die Queue außerdem, um wartende Threads zu verwalten.
-:::
-
-## Die Magie: Blockieren bei Leerlauf
-
-- Consumer, Timeout warten, Queue leer → Blocked
-- Put macht ihn Ready
-- Er läuft, wenn der Scheduler ihn wählt
-- `timeout = 0`: sofortiger Status, Zielwert nicht als neue Nachricht behandeln
-- Endliche Wartezeit kann mit Timeout enden
-- `osWaitForever` macht einen ungültigen Handle nicht gültig
+Papieraufgabe 1: weitere Puts und Gets nachvollziehen.
 
 ::: notes
-Blocked heißt: der Consumer führt keine eigenen Befehle aus. Tick und IRQs können weiter CPU-Zeit brauchen. Das ist nicht „CPU 0 %“. Ein Get bei leerer Queue mit Timeout größer 0 setzt den Thread auf Blocked. Timeout 0 kehrt sofort zurück, der Zielpuffer ist keine neue Nachricht. Eine endliche Wartezeit kann mit Timeout enden. `osWaitForever` wartet ohne eigene Frist und macht einen ungültigen Handle nicht gültig.
+Head ist der nächste Entnahmeindex, Tail der nächste Einfügeindex und Count die Belegung. Bei N gleich drei läuft Tail nach drei erfolgreichen Puts wieder auf null. Head hat sich ohne Get nicht verändert. Damit sind beide Indizes wie im leeren Startzustand null, aber die Bedeutung ist anders: Count null heißt leer, Count drei heißt voll.
 
-Ein erfolgreiches Put kann den Wartenden Ready setzen. Running wird er erst, wenn der Scheduler ihn wählt. Ready ist nicht schon die Verarbeitung.
-
-Frage: Darf `m` nach einem Get-Timeout als frisch empfangen verarbeitet werden? Nein. Nur `osOK` erfüllt den Vertrag, dass eine neue Kopie im Zielobjekt liegt.
-
-Auch der Producer kann warten müssen, wenn die Queue voll ist.
+Ein Ring kann diese Unterscheidung anders kodieren, etwa durch ein zusätzliches Voll-Bit oder einen absichtlich unbenutzten Platz. Unsere Rechnungen verwenden ausdrücklich Count und alle drei nutzbaren Plätze. Man darf daher nicht heimlich auf eine andere Konvention wechseln. Bei vollem Ring wird der neue Try-Put, also Einfügen ohne Wartezeit, abgewiesen; Head, Tail und gültige Folge bleiben erhalten. Bei leerem Try-Get erhält der Leser keinen neuen Wert. Papieraufgabe 1 setzt dieses Modell fort und fordert nach jedem Schritt den vollständigen Zustand. Damit wird die abstrakte FIFO-Reihenfolge überprüfbar.
 :::
 
-## Die Magie: Blockieren bei Überlast
-
-- Producer, Queue voll, Timeout > 0 → Blocked, bis ein Platz frei wird
-- Try-Put: nichts eingereiht, Nachricht bleibt beim Sender
-- Nicht jeden Fehler „Queue voll“ nennen
-- Nur bei `osOK` weiterverarbeiten
-
-```c
-osStatus_t st = osMessageQueuePut(q, &msg, 0, 0);
-if (st == osErrorResource) drop_count++; /* voll, Timeout 0 */
-else if (st != osOK) tech_errors++;      /* anderer Fehler */
-```
-
-::: notes
-Ist die Queue voll und der Timeout größer als 0, wird der Producer Blocked. Er behält seine Nachricht, bis die Kopie gelingt. Platz entsteht durch Get, nicht erst durch die fertige Verarbeitung des Consumers. Try-Put mit Timeout 0 reiht nichts ein. `osErrorResource` ist die erwartete Ablehnung bei voller Queue. Andere Werte von `osStatus_t` sind technische Fehler und dürfen nicht in denselben Dropzähler. `osOK` allein erlaubt die Annahme, dass die Kopie in der Queue liegt.
-
-Hält der Producer dabei einen Mutex, den der Consumer vor dem nächsten Get braucht, entsteht ein Zyklus: die Queue ist voll, der Producer wartet auf Platz und gibt den Mutex nicht frei, der Consumer kommt nicht zum Get. Die Threadsicherheit der Queue verhindert diesen Anwendungsdeadlock nicht. Der sichere Ablauf nimmt den Mutex nicht über den blockierenden Put hinweg.
-
-Die Vorteile der Queue gelten nur zusammen mit diesen Warte- und Überlaufverträgen.
-:::
-
-## Zusammenfassung: ITC-Vorteile
-
-- Reihenfolge, solange Platz und Verträge passen
-- Warten ohne Polling
-- Kopie entkoppelt die Stackvariable
-- Keine Priority Inheritance für das Paar Producer/Consumer
-- Kein unendlicher Puffer bei $\lambda > \mu$
-
-::: notes
-Die Reihenfolge gilt für erfolgreich eingereihte Nachrichten. Warten ersetzt das Pollen, solange der Timeoutvertrag passt. Eine Wertkopie entkoppelt die Stackvariable des Senders, nicht automatisch Daten hinter einem Pointer. ITC und FIFO bleiben die Begriffe dieser Hälfte. Eine normale Queue vererbt nicht die Priorität eines Producers, der auf einen Platz wartet. PIP gilt für den Mutex-Besitzer, nicht für dieses Paar. Reihenfolge und Threadpriorität allein sind keine Fristgarantie. Bei dauerhaft $\lambda > \mu$ hilft auch kein unendlicher Puffer, den es hier nicht gibt.
-
-Jetzt wird die begrenzte Kapazität mit einer konkreten Dauerlast nachgerechnet.
-:::
-
-## Überlauf: Burst und Dauerlast
-
-Lehrannahmen: $N = 10$, anfangs leer, API-Zeit 0. Put bei $1,2,3,\ldots\,\mathrm{ms}$. Get bei $5,10,15,\ldots\,\mathrm{ms}$. Zur selben Zeit zuerst Put, dann Get. Voller Try-Put verwirft den **neuen** Wert.
-
-| Zeitpunkt | Stand |
-|-----------|--------|
-| nach $5\,\mathrm{ms}$ | Count 4 |
-| nach $10\,\mathrm{ms}$ | Count 8 |
-| bei $12\,\mathrm{ms}$ | Count 10 |
-| erster Fehl-Put | $13\,\mathrm{ms}$ |
-
-Über $1$–$20\,\mathrm{ms}$: 20 Versuche, **13** erfolgreiche Puts, **7** verworfen, **4** Gets, **9** bleiben.
-
-$\lambda = 1000/\mathrm{s}$, $\mu = 200/\mathrm{s}$: kein endlicher Puffer hält das verlustfrei, wenn jede Entnahme nur eine Nachricht ist. Ein Consumer, der danach einen ganzen Stapel leert, ist ein anderes Modell.
-
-::: notes
-$N = 10$, anfangs leer, API-Zeit 0. Ein Try-Put bei jeder ganzen Millisekunde ab 1. Ein Get bei 5, 10, 15 und 20 ms. Zur selben Zeit zuerst Put, dann Get. Ein voller Try-Put verwirft den neuen Wert. Jeder Get entnimmt genau eine Nachricht. Der Wert ist die Zeit des Versuchs.
-
-Nach 5 ms sind vier Nachrichten drin, weil der Put bei 5 noch klappt und das Get danach eine entnimmt: Versuche 1 bis 5, eine Entnahme, Count 4. Nach 10 ms Count 8. Bei 12 ms Count 10. Der erste abgelehnte Put ist 13 ms. Bei 15 ms scheitert der Put noch. Das Get danach macht einen Platz frei, der Put bei 16 ms gelingt. Über 1 bis 20 ms: 20 Versuche, 13 Erfolge, sieben verworfene neue Nachrichten, vier Gets, neun Rest. Die Bilanzen sind $20 = 13 + 7$ und $13 = 4 + 9$. Verworfen werden 13, 14, 15, 17, 18, 19 und 20. Entnommen werden 1, 2, 3 und 4.
-
-$\lambda = 1000$ Nachrichten je Sekunde und $\mu = 200$ sind Annahmen dieses Modells. Ein größerer endlicher Puffer verschiebt den Verlust, beseitigt die Dauerüberlast nicht. Ein Worker, der später einen ganzen Stapel leert, ist ein anderer Bedienvertrag.
-
-Frage: Warum klappt der Put bei 16 ms, obwohl der bei 15 ms scheitert? Weil das Get bei 15 erst nach dem gescheiterten Put einen Platz freigibt.
-
-Aus dem Verlauf lässt sich die nötige Kapazität für ein begrenztes Modell bestimmen.
-:::
-
-## Kapazität planen
-
-Unter einem **begrenzten** verlustfreien Modell:
-
-$$N \ge \max_t \bigl(A(t) - D(t)\bigr)$$
-
-- $A$: angebotene Nachrichten, $D$: Entnahmen
-- Nicht erst die Puts zählen, die nach Drops noch klappen
-- Für das Intervall 1–20 ms ohne Drops: unmittelbar nach dem Put bei 20 ms sind erst drei Gets erfolgt, also $20 - 3 = 17$ Plätze. Nach dem vierten Get bleiben 16. Das ist eine Lehrübung, keine Dauerlösung.
-- Ein schon verarbeiteter Satz liegt außerhalb der Queue
-- Payload-Pool extra zählen
-
-| Entscheidung | Wirkung |
-|--------------|---------|
-| Quelle drosseln | nur wenn die Quelle warten kann |
-| neuen Wert verwerfen | Lücke in der Historie |
-| alten ersetzen | Latest-Value, andere API |
-| Fehler melden | jemand muss ihn sehen |
-
-ISR wartet nicht. Ein ADC hält nicht automatisch an.
-
-::: notes
-$N$ ist die Kapazität in Elementen, $A(t)$ die Zahl angebotener Nachrichten bis $t$, $D(t)$ die Entnahmen im verlustfreien Referenzablauf. Die Anfangsbelegung $Q_0$ gehört dazu. Die Formel $N \ge \max(A-D)$ beschreibt die höchste Zwischenbelegung, nicht die erfolgreichen Puts nach Drops. Durchschnittsraten genügen nicht: Bursts, Pausen und zeitgleiche Ereignisse bestimmen die Spitze. Ein schon entnommenes Element liegt nicht mehr in der Queue. Ein Pointerpayload belegt trotzdem weiter seinen externen Puffer.
-
-Für 1 bis 20 ms ohne Drops sind unmittelbar nach dem Put bei 20 ms erst drei Gets erfolgt, also 17 Plätze. Nach dem vierten Get bleiben 16. Das ist eine Lehrübung für dieses Intervall, keine Dauerlösung bei $\lambda > \mu$.
-
-Backpressure bremst nur eine Quelle, die warten kann. Ein blockierter Softwareproducer stoppt ADC, UART-Empfang oder DMA nicht. Die Entscheidung muss benannt sein: drosseln, verwerfen, Latest-Value oder einen sichtbaren Fehler. Ein unbemerkter Zähler ist noch keine Behandlung.
-
-Frage: Warum sind für den verlustfreien begrenzten Ablauf 17 statt 16 Plätze nötig? Weil der Put bei 20 ms vor dem Get derselben Millisekunde liegt. Die Belegung davor ist 20 minus 3.
-
-Die gewählte Kapazität wird jetzt beim Erzeugen der Queue festgelegt.
-:::
-
-## CMSIS-API: Queue anlegen
-
-```c
-typedef struct {
-    uint32_t sample;
-    uint32_t seq;
-    uint32_t tick;
-} SensorMessage;
-
-osMessageQueueId_t q;
-
-void app_init(void) {
-    /* Lehrgerüst. Im Cube-Projekt Kernel nur einmal initialisieren. */
-    if (osKernelInitialize() != osOK) Error_Handler();
-    q = osMessageQueueNew(8, sizeof(SensorMessage), NULL);
-    if (q == NULL) Error_Handler();
-    if (osThreadNew(Producer, NULL, NULL) == NULL) Error_Handler();
-    if (osThreadNew(Consumer, NULL, NULL) == NULL) Error_Handler();
-    if (osKernelStart() != osOK) Error_Handler();
-}
-```
-
-- `sizeof` und Alignment am Build prüfen
-- `uint32_t`-Übung darf bleiben; das Struct ist der Datensatz
-- 1-ms-Modell und `osDelay(10)` sind verschiedene Versuche
-
-::: notes
-`SensorMessage` enthält `sample`, `seq` und `tick`, jeweils `uint32_t`, ein vorzeichenloser 32-Bit-Typ. `sizeof` liefert die Elementgröße in Byte. `osMessageQueueId_t` ist der Handle, `NULL` das Attribut für die dynamische Anlage. Das Lehrgerüst ruft `osKernelInitialize` einmal, erzeugt die Queue, dann Producer und Consumer, und startet den Kernel. `Error_Handler` darf mit einem Null-Handle nicht weiterlaufen. Im Cube-Projekt steht die Initialisierung schon im generierten Boot. Sie wird dort nicht ein zweites Mal gerufen. `sizeof` und Alignment prüft der Build. Ohne Build gibt es keinen Messnachweis. Die 1-ms-Dauerlast und ein Producer mit anderer Periode sind verschiedene Versuche. `osDelay` zählt Kernel-Ticks. Der Thread läuft danach, wenn er dran ist.
-
-Der Producer füllt genau diesen Datensatz und veröffentlicht ihn.
-:::
-
-## CMSIS-API: Daten schreiben (Put)
-
-```c
-void Producer(void *argument) {
-    SensorMessage m;
-    osStatus_t st;
-    (void)argument;
-    m.seq = 0;
-    for (;;) {
-        m.sample = next_sample(); /* oder synthetische Folge */
-        m.seq++;
-        m.tick = osKernelGetTickCount();
-        st = osMessageQueuePut(q, &m, 0, 0);
-        if (st == osErrorResource) drops++;
-        else if (st != osOK) tech_errors++;
-        osDelayUntil(next_deadline());
-    }
-}
-```
-
-| Status | Bedeutung |
-|--------|-----------|
-| `osOK` | Kopie ist in der Queue |
-| voll, Timeout 0 | nichts eingereiht |
-| Timeout | Wartezeit um, nichts eingereiht |
-| Parameter, ISR, Handle | kein „einfach voll“ |
-
-`msg_prio = 0` im Labor: FIFO-Entscheidung, vom FreeRTOS-Adapter ignoriert.
-
-::: notes
-Die Schleife erhöht `seq` je Versuch, auch wenn der Put scheitert. Dann zeigt die Lücke in der erfolgreichen Folge den Verlust. `next_sample` ist eine benannte synthetische Quelle, kein ADC. `tick` kommt von `osKernelGetTickCount` und ist ein Kernel-Tick, keine Millisekunde. `&m` ist die Adresse der Nachricht für die Kopie. Der dritte Parameter 0 ist `msg_prio`, der vierte der Timeout 0. `osOK` heißt, die Kopie liegt in der Queue. `osErrorResource` bei Timeout 0 heißt voll, nichts eingereiht, und zählt als Drop. Andere Statuswerte sind technische Fehler.
-
-`osDelayUntil` bekommt einen absoluten Sollzeitpunkt. `next_deadline` muss den Startwert setzen, die Periode addieren und bei Überlast auf ein zukünftiges Ziel springen, sonst entsteht eine Endlosschleife ohne Warten. Bei 1 kHz sind 20 Ticks nominal 20 ms. Tickphase und Scheduling verändern die beobachtete Dauer. Die 1-ms-Dauerlastrechnung ist ein anderes Experiment als diese Periode.
-
-Die Consumerseite prüft den Empfang, bevor sie den Datensatz verwendet.
-:::
-
-## CMSIS-API: Daten lesen (Get)
-
-```c
-void Consumer(void *argument) {
-    SensorMessage m;
-    (void)argument;
-    for (;;) {
-        if (osMessageQueueGet(q, &m, NULL, 20) != osOK)
-            continue; /* alten Wert nicht als neu werten */
-        use(m.sample, m.seq);
-    }
-}
-```
-
-- Signatur `void Task(void *argument)`
-- GetCount nur zur Diagnose
-
-::: notes
-`osMessageQueueGet` kopiert ein Element nach `&m`. `NULL` heißt, der Nachrichtenvorrang wird nicht ausgegeben. 20 ist die Wartezeit in Kernel-Ticks. Nur `osOK` erlaubt `use`. Ein Timeout lässt den alten Inhalt von `m` stehen. `continue` überspringt die Verarbeitung. Ein technischer Dauerfehler darf nicht in einer schnellen Schleife ohne Pause stecken bleiben. Dafür braucht der Fehlerpfad eine eigene Behandlung, nicht dasselbe `continue` wie ein gewöhnlicher Timeout, wenn der Status kein Timeout ist. Entnahme und Verarbeitung sind verschiedene Ereignisse. `GetCount` ist Diagnose, keine Voraussetzung für einen sicheren Get.
-
-Die Signatur `void Consumer(void *argument)` passt zum Kernel. `use` ist der Lehrvertrag „Werte ansehen“, keine Boardfunktion.
-
-Frage: Kann ein blockierender Put unter einem Mutex Deadlock erzeugen, den der Consumer vor dem Get braucht? Ja. Der Producer wartet auf Platz und hält den Mutex, der Consumer kommt nicht zum Get. Der sichere Ablauf gibt den Mutex vor dem Warten frei oder nimmt ihn gar nicht über den Put hinweg.
-
-Ein Blick auf die kopierten Bytes erklärt, warum lokale Objekte hier funktionieren.
-:::
-
-## Unter der Haube: Copy by Value
-
-| | Value-Queue | Pointer-Queue |
-|--|-------------|---------------|
-| Element | Sample oder Struct | Adresse oder Deskriptor |
-| RAM der Queue | $N$ mal Elementgröße | $N$ mal Zeigergröße |
-| Nutzdaten | liegen in der Queue | liegen woanders, gemeinsam |
-
-- Auch der Pointer wird **by value** kopiert
-- Das Bild wird nicht kopiert
-- Es entsteht kein Eigentumsvertrag
-- `sizeof(uint8_t *)` im CM4-Build: 4 Byte, keine Sprachgarantie für jede ABI
-- Nach erfolgreichem Put darf die Pointer**variable** woanders hinzeigen
-- Das Array darf erst nach vereinbarter Freigabe neu beschrieben werden
-
-::: notes
-Eine Value-Queue kopiert die festgelegte Elementgröße. Ein Struct ohne Pointer liegt danach vollständig im Slot. Ein enthaltener Pointer wird nur als Adresswert kopiert, nicht als tiefe Kopie der Bildbytes. ABI, Application Binary Interface, legt die Darstellung der Adresse fest. `sizeof(uint8_t *)` ist im CM4-Modell 4 Byte, keine Garantie für jede ABI. `&image_ptr` ist die Adresse der Pointervariable und damit das Quellobjekt der Kopie. `image_ptr` selbst zeigt auf die Bildbytes. Nach erfolgreichem Put darf die Variable woanders hinzeigen. Das Array darf erst nach vereinbarter Freigabe neu beschrieben werden. Es entsteht kein Eigentumsvertrag von selbst.
-
-Frage: Kann die Queue einen im Struct enthaltenen Pointer in einen unabhängigen Bildinhalt verwandeln? Nein. Die Kopie ist flach. Der Adresswert wird dupliziert, die Bytes dahinter nicht.
-
-Große Nutzdaten machen die Kosten dieses Kopiermodells sichtbar.
-:::
-
-## Der Feind der Queue: Große Daten!
-
-$320 \times 240$ Byte:
-
-- ein Bild: 76800 Byte = 76,8 kB = **75 KiB**
-- zwei Puffer: 150 KiB
-- zehn Bilder als Value-Queue: **750 KiB** Nutzdaten, plus Verwaltung
-- zehn Pointer-Slots: **40 Byte**, die Bilder bleiben extra
-
-Große Kopien sind teuer, nicht pauschal verboten. Es zählen Größe, Rate, RAM und maskierte Kernelpfade.
-
-::: notes
-320 mal 240 Pixel mit einem Byte je Pixel sind 76800 Byte, also 76,8 kB mit 1000 Byte je kB und 75 KiB mit 1024 Byte je KiB. Zwei Puffer sind 150 KiB. Zehn Bilder als Value-Queue sind 750 KiB Nutzdaten plus Verwaltung. Zehn Pointerslots zu 4 Byte sind 40 Byte Queuenutzdaten. Die Bilder bleiben extra. RAM, Kopierzeit und Rate sind verschiedene Ressourcen. Eine große Kopie ist nicht generell verboten. Ihr Aufwand und die im Kernel maskierten Bereiche müssen zur Latenz passen. Eine Zykluszahl wird ohne Build nicht erfunden. Die Balken dürfen 40 Byte und 750 KiB nicht als Gesamtbedarf derselben Lösung vergleichen.
-
-Das nächste Beispiel transportiert deshalb eine Adresse und braucht einen anderen Queuevertrag.
-:::
-
-## Die Lösung: Copy by Reference (Pointer)
-
-```c
-osMessageQueueId_t pointer_queue; /* Element: uint8_t *, nicht SensorMessage */
-static uint8_t buf_a[64], buf_b[64];
-uint8_t *slot = buf_a;
-if (osMessageQueuePut(pointer_queue, &slot, 0, 0) == osOK)
-    slot = buf_b; /* Variable neu, buf_a bleibt belegt */
-else
-    ; /* Put fehlgeschlagen: buf_a bleibt beim Producer */
-```
-
-Anlage: `osMessageQueueNew(2, sizeof(uint8_t *), NULL)`. `&slot` kopiert den Adresswert. `slot` selbst wäre die Bildadresse, nicht das Queue-Element.
-
-- Die Adresse wird kopiert, `slot` darf danach umgebogen werden
-- Zwei Arrays A und B allein verhindern das Überschreiben nicht
-- Fehlgeschlagenes Put: Puffer bleibt beim Producer
-- Zu wenige echte Puffer: die Pointer-Queue läuft nicht von selbst voll mit Bildern
-
-::: notes
-`pointer_queue` ist ein eigener Handle. Die Elementgröße ist `sizeof(uint8_t *)`, nicht `sizeof(SensorMessage)`. Dieselbe Queue `q` aus dem Sensorbeispiel darf den Typ nicht wechseln. `slot` zeigt erst auf `buf_a`. `&slot` übergibt die Adresse der Pointervariable, damit der Adresswert kopiert wird. Nach `osOK` darf `slot` auf `buf_b` zeigen. `buf_a` bleibt belegt, bis der Consumer es freigibt. Schlägt Put fehl, bleibt der Puffer beim Producer. Es gibt kein zweites Put und keine Rückgabe, die nie entnommen wurde. Zwei Arrays allein sind kein Besitzvertrag. Ein Deskriptor mit Pointer, Länge und Sequenz ist größer als 4 Byte.
-
-Das Umschalten ist ein einzelner Handoff, kein sicherer Endlos-Ping-Pong.
-
-Für mehrere Nachrichten braucht die Adresse einen expliziten Lebensdauerkreislauf.
-:::
-
-## Gefahren von Copy by Reference
-
-Lebenszyklus, genau ein Verantwortlicher:
-
-FREE → FILLING → QUEUED → PROCESSING → FREE
-
-```{mermaid}
-%%| fig-width: 5.6
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  FREE[FREE] --> FILL[FILLING]
-  FILL --> QUEUED[QUEUED]
-  QUEUED --> PROC[PROCESSING]
-  PROC --> FREE
-```
-
-Put erfolgreich: Verantwortung geht an die Consumerseite. Put scheitert: der Puffer bleibt beim Producer.
-
-- Ready-Queue und Free-Pool sind zwei Richtungen
-- Put ok: Verantwortung geht weiter
-- Put scheitert: keine zweite Einreihung, keine Doppelrückgabe
-- Queue für zehn Pointer erzeugt keine zehn Bilder, wenn nur A und B existieren
-
-Fehler in den Notizen: Stack der beendeten Funktion, freigegebener Heap, DMA schreibt weiter.
-
-::: notes
-FREE heißt verfügbar, FILLING wird vom Producer gefüllt, QUEUED wartet in der Ready-Queue, PROCESSING gehört dem Consumer, danach zurück nach FREE. Je Übergang gibt es genau einen Verantwortlichen. `free_pool` und `ready_queue` sind zwei Richtungen. Put erfolgreich übergibt den Vertrag. Put gescheitert: der Producer behält den Puffer oder gibt ihn genau einmal zurück. Kein Doppel-Put, keine Doppelrückgabe, kein Wiederbefüllen vor der Freigabe.
-
-Zehn Pointerplätze und nur zwei Arrays ergeben zwei nutzbare Bilder, nicht zehn. Freie, gefüllte, wartende und bearbeitete Puffer werden zusammengezählt. Reset einer Pointer-Queue räumt die Bilder nicht auf. Stackende, freigegebener Heap, wiederverwendeter Poolslot und noch laufende DMA sind verschiedene Fehler. `static` verlängert die Lebensdauer und verhindert das Überschreiben nicht.
-
-Frage: Macht `static` einen Puffer gegen den Producer sicher? Nein. Die Variable lebt lange, aber der Producer darf sie trotzdem beschreiben, solange der Consumer sie noch liest. DMA darf erst nach vereinbartem Abschluss und passender Sichtbarkeit veröffentlichen. Cacheaufrufe gehören nur zum Kern, der den Puffer wirklich cached. Auf dem CM4 keine pauschalen CM7-Cachebefehle.
-
-Manchmal soll keine Historie, sondern nur der letzte gültige Stand transportiert werden.
-:::
-
-## Der Spezialfall: Die Mailbox
-
-Drei Abläufe, Start leer, dann 10, 20, 30:
-
-| Muster | Ergebnis |
-|--------|----------|
-| FIFO mit Platz | 10, dann 20, dann 30 |
-| Länge 1, Put Timeout 0 | 10 bleibt, 20 und 30 werden abgelehnt |
-| Overwrite | zuletzt 30 |
-
-Länge 1 ist **keine** Overwrite-Semantik.
-
-„Timeout 0 als Näherung“ ist falsch: der alte Wert bleibt.
-
-::: notes
-Start leer, dann 10, 20 und 30. Eine FIFO mit genug Platz bewahrt 10, 20, 30. Eine Länge-1-Queue mit Put und Timeout 0 nimmt 10 und weist 20 und 30 ab. Der alte Wert bleibt. Overwrite ersetzt ihn, am Ende steht 30. Länge eins allein ist kein Latest-Value-Vertrag. „Timeout 0 als Näherung“ ist falsch.
-
-Frage: Was liest man nach drei Try-Puts auf die nie geleerte 1er-Queue? Den Wert 10. Die Puts von 20 und 30 liefern einen Kapazitätsfehler und ändern den Inhalt nicht.
-
-Die passende Implementierung hängt von der API ab.
-:::
-
-## Wann Queue, wann Mailbox?
-
-„Mailbox“ hier: Latest-Value, Begriff je RTOS anders.
-
-Native FreeRTOS, eigenes Modul, kein Cast auf `osMessageQueueId_t`:
-
-- `xQueueCreate(1, ...)`
-- `xQueueOverwrite`
-- `xQueuePeek`
-- in der ISR die FromISR-Variante und die Yield-Regel
-
-CMSIS-only: kurzer geschützter Snapshot mit Version und Zeit, Benachrichtigung **nach** dem Veröffentlichen. Die ISR nimmt keinen Mutex. Nutzdaten kommen über einen erlaubten kurzen Kanal in den Thread.
-
-::: notes
-Historie braucht die FIFO. Der neueste Zustand braucht Overwrite oder einen geschützten Snapshot. Ein Ereigniszähler braucht eine endliche Queue oder einen Zähler mit Überlaufregel. Nativ, in einem eigenen Modul ohne Cast auf den CMSIS-Handle, kann `xQueueCreate(1, ...)` mit `xQueueOverwrite` den letzten Wert setzen. `xQueuePeek` liest, ohne zu entnehmen. In der ISR gelten die FromISR-Varianten und die Yield-Regel. CMSIS-only hat diese Funktionen nicht automatisch. Dort veröffentlicht ein Thread einen geschützten Snapshot mit Version und Zeitstempel und signalisiert danach. Die ISR nimmt keinen Mutex. Rohdaten kommen über einen erlaubten kurzen Kanal in diesen Thread.
-
-Peek kann bei leerer Queue warten. Ist schon ein Wert da, garantiert es keine neue Version. Eine Peek-Schleife kann immer denselben Stand liefern. Aus Peek und Overwrite folgt kein Vertrag, dass jeder Pflichtempfänger jede Version genau einmal erhält.
-
-Mehrere Leser des Zustands sind noch keine garantierte Zustellung an alle.
-:::
-
-## Das Broadcast-Konzept (Mailbox)
-
-- Get: ein Element, **ein** Consumer
-- Peek oder Snapshot: mehrere Leser, zu verschiedenen Zeiten verschiedene Versionen
-- Jeder Pflichtempfänger braucht einen eigenen Zustellvertrag
-- Zusammenfassen von Zuständen kann gewollt sein
-- Ereignisse brauchen die FIFO oder eine Zählung
-
-::: notes
-Get gibt ein Element an genau einen Consumer. Das ist Arbeitsverteilung, kein Broadcast. Broadcast hieße, jede Version erreicht jeden Pflichtempfänger. Ein Snapshot kann von mehreren Threads gelesen werden, zu verschiedenen Zeiten in verschiedenen Versionen. Die Version beantwortet „hat sich etwas geändert?“, nicht „habe ich jede Zwischenversion erhalten?“. Für zuverlässige Zustellung braucht jeder Empfänger einen eigenen Vertrag, etwa eine eigene Queue mit Überlaufregel. Ein kompliziertes Bestätigungssystem bauen wir hier nicht.
-
-Frage: Was fehlt zwischen „alle können den Snapshot lesen“ und „alle bekommen jede Nachricht“? Eine nachvollziehbare Zustellung je Empfänger. Gemeinsame Lesbarkeit speichert keine Historie und weckt niemanden für jede Zwischenversion.
-
-Die Kommunikationsanforderung entscheidet somit über Queue, Snapshot und Puffervertrag.
-:::
-
-## Zusammenfassung Halbzeit
-
-- Historie: FIFO, Überlauf explizit
-- Zustand: Overwrite oder Snapshot, nicht die 1er-Queue mit Try-Put
-- Pointer: 40 Byte Slots sind nicht 750 KiB Bilder
-- Warten und Fehlerstatus gehören zum Pfad
-
-::: notes
-Historie heißt FIFO mit explizitem Überlauf. Zustand heißt Overwrite oder Snapshot, nicht die 1er-Queue mit Try-Put. Ein Pointerslot von 4 Byte ist nicht das Bild von 75 KiB. Warten und der Status gehören zum Pfad. `GetSpace` reserviert nichts. Ein fehlgeschlagenes Get ist keine neue Nachricht.
-
-Frage: Welche Information fehlt, wenn nur ein Pointer erfolgreich empfangen wurde? Dass der Puffer noch gültig ist, wie lang er ist, wer ihn lesen darf und wer ihn später freigibt. Die Adresse allein ist kein Besitzvertrag.
-
-Im zweiten Teil tritt die Hardware als Producer auf und setzt zusätzliche Kontext- und Zeitgrenzen.
-:::
-
-## Block 4: Interrupts im RTOS
-
-- Die ISR unterbricht Threads **dieses** Kerns
-- Höhere IRQs können sich schachteln, je nach Maske
-- Der andere Kern und DMA können weiterlaufen
-- „Die CPU steht“ ist falsch
-- Eine lange ISR verzögert Threads und kann den Tick verschieben
-- Verpasste Ticks sind nicht beliebig tief gespeichert
-- Ob Fristen reißen, sagt das Budget, nicht der Satz „alle Deadlines wandern“
-
-::: notes
-Eine ISR unterbricht Threads dieses Kerns. Höher dringliche IRQs können sich je nach Maske schachteln. Der andere Kern und DMA können weiterlaufen. „Die CPU steht“ ist falsch. Eine lange ISR verschiebt Threadfortschritt und kann die Tickbehandlung verzögern. Ein Pendingbit speichert keine beliebig lange Liste verpasster Ticks. Ob Fristen reißen, sagt das Budget, nicht der Satz, alle Deadlines wanderten. Eine Behauptung „ISR unter 1 µs“ ohne Messaufbau gibt es hier nicht.
-
-Diese Unterschiede begründen die Regeln für ISR-Code. Eine ISR ist selbst kein Threadzustand Ready oder Blocked. Sie verdrängt die CPU-Ausführung, ohne den unterbrochenen Thread schon beim Hardwareeintritt wie bei einem Schedulerwechsel nach Ready zu setzen.
-:::
-
-## Rückblick: Die goldene Regel der ISR
-
-- Kurz, keine blockierende API, kein `printf`, kein Mutex
-- Timeout 0 macht eine verbotene CMSIS-Funktion nicht erlaubt
-- Nicht jede native Funktion hat FromISR
-- Falsche Nutzung: Status, Assert, Lockup oder Inkonsistenz, nicht zwingend HardFault
-
-::: notes
-Die ISR bleibt kurz. Kein blockierendes Warten, kein `printf`, kein `osMutexAcquire` oder `osMutexRelease`. Timeout 0 macht eine verbotene Funktion nicht erlaubt. Nicht jede native Funktion hat eine FromISR-Variante. Falsche Nutzung kann Status, Assert, Lockup oder Inkonsistenz erzeugen, nicht zwingend einen HardFault. Die IPSR-Prüfung im Wrapper erkennt den Exceptionkontext. IPSR ist das Interrupt Program Status Register. Sie ersetzt nicht die Prüfung der IRQ-Priorität und gilt nicht als Freibrief für jede API.
-
-Frage: Ist `osMutexAcquire(m, 0)` in der ISR zulässig? Nein. Nichtblockieren ist nur eines von drei Kriterien. Mutex-Acquire ist in der gezeigten Tabelle aus der ISR ausgeschlossen.
-
-Aufschiebbare Arbeit wird deshalb in einen Thread verlagert.
-:::
-
-## Das Architektur-Muster: Deferred Interrupt Processing
-
-Top-Half: das, was die Hardware sofort braucht.
-
-Bottom-Half: der Thread, Priorität nach **Frist und Last**, nicht pauschal „sehr hoch“.
-
-Register lesen und Flags löschen in der Reihenfolge des Geräts. „Erst Flag, dann Daten“ gilt nicht überall.
-
-Im HAL-EXTI-Pfad nicht ein zweites Mal quittieren.
-
-::: notes
-Deferred Interrupt Processing heißt aufgeschobene Interruptverarbeitung. Die Top-Half, die ISR, erledigt die sofort nötige Hardwarearbeit und sichert Daten oder ein Signal. Die Bottom-Half, der Worker, erledigt den Rest. Seine Priorität folgt Frist, Last und dem übrigen Taskset. Sie ist nicht automatisch maximal. Die Reihenfolge von Quittung und Datenlesen folgt dem Gerät. „Erst Flag, dann Daten“ gilt nicht überall. Im HAL-EXTI-Pfad ist die Quittung schon erfolgt. Der Callback löscht nicht unbesehen ein zweites Mal.
-
-Der Worker wird Ready und kann erst nach dem Handler und dem Scheduler laufen. Die CPU muss vorher nicht Idle gewesen sein.
-
-Welche Daten sofort gesichert werden müssen, zeigt die Top-Half.
-:::
-
-## Die Top-Half (Die ISR)
-
-- Quittung und die Daten, die sonst verloren gehen
-- Ein Semaphor-Token enthält kein Bild
-- Drei Releases vor dem nächsten Acquire, max count 1: höchstens ein Token, zwei Releases scheitern
-- „Arbeit da“ passt; lückenloses Zählen braucht eine Queue mit Überlaufzähler
-- Prellen, Zusammenfassen und Queue-Drop sind drei verschiedene Dinge
-
-::: notes
-Ein Semaphortoken enthält keine Samplebytes. Wird das Register überschrieben, bevor der Worker läuft, muss die ISR das Minimum kopieren oder ein DMA-Puffer den Vertrag tragen. Drei Releases ohne Acquire, Start leer, Maximum 1: der erste gelingt, zwei scheitern am vollen Semaphor. Es bleibt höchstens ein Token. Das ist ein Arbeitsindikator, keine verlustfreie Zählung. Physikalische Flanken, Callbackaufrufe, gespeicherte Tokens und entprellte Betätigungen sind verschiedene Zahlen. GPIO-EXTI kann mehrere Flanken selbst zusammenfassen.
-
-Frage: Was passiert bei drei Releases ohne Acquire auf einem anfangs leeren binären Semaphor? Ein Erfolg und zwei Kapazitätsfehler. Der Worker sieht später höchstens ein gespeichertes „Arbeit da“.
-
-Der Worker verarbeitet die geretteten Daten und wartet danach wieder passend.
-:::
-
-## Die Bottom-Half (Die Task)
-
-- Acquire-Status prüfen, dann arbeiten, wieder warten
-- Mehrere gepufferte Sätze ohne neue Flanke sind erlaubt
-- UART über den geschützten Pfad aus VL4
-- Normal: kurze Arbeit und `osDelay` / Warten auf das nächste Signal
-- `HAL_Delay(100)` nur als Vergleich: Busy-Wait, High kann Low verdrängen, höhere Tasks können trotzdem präemptieren
-- Eine weiterblinkende LED ist kein Fristbeweis
-
-::: notes
-Der Worker prüft den Acquire-Status, arbeitet und wartet wieder auf nötige Arbeit. Mehrere schon gepufferte Datensätze dürfen in einem Aufwachen verarbeitet werden, mit einer Grenze, damit ein Burst nicht endlos wird. UART-Ausgabe nutzt den Schutz aus Vorlesung 4. Ein künstliches Delay ist keine allgemeine Pflicht. Es kann Durchsatz begrenzen und weitere Ereignisse zusammenfassen.
-
-`HAL_Delay(100)` ist eine separate Vergleichsvariante. In der üblichen HAL ist es aktives Warten auf `HAL_GetTick`. Die Funktion kann lokal ersetzt sein. Ein höherpriorer Busy-Wait verzögert niedrigere Threads. Höhere Tasks und erlaubte Interrupts laufen weiter. Der Chip friert nicht ein. `HAL_Delay` und `osDelay` nutzen nicht automatisch dieselbe Zeitbasis. Eine blinkende LED beweist weder Frist noch quantitative Latenz.
-
-Ein Sequenzdiagramm trennt jetzt ISR-Aktivität, Ready und Worker-Code.
-:::
-
-## Visualisierung: Top-Half und Bottom-Half
-
-```{mermaid}
-%%| fig-width: 6.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-sequenceDiagram
-  participant HW as Hardware
-  participant ISR as Top-Half
-  participant K as Kernel
-  participant W as Worker
-  HW->>ISR: Ereignis
-  ISR->>ISR: quittieren, Daten retten
-  ISR->>K: Signal oder kurze Queue
-  Note over W: Ready, noch nicht Running
-  ISR-->>K: ISR-Ende
-  K->>W: PendSV, wenn Priorität passt
-  W->>W: Verarbeitung, dann warten
-```
-
-::: notes
-Hardware, Top-Half, Kernel und Worker sind die Teilnehmer. Das Ereignis startet die ISR. Sie quittiert nach dem Gerätevertrag und rettet Daten. Signal oder kurzes Queue-Put gehen an den Kernel. Die Notiz am Worker sagt Ready, noch nicht Running. Erst nach ISR-Ende kann PendSV wechseln, wenn die Priorität passt. Danach verarbeitet der Worker und wartet wieder. Thread-Code läuft nicht mitten in der noch fortgesetzten ISR. Ein zweiter Release auf einen vollen binären Semaphor kann scheitern. Signal und Nutzdaten sind getrennte Pfeile.
-
-Die Wahl des Signals hängt davon ab, ob Arbeit, Ereignis oder neuer Zustand gemeint ist.
-:::
-
-## Wie signalisiert die Top-Half?
-
-| Bedarf | Mittel |
-|--------|--------|
-| Arbeit vorhanden | binärer Semaphor, leer erzeugt |
-| jedes Ereignis oder Nutzdaten | Queue, Timeout 0, Drop zählen |
-| nur ein neuer Stand | Overwrite oder Snapshot, nicht Try-Put |
-
-Der Puffer muss gültig bleiben, bis der Vertrag ihn freigibt.
-
-::: notes
-„Arbeit vorhanden“ ist ein leerer binärer Semaphor. Jedes Ereignis oder Nutzdaten brauchen eine Queue, Timeout 0 und eine Überlaufbehandlung. Nur der neue Stand braucht Overwrite oder einen Snapshot, nicht Try-Put. Ein Token ohne gerettete Daten weckt den Worker ins Leere, wenn das Register schon überschrieben ist. Pointerdaten brauchen Gültigkeit, Sichtbarkeit und eine spätere Freigabe. Der Puffer bleibt gültig, bis der Vertrag ihn freigibt.
-
-Jedes ausgewählte Mittel muss zusätzlich die ISR-Aufrufregeln erfüllen. Ein Semaphor sagt nur, dass Arbeit da ist. Eine Queue kann die geretteten Bytes tragen. Overwrite ersetzt den alten Stand und bewahrt nicht die Zwischenwerte.
-:::
-
-## Die große Hürde: OS-Aufrufe in der ISR
-
-Drei Fragen, alle ja:
-
-1. Ist die Funktion in der ISR erlaubt?
-2. Ist der Aufruf nicht blockierend?
-3. Liegt die IRQ-Priorität im Syscall-Bereich?
-
-| CMSIS | aus ISR |
-|-------|---------|
-| Queue Put/Get | nur Timeout 0 |
-| Semaphore Release | ja |
-| Semaphore Acquire | nur Timeout 0 |
-| Mutex Acquire/Release | nein |
-| New, Reset, Delete | nein |
-
-::: notes
-Drei Fragen müssen alle ja sein. Ist die Funktion in der ISR erlaubt? Ist der Aufruf nicht blockierend? Liegt die IRQ im Syscall-Bereich? CMSIS Queue Put und Get sowie Semaphor Acquire nur mit Timeout 0. Semaphor Release ist vorgesehen. Mutex Acquire und Release sowie New, Reset und Delete gehören nicht in den Callback. Eine Kontextprüfung macht eine falsche Interruptpriorität nicht gültig. Native Namen stehen nur daneben, wenn das Labor sie wirklich ruft. Das CMSIS-Labor bleibt bei CMSIS.
-
-Die native FreeRTOS-API benennt die besonderen ISR-Operationen ausdrücklich.
-:::
-
-## Native FreeRTOS-Lösung: Eigene ISR-Funktionen
-
-- `xQueueSendFromISR`, `xSemaphoreGiveFromISR`
-- `xHigherPriorityTaskWoken` beginnt bei `pdFALSE`
-- danach `portYIELD_FROM_ISR`
-- Fehlendes Yield: unter den Annahmen zuerst zurück zur unterbrochenen Task, bis ein späterer Anlass schedult
-- Das ist ein Fehlerbild, nicht „der Kernel wartet immer auf den nächsten SysTick“
-
-::: notes
-`xQueueSendFromISR` und `xSemaphoreGiveFromISR` sind die nativen ISR-Varianten. `BaseType_t` ist der Port-Typ des Flags. `xHigherPriorityTaskWoken` startet bei `pdFALSE` und wird über mehrere Aufrufe nicht wieder gelöscht. Es zeigt, dass eine Schedulerentscheidung nötig ist, nicht dass die Arbeit schon fertig ist. `portYIELD_FROM_ISR` fordert den Wechsel an. Der Rückgabewert der FromISR-Funktion ist davon getrennt. Ein fehlendes Yield kann die geweckte Task bis zu einem späteren Anlass verzögern. Das muss nicht universell der nächste SysTick sein. Kein blockierender Tickparameter gehört in den FromISR-Aufruf. Das native Objekt wird nicht auf einen CMSIS-Handle gecastet. Im CMSIS-Labor ist dieser Ausschnitt Vergleich, kein zweites Yield.
-
-CMSIS kapselt diese Schritte in der verwendeten Anbindung.
-:::
-
-## Die CMSIS-RTOS v2 Abstraktion
-
-- Der ST-Adapter prüft den Kontext und ruft bei erlaubten Funktionen die native FromISR-Variante
-- Die Switch-Anforderung sitzt im Wrapper
-- Im CMSIS-Labor kein zweites manuelles Yield
-- Der Wrapper macht Mutex-Aufrufe dadurch nicht ISR-fähig
-
-::: notes
-CMSIS-RTOS2 ist die standardisierte Schnittstelle. Der ST-Adapter prüft den Kontext und ruft bei erlaubten Funktionen die native FromISR-Variante. Die Switch-Anforderung sitzt im Wrapper. Im CMSIS-Labor kommt kein zweites manuelles Yield dazu. Der geprüfte Pfad gilt für `osMessageQueuePut` mit Timeout 0 und für `osSemaphoreRelease`, nicht für jede CMSIS-Funktion. Mutex-Aufrufe werden dadurch nicht ISR-fähig. Die IRQ-Schwelle bleibt. Die lokale `cmsis_os2.c` kann von der Referenz 11.2.0 abweichen. Ein öffentliches main ist nicht der Laborstand.
-
-Die Hardwarepriorität des aufrufenden Interrupts bleibt ausdrücklich zu konfigurieren.
-:::
-
-## Die eine CMSIS-Regel für ISRs
-
-Kleine NVIC-Zahl = höhere IRQ-Dringlichkeit.
-
-Taskpriorität High repariert eine falsche EXTI-Priorität nicht.
-
-Beispiel, nur bei bestätigten 4 Priority-Bits und logischer Grenze 5: logisch 0–4 keine Kernel-API, 5–15 bei passender Gruppierung erlaubt. Der Portwert ist $5 \ll 4 = \mathtt{0x50}$. CMSIS/HAL erwarten in diesem Modell die unverschobene 5.
-
-`configMAX_SYSCALL_INTERRUPT_PRIORITY` ist der **geschobene** Registerwert.
-
-::: notes
-Drei Regeln: erlaubte Funktion, nicht blockierender Parameter, zulässige IRQ-Dringlichkeit. Eine kleinere NVIC-Zahl bedeutet höhere Interruptdringlichkeit. Das ist nicht die Taskpriorität. Bei vier implementierten Bits und logischer Grenze 5 dürfen 0 bis 4 keine Kernel-API rufen. 5 bis 15 dürfen die erlaubten Aufrufe, wenn die Gruppierung passt. Der Registerwert ist $5 \ll 4 = \mathtt{0x50}$. CMSIS und HAL bekommen in diesem Modell die unverschobene 5. `__NVIC_PRIO_BITS`, `configPRIO_BITS` und der Port werden am Projekt geprüft. „EXTI immer auf 5“ ist keine Anweisung. Eine hohe Workerpriorität repariert die falsche IRQ nicht.
-
-Frage: Repariert `osPriorityHigh` beim Worker eine falsch konfigurierte EXTI-IRQ? Nein. Die Skalen sind unabhängig. Liegt die IRQ über der Syscallgrenze, darf der Callback den Kernel nicht rufen, egal wie hoch der Thread ist.
-
-Ein erlaubter Aufruf macht den Worker bereit. Der nächste Abschnitt erklärt den tatsächlichen Start.
-:::
-
-## Der Context-Switch aus der ISR (Yielding)
-
-Synthetische Spur, keine H755-Messung:
-
-| Ereignis | Zeit |
-|----------|-----:|
-| Flanke | 0 µs |
-| ISR-Eintritt | 3 µs |
-| Worker Ready | 8 µs |
-| ISR-Ende | 12 µs |
-| Workerstart nach PendSV | 16 µs |
-
-Startlatenz des Workers in diesem Modell: **16 µs** vom Ereignis bis zum ersten Workerbefehl. Die Interruptstartlatenz ist 3 µs, die ISR-Dauer 9 µs, Ready bis Running 8 µs. Das sind Lehrzeiten, keine H755-Messung.
-
-Dazu kommen Maskierung, fremde ISRs und die Worker-Laufzeit bis Completion.
-
-::: notes
-Die Spur ist synthetisch, keine H755-Messung. Flanke bei 0 µs, ISR-Eintritt bei 3 µs, Worker Ready bei 8 µs, ISR-Ende bei 12 µs, Workerstart nach PendSV bei 16 µs. Die Interruptstartlatenz ist 3 µs. Die ISR-Dauer ist 12 minus 3 gleich 9 µs. Ready bis Running ist 16 minus 8 gleich 8 µs. Ereignis bis erster Workerbefehl ist 16 µs. Die Spanne 12 bis 16 µs ist der angenommene Übergang einschließlich Kontextwechsel. Maskierung und fremde ISRs, die schon in den Zeitpunkten stecken, werden nicht noch einmal addiert. Ein erweitertes Modell verschiebt die Zeitpunkte selbst. Completion enthält nach dem Start die Workerarbeit, Wartezeiten und weitere Unterbrechungen. Start bei 16 µs beweist keine Deadline der fertigen Verarbeitung.
-
-PendSV und die unterbrochene Task erklären, wie der angeforderte Wechsel vollzogen wird.
-:::
-
-## Wie löst FreeRTOS das Yielding?
+## Warten auf Daten verändert den Threadzustand
 
 ```{.plantuml}
 @startuml
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontSize 24
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam ArrowFontName SansSerif
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
 skinparam timing {
+  FontName SansSerif
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+scale 1 as 110 pixels
+concise "Consumer" as C
+@0
+C is Running
+@1
+C is Blocked
+@3
+C is Ready
+@5
+C is Running
+@6
+C is Blocked
+@enduml
+```
+
+Schematische Schritte: Get leer bei 1 · Put bei 3 · Auswahl bei 5.
+
+::: notes
+Consumer ist der empfangende Thread. Die waagerechte Achse zeigt schematische Schritte, keine gemessenen Millisekunden. Running bedeutet laufend, Blocked wartend und Ready ausführungsbereit. Der Consumer ruft bei Schritt eins Get auf einer leeren Queue mit erlaubter Wartezeit auf. Der Kernel setzt ihn auf Blocked. Er führt in diesem Zustand keine eigene Pollingschleife aus.
+
+Ein erfolgreicher Put bei Schritt drei kann den wartenden Consumer auf Ready setzen. Er läuft trotzdem erst bei Schritt fünf, wenn der Scheduler ihn auswählt. Der Abstand ist hier bewusst sichtbar: Ready ist kein Verarbeitungsbeginn. Nach Verarbeitung versucht er bei Schritt sechs erneut ein Get und wartet wieder. Tickbehandlung, andere Threads und Interrupts können während seiner Blockierung weiterlaufen. Ein Get mit Timeout null würde sofort einen Status zurückgeben, anstatt diesen Wartezustand einzugehen. Eine endliche Wartezeit kann auch ohne Nachricht ablaufen. Erst der erfolgreiche Rückgabestatus bestätigt, dass eine neue Nachricht im Zielobjekt angekommen ist.
+:::
+
+## Queue einmal anlegen und Handle prüfen
+
+```c
+/* Nach dem vorhandenen osKernelInitialize(). */
+osMessageQueueId_t q;
+q = osMessageQueueNew(4, sizeof(SensorMsg), NULL);
+if (q == NULL) {
+    Error_Handler(); /* darf hier nicht zurückkehren */
+}
+```
+
+- `SensorMsg`: fest vereinbarter Nachrichtentyp
+- Erst Queue, dann Threads, dann Kernelstart
+- Kein zweites Initialisieren im generierten Cube-Projekt
+
+::: notes
+Der C-Ausschnitt zeigt die Anlage, nicht ein vollständiges Bootprogramm. CMSIS-RTOS2 ist die standardisierte Betriebssystem-Schnittstelle. osMessageQueueId_t ist ihr Queue-Handle, also ein Bezeichner des angelegten Objekts. osMessageQueueNew erhält vier Elementplätze, die mit sizeof ermittelte Bytegröße von SensorMsg und mit NULL keine zusätzlichen Attribute. SensorMsg muss zuvor als gemeinsamer Nachrichtentyp definiert sein. Die vier ist die Kapazität, nicht die Zahl erzeugter Threads.
+
+Im betrachteten Adapter wird bei NULL-Attributen dynamisch Speicher reserviert. Ein NULL-Ergebnis kann an Speicher, Parametern, Aufrufkontext oder Konfiguration liegen. Damit darf kein Thread die Queue benutzen. Error_Handler bezeichnet den Fehlerpfad des generierten Projekts; er muss diesen Initialisierungsabbruch tatsächlich stoppen. Im Labor enthält die Hilfsfunktion zusätzlich eine Endlosschleife, falls der Handler unerwartet zurückkehrt. Das Cube-Projekt initialisiert und startet den Kernel bereits. Wir fügen nur die Objektanlage an der richtigen Stelle ein, statt den Startablauf zu duplizieren.
+:::
+
+## Put übergibt eine Kopie bei Erfolg
+
+```c
+SensorMsg msg = { .sample = 70u, .seq = 7u };
+osStatus_t st = osMessageQueuePut(q, &msg, 0u, 0u);
+if (st == osOK) {
+    /* Nachricht übernommen: msg darf wiederverwendet werden. */
+}
+```
+
+Volle Queue, Timeout 0: neue Nachricht bleibt draußen.
+
+Timeout größer 0: Thread kann auf freien Platz warten.
+
+::: notes
+Put bedeutet Einreihen. Im C-Code bezeichnet msg eine lokale Nachricht mit Messwert sample gleich siebzig und Sequenznummer seq gleich sieben. Die Adresse &msg ist die Quelle der Kopie. q muss ein gültiger Queue-Handle sein, dessen Elementgröße zu SensorMsg passt. Die erste null ist msg_prio, der Nachrichtenvorrang, der im betrachteten CMSIS-FreeRTOS-Adapter ignoriert wird. Die zweite null ist der Timeout in Kernel-Ticks, also die Wartezeit. osStatus_t ist der Typ des Rückgabestatus.
+
+osOK bestätigt, dass die Bytes übernommen wurden. Erst danach darf der Sender aus dieser erfolgreichen Übergabe schließen, dass der Empfänger eine eigene Kopie erhalten kann. Eine volle Queue wird mit Timeout null nicht überschrieben. Der Aufruf meldet osErrorResource und lässt die gespeicherten Nachrichten stehen. Mit positiver Wartezeit kann ein Thread auf Platz warten; seine Quelldaten müssen bis zur Rückkehr gültig bleiben. Ein solcher Wartepfad ist für einen Interruptbehandler unzulässig. Im Labor werden erwartete Kapazitätsfehler von technischen Fehlern getrennt.
+:::
+
+## Get nur bei Erfolg als neue Nachricht nutzen
+
+```c
+SensorMsg msg;
+osStatus_t st = osMessageQueueGet(q, &msg, NULL, 50u);
+if (st == osOK) {
+    ProcessMessage(&msg);
+} else if (st == osErrorTimeout) {
+    /* Keine neue Nachricht innerhalb von 50 Ticks. */
+}
+```
+
+Get gibt einen Queue-Platz frei, bevor die Verarbeitung fertig ist.
+
+::: notes
+Get bedeutet Entnehmen. Der C-Ausschnitt ist Lehrcode: ProcessMessage steht für die hier nicht ausgeführte Anwendungsverarbeitung. q ist ein gültiger Queue-Handle, msg der passend große lokale Zielpuffer und NULL bedeutet, dass kein Nachrichtenvorrang zurückgegeben werden soll. Die Zahl fünfzig ist eine endliche Wartezeit in Kernel-Ticks, nicht automatisch in Millisekunden. osStatus_t bezeichnet den Status, osOK den erfolgreichen Empfang und osErrorTimeout den Ablauf dieser Wartezeit.
+
+Die lokale Variable msg ist zunächst nicht als neuer gültiger Datensatz zu betrachten. Nur bei osOK darf ProcessMessage die empfangene Nachricht auswerten. Auch nach einem früheren Erfolg und einem späteren Timeout wäre der alte Inhalt keine neue Nachricht. Die Folie zeigt nicht sämtliche Fehlerpfade; Parameter- oder Kontextfehler gehören in eine eigene technische Diagnose. Sobald Get die Kopie entnimmt, ist der Queue-Platz frei. Der Consumer kann noch lange mit dieser Kopie beschäftigt sein. Für Kapazitätsrechnungen zählen deshalb Entnahmen und fertig verarbeitete Nachrichten an unterschiedlichen Grenzen.
+:::
+
+## Status auswerten, Momentaufnahmen richtig lesen
+
+| Ergebnis | Bedeutung bei gültigem Aufruf |
+|---|---|
+| `osOK` | Kopie gelungen |
+| `osErrorResource`, Timeout 0 | voll bei Put, leer bei Get |
+| `osErrorTimeout` | endliche Wartezeit abgelaufen |
+| anderer Fehler | technisches Problem prüfen |
+
+`GetCount` und `GetSpace` reservieren keinen Platz.
+
+::: notes
+Die Tabelle bezieht sich auf gültige Queue-Aufrufe der CMSIS-RTOS2-Schnittstelle. osOK ist der Erfolgsstatus. osErrorResource meldet beim nicht wartenden Put fehlenden Platz und beim nicht wartenden Get fehlende Daten. osErrorTimeout ist das Ende eines erfolglosen Wartens mit endlichem Timeout. Ein ungültiger Handle, ein unzulässiger Kontext oder falsche Parameter dürfen nicht einfach als gewöhnlicher Nachrichtenverlust gezählt werden.
+
+GetCount steht verkürzt für osMessageQueueGetCount, die aktuelle Belegung, und GetSpace für osMessageQueueGetSpace, die aktuell freien Plätze. Zwischen dieser Abfrage und dem nächsten Put kann ein anderer Thread oder ein erlaubter Interrupt denselben Platz belegen. Die Abfrage reserviert daher nichts. Ein Ablauf nach dem Muster „Platz gesehen, also Put kann nicht scheitern“ ist falsch. Der Status des tatsächlichen Put entscheidet. Die vollständige Laboranwendung trennt akzeptierte Nachrichten, kapazitätsbedingte Drops und technische Fehler. Ein Drop ist eine bewusst erkennbare verworfene Nachricht, noch keine vollständige Reaktion auf den Verlust.
+:::
+
+## Ein überprüfbares Modell für Dauerüberlast
+
+Lehrannahmen, keine Boardmessung:
+
+- Queue anfangs leer, $N=10$, API-Zeit vernachlässigt
+- Put bei $1,2,3,\ldots\,\mathrm{ms}$, jeweils Wert $t$
+- Get bei $5,10,15,20\,\mathrm{ms}$, je ein Element
+- Zeitgleich: erst Put, dann Get
+- Voll: neue Nachricht verwerfen
+
+$\lambda=1000\,/\mathrm{s}$ und $\mu=200\,/\mathrm{s}$
+
+::: notes
+N ist die Kapazität in Elementen, ms sind Millisekunden und API bedeutet Application Programming Interface, Programmierschnittstelle. Die Rechenzeit ihrer Operationen wird im Modell vernachlässigt. lambda ist die angebotene Nachrichtenrate und mu die mögliche Entnahmerate, jeweils in Nachrichten pro Sekunde. Ein Put pro Millisekunde entspricht tausend pro Sekunde; ein Get alle fünf Millisekunden entspricht zweihundert pro Sekunde.
+
+Die Queue ist zu Beginn leer. Jeder Put versucht, den Wert seines Zeitpunkts einzureihen. Bei Vollbelegung wird dieser neue Wert verworfen. Bereits gespeicherte Werte bleiben erhalten. Bei gleichen Zeitpunkten gilt eine feste Reihenfolge: Put vor Get. Diese Zählkonvention beeinflusst die Belegungsspitze und den ersten Verlust. Der Consumer entnimmt bei jedem Get nur eine Nachricht. Ein Worker, der nach einer Pause die gesamte Queue leert, wäre ein anderes Modell. Die Annahmen erlauben eine genaue Handrechnung, stellen jedoch keinen Ablaufbeweis für osDelay auf realer Hardware dar.
+:::
+
+## Die Belegung steigt trotz regelmäßiger Gets
+
+| Nach allen Operationen bei $t$ | Belegung |
+|---|---:|
+| $5\,\mathrm{ms}$ | 4 |
+| $10\,\mathrm{ms}$ | 8 |
+| $12\,\mathrm{ms}$ | 10 |
+| $20\,\mathrm{ms}$ | 9 |
+
+Erster Fehl-Put: $13\,\mathrm{ms}$.
+
+Bis 20 ms: $20=13+7$ Versuche, $13=4+9$ Erfolge.
+
+::: notes
+Die Tabelle setzt das Lehrmodell mit zehn Plätzen, anfangs leerer Queue, einem Put je Millisekunde und einem Get alle fünf Millisekunden fort. Einheiten sind Millisekunden und Nachrichten. Nach den ersten fünf Puts und einem Get sind vier Elemente vorhanden. Nach zehn Puts und zwei Gets sind es acht. Put elf und zwölf füllen die Queue vollständig. Der erste abgewiesene Versuch liegt daher bei dreizehn Millisekunden.
+
+Die Werte dreizehn, vierzehn und fünfzehn werden verworfen. Erst der Get nach dem gescheiterten Put bei fünfzehn schafft einen Platz. Put sechzehn gelingt; siebzehn bis zwanzig scheitern wieder vor dem Get bei zwanzig. Insgesamt gibt es dreizehn erfolgreiche Puts und sieben Verluste. Vier Gets liefern eins, zwei, drei und vier; neun Elemente bleiben übrig. Die erste Bilanz zerlegt zwanzig Versuche in dreizehn Erfolge und sieben Fehler. Die zweite zerlegt dreizehn Erfolge in vier Entnahmen und neun Restnachrichten. Diese Bilanzen prüfen den Verlauf unabhängig von einzelnen Tabellenzeilen.
+:::
+
+## Kapazität aus der höchsten Zwischenbelegung
+
+Für ein begrenztes, verlustfreies Referenzmodell:
+
+$$N\ge\max_t\bigl(Q_0+A(t)-D(t)\bigr)$$
+
+- $Q_0$: Anfangsbelegung, $A$: angebotene Nachrichten
+- $D$: Entnahmen, auch Zwischenstände berücksichtigen
+- Im Modell bis 20 ms: $20-3=17$ Plätze vor dem letzten Get
+- Ein endlicher Puffer löst dauerhafte $\lambda>\mu$ nicht
+
+::: notes
+N ist die erforderliche Kapazität in Elementen. Q null ist die Anfangsbelegung. A von t zählt angebotene Nachrichten bis zum betrachteten Zeitpunkt, D von t die Entnahmen im gedachten verlustfreien Referenzablauf. Der Ausdruck ist die Belegung, solange keine Nachricht abgewiesen wird. Das Maximum muss auch Zwischenstände nach einem Put und vor einem zeitgleichen Get erfassen. Man darf nicht nur die nach bereits eingetretenen Verlusten erfolgreichen Puts zählen: Das würde den benötigten Speicher unterschätzen.
+
+Für die leere Startqueue im begrenzten Intervall von eins bis zwanzig Millisekunden sind unmittelbar nach Put zwanzig erst drei Gets erfolgt. Die Spitze beträgt zwanzig minus drei gleich siebzehn. Nach dem vierten Get bleiben sechzehn. Die erforderliche Kapazität ist also siebzehn und nicht sechzehn. lambda und mu bezeichnen angebotene Rate und Entnahmerate. Wenn dauerhaft mehr ankommt als entnommen werden kann, wächst der Referenzrückstau unbegrenzt. Die Formel liefert dann keine endliche Dauerlösung. Bursts, also kurzzeitige Nachrichtenhäufungen, können dagegen mit ausreichendem Speicher aufgefangen werden.
+:::
+
+## Bei Überlast eine bewusste Entscheidung treffen
+
+| Regel | Geeignet, wenn … |
+|---|---|
+| Sender auf Platz warten lassen | die Quelle warten kann |
+| neuen Datensatz verwerfen | Verlust erkannt und behandelt wird |
+| älteren Zustand ersetzen | nur der neueste Stand benötigt wird |
+| Fehler eskalieren | Verlust die Anforderung verletzt |
+
+Blockierter Softwarethread stoppt keine Hardwarequelle automatisch.
+
+::: notes
+Überlast bedeutet, dass die angebotene Arbeit die verfügbare Verarbeitung oder den Speicher überfordert. Eine Warteentscheidung beim Producer, dem Softwareerzeuger, erzeugt Backpressure, also Gegendruck zur Quelle. Das kann sinnvoll sein, wenn eine Berechnung später fortgesetzt werden darf. Eine unabhängig weiterlaufende Hardwarequelle wartet deshalb aber nicht automatisch. ADC bedeutet Analog-Digital-Wandler, UART Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle, und DMA Direct Memory Access, direkter Hardware-Speicherzugriff. Diese Quellen brauchen einen eigenen Fluss- und Puffervertrag.
+
+Neue Datensätze zu verwerfen bewahrt die ältere Historie, hinterlässt jedoch Lücken. Ältere Zustände zu ersetzen priorisiert Aktualität und ist eine andere Semantik als FIFO, First In First Out. Eskalation bedeutet eine sichtbare Behandlung, etwa Abbruch eines Versuchs oder eine dokumentierte Fehleranzeige. Ein still erhöhtes Diagnosefeld allein erfüllt noch keine Sicherheits- oder Qualitätsanforderung. Papieraufgabe 2 verbindet die Lastrechnung mit der Auswahl einer solchen Regel, damit die Rechenzahl zu einer begründeten Entwurfsentscheidung führt.
+:::
+
+## Threadsichere Queue, trotzdem Anwendungsdeadlock
+
+1. Producer hält Mutex A.
+2. Volle Queue: Producer wartet im Put auf Platz.
+3. Consumer braucht A, bevor er das nächste Get ausführt.
+
+Producer wartet auf Consumer; Consumer wartet auf Producer.
+
+Den Mutex vor dem blockierenden Put freigeben, wenn der Vertrag es erlaubt.
+
+::: notes
+Producer ist der Nachrichtenerzeuger, Consumer der Empfänger, Put das Einreihen und Get das Entnehmen. Ein Mutex schützt eine Ressource und hält einen Besitzer fest. Im Beispiel besitzt der Producer Mutex A und versucht anschließend einen wartenden Put auf eine volle Queue. Er kann den Mutex erst nach erfolgreichem Put freigeben. Der Consumer versucht vor seiner nächsten Entnahme ebenfalls A zu erwerben. Weil A belegt ist, kann er nicht zum Get gelangen.
+
+Damit entsteht ein Deadlock, eine Verklemmung durch einen geschlossenen Wartezyklus. Die Queue kann ihre internen Strukturen völlig korrekt schützen und trotzdem diesen Anwendungsfehler nicht verhindern. Auch die Prioritätsvererbung des Mutex erzeugt keinen freien Queue-Platz, wenn der Besitzer selbst blockiert ist. Ein geeigneter Entwurf kopiert die benötigten Daten im geschützten Abschnitt, gibt den Mutex frei und führt dann den möglicherweise blockierenden Put mit der privaten Kopie aus. Das gilt nur, wenn Inhalt und Lebensdauer der Kopie den Anwendungsvertrag erfüllen. Die bekannte Ressourcenanalyse aus Vorlesung 4 bleibt somit auch beim Datentransport notwendig.
+:::
+
+## Wertkopie entkoppelt lokale Nachrichten
+
+```c
+SensorMsg msg = { .sample = 10u, .seq = 1u };
+if (osMessageQueuePut(q, &msg, 0u, 0u) == osOK) {
+    msg.sample = 99u;
+}
+```
+
+Der Consumer erhält weiterhin `sample = 10`, sofern niemand die Queue verändert.
+
+Queue-Slots speichern die festgelegte Elementgröße.
+
+::: notes
+Der C-Code zeigt eine kleine Wertnachricht. sample ist der Nutzwert, seq die Sequenznummer und q ein gültiger Handle einer Queue mit der Elementgröße SensorMsg. Put kopiert bei osOK, dem Erfolgsstatus, die vereinbarten Bytes von &msg in den Queue-Speicher. Die spätere Änderung des lokalen Felds sample auf neunundneunzig verändert diese gespeicherte Kopie nicht. Ein späterer erfolgreicher Get kann daher weiterhin zehn empfangen.
+
+Der Zusatz über Änderungen an der Queue grenzt den Ablauf ein: Ein anderer Consumer könnte die Nachricht entnommen oder eine zulässige Verwaltungsoperation den Inhalt verworfen haben. Wir betrachten hier einen unveränderten gespeicherten Datensatz. Die Kopie erfolgt byteweise entsprechend der Elementgröße. Felder mit Adressen sind deshalb keine tiefe Kopie der referenzierten Daten. Ein Strukturfeld namens buffer bleibt eine Adresse, wenn sein Typ ein Pointer ist. Für die kleine Nachricht mit reinen Zahlen reicht die lokale Lebensdauer während des Put-Aufrufs aus. Diese Eigenschaft macht Wertnachrichten zum geeigneten Einstieg, bevor große Datensätze einen zusätzlichen Besitzvertrag benötigen.
+:::
+
+## Eine Pointerkopie kopiert kein Bild
+
+```c
+uint8_t *ptr = image_buffer;
+/* q_ptr wurde mit sizeof(ptr) angelegt. */
+osStatus_t st = osMessageQueuePut(q_ptr, &ptr, 0u, 0u);
+```
+
+- Kopiert wird die Adresse, nicht der Bildinhalt
+- Puffer muss gültig und unverändert verfügbar bleiben
+- `static` verlängert die Lebensdauer, schützt aber nicht vor Überschreiben
+
+::: notes
+Der C-Ausschnitt ist Lehrcode für einen Pointer, also eine Speicheradresse. uint8_t bezeichnet einen vorzeichenlosen Acht-Bit-Typ. image_buffer steht für einen tatsächlich bereitgestellten Bildpuffer, ptr für dessen Adresse. q_ptr muss mit sizeof(ptr), der Größe eines solchen Pointerwerts, angelegt worden sein. &ptr übergibt die Adresse des Pointerobjekts als Kopierquelle. Der Status st muss genauso wie bei anderen Puts geprüft werden.
+
+Bei Erfolg wird nur die Adresse kopiert. Die Bytes des Bildes bleiben im externen Puffer. Der Consumer kann nur richtig lesen, wenn dieser Puffer noch existiert und der Producer, der Erzeuger, ihn nicht inzwischen verändert. Ein lokales Array einer beendeten Funktion ist kein geeigneter langfristiger Speicher. Ein static-Array lebt länger, kann aber weiterhin zu früh wiederbefüllt werden. Ebenso darf eine laufende Hardwareübertragung den Inhalt nicht gleichzeitig überschreiben. Copy by Reference wird als Kurzname für diesen Vertrag verwendet; technisch kopiert die Queue den Pointer weiterhin als Wert. Erst geregelter Besitz macht die kleine Adressnachricht sicher nutzbar.
+:::
+
+## Pufferbesitz im Kreislauf
+
+
+
+Gescheiterter Put: Verantwortung bleibt beim Producer.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  F[FREE] -->|Producer nimmt| W[FILLING]
+  W -->|Put erfolgreich| Q[QUEUED]
+  Q -->|Consumer entnimmt| P[PROCESSING]
+  P -->|genau einmal zurück| F
+  style Q fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
+::: notes
+Die Abbildung beschreibt Zustände eines Datenpuffers, keine Threadzustände. Deshalb zeigt der Zustandskreislauf den Besitz und keine Präemption. FREE bedeutet verfügbar, FILLING vom Producer befüllt, QUEUED erfolgreich zur Consumerseite übergeben und PROCESSING vom Consumer verarbeitet. Die Pfeile werden von oben nach unten und dann zurück zum Anfang gelesen. Die rote Markierung hebt die erfolgreiche Übergabe hervor. Producer ist der Erzeuger, Consumer der Verbraucher und Put das Einreihen einer Adresse oder eines Deskriptors.
+
+Eine Free-Pool-Struktur enthält verfügbare Pufferidentitäten; die Ready-Queue enthält übergebene Puffer. Bei erfolgreichem Put darf der Producer den Puffer nicht mehr verändern. Der Consumer gibt ihn nach abgeschlossener Nutzung genau einmal zurück. Bei fehlgeschlagenem Put bleibt der Producer verantwortlich und muss den Puffer behalten, später erneut übergeben oder einmal zurückgeben. Er darf nicht zugleich erneut einreihen und zurückgeben. Die tatsächliche Ausführung kann einen geweckten Consumer schon vor Rückkehr des Producer-Aufrufs starten lassen. Der Besitzvertrag muss darum am erfolgreichen Übergabepunkt gelten, nicht erst bei einer später geschriebenen Diagnosezeile.
+:::
+
+## Queue-Speicher und Payload-Pool getrennt zählen
+
+Lehrannahmen: zehn Plätze, 4-Byte-Pointer, Bilder mit $75\,\mathrm{KiB}$.
+
+| Anteil | Nutzspeicher |
+|---|---:|
+| zehn reine Pointer-Slots | 40 Byte |
+| zehn Bildpuffer | 750 KiB |
+| nur zwei Bildpuffer | 150 KiB, höchstens zwei Bilder gleichzeitig |
+
+Kontrollblock, Alignment und Allokator kommen hinzu.
+
+::: notes
+KiB bedeutet Kibibyte, also 1024 Byte. Die angenommenen Bilder enthalten je fünfundsiebzig KiB, die angenommenen Pointer jeweils vier Byte. Zehn Pointer-Slots brauchen damit zehn mal vier gleich vierzig Byte reinen Elementnutzspeicher. Zehn tatsächliche Bildpuffer brauchen zehn mal fünfundsiebzig gleich siebenhundertfünfzig KiB. Diese beiden Zahlen beschreiben verschiedene Speicherbereiche. Eine Queue mit zehn freien Pointerplätzen erzeugt keine zehn Bildpuffer.
+
+Bei nur zwei Bildpuffern sind maximal zwei unabhängige Bilder gleichzeitig im gesamten Besitzkreislauf verfügbar: frei, beim Producer, in der Queue oder beim Consumer. Die Zahl wartender Queue-Adressen allein zählt nicht alle belegten Puffer. Kontrollblock, Alignment, also Speicherausrichtung, und Allokatorverwaltung erhöhen den Gesamtbedarf. Ein Deskriptor mit Pointer, Länge und Sequenz ist außerdem größer als ein reiner Pointer. Die Zahlen sind eine Modellrechnung, keine Behauptung über frei verfügbaren RAM des Boards. RAM bedeutet Random Access Memory, Arbeitsspeicher. Linker-Map, Speicherregion und konkrete Adapterforderungen bestimmen, ob der Entwurf im Zielprojekt tatsächlich passt.
+:::
+
+## Eine Queue der Länge eins ist noch keine Mailbox
+
+Start leer, Sender bietet 10, 20, 30; kein Leser dazwischen.
+
+| Vertrag | Späterer Inhalt |
+|---|---|
+| FIFO mit drei Plätzen | 10, 20, 30 |
+| Länge 1, Put mit Timeout 0 | 10; zwei Ablehnungen |
+| Latest-Value mit Overwrite | 30 |
+
+„Mailbox“ meint hier ausdrücklich den jüngsten Zustand.
+
+::: notes
+FIFO heißt First In First Out und bewahrt erfolgreich eingereihte Nachrichten in ihrer Reihenfolge. Latest-Value bedeutet jüngster Wert. Overwrite ist ein ausdrücklich erlaubtes Ersetzen eines noch ungelesenen älteren Zustands. Der Begriff Mailbox wird von Betriebssystemen unterschiedlich verwendet; in dieser Vorlesung bezeichnet er diesen Latest-Value-Vertrag.
+
+Die Länge-1-Queue nimmt den ersten Wert zehn auf. Beide späteren Puts mit Timeout null werden bei Vollbelegung abgelehnt und lassen zehn stehen. Timeout null ist deshalb keine Näherung an Overwrite. Eine echte Overwrite-Operation ersetzt dagegen zunächst zehn durch zwanzig und danach durch dreißig. Im nativen FreeRTOS existiert xQueueOverwrite für eine Queue der Länge eins. CMSIS-RTOS2 bietet hier keine entsprechende standardisierte Queue-Overwrite-Funktion. Ein CMSIS-Handle wird nicht zu einem nativen Handle gecastet. Auch Get gefolgt von Put bildet gegenüber anderen Teilnehmern kein atomares Ersetzen. Wer beim Display nur Aktualität braucht, muss somit einen passenden Vertrag implementieren, statt lediglich die Kapazität auf eins zu setzen.
+:::
+
+## Aktuellen Zustand als geschützten Snapshot lesen
+
+Ein Thread veröffentlicht Wert, Version und Zeitpunkt unter einem Mutex.
+
+- Leser kopiert denselben Datensatz unter demselben Mutex
+- Neue Version zeigt eine Änderung
+- Zwischenversionen dürfen verloren gehen
+- Benachrichtigung folgt auf Veröffentlichung
+- ISR verwendet keinen Mutex
+
+::: notes
+Ein Snapshot ist eine zusammengehörige Momentaufnahme mehrerer Felder. Ein veröffentlichender Thread schreibt beispielsweise Wert, Versionsnummer und Zeitstempel in einem kurzen, durch Mutex geschützten Abschnitt. Ein Mutex ist eine Sperre mit Besitzer. Alle beteiligten Leser kopieren unter derselben Sperre den vollständigen Datensatz und geben die Sperre danach frei. So stimmen die Felder zusammen, sofern kein weiterer ungeschützter Teilnehmer schreibt.
+
+Die Version kennzeichnet Änderungen. Sie beweist keine Zustellung aller Zwischenversionen. Ein Leser kann etwa direkt von Version eins auf fünf springen, wenn er später liest. Für einen aktuellen Zustand kann das erlaubt sein. Wenn eine Benachrichtigung verwendet wird, folgt sie auf die vollständige Veröffentlichung, damit der geweckte Leser nicht erst einen alten Stand findet. ISR steht für Interrupt Service Routine, Interruptbehandler. Er darf keinen CMSIS-Mutex erwerben oder freigeben. Bei hardwareerfassten Daten übergibt daher ein erlaubter kurzer Kanal die Rohdaten an den veröffentlichenden Thread. Diese Lösung baut auf Vorlesung 4 auf und bleibt heute ein Entwurfsmuster, kein zusätzliches Pflichtprogramm.
+:::
+
+## Mehrere Consumer: Arbeitsverteilung oder Zustellung?
+
+- Ein Get entnimmt eine Nachricht für einen Consumer
+- Zwei Get-Consumer bekommen nicht beide dieselbe Nachricht
+- Gemeinsamer Snapshot: mehrere Leser, möglicherweise verschiedene Versionen
+- Jeder Pflichtempfänger braucht einen eigenen Zustellvertrag
+
+Beispiel: zwei eigene Queues, jeweils mit Überlaufregel.
+
+::: notes
+Consumer bezeichnet einen Nachrichtenverbraucher und Get die Entnahme. Bei zwei Threads an derselben Queue wird jede Nachricht einmal entnommen. Welcher Consumer sie erhält, hängt vom Ablauf und den Kernel-Wartelisten ab. Das ist Arbeitsverteilung, etwa zwei Bearbeiter einer Auftragsfolge. Es ist kein Broadcast. Broadcast bedeutet Zustellung einer Nachricht an alle vorgesehenen Empfänger.
+
+Ein Snapshot, eine konsistente gemeinsame Momentaufnahme, kann von mehreren Lesern kopiert werden. Sie lesen zu verschiedenen Zeitpunkten möglicherweise unterschiedliche Versionen. Gemeinsame Lesbarkeit bedeutet deshalb ebenfalls nicht, dass jeder alle Ereignisse bekommt. Für zwei Pflichtempfänger kann der Sender zwei getrennte Queues benutzen. Dann muss er aber jeden Put-Status getrennt behandeln. Erfolg an Queue A und Überlauf an Queue B wäre eine teilweise Zustellung, kein gemeinsamer Erfolg. Dieses Beispiel führt keinen vollständigen Bestätigungsmechanismus ein, sondern macht die Anforderung sichtbar. Bei der Papieraufgabe zu Historie und Zustand ist immer zuerst zu klären, ob Daten einmal bearbeitet, mehrfach gelesen oder zuverlässig an jeden Empfänger geliefert werden müssen.
+:::
+
+## Papierprüfung: die passende Aussage begründen
+
+1. Head = Tail: genügt das als Leerbeweis?
+2. Erfolgreicher Put: ist die Nachricht schon verarbeitet?
+3. Zehn Pointerplätze: existieren damit zehn Bilder?
+4. Zustand 30 gewünscht: liefert eine volle 1er-Try-Put-Queue ihn?
+
+Antwort jeweils mit Voraussetzung oder Gegenbeispiel.
+
+::: notes
+Diese Verständnisfragen verbinden die erste Hälfte. Head und Tail sind die nächsten Entnahme- und Einfügepositionen des Ringmodells. Sie können bei leerem und vollem Ring gleich sein; Count, die Belegung, entscheidet. Ein Put ist das Einreihen. Sein Erfolgsstatus bestätigt die Kopie, aber keine abgeschlossene Verarbeitung. Der Consumer, der Empfänger, kann noch Blocked oder Ready gewesen sein und muss erst ausgewählt werden.
+
+Zehn Pointerplätze sind zehn speicherbare Adressen. Die tatsächlichen Bildpuffer werden separat angelegt und gezählt. Mit nur zwei Puffern existieren weiterhin nur zwei unabhängige Bilder. Try-Put meint Einfügen ohne Warten. Auf einer vollen Queue der Länge eins lehnt es den neuen Wert ab; der alte Wert bleibt. Nur ein expliziter Latest-Value-Vertrag, also Ersetzen durch den jüngsten Zustand, könnte dreißig liefern. Die begründeten Antworten sind wichtiger als vier Wörter wahr oder falsch. Dieselben Trennungen gelten im zweiten Teil, wenn ein Hardwareereignis statt eines Softwarethreads Daten erzeugt. Hinzu kommen dann die Aufrufregeln des Interruptkontexts.
+:::
+
+## Ein Interrupt ist kein zusätzlicher Thread
+
+- IRQ unterbricht die Ausführung auf diesem Kern
+- ISR erledigt die Interruptbehandlung
+- Ein höher dringlicher Interrupt kann die ISR unterbrechen
+- ISR darf nicht wie ein Thread auf Daten oder Platz blockieren
+- Zweiter Kern und Hardware können weiterarbeiten
+
+::: notes
+IRQ steht für Interrupt Request, Interruptanforderung. ISR steht für Interrupt Service Routine, Interruptbehandler. Ein Hardwareereignis kann den laufenden Thread auf demselben Kern unterbrechen und den Behandler ausführen lassen. Der Behandler ist dabei kein weiterer Thread mit eigenem wartenden Betriebssystemkontext. Die Threads werden durch den Interrupt nicht einfach alle auf den Zustand Blocked gesetzt.
+
+Eine höher dringliche Interruptquelle kann je nach Prioritäten und Maskierung auch eine ISR unterbrechen. Ein Thread mit hoher Betriebssystempriorität verdrängt dagegen keine noch aktive Hardware-ISR. Der zweite Kern und DMA, Direct Memory Access oder direkter Hardware-Speicherzugriff, können unabhängig weiterarbeiten. Eine lange ISR verzögert Threadfortschritt und möglicherweise andere Interruptbehandlungen. Daraus folgt die Beschränkung auf die sofort notwendige Arbeit. Der Behandler kann nicht auf eine volle Queue warten, bis ein Thread endlich einen Platz entnimmt: Dieser Thread müsste auf demselben Kern erst wieder laufen können. Das aufgeschobene Verarbeitungsmuster trennt diese beiden Verantwortlichkeiten.
+:::
+
+## Top-Half sichert, Bottom-Half verarbeitet
+
+
+
+Deferred Interrupt Processing: aufschiebbare Arbeit in einen Thread verlagern.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  E[Ereignis] --> T[Top-Half]
+  T -->|nicht wartende Übergabe| Q[Queue oder Signal]
+  Q --> B[Bottom-Half]
+  style T fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
+::: notes
+Deferred Interrupt Processing bedeutet aufgeschobene Interruptverarbeitung. Die Top-Half, obere Hälfte, ist der unmittelbar ausgeführte Behandler. Die Bottom-Half, untere Hälfte, ist ein Worker, also ein verarbeitender Thread. Die Abbildung wird von oben nach unten gelesen. Der rote Rahmen hebt die sofort notwendige Hardwarearbeit hervor. Die Pfeile beschreiben Daten- und Signalübergabe; die Zeichnung ist kein zeitlich maßstäbliches Schedulingdiagramm.
+
+Die Top-Half quittiert das Ereignis nach dem Gerätevertrag und sichert die Daten, die sonst verloren gehen könnten. Quittieren bedeutet, die erkannte Anforderung im vorgesehenen Hardwarepfad zu bestätigen. Die Reihenfolge von Datenlesen und Flagbehandlung ist gerätespezifisch. Die nicht wartende Übergabe speichert entweder kleine Rohdaten in einer Queue oder meldet vorhandene Arbeit. Die Bottom-Half führt Berechnungen und erlaubtes Warten aus. Deren Priorität folgt den Fristen und der Last; sie ist nicht automatisch maximal. Das Auslagern verkürzt den unmittelbar belegten Interruptpfad, beseitigt aber weder den Kapazitätsbedarf noch die Gesamtzeit bis zum Ergebnis.
+:::
+
+## Was in der ISR sofort nötig ist
+
+- Bedrohte Rohdaten sichern
+- Hardwareflag nach Gerätevertrag behandeln
+- Kleinen Datensatz oder Arbeitshinweis übergeben
+- Status prüfen und knappe Diagnose führen
+
+Keine lange Rechnung, kein `printf`, kein Mutex, kein blockierendes Warten.
+
+::: notes
+ISR bedeutet Interrupt Service Routine, Interruptbehandler. Rohdaten sind hier der noch nicht vollständig ausgewertete Eingang, etwa ein Registerwert oder die Kennzeichnung eines abgeschlossenen Puffers. Würde die Hardware ein Register vor dem Workerstart überschreiben, reicht bloßes Aufwecken nicht aus. Die Daten müssen rechtzeitig kopiert oder in einem gültigen Hardwarepuffer erhalten werden.
+
+printf ist die formatierte C-Ausgabe. Sie kann umfangreiche Bibliotheks-, Geräte- und Synchronisationsarbeit auslösen und ist deshalb kein geeigneter kurzer Diagnosepfad im Behandler. Ein Mutex ist eine Besitzsperre; seine CMSIS-Aufrufe sind im Interruptkontext unzulässig. Blockierendes Warten kann den Thread, der Fortschritt ermöglichen müsste, am Laufen hindern. Eine kurze Übergabe bleibt trotzdem endlich: Der Rückgabestatus kann fehlenden Platz melden. Diagnosezähler brauchen eindeutige Schreiber. Ein volatile-Zähler, den ISR und Thread beide mit ++ ändern, wird durch volatile nicht nebenläufigkeitssicher. Falsche API-Nutzung kann zu Fehlerstatus, Assertion, Inkonsistenz oder Stillstand führen; ein bestimmter Hardware-Fault ist kein universell garantierter Ausgang.
+:::
+
+## Token oder Nachricht: was soll erhalten bleiben?
+
+| Bedarf | Passender Kanal |
+|---|---|
+| „Arbeit ist vorhanden“ | leerer binärer Semaphor |
+| jedes erfasste Ereignis mit Daten | Queue, Timeout 0, Überlaufregel |
+| jüngster Zustand | expliziter Snapshot- oder Overwrite-Vertrag |
+
+Drei Releases ohne Acquire, Maximum 1: ein gespeichertes Token.
+
+::: notes
+Ein Semaphor ist ein begrenzter Zähler von Berechtigungen oder Hinweisen. Ein binärer Semaphor erlaubt höchstens ein Token und beginnt für Ereignissignalisierung leer. Release stellt ein Token bereit, Acquire verbraucht es. Bei drei Releases ohne dazwischenliegendes Acquire gelingt im anfangs leeren Semaphor mit Maximum eins nur der erste; die anderen melden fehlende Kapazität. Ein späterer Worker kann deshalb höchstens einen gespeicherten Hinweis erhalten.
+
+Eine Queue ist eine begrenzte Nachrichtenwarteschlange. Ein Put mit Timeout null kann kleine Daten aus einer erlaubten ISR übernehmen, meldet bei Vollbelegung aber ebenfalls einen Fehler. ISR heißt Interrupt Service Routine, Interruptbehandler. „Jedes Ereignis“ beschreibt die Anforderung, nicht die unbegrenzte Leistungsfähigkeit des Kanals. Ein Snapshot ist eine konsistente Momentaufnahme, Overwrite ein ausdrücklich erlaubtes Ersetzen. Diese Mittel eignen sich für den jüngsten Zustand, brauchen jedoch weiterhin einen sicheren Veröffentlichungsweg. Ein Token enthält keine Messbytes. Wenn der Worker nur geweckt wird und das ursprüngliche Register inzwischen einen neuen Wert trägt, ist die frühere Messung bereits verloren.
+:::
+
+## Drei Bedingungen für einen ISR-Aufruf
+
+1. Funktion im Interruptkontext zugelassen?
+2. Parameter ohne blockierendes Warten?
+3. Interruptpriorität für Kernelaufrufe zulässig?
+
+| CMSIS-RTOS2 | ISR-Regel |
+|---|---|
+| Queue Put/Get, Semaphor Acquire | nur Timeout 0 |
+| Semaphor Release | erlaubt bei passendem Kontext |
+| Mutex Acquire/Release | unzulässig |
+
+::: notes
+ISR steht für Interrupt Service Routine, Interruptbehandler. CMSIS-RTOS2 ist die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. Die Tabelle nennt deren grundlegende Kontextverträge. Queue Put und Get bedeuten Einreihen und Entnehmen. Semaphor Acquire und Release verbrauchen und erzeugen ein Token. Ein Mutex ist eine Besitzsperre und darf über diese Schnittstelle nicht aus dem Behandler erworben oder freigegeben werden.
+
+Alle drei Fragen müssen positiv beantwortet werden. Timeout null erfüllt nur die zweite. So bleibt osMutexAcquire mit null trotzdem verboten. Die Interruptpriorität ist eine zusätzliche Anforderung des konkreten FreeRTOS-Ports. Ein erlaubter Name und nicht wartende Parameter helfen nicht, wenn der aufrufende Interrupt außerhalb dieses Bereichs liegt. Auch das Anlegen, Zurücksetzen oder Löschen einer Queue gehört nicht in diesen Callback. Die Tabelle ist keine vollständige Liste aller Funktionen. Prüfen Sie bei weiteren APIs deren dokumentierten Kontext, anstatt aus einem ähnlichen Namen automatisch auf Zulässigkeit zu schließen. Nun müssen wir die Hardwarepriorität von der bereits bekannten Threadpriorität trennen.
+:::
+
+## Zwei Prioritätsskalen mit verschiedener Richtung
+
+| Skala | Bedeutung |
+|---|---|
+| CMSIS-Threadpriorität | höherer Wert: höherer Threadvorrang |
+| logische NVIC-Priorität | kleinere Zahl: höhere IRQ-Dringlichkeit |
+
+Ein Worker mit `osPriorityHigh` repariert keine unzulässige IRQ-Priorität.
+
+Interruptgruppierung und implementierte Bits am Projekt prüfen.
+
+::: notes
+CMSIS bedeutet Common Microcontroller Software Interface Standard; osPriorityHigh ist eine hohe Threadpriorität seiner Betriebssystem-Schnittstelle. Threadpriorität bestimmt, welche ausführungsbereite Aufgabe der Scheduler auswählt. NVIC steht für Nested Vectored Interrupt Controller, den verschachtelten Interruptcontroller des Cortex-M. IRQ bedeutet Interrupt Request, Interruptanforderung. Die logische NVIC-Priorität hat die umgekehrte Zahlenrichtung: Null ist besonders dringlich, größere Zahlen weniger dringlich.
+
+FreeRTOS schützt bestimmte Kerneloperationen durch Maskierung eines Interruptbereichs. Interrupts, die darüber besonders dringlich bleiben, dürfen diese Kerneloperationen nicht selbst aufrufen. Ein Worker kann beliebig hoch unter den Threads stehen und diese Hardwaregrenze trotzdem nicht verändern. Die implementierte Bitzahl begrenzt die verfügbaren logischen Werte. Die Gruppierung legt fest, wie die Bits für Präemption und Unterprioritäten benutzt werden. Diese Einstellungen stammen aus dem tatsächlich verwendeten Projekt und Port. Im nächsten Zahlenbeispiel sind sie ausdrücklich vorgegeben, damit die Rechenaufgabe nicht als allgemeine Boardkonfiguration missverstanden wird.
+:::
+
+## Beispiel: vier Bits und logische Grenze fünf
+
+Nur unter diesen Lehrannahmen und passender Gruppierung:
+
+| Logischer NVIC-Wert | Kernel-API aus IRQ |
+|---|---|
+| 0–4 | unzulässig |
+| 5–15 | erlaubte Funktionen, ohne Warten |
+
+Registergrenze: $5\cdot2^{8-4}=80=\mathrm{0x50}$.
+
+HAL/CMSIS-Prioritätssetter erhalten den logischen Wert 5.
+
+::: notes
+NVIC ist der Nested Vectored Interrupt Controller, der Interruptcontroller. IRQ bedeutet Interrupt Request. API heißt Application Programming Interface, Programmierschnittstelle, HAL Hardware Abstraction Layer, Hardwareabstraktion, und CMSIS Common Microcontroller Software Interface Standard. Im Lehrbeispiel sind vier Prioritätsbits implementiert und so gruppiert, dass die FreeRTOS-Portforderungen erfüllt sind. Eine kleinere logische Zahl bedeutet höhere Dringlichkeit.
+
+Die logische Kernelaufrufgrenze beträgt fünf. Werte null bis vier liegen oberhalb ihrer Dringlichkeit und dürfen keine Kernel-API aufrufen. Fünf bis fünfzehn dürfen nur die dort erlaubten nicht wartenden Funktionen benutzen. Im Acht-Bit-Prioritätsregister werden die vier Bits nach oben ausgerichtet. Deshalb wird fünf mit zwei hoch vier multipliziert: achtzig dezimal oder 0x50 hexadezimal. configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY bezeichnet in üblichen Cube-Konfigurationen die unverschobene Grenze; configMAX_SYSCALL_INTERRUPT_PRIORITY den Registerwert. Die konkrete Definition wird am Projekt geprüft. 0x50 wird nicht als logische Cube-Eingabe verwendet. Ebenso ist fünf keine universelle Anweisung für jedes STM32-Projekt.
+:::
+
+## Der CMSIS-Adapter unterscheidet Aufrufkontexte
+
+`osMessageQueuePut` aus Thread oder erlaubter ISR:
+
+- Adapter erkennt Handlerkontext
+- Threadpfad: native wartende oder sofortige Queue-Funktion
+- ISR-Pfad: native `FromISR`-Funktion, Timeout 0
+- Adapter fordert erforderlichen Kontextwechsel an
+
+Im CMSIS-Labor kein zusätzliches manuelles Yield.
+
+::: notes
+CMSIS-RTOS2 ist die standardisierte Betriebssystem-Schnittstelle. Der Adapter bildet sie auf native FreeRTOS-Funktionen ab. ISR heißt Interrupt Service Routine, Interruptbehandler. Im eingesehenen Cortex-M-Pfad wird der Handlerkontext über das IPSR, Interrupt Program Status Register oder Interruptprogrammstatusregister, und gegebenenfalls weitere Portprüfungen erkannt. Thread Mode hat keine aktive Exceptionnummer; Handler Mode bezeichnet den Ausnahmebehandlungskontext.
+
+Bei osMessageQueuePut aus einer erlaubten ISR verlangt der Adapter Timeout null und ruft die native Queue-FromISR-Funktion auf. FromISR kennzeichnet die für diesen Kontext vorgesehene Variante. Ein erfolgreiches Einreihen kann einen höher priorisierten wartenden Thread bereit machen; der Adapter fordert dann den nötigen Wechsel an. Diese Kontextentscheidung ersetzt weder die Prioritätsprüfung noch das Funktionsverbot für Mutex-Aufrufe. Ein CMSIS-Mutex wird dadurch nicht ISR-fähig. Das Labor benutzt ausschließlich CMSIS-Aufrufe, deshalb kommt kein zweites manuelles Yield, also Wechselanforderung, hinzu. Die lokale cmsis_os2.c muss den beschriebenen Vertrag tatsächlich implementieren.
+:::
+
+## Native ISR-API: Status und Wechselbedarf getrennt
+
+```c
+/* Vergleichscode für ein eigenes natives FreeRTOS-Objekt. */
+BaseType_t higher_woken = pdFALSE;
+BaseType_t ok = xQueueSendFromISR(native_q, &msg, &higher_woken);
+/* ok prüfen: erfolgreich oder voll. */
+portYIELD_FROM_ISR(higher_woken);
+```
+
+Im Labor bleiben Objekte und Aufrufe bei CMSIS-RTOS2.
+
+::: notes
+Der C-Ausschnitt ist Vergleichscode und kein zusätzlich einzubauender Laborpfad. ISR steht für Interrupt Service Routine, Interruptbehandler. native_q ist ein tatsächlich mit der nativen FreeRTOS-API angelegtes Queue-Objekt, msg die passende Nachricht und BaseType_t der native Porttyp für Status und Flag. pdFALSE bedeutet falsch. xQueueSendFromISR reiht ohne blockierendes Warten ein und kann higher_woken auf wahr setzen, wenn eine höher priorisierte Aufgabe geweckt wird.
+
+ok meldet den Übergabeerfolg und ist von higher_woken zu unterscheiden. Eine erfolgreiche Nachricht muss nicht immer einen Wechsel erfordern, etwa wenn der Consumer nicht wartet oder niedriger priorisiert ist. Bei mehreren nativen Übergaben im selben Handler wird das einmal initialisierte Wake-Flag nicht zwischendurch wieder auf falsch gesetzt. portYIELD_FROM_ISR fordert anschließend den passenden Kontextwechsel an; es lässt keinen Thread mitten im fortgesetzten Handlercode laufen. Ohne erforderliches Yield kann der Start bis zu einem späteren Schedulinganlass verzögert werden, nicht zwingend bis zum nächsten Tick. CMSIS-Handles werden nicht in native Handles umgewandelt.
+:::
+
+## Ready wird erst nach der ISR zu Running
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontSize 32
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam ArrowFontName SansSerif
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+  FontName SansSerif
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+scale 4 as 160 pixels
 concise "CPU" as C
 concise "Worker" as W
 @0
-C is TaskA
+C is A
 W is Blocked
 @3
 C is ISR
-W is Blocked
 @8
-C is ISR
 W is Ready
 @12
 C is PendSV
 @16
 C is Worker
 W is Running
+@24
+C is A
+W is Blocked
+@28
+C is A
 @enduml
 ```
 
-Hardware-Unterbrechung macht Task A nicht im selben Sinn Ready wie ein Scheduler-Wechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat.
+Synthetische Zeitachse in µs; Ereignis bei 0, Workerstart bei 16.
 
 ::: notes
-Die CPU-Spur zeigt Task A von 0 bis 3 µs, die ISR von 3 bis 12 µs, PendSV von 12 bis 16 µs und den Worker ab 16 µs. Der Worker ist bis 8 µs Blocked, dann Ready, und erst ab 16 µs Running. Die Hardwareunterbrechung macht Task A nicht im selben Sinn Ready wie ein Schedulerwechsel. A ist verdrängt, solange ISR oder der höhere Worker die CPU hat. Die höhere Taskpriorität des Workers verdrängt die noch aktive ISR nicht. Die Zeiten sind dieselben wie in der Tabelle. Aus einem anderen Intervall, etwa 1 bis 3, folgt keine minimale Latenz.
+CPU steht für Central Processing Unit, Prozessor. ISR bedeutet Interrupt Service Routine, Interruptbehandler. Der Worker ist der verarbeitende Thread. PendSV bezeichnet die ausstehend schaltbare Systemexception, über die der übliche Cortex-M-FreeRTOS-Port den Kontextwechsel ausführt. Die obere Spur zeigt die Prozessorbelegung, die untere den Workerzustand. A bezeichnet die zuvor laufende Aufgabe Thread A. Die waagerechte Achse zählt Mikrosekunden, µs. Alle Zeitpunkte sind didaktische Annahmen.
 
-Beim CMSIS-Code erledigt der Wrapper die dafür nötige Switch-Anforderung.
+Ein Ereignis tritt bei null auf. Thread A läuft noch bis zum angenommenen ISR-Eintritt bei drei. Der Worker wartet zunächst Blocked. Der Übergabeaufruf macht ihn bei acht Ready, also ausführungsbereit. Die ISR führt ihren Rest bis zwölf zu Ende. Danach beansprucht der angenommene Übergang mit PendSV vier Mikrosekunden. Bei sechzehn wird der Worker Running und arbeitet bis vierundzwanzig, bevor er wieder wartet. Ein hoher Threadvorrang unterbricht die noch aktive ISR nicht. Der verlängerte rechte Rand nach vierundzwanzig macht den abschließenden Wartezustand lesbar; er fügt keinen weiteren Verarbeitungsauftrag hinzu. Die Spur setzt voraus, dass keine weitere höher dringliche Exception und kein anderer höher priorisierter Thread den dargestellten Wechsel verzögert. Sie ist keine garantierte H755-Latenz.
 :::
 
-## CMSIS ist unser Freund!
+## Vier Zeitgrößen und eine Abschlussfrist
 
-- Erlaubte CMSIS-ISR-Funktionen nehmen das Yield mit
-- Unerlaubte bleiben unerlaubt
-- Diagnose: Rückgabewert, Assert, Zähler — kein `printf` in der ISR
-- Eine IRQ oberhalb der Grenze darf Daten ablegen und eine niedrigere, erlaubte IRQ anstoßen
-- Sie darf den RTOS-Aufruf nicht selbst erzwingen
-- Das ist Anhang, nicht der Tasterversuch
+Für die synthetische Spur; Abschluss bei $24\,\text{µs}$:
+
+| Größe | Rechnung |
+|---|---|
+| Ereignis bis ISR-Eintritt | $3-0=3\,\text{µs}$ |
+| ISR-Dauer | $12-3=9\,\text{µs}$ |
+| Ready bis Workerstart | $16-8=8\,\text{µs}$ |
+| Ereignis bis Abschluss | $24-0=24\,\text{µs}$ |
+
+Relative Deadline $D=25\,\text{µs}$: Modell erfüllt, Restbudget $1\,\text{µs}$.
 
 ::: notes
-Erlaubte CMSIS-ISR-Funktionen nehmen das Yield im Adapter mit. Unerlaubte bleiben unerlaubt. Diagnose nutzt den Status, Assert und Zähler. `printf` bleibt außerhalb der ISR. Eine IRQ oberhalb der Grenze darf Daten ablegen und eine niedrigere, erlaubte IRQ anstoßen. Sie darf den RTOS-Aufruf nicht selbst erzwingen. Dieser Pfad ist ein Anhang mit eigenem Datenvertrag, nicht der Tasterversuch.
+µs bezeichnet Mikrosekunden. Alle Zeitangaben beziehen sich auf dieselbe Ereigniszeit null. ISR bedeutet Interrupt Service Routine, Interruptbehandler. Ready ist ausführungsbereit; Workerstart ist der erste laufende Befehl des verarbeitenden Threads. D ist die relative Abschlussfrist ab dem Ereignis. Die Zahlen stammen aus derselben synthetischen Spur, nicht aus einer Hardwaremessung.
 
-Die vollständige Reihenfolge wird als Übersicht zusammengeführt. Der Adapter nimmt dem Labor das manuelle Yield ab, nicht die Prüfung von Funktion, Timeout und Interruptpriorität. Ein erfolgreicher Status in der ISR heißt noch nicht, dass der Worker schon läuft.
+Die Eintrittslatenz ist drei minus null gleich drei Mikrosekunden. Die ISR-Dauer beträgt zwölf minus drei gleich neun. Ready bis Running ist sechzehn minus acht gleich acht. Die gesamte Antwort bis zum geforderten Abschluss beträgt vierundzwanzig minus null gleich vierundzwanzig. Bei einer relativen Deadline von fünfundzwanzig bleibt eine Mikrosekunde Restbudget. Die acht Mikrosekunden Ready-Warten überlappen mit einem Teil der ISR und dem Übergang. Sie werden nicht zusätzlich auf Eintrittslatenz plus ISR-Dauer plus Übergang plus Workerarbeit addiert. Das würde Zeit doppelt zählen. Der Workerstart allein bei sechzehn beweist keinen rechtzeitigen Abschluss. Zusätzliche Interferenz kann das knappe Restbudget überschreiten.
 :::
 
-## Visualisierung: Präemption aus der ISR
+## Flanke, Callback und Betätigung sind verschiedene Zählungen
 
-Ereignis → ISR → Ready → ISR-Ende → PendSV → Worker.
+- Tasterprellen kann mehrere elektrische Flanken erzeugen
+- Hardware-Pendingbit kann Ereignisse zusammenfassen
+- Volle Queue kann erfasste Callbacks verwerfen
+- Entprellung bildet einen eigenen Zustandsvertrag
+- Sequenzlücke beweist nicht jede physikalisch verlorene Flanke
 
-Nicht: Ereignis → sofortiger Thread.
-
-Die alte kleine Kurve ohne Einheit ersetzt dieses Bild nicht.
+Eine 50-Tick-Workerpause ist keine vollständige Entprellung.
 
 ::: notes
-Die Folge ist Ereignis, ISR, Ready, ISR-Ende, PendSV, Worker. Nicht Ereignis und sofortiger Thread. Die µs-Werte sind 0, 3, 8, 12 und 16. Completion ist der Abschluss der geforderten Verarbeitung, nicht das erste Workerkommando. Ein weiteres höherpriores Ereignis kann den Lauf noch verschieben. Die Grafik auf der vorherigen Folie trägt dieselben Zeiten. Es entsteht keine neue Boardmessung.
+Eine Flanke ist ein Wechsel des elektrischen Pegels. Tasterprellen sind schnelle Wechsel beim mechanischen Betätigen oder Loslassen. Ein Callback ist ein vom Treiber aufgerufener Softwarebehandler. Die Anzahl physikalischer Flanken, ausgeführter Callbacks, übernommener Queue-Nachrichten und entprellter Betätigungen kann unterschiedlich sein.
 
-Frage: Was unterscheiden 3 µs, 9 µs, 8 µs und 16 µs? 3 µs bis zum ISR-Eintritt, 9 µs ISR-Dauer, 8 µs von Ready bis Running, 16 µs vom Ereignis bis zum Workerstart.
-
-Das Labor erzeugt diese Zustandsfolge mit einem überprüften Button- und EXTI-Pfad.
+Ein Hardware-Pendingbit hält häufig nur fest, dass eine Anforderung ansteht; es ist kein beliebig tiefer Ereignisspeicher. Eine Sequenznummer im Callback zählt darum zunächst nur tatsächlich erreichte Aufrufe. Eine Lücke zwischen empfangenen Sequenznummern kann einen abgelehnten Put anzeigen, beweist aber keine vor dem Callback verlorene Flanke. Eine volle Queue verwirft nach unserem Vertrag die neue Callbacknachricht. Entprellung ist eine zusätzliche Entscheidung, etwa ein Zustandsautomat mit stabil beobachtetem Pegel für Press und Release. Eine Pause von fünfzig Kernel-Ticks nach jedem Get stoppt weder neue Flanken noch beseitigt sie bereits gespeicherte Nachrichten. Im Labor dient diese Pause bewusst zur begrenzten Bedienrate. Wir behaupten damit keinen fertigen Tastertreiber.
 :::
 
-## Laborvorbereitung: Deferred Interrupts
+## Laborbasis: vorhandenes Projekt gezielt erweitern
 
-Teil A: Queue mit `uint32_t` oder `SensorMessage`, Sequenz, definierte Drops.
-
-Teil B: User-Button. UM2408 für NUCLEO-H755ZI-Q / MB1363: Standard PC13, Alternative PA0. Gelbe LD2 an PE1, wenn die Brücken so stehen.
-
-GPIO-Takt, Ausgangsmodus und EXTI-Zielkern prüfen. Der RTOS-aufrufende Handler muss im CM4-Kontext liegen.
+- NUCLEO-H755ZI-Q mit STM32H755ZIT6
+- STM32CubeMX erzeugt das CMake-Projekt
+- VS Code mit STM32 VS Code Extension
+- Ein FreeRTOS-Kernel, CMSIS_V2 auf CM4
+- Modul: `code/lab05/lab05_messages.c` und `.h`
+- CM7-Grundstart aus Vorlesung 3 beibehalten
 
 ::: notes
-Teil A ist eine Datenqueue mit Sequenz und getrennten Drop- und Fehlerzählern. Teil B ist der Taster. GPIO ist der allgemeine Ein- und Ausgang. UM2408 beschreibt das Board MB1363, NUCLEO-H755ZI-Q. Der User-Button liegt standardmäßig an PC13, Port C Pin 13, alternativ an PA0, wenn die Lötbrücken SB das vorsehen. Die gelbe LED LD2 liegt an PE1, Port E Pin 1, wenn die Bestückung das bestätigt. Revision, Brücken, Aktivpegel, EXTI-Zielkern und Priorität werden am Projekt geprüft. GPIO-Takt, Modus, Flanke und Routing gehören zum Pfad. Ein NVIC-Haken allein genügt nicht. Die Priorität muss die Syscallgrenze einhalten.
+NUCLEO-H755ZI-Q ist das vorgesehene Board mit dem Mikrocontroller STM32H755ZIT6. CM4 und CM7 bezeichnen die Projektteile für Cortex-M4 und Cortex-M7. STM32CubeMX ist das Konfigurations- und Generierungswerkzeug. VS Code ist Visual Studio Code; die STM32 VS Code Extension integriert die STM32-Werkzeuge und CMake-Ziele. CMake beschreibt den Build, also Übersetzung und Verknüpfung des Projekts. CMSIS_V2 ist die Cube-Auswahl der zweiten CMSIS-Betriebssystem-Schnittstelle.
 
-Der Startablauf stellt sicher, dass keine frühe IRQ ungültige Kernelobjekte anspricht.
+Die Übung übernimmt die bereits lauffähige Dual-Core-Basis aus Vorlesung 3. Das Repository liefert das vollständige Anwendungsmodul, aber keine für alle Boardrevisionen fertige .ioc-Konfiguration oder generierte Firmware. Die .ioc-Datei ist die Projektkonfiguration von CubeMX. CM7 übernimmt weiterhin den vorbereiteten Grundstart; die lokalen Queues liegen im CM4-Kernel. Die beiden neuen Dateien werden dem tatsächlichen CM4-CMake-Ziel hinzugefügt. Alte Lastthreads und Interruptcallbacks aus den früheren Versuchen werden deaktiviert, damit die beobachtete Last dem heutigen Versuch entspricht.
 :::
 
-## Schritt 1: Die Top-Half (ISR) in C
+## CubeMX: Konfiguration vor dem API-Aufruf prüfen
 
-Reihenfolge:
+Teil A: zwei Threads, Interruptteil noch deaktiviert.
 
-1. Takt und GPIO
-2. `osKernelInitialize`
-3. `ButtonSem = osSemaphoreNew(1, 0, NULL)`
-4. Threads prüfen, `osKernelStart`
-5. EXTI erst in einem schon laufenden Startthread freigeben. Nach erfolgreichem `osKernelStart` läuft diese Funktion nicht weiter.
+- Producer: `osPriorityNormal`
+- Consumer: `osPriorityAboveNormal`
+- Tickfrequenz 1000 Hz prüfen, je 1024 Byte Startstack
+- Dynamische Queue- und Semaphorobjekte aktivieren
 
-Ausstehende Flags nach diesem Vertrag löschen, nicht im frühen `MX_GPIO_Init` einen Callback ins Leere schicken.
-
-Pfad: `EXTI15_10_IRQHandler` → `HAL_GPIO_EXTI_IRQHandler` → Callback → `osSemaphoreRelease`.
-
-HAL quittiert. Der Callback prüft die Leitung und kehrt zurück.
+Teil B: Button-EXTI nur auf CM4; Priorität und Flanke aus Projekt/Board prüfen.
 
 ::: notes
-Takt und GPIO kommen zuerst. Der Kernel wird einmal initialisiert. `ButtonSem` entsteht leer mit Maximum 1. Threads werden geprüft, dann startet der Kernel. Die EXTI-Freigabe steht in einem Thread, der danach läuft, nicht in der Zeile hinter `osKernelStart`, denn die kehrt bei Erfolg nicht zurück. Alte Pendingflags werden nach diesem Vertrag gelöscht, ohne ein neues Ereignis versehentlich zu verwerfen. Der frühe GPIO-Init darf den Callback nicht vor Handle und Kernelstart erreichen.
+API bedeutet Application Programming Interface, Programmierschnittstelle. Producer ist der Nachrichtenerzeuger, Consumer der Empfänger. osPriorityNormal und osPriorityAboveNormal sind CMSIS-Threadprioritäten; der Consumer hat hier höheren Vorrang. Hz steht für Hertz, Ereignisse je Sekunde. Tausend Kernel-Ticks pro Sekunde entsprechen nominell einer Millisekunde je Tick. Eine Wartezeit von zehn Ticks garantiert trotzdem kein exaktes Zehn-Millisekunden-Raster, weil Phasenlage und Scheduling hinzukommen.
 
-Der Referenzpfad ist `EXTI15_10_IRQHandler`, dann `HAL_GPIO_EXTI_IRQHandler`, dann der Callback, dann `osSemaphoreRelease`. HAL quittiert. Der Callback prüft die Leitung und kehrt zurück. `osOK`, voller Semaphor und andere Fehler werden getrennt gezählt, und zwar aus einem Kontext. Kein Heap, keine lange Schleife, kein `printf`.
-
-Frage: Warum ist Code nach `osKernelStart` kein verlässlicher Ort für die IRQ-Freigabe? Weil der erfolgreiche Start nicht zum Aufrufer zurückkehrt. Die Freigabe muss in einem schon laufenden Thread stehen.
-
-Der Worker interpretiert das Signal als Anlass für eine wohldefinierte Tasterverarbeitung.
+1024 Byte je Stack sind ein Startwert für die kleine Übung, kein nachgewiesenes Maximum. Stack und Heap werden am Projekt geprüft. Der Heap ist der dynamisch verwaltete Speicher für die angelegten Objekte. EXTI bezeichnet die externe Interruptanbindung des STM32. GPIO, General Purpose Input/Output oder allgemeiner Ein- und Ausgang, Pinbelegung, Flanke, Zielkern und NVIC-Priorität müssen zusammenpassen. NVIC ist der Interruptcontroller. PC13 ist nur dann der verwendete Buttonpin, wenn Boardrevision, Lötbrücken und Konfiguration das bestätigen. Der CM7-Pfad darf dieselbe Leitung nicht unkoordiniert ebenfalls bedienen.
 :::
 
-## Schritt 2: Die Bottom-Half (Task) in C
+## Startreihenfolge verhindert frühe Kernelzugriffe
+
+1. GPIO und Bootbasis konfigurieren; Button-IRQ gesperrt halten
+2. Vorhandenes `osKernelInitialize()` ausführen
+3. `Lab05_Init()` einmal: Queues und Park-Semaphor prüfen
+4. Passende Threads einmal erzeugen, `osKernelStart()`
+5. Erst im laufenden Buttonthread EXTI freigeben
+
+Code hinter erfolgreichem `osKernelStart()` wird nicht weiter ausgeführt.
+
+::: notes
+GPIO steht für General Purpose Input/Output, allgemeiner Ein- und Ausgang. IRQ ist eine Interrupt Request, Interruptanforderung. EXTI ist die externe Interruptanbindung. Der Buttoninterrupt bleibt während der Objektanlage gesperrt, damit kein früher Callback einen noch ungültigen Handle verwendet. osKernelInitialize initialisiert den Kernel; dieser Aufruf existiert bereits im generierten Projekt. Lab05_Init legt die Datenqueue, die Buttonqueue und einen leeren Park-Semaphor an und prüft die Handles. Es wird nur einmal nach erfolgreicher Kernelinitialisierung ausgeführt.
+
+Ein Park-Semaphor ist hier ein leerer Arbeitshinweis, den niemand freigibt. Fertige Einmalthreads warten daran ohne CPU-Polling. CPU bedeutet Central Processing Unit, Prozessor. Nach Anlage der benötigten Threads startet das vorhandene osKernelStart den Scheduler. Bei Erfolg kehrt es nicht zum aufrufenden Bootcode zurück. Die Button-IRQ-Freigabe gehört darum in einen tatsächlich laufenden Thread. Für Teil B wird dort das vorab dokumentierte Pendingflag-Verhalten geprüft, bevor die bestätigte Leitung aktiviert wird. Alte Flags werden nicht blind gelöscht, während bereits zu erhaltende neue Ereignisse entstehen.
+:::
+
+## Teil A: zwanzig Wertnachrichten anbieten
+
+`Lab05_Producer`: endlicher Versuch.
+
+- Datenqueue: vier Plätze
+- Sequenz 1 bis 20, `sample = 10 * seq`
+- Put ohne Warten, danach `osDelay(10)`
+- Status pro Versuch protokollieren
+- Danach STOP-Nachricht mit wartendem Put senden und parken
+
+STOP gehört zum Steuerpfad, nicht zu den zwanzig Datenversuchen.
+
+::: notes
+Lab05_Producer ist der erzeugende C-Thread des bereitgestellten Moduls. Die Datenqueue besitzt vier Plätze. Jeder Datensatz enthält Art, Nutzwert sample, Sequenz seq und Erfassungstick. Die Art unterscheidet eine gewöhnliche Datenmessage von STOP. Der Producer bietet zwanzig Werte mit Sequenz eins bis zwanzig an. Das Produkt zehn mal seq ist synthetischer Inhalt und keine Sensormessung. Put verwendet Timeout null und damit keine Wartezeit auf Platz. osDelay mit zehn wartet Kernel-Ticks, kein genaues periodisches Raster.
+
+Der Thread schreibt Status und Zeit in seinen eigenen Logbereich. osErrorResource zählt als Kapazitätsverlust; andere Fehler stoppen den Versuch. Nach den zwanzig Angeboten sendet er eine gesonderte STOP-Nachricht mit osWaitForever, also ohne eigene Wartefrist. Der Consumer muss daher weiterlaufen können und leert die Queue. FIFO, First In First Out, stellt sicher, dass angenommene Daten vor STOP entnommen werden. Der wartende Kontrollpfad wird bei gültigem Ablauf nicht als Datenverlust gezählt. Anschließend blockiert der Producer am nie freigegebenen Park-Semaphor.
+:::
+
+## Teil A: entnehmen, kopieren, kontrolliert warten
+
+`Lab05_Consumer`:
+
+- Get mit `osWaitForever`
+- Daten nur bei `osOK` auswerten
+- Sequenz und Inhalt in eigenes Log übernehmen
+- Nach jeder Datenmessage `osDelay(40)`
+- STOP: Abschluss markieren und parken
+
+Erwartung: begrenzter Rückstau, Drops und nachvollziehbare Sequenzlücken.
+
+::: notes
+Lab05_Consumer ist der empfangende Thread. Get entnimmt aus der Datenqueue und kopiert in eine lokale C-Struktur. osWaitForever bedeutet Warten ohne eigene Frist, osOK bestätigt den Empfang. Bei einer technischen Abweichung bricht das Modul über seinen Fehlerpfad ab. Gewöhnliche Daten werden in ein eigenes Consumerlog geschrieben. Der Consumer prüft die zulässige Art, streng steigende Sequenzen und den Inhalt sample gleich zehn mal seq.
+
+Die Pause osDelay mit vierzig Kernel-Ticks macht den Consumer absichtlich langsamer als die angebotene Folge. Diese Wartezeit erzeugt keine exklusive Prozessorlast: Andere Threads können laufen. Schon mit Get wird ein Queue-Platz frei, bevor die Pause oder eine spätere Verarbeitung fertig ist. Der reale Verlustverlauf hängt von Tickphase und Scheduling ab; die Papierzahl mit zehn Plätzen und einem Put je Millisekunde wird hier nicht erwartet. Nach STOP markiert der Consumer den Abschluss und parkt. Erst dann lassen sich angenommene Daten, Verluste und empfangene Daten konsistent bilanzieren. Eine fehlende Sequenz am Ende ist über das Producerlog erkennbar, auch wenn kein späterer Datenwert mehr eine sichtbare Lücke erzeugt.
+:::
+
+## Teil B: der geprüfte HAL-Callback übergibt Daten
+
+Nur bei bestätigtem Button auf Pin 13:
 
 ```c
-/* pressed: aktiver Tasterpegel, am Board prüfen. debounce_ticks: Lehrannahme. */
-void ButtonTask(void *argument) {
-    (void)argument;
-    for (;;) {
-        if (osSemaphoreAcquire(ButtonSem, osWaitForever) != osOK)
-            continue;
-        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)
-            continue;
-        osDelay(debounce_ticks);
-        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) != pressed)
-            continue;
-        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* eine Aktion je Druck */
-        do {
-            osDelay(debounce_ticks);
-        } while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == pressed);
-        osDelay(debounce_ticks); /* Release-Kandidat erneut prüfen */
-        while (osSemaphoreAcquire(ButtonSem, 0) == osOK) { }
+void HAL_GPIO_EXTI_Callback(uint16_t pin)
+{
+    if (pin == GPIO_PIN_13) {
+        Lab05_ButtonIRQ();
     }
 }
 ```
 
-Zustände: bereit, Press-Kandidat, bestätigt und einmal verarbeitet, warten auf Release, Release-Kandidat, wieder bereit. Ein langer Druck toggelt einmal. Alte Tokens werden danach verworfen. Das ist ein Abtastmodell, kein lückenloser Pegelbeweis.
-
-Vergleichsvariante, ausdrücklich: `HAL_Delay(100)` als Busy-Wait. Heartbeat darunter kann stocken. Eine noch höhere Task kann unterbrechen.
-
-Entprellung: stabile Pegel und Press/Release im Worker. 100 ms Delay löscht keine schon gespeicherten Folgeevents.
+CM4-IRQ → `HAL_GPIO_EXTI_IRQHandler` → Callback → Queue Put mit Timeout 0.
 
 ::: notes
-`pressed` ist der aktive Tasterpegel und muss zur Bestückung passen. `debounce_ticks` ist eine Lehrannahme in Kernel-Ticks, nicht automatisch 20 ms. Der Ablauf ist: Token annehmen, Pegel ist Press-Kandidat, nach `osDelay` erneut prüfen, bei stabilem Druck einmal toggeln, dann warten, bis der Pegel losgelassen ist, den Release-Kandidaten noch einmal prüfen und alte Tokens mit Timeout 0 verwerfen. Ein langer Druck erzeugt eine Aktion. Eine neue Aktion kommt erst nach bestätigtem Loslassen. Zwei gleiche Pegelproben beweisen nicht, dass der Pegel dazwischen lückenlos stabil war. Das ist ein Abtastmodell. PE1 gilt nur, wenn LD2 dort anliegt.
+HAL bedeutet Hardware Abstraction Layer, Hardwareabstraktion. GPIO steht für General Purpose Input/Output, allgemeiner Ein- und Ausgang. EXTI ist die externe Interruptanbindung. IRQ bedeutet Interrupt Request, Interruptanforderung. Der C-Callback wird vom HAL-Treiber aus dem zugehörigen CM4-Interruptpfad aufgerufen. uint16_t ist ein vorzeichenloser 16-Bit-Typ; pin enthält eine Pinmaske. GPIO_PIN_13 bezeichnet die Maske für Pin dreizehn, nicht unmittelbar die Zahl dreizehn als Vergleichswert.
 
-`HAL_Delay(100)` bleibt die separate Busy-Wait-Variante. 100 ms Delay löschen keine schon gespeicherten Folgeevents. Deshalb leert der Code die Tokens erst nach dem bestätigten Release. Ein Burst mehrerer Releases vor dem ersten Acquire zeigt die Zusammenfassung des binären Semaphors. Eine Event-Queue mit Timeout 0 ist die Zählvariante und ebenfalls endlich.
-
-Frage: Warum genügt zweimal „gedrückt“ lesen nicht für Press und Release? Weil das Loslassen nie bestätigt wird. Ein während des Drucks gespeichertes zweites Token kann nach dem ersten Toggle erneut als Druck gelten.
-
-Das Auswertungsblatt trennt beobachtete Signale, Token und verarbeitete Betätigungen.
+Der Ausschnitt gilt nur für einen tatsächlich bestätigten Buttonpin dreizehn. Andernfalls wird die passende Maske verwendet. Der generierte IRQ-Handler muss bereits HAL_GPIO_EXTI_IRQHandler aufrufen. In diesem Standardpfad behandelt HAL das EXTI-Pendingflag; der Callback quittiert es nicht ein zweites Mal. Lab05_ButtonIRQ erstellt eine kleine Nachricht aus Callbacksequenz und Kernel-Tick und verwendet ein nicht wartendes Put. Eine volle Queue zählt getrennt von einem technischen Fehler. Der Modulaufruf gehört ausschließlich in den bestätigten erlaubten Interruptpfad nach Kernelstart, nicht zugleich in einen Testthread. UART-Ausgabe oder printf werden hier nicht hinzugefügt.
 :::
 
-## Was werden wir im Labor beobachten?
+## Teil B: Worker und Diagnose richtig interpretieren
 
-| Feld | Notiz |
-|------|--------|
-| Semaphor anfangs 0 | |
-| NVIC-Zahl und Grouping | |
-| Tickfrequenz | |
-| Workerpriorität | |
-| Drop- und Fehlerzähler | |
-| ISR-Dauer, Start, Completion | |
-| Heartbeat-Verzögerung | |
-| verarbeitete Ereignisse | |
+- `Lab05_ButtonWorker`: `osPriorityAboveNormal`, Get und 50-Tick-Pause
+- Vier Buttonplätze; Callbacks können verworfen werden
+- Modul zählt angeboten, angenommen, verworfen, technisch fehlerhaft
+- Keine Entprellung und keine Mikrosekundenmessung
+- Für konsistente Diagnose: alle Kerne anhalten oder Auswertung stoppen
 
-Augenmaß an der LED ist keine quantitative Frist.
-
-Messung: GPIO oder vorhandenes Trace, `printf` danach. Pins nur aus dem Projekt.
+ISR-Zähler werden nur von dieser einen IRQ geschrieben.
 
 ::: notes
-Jede Zeile hat eine Quelle und bleibt leer, bis gemessen wurde. Semaphor anfangs 0, NVIC-Zahl, Gruppierung, Tickfrequenz und Workerpriorität kommen aus dem Projekt. Dropzähler und technische Fehler sind getrennt. Callbackanzahl, erfolgreiche Releases, volle-Semaphor-Ablehnungen, Acquires und entprellte Aktionen sind verschiedene Größen. ISR-Dauer, Workerstart und Completion haben verschiedene Endpunkte. Die Heartbeat-LED ist qualitativ. Eine blinkende LED beweist keine quantitative Deadline. `printf` kommt nach dem Messlauf. GPIO- oder Tracepins nur aus dem Projekt. Ein Build beweist keine Latenz.
+Der Worker ist der verarbeitende Buttonthread. osPriorityAboveNormal ist seine CMSIS-Threadpriorität. Get entnimmt eine Nachricht, danach erzeugt osDelay mit fünfzig eine Wartezeit in Kernel-Ticks. Die Buttonqueue hat vier Plätze. Diese absichtlich begrenzte Bedienrate macht Häufungen und Kapazitätsfehler sichtbar, ist aber keine vollständige Entprellung. ISR heißt Interrupt Service Routine, Interruptbehandler. Die Callbacksequenz zählt erreichte IRQ-Aufrufe, nicht jede elektrische Flanke.
 
-Die Beobachtungen werden den Daten- und Kontextverträgen zugeordnet.
+Angeboten, angenommen, verworfen und technisch fehlerhaft werden ausschließlich aus dieser einen Button-IRQ geschrieben. Der Worker schreibt seinen eigenen empfangenen Stand. volatile stellt die Diagnosefelder für den Debugger bereit, ersetzt aber keine allgemeine Synchronisation. Sie werden nicht parallel von einem Reportingthread gelesen oder zurückgesetzt. Ein konsistenter Snapshot wird bei angehaltenen Kernen oder nach kontrolliertem Stoppen und Leeren des Kanals ausgewertet. Die Tickdifferenz zwischen Erfassung und Entnahme ist eine grobe Wartebeobachtung. Für tatsächliche ISR-Dauer und Workerstartlatenz braucht es GPIO-Marker oder Trace mit definierter Zeitbasis. GPIO bedeutet allgemeiner Ein- und Ausgang; Trace ist eine aufgezeichnete Ausführungsspur. Ohne diese Messung bleiben Mikrosekundenwerte offen.
 :::
 
-## Zusammenfassung des Tages
+## Quiz: Aussagen mit ihrem Gültigkeitsbereich prüfen
 
-- Variable: letzter Wert; FIFO: Folge, bis der Puffer voll ist
-- Ringbeispiel endet bei 20, 30, 40; Head = Tail und Count = 3 heißt voll
-- Dauerlast: erster Fehl-Put bei 13 ms, Bilanz 13 und 7
-- Pointer-Queue kopiert 4 Byte und nicht das Bild
-- Try-Put auf voller 1er-Queue behält 10
-- Startlatenz im Lehrbeispiel 16 µs, nicht gemessen
-- EXTI-Priorität und leerer Semaphor gehören zur Init
+- Kopiert heißt nicht verarbeitet
+- Ready heißt nicht Running
+- Freier Queue-Platz heißt nicht freier Payload-Puffer
+- Nicht wartend heißt nicht automatisch ISR-zulässig
+- Größerer Puffer heißt nicht dauerhaft genügend Durchsatz
+
+Quiz mit zehn Fragen; danach einen Fehlerpfad begründen.
 
 ::: notes
-Eine Variable hält den letzten Wert. Eine FIFO hält die Folge, bis der Puffer voll ist. Der Ring endet physisch bei [40, 20, 30], logisch bei 20, 30, 40, Head = Tail = 1 und Count = 3. Die Dauerlast hat den ersten Fehl-Put bei 13 ms, 13 Erfolge und 7 Verwürfe. Vier Byte gelten für einen reinen Pointer im bestätigten 32-Bit-Modell, nicht für jeden Deskriptor. Try-Put auf der vollen 1er-Queue behält 10. Die Lehrlatenz bis zum Workerstart ist 16 µs und nicht gemessen. EXTI-Priorität und der leere Semaphor gehören zur Init. Die Freigabe liegt in einem laufenden Thread.
+Eine Queue ist eine begrenzte Nachrichtenwarteschlange. Ein erfolgreicher Put bestätigt die Kopie, nicht den Abschluss beim Consumer, dem Empfänger. Ready bedeutet ausführungsbereit und Running laufend. Ein externer Payload, also die eigentlichen Nutzdaten hinter einer Adresse, kann noch vom Consumer benutzt werden, obwohl der Queue-Platz durch Get bereits frei ist. ISR heißt Interrupt Service Routine, Interruptbehandler. Ein nicht wartender Aufruf braucht weiterhin eine erlaubte Funktion und zulässige Interruptpriorität.
 
-Frage: Welche drei Verträge müssen bei einer Pointerqueue aus der ISR stimmen? Ein zulässiger Kernelaufruf, eine gültig gesicherte Payload und eine klare spätere Freigabe. Fehlt einer, ist die Adresse in der Queue kein brauchbarer Puffer.
-
-Ein zweiter Kernel führt weitere Grenzen für diese lokalen Objekte ein.
+Durchsatz ist die Anzahl dauerhaft verarbeitbarer Nachrichten pro Zeit. Ein größerer Puffer gleicht eine begrenzte Lastspitze aus, macht aber einen dauerhaft zu langsamen Consumer nicht schneller. Das Quiz prüft diese Unterscheidungen mit zehn Anwendungsfragen und plausiblen Fehlinterpretationen. Für den Abschluss begründen Sie etwa den vollen Queue-Pfad, eine Pointerübergabe oder eine Interruptpriorität. Im nächsten Termin kommt der zweite Prozessorkern als eigenständiger Teilnehmer hinzu. Die lokale Kernelqueue ist dabei weiterhin kein automatisch gemeinsamer Kanal; Speicherzugriff und Sichtbarkeit werden zusätzliche Entwurfsfragen.
 :::
 
-## Ausblick
+## Quellen und Grenzen der Nachweise
 
-- Nächster Termin: mehrere Kerne, gemeinsamer Speicher, kein gemeinsamer Heap
-- Die Queue von heute bleibt lokal auf ihrem Kernel
-- Cache und DMA nur mit dem Kern, der den Puffer cached
+- Buttazzo: *Hard Real-Time Computing Systems*, 3. Auflage
+- [Arm CMSIS-RTOS2: Message Queue](https://arm-software.github.io/CMSIS_6/latest/RTOS2/group__CMSIS__RTOS__Message.html)
+- [CMSIS-FreeRTOS-Adapter](https://github.com/ARM-software/CMSIS-FreeRTOS/blob/main/CMSIS/RTOS2/FreeRTOS/Source/cmsis_os2.c)
+- [FreeRTOS: Cortex-M-Interruptprioritäten](https://www.freertos.org/Documentation/02-Kernel/03-Supported-devices/04-Demos/ARM-Cortex/RTOS-Cortex-M3-M4)
+- ST: UM2408, RM0399 und lokales STM32Cube-Projekt
 
 ::: notes
-Zwei Kerne mit getrennten Kerneln teilen nicht automatisch dieselbe Queueverwaltung und nicht denselben Allokator. Gemeinsamer RAM ist etwas anderes als ein gemeinsam verwalteter Heap. „Kein gemeinsamer Heap“ heißt: kein automatisch gemeinsam verwalteter Heap. HSEM, die Hardwaresemaphor, und die MPU, die Speicherschutzeinheit, koordinieren Zugriff und Schutz. Sie ersetzen die heutigen Datenverträge nicht. Cache und DMA brauchen passende Sichtbarkeit. D-Cache betrifft nur den Kern und den Speicherbereich, der ihn wirklich führt. Der nächste Termin ergänzt die kernübergreifende Synchronisation. Die Ownershipregeln von heute bleiben gültig.
+Giorgio C. Buttazzos Hard Real-Time Computing Systems ist die zentrale Literatur für die Echtzeitmodelle und Ressourcenabhängigkeiten. CMSIS bedeutet Common Microcontroller Software Interface Standard; RTOS2 bezeichnet die zweite Betriebssystem-Schnittstelle. Die Message-Queue-Dokumentation beschreibt Objektanlage, Kopieren, Status und zulässige Interruptkontexte. Der öffentlich eingesehene CMSIS-FreeRTOS-Adapter belegt die dort implementierte Abbildung auf native Funktionen, insbesondere den ignorierten Nachrichtenvorrang und den ISR-Pfad. ISR bedeutet Interrupt Service Routine, Interruptbehandler. Ein veränderlicher main-Branch ist keine fest zugesicherte Version des Laborpakets; die lokale Datei wird zusätzlich geprüft.
 
-Damit ist der Einkern-Vertrag für Nachrichten, Zeiger und Interrupts abgeschlossen.
+UM2408 ist das ST-Benutzerhandbuch der entsprechenden Nucleo-144-Boardfamilie, RM0399 das Referenzhandbuch der betreffenden Dual-Core-Mikrocontroller. Sie sind zusammen mit Boardrevision, Brücken und Projekt die Grundlage für Pins und Interruptzuordnung. Eigene Zahlen in der Vorlesung sind gekennzeichnete Modellannahmen. Renderprüfung, C-Syntaxprüfung, simulierte Protokollprüfung und tatsächlicher STM32-Build beziehungsweise Hardwaremessung sind verschiedene Nachweise. Ohne bereitgestelltes Zielprojekt und Board wird kein erfolgreicher Hardwareversuch behauptet.
 :::
