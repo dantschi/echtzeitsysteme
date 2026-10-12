@@ -1,403 +1,230 @@
 ---
 title: "03 · Einführung in Echtzeitbetriebssysteme"
-subtitle: "FreeRTOS und Task-Management · EZS · DHBW Stuttgart"
+subtitle: "Vom Dispatcher zu FreeRTOS-Threads · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Vortrag:  quarto preview vorlesungen/03_einfuehrung-rtos.qmd
-# Handout:  quarto render vorlesungen/03_einfuehrung-rtos.qmd --profile handout --to pdf
-format: revealjs
+# Vortrag: quarto preview vorlesungen/03_einfuehrung-rtos.qmd
+# Skript: quarto render vorlesungen/03_einfuehrung-rtos.qmd --profile handout --to pdf
+format:
+  revealjs:
+    title: ""
+    pagetitle: "03 · Einführung in Echtzeitbetriebssysteme"
+center: false
 ---
 
-## Willkommen in der Profiliga!
+## Vom Dispatcher zum Echtzeitbetriebssystem
 
-- Dritter Termin: vom Dispatcher der Vorlesung 2 zu einem Kernel
-- Heute: **ein** FreeRTOS auf dem Cortex-M4 des STM32H755
-- Der CM7 übernimmt die im Projekt dokumentierte Startfunktion, keinen zweiten Scheduler
-- Ein RTOS strukturiert Tasks; Fristen bleiben nachzuweisen
+- Vorlesung 1: Reagieren durch Polling und Interrupts
+- Vorlesung 2: Aufgaben auswählen und Fristen prüfen
+- Heute: Aufgaben unterbrechen, fortsetzen und auf Ereignisse warten
 
-::: notes
-Gegenüber Vorlesung 2 kommt ein anderer Kontrollfluss hinzu. Dort ruft ein kooperativer Dispatcher endliche Funktionen auf und bekommt die CPU erst zurück, wenn eine Funktion zurückkehrt. Ein RTOS, Real-Time Operating System, verwaltet fortsetzbare Threads und kann die Zuteilung präemptiv ändern. Der Kernel ist der Betriebssystemkern, der diese Auswahl und die Wartezustände führt. Heute läuft genau ein solcher Kernel auf dem Cortex-M4. CM4 und CM7 sind die Projektteile für die beiden Kerne des STM32H755. Der M7 übernimmt die dokumentierte Start- und Systemfunktion. Es gibt keinen gemeinsamen SMP-Scheduler, also kein Symmetric Multiprocessing über beide Kerne. AMP, Asymmetric Multiprocessing, lässt auf den Kernen getrennte Software laufen.
-
-Release ist der Zeitpunkt, ab dem ein Job rechnen darf. Start ist der erste CPU-Zeitpunkt, Completion die Fertigstellung. Die Deadline ist die Frist, ein Deadline Miss ihre Verletzung. Jitter ist die Schwankung eines definierten Zeitabstands, nicht schon jede konstante Verspätung. Eine fehlende `.ioc`, die Konfigurationsdatei von STM32CubeMX, bedeutet, dass konkrete Versionen und Einstellungen am gestellten Projekt geprüft werden müssen.
-
-Die Agenda führt vom Kontrollfluss zu Zuständen, Timing und dem Drei-Thread-Labor.
-:::
-
-## Agenda für heute
-
-1. Recap: Dispatcher, nicht der rekursive Eigenbau
-2. Was ein Kernel leistet — und was nicht
-3. Kontext, RAM, Zustände, Prioritäten
-4. Ticks, Delays, CMSIS-RTOS2
-5. Labor: Heartbeat, HeavyMath, Emergency
+Leitfrage: Wie bleibt eine periodische Aufgabe aktiv, wenn eine andere dauernd rechnet?
 
 ::: notes
-Die fünf Blöcke folgen der Abhängigkeit, nicht einer minutengenauen Planung. Zuerst klären wir, warum der eigene Dispatcher an einer nicht zurückkehrenden Funktion scheitert. Danach ordnen wir, was ein Kernel leistet und was er nicht garantiert. Kontext, RAM und Zustände erklären, woran der Kernel eine Task überhaupt erkennt. Ticks und die CMSIS-RTOS2-Schnittstelle legen fest, wie gewartet wird. CMSIS 6 heißt Common Microcontroller Software Interface Standard. CMSIS-RTOS2 ist die Betriebssystem-API, nicht der FreeRTOS-Kernel selbst. Ein Thread-Flag ist ein Bit, mit dem ein Thread auf ein Ereignis warten kann.
+Ein Echtzeitbetriebssystem, englisch Real-Time Operating System oder RTOS, ergänzt die bisherige Anwendung um einen Betriebssystemkern. Dieser Kernel verwaltet Aufgaben und ihre Wartebedingungen. Er entscheidet, welche Aufgabe den Prozessor bekommt, und bewahrt den Zustand unterbrochener Aufgaben auf. Die zentrale Verarbeitungseinheit, englisch Central Processing Unit oder CPU, führt auf unserem betrachteten Kern weiterhin nur einen Befehlsstrom zur gleichen Zeit aus.
 
-Im Labor hat Heartbeat die Rolle einer kleinen periodischen Aktion, HeavyMath die einer dauerhaft bereiten Rechenlast und Emergency die eines Threads, der auf den Taster wartet. Emergency ist ein Demonstrationsname, kein sicherheitszertifizierter Not-Halt. Kommunikation wird heute nur so weit gebraucht, wie diese Flag-Übergabe sie erfordert. Ein TCB, Task Control Block, ist das Verwaltungsobjekt einer Task und kommt im dritten Block.
-
-Zuerst erinnern wir uns an das korrekte kooperative Zielbild und seinen Unterschied zum fehlerhaften rekursiven Aufruf.
+Sie benötigen die Begriffe Ausführungszeit, Periode, Deadline und Priorität aus Vorlesung 2 sowie die Unterscheidung von Hauptprogramm und Interruptbehandler aus Vorlesung 1. Kenntnis einer Betriebssystem-Programmierschnittstelle wird nicht vorausgesetzt. Wir verwenden dasselbe Beispiel in Zustandsbildern, Zeitachsen und Labor: Eine periodische Anzeige soll trotz laufender Hintergrundrechnung reagieren. Die Notizen erklären auch die Voraussetzungen der Beispiele und bilden zusammen mit den Folien einen Lerntext.
 :::
 
-## Recap: Unser Round-Robin Eigenbau
+## Lernpfad und Lernziele
 
-VL2-Zielbild: zentraler Dispatcher, endliche `step()`-Funktionen, Zustand im TCB.
+1. Aufgabe, Thread und Job unterscheiden
+2. Ready, Running und Blocked erklären
+3. Prioritäten, Präemption und Starvation nachvollziehen
+4. Speicher und zeitgesteuertes Warten planen
+5. Einen Taster an eine wartende Aufgabe übergeben
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "Dispatcher" as D
-@0
-D is StepA
-@2
-D is zurueck
-@3
-D is StepB
-@5
-D is zurueck
-@enduml
-```
-
-- Ein Step, der nicht zurückkehrt, blockiert weitere **kooperative** Schritte
-- Aktive Interrupts können weiterlaufen
-- Ein normaler Funktionsaufruf sichert keine Fortsetzung mitten in einer Endlosschleife
+Papieraufgaben zuerst; anschließend Umsetzung auf dem Board.
 
 ::: notes
-Der Dispatcher aus Vorlesung 2 wählt eine endliche `step`-Funktion und ruft sie auf. Die Zeitachse zeigt Step A, die Rückkehr und danach Step B auf derselben CPU. Der kooperative Zustand im TCB merkt sich, an welchem Arbeitsschritt die nächste Aktivierung weitermacht. Er bewahrt nicht automatisch einen pausierten C-Aufrufstack.
+Der Lernpfad beginnt mit dem beobachtbaren Verhalten und führt erst danach zur technischen Umsetzung. Ein Thread ist ein fortsetzbarer Ausführungsablauf. Ein Job ist eine einzelne Aktivierung einer Aufgabe. Ready bedeutet ausführungsbereit, Running bedeutet gerade dem Prozessor zugeteilt und Blocked bedeutet wartend. Präemption bezeichnet das Verdrängen einer laufenden Aufgabe; Starvation ist das dauerhafte Ausbleiben von Prozessorzeit für eine bereite Aufgabe.
 
-Das Fehlmuster legt A, B und C als normale Aufrufe auf denselben Stack: Jeder Aufruf speichert eine Rücksprungadresse, aber niemand kann eine beliebige unterbrochene Endlosschleife später einfach fortsetzen. Ein nur reservierter privater Speicherbereich ist noch nicht der aktive CPU-Stack. Dafür braucht es eine Kontextinitialisierung und eine echte Umschaltung von Stackzeiger und Registern.
-
-Frage: Warum hilft ein privater Speicherblock noch nicht, solange wir nur C-Aufrufe haben? Weil der Prozessor weiter den bisherigen Stack Pointer benutzt. Der reservierte Bereich wird erst zum Stack, wenn der Kontextwechsel ihn lädt.
-
-Ein nicht zurückkehrender Schritt macht die Grenze des kooperativen Musters sichtbar.
+Am Ende können Sie aus einer Ereignisfolge eine Prozessorbelegung und die zugehörigen Zustände ableiten. Sie können begründen, warum aktives Warten und Betriebssystem-Warten unterschiedliche Folgen haben, und eine Speicherrechnung mit ausdrücklich benannten Annahmen durchführen. Der Papierteil der Übung prüft diese Fähigkeiten ohne Hardware. Das Programmieren macht anschließend die Konsequenzen derselben Entscheidungen sichtbar. Neue Registerdetails und Energiesparverfahren sind Vertiefungen, keine Voraussetzung für den Einstieg.
 :::
 
-## Recap: Der Crash im Labor
+## Vier Schulstunden: gemeinsam verstehen und anwenden
 
-- Kooperativ: Heavy-Schritt ohne `return` — Heartbeat-Callback kommt nicht dran
-- Präemptiv, analog: High bleibt dauerhaft Ready — Low verhungert trotzdem
-- Präemption löst das erste Problem und kann das zweite erzeugen
-- Harte Fristen brauchen Grenzen der Arbeit, nicht nur einen Kernel
+| Abschnitt | Erklärung / Auswertung | Eigenständige Arbeit |
+|---|---|---|
+| 0–45 min | Grundmodell und Prioritäten: 30 min | Papieraufgaben 1–2: 15 min |
+| 45–90 min | Speicher, Zeit und Ereignisse: 30 min | Papieraufgaben 3–4: 15 min |
+| 90–135 min | Firmwareaufbau: 25 min | Codeintegration: 20 min |
+| 135–180 min | Quiz und Abschluss: 20 min | Laborversuche: 25 min |
+
+Werkzeuge und Dual-Core-Grundstart vor dem Termin vorbereiten.
+
+::: notes
+Vier Schulstunden zu je 45 Minuten ergeben 180 Minuten Unterrichtszeit. Pausen kommen gegebenenfalls zusätzlich hinzu. Die Tabelle ist eine didaktische Zeitplanung, keine garantierte Bearbeitungsdauer. Sie verbindet die folgenden 50 Folien mit den Aufgaben und dem Quiz, statt alle Folien am Stück vorzutragen. Die ersten beiden Abschnitte enden jeweils mit einer kurzen eigenständigen Papierphase und gemeinsamer Ergebnissicherung.
+
+Die Erklärung umfasst insgesamt 85 Minuten. Hinzu kommen 30 Minuten Papieraufgaben, 20 Minuten Codeintegration, 25 Minuten Laborversuche, 15 Minuten Quiz und fünf Minuten Abschluss. Die schnellen Verständnisfragen innerhalb der Erklärung werden durch kurze Einzelüberlegung und anschließendes Begründen bearbeitet. Gemeinsame Lösungen stehen in den jeweiligen Notizen.
+
+Für den Programmierteil müssen STM32CubeMX, das Konfigurationswerkzeug, und Visual Studio Code mit der STM32-Erweiterung bereits installiert sein. Ein grundsätzlich lauffähiges Dual-Core-Projekt mit Cortex-M7- und Cortex-M4-Start ist Voraussetzung für die knappe Integrationsphase. Frische Installation und erstmalige Bootfehlersuche passen nicht verlässlich zusätzlich hinein. Fehlt dieser Grundstand, zeigt die Lehrperson die Codeintegration am vorbereiteten Projekt; die Studierenden bearbeiten die gleichen Zustands- und Diagnosefragen dazu. Hardwareversuche bleiben dann als Demonstration oder nicht selbst durchgeführt gekennzeichnet.
+:::
+
+## Was übernimmt das RTOS gegenüber Vorlesung 2?
+
+| Kooperativer Dispatcher | Präemptives RTOS |
+|---|---|
+| Ruft endliche `step()`-Funktion auf | Startet einen fortsetzbaren Thread |
+| Nächste Aufgabe erst nach Rückkehr | Höhere bereite Priorität kann verdrängen |
+| Fortschritt ausdrücklich speichern | Kontext beim Wechsel sichern |
+| Warten markieren und zurückkehren | Warteaufruf hält den Thread an |
+
+Interrupts können in beiden Varianten aktiv sein.
+
+::: notes
+RTOS heißt Real-Time Operating System, also Echtzeitbetriebssystem. Der Dispatcher aus Vorlesung 2 ist eine zentrale Auswahlfunktion. Er ruft eine endliche C-Funktion namens step auf; diese muss selbst zurückkehren. Eine markierte Wartebedingung beendet nicht automatisch den aktuellen C-Aufruf. Die Anwendung speichert ihren Fortschritt deshalb etwa als Index oder Zustand.
+
+Ein Thread darf dagegen eine Endlosschleife besitzen. Beim Betriebssystem-Warten wird sein Ausführungszustand gesichert; nach dem Aufwachen läuft er hinter dem Warteaufruf weiter. Der Kontext enthält die Information, welche Anweisung als Nächstes kommt, sowie Register- und Stackzustand. Präemptiv bedeutet, dass eine höhere ausführungsbereite Priorität diesen Wechsel auch ohne freiwillige Rückkehr auslösen kann. Eine gewöhnliche Funktion namens yield, die einfach eine andere Funktion aufruft, bewirkt das nicht.
+
+Die Interrupts aus Vorlesung 1 bleiben davon getrennt: Auch ein kooperativer Schritt, der nie zurückkehrt, kann noch von einem erlaubten Interrupt unterbrochen werden. Der Prozessor ist dann nicht zwingend abgestürzt; nur die anderen kooperativen Schritte kommen nicht mehr dran.
+:::
+
+## Kurzaufgabe: Was blockiert hier tatsächlich?
 
 ```c
-/* Fehlbeispiel, historisch: nicht der VL2-Dispatcher */
-void Task_1(void) {
-    while (1) { LED_On(); os_yield(); /* ruft andere Task */ }
+/* C-Lehrcode: Ausschnitt eines kooperativen Dispatchers */
+for (;;) {
+    HeartbeatStep();  /* endliche Aktion */
+    HeavyStep();     /* kehrt in diesem Versuch nie zurück */
 }
 ```
 
-::: notes
-Zwei Fehler sind zu trennen. Kooperativ kehrt Heavy nicht zurück, deshalb ruft der Dispatcher Heartbeat nicht erneut auf. Erlaubte Interrupts können trotzdem laufen. Präemptiv verdrängt ein dauerhaft bereiter höherpriorer Thread einen niedrigeren auch dann, wenn beide eigene Stacks haben.
-
-Der gezeigte `os_yield`-Aufruf ist absichtlich falscher historischer Code, nicht der Dispatcher aus Vorlesung 2 und nicht die FreeRTOS-API. Eine normale C-Funktion dieses Namens ist noch kein `osThreadYield`. Begrenzte kooperative Abläufe können Fristen erfüllen. Präemption behebt nicht jede ungünstige Last- und Prioritätskonfiguration.
-
-Damit haben wir zwei unterschiedliche Grenzen gesehen: Ein kooperativer Schritt kann den Dispatcher festhalten, ein präemptiver High-Thread niedrigere Arbeit verdrängen. Ein Kernel bietet Werkzeuge zur Strukturierung; sinnvoll werden sie erst mit passenden Wartepunkten und Prioritäten.
-:::
-
-## Die Notwendigkeit eines echten RTOS
-
-- Viele Aufgaben, Fristen und Wartepunkte werden sonst zur Flag-Suppe
-- Der Kernel bietet Scheduling, Objektallokation, Kommunikation, Synchronisation, Port
-- Mutex ist keine allgemeine ISR-Lösung; aus der ISR nur dafür vorgesehene Übergaben
-- Zertifizierung und Speicherschutz entstehen nicht durch „FreeRTOS einschalten“
+1. Wird Heartbeat ein zweites Mal aufgerufen?
+2. Kann ein erlaubter Timerinterrupt trotzdem laufen?
+3. Was muss ein RTOS zusätzlich sichern, um HeavyMath zu verdrängen?
 
 ::: notes
-Sobald viele Aufgaben an verschiedenen Stellen warten, werden Flags und Abschnitte der Hauptschleife unübersichtlich. Der Kernel trennt dafür mehrere Aufgaben. Scheduling wählt den nächsten Thread. Objektallokation reserviert die dazugehörigen Speicherobjekte. Kommunikation transportiert Daten, Synchronisation schützt gemeinsame Ressourcen. Der Port passt den Kernel an Prozessor, Compiler, Kontextwechsel und Tick an, nicht nur durch ein paar Assemblerzeilen.
+Der C-Lehrcode knüpft an den Dispatcher aus Vorlesung 2 an. for mit leeren Bedingungen ist eine Endlosschleife. HeartbeatStep und HeavyStep sind hier gewöhnliche Funktionsaufrufe, keine bereits angelegten Betriebssystem-Threads. HeartbeatStep kehrt nach einer kurzen Aktion zurück. Für HeavyStep nehmen wir ausdrücklich an, dass die Funktion in einer eigenen Endlosschleife bleibt. Ein normaler Aufruf der nächsten Schleifeniteration erfolgt dann nicht.
 
-Eine Queue kann mehrere Einträge speichern. Ein Mutex schützt eine Ressource mit Eigentümerschaft. Beides wird erst später im Detail behandelt. Eine ISR, die Interrupt Service Routine, wartet nicht auf einen blockierenden Mutex. Ein RTOS schafft weder automatisch eine Zertifizierung noch Speicherschutz noch einen Fristnachweis.
+Die erste Antwort lautet deshalb: Heartbeat wird nicht ein zweites Mal aufgerufen. Der Kontrollfluss hängt in HeavyStep fest. Zweitens kann ein zugelassener Timerinterrupt weiterhin ausgeführt werden, solange er nicht maskiert ist. Die Interruptbehandlung aus Vorlesung 1 ist nicht gleichbedeutend mit dem Rücksprung in den Dispatcher. Der Prozessor muss also weder abgestürzt noch vollständig untätig sein.
 
-Die folgende Tabelle ordnet diese Aufgaben konkreten Kernelbausteinen zu.
+RTOS bedeutet Real-Time Operating System, Echtzeitbetriebssystem. Damit es drittens einen anderen Thread auswählen und HeavyMath später fortsetzen kann, muss es den Ausführungskontext sichern: nötige Register, Fortsetzungsstelle und Bezug auf den eigenen Stack, den Aufrufstapel. Ein Callback namens yield, der nur eine andere C-Funktion aufruft, genügt dafür nicht. Lassen Sie die drei Antworten zunächst begründen, bevor Sie zur Rollenverteilung der Laboraufgaben übergehen.
 :::
 
-## Was leistet ein RTOS?
+## Unser durchgängiges Beispiel
 
-| Baustein | Rolle |
-|----------|--------|
-| `tasks.c` | Zustände, Ready-Listen, Delays |
-| `list.c` | Listen für diese Objekte |
-| `queue.c` | Queues (später) |
-| `heap_x.c` | eine mögliche Allokation |
-| CM4F-Port | C **und** Assembler: PendSV, SVC, Tick |
+| Aufgabe | Rolle | Normalbetrieb |
+|---|---|---|
+| Ereignis-Task | Tasterreaktion | wartet, reagiert kurz |
+| Heartbeat | sichtbare Lebensanzeige | Aktion alle 500 ms |
+| HeavyMath | Hintergrundrechnung | dauerhaft bereit |
 
-- Plattformunabhängig ist die API-Idee, nicht Prioritätszahl, Takt oder Treiber
+Prioritätsordnung: Ereignis-Task $>$ Heartbeat $>$ HeavyMath.
+
+Lehrplattform: ein FreeRTOS-Kernel auf dem Cortex-M4.
 
 ::: notes
-`tasks.c` verwaltet, welche Tasks ausführungsbereit oder wartend sind, zum Beispiel wenn Heartbeat in einem Delay steht und HeavyMath bereit ist. `list.c` stellt die Listen bereit, in denen diese Tasks hängen. `queue.c` unterstützt Warteschlangen und weitere darauf aufbauende Mechanismen. `heap_x.c` ist eine wählbare Strategie für dynamische Reservierung, nicht die einzige mögliche. Der CM4F-Port behandelt die Architektur: Er fordert PendSV an, die aufschiebbare Systemausnahme für den Kontextwechsel, nutzt SVC, den Supervisor Call, unter anderem für den Start des ersten Threads, und hängt den Kernel-Tick oft an SysTick, den Systemtimer des Cortex-M. SysTick ist eine übliche Quelle, keine Pflicht.
+Heartbeat bedeutet hier Lebensanzeige: Eine Leuchtdiode wird periodisch umgeschaltet. Zwei Umschaltungen im Abstand von 500 Millisekunden ergeben einen vollständigen Ein-Aus-Zyklus von ungefähr einer Sekunde. HeavyMath heißt die künstliche Rechenlast; sie wartet absichtlich nicht. Die Ereignis-Task verarbeitet einen Tasterhinweis und wartet danach wieder. Sie ist keine sicherheitszertifizierte Not-Halt-Funktion.
 
-HAL, die Hardware-Abstraktionsschicht, initialisiert Peripherie. Sie ist nicht der FreeRTOS-Kontextport. Die API-Idee ist über Ports hinweg ähnlich. Prioritätszahlen, Takt und Treiber bleiben zu prüfen.
+Eine Task ist im FreeRTOS-Kernel die verwaltete Aufgabe; über unsere Schnittstelle wird derselbe Ablauf Thread genannt. FreeRTOS ist der verwendete Echtzeitbetriebssystemkern. Alle drei Aufgaben teilen sich den Cortex-M4-Prozessorkern des STM32H755. Der Cortex-M7 übernimmt die im Projekt konfigurierte System- und Startfunktion. Er führt unsere drei Aufgaben nicht parallel aus und bekommt in dieser Übung keinen zweiten Kernel.
 
-Diese Bausteine finden sich in unterschiedlichen RTOS-Produkten mit verschiedenen Funktionen und Einsatzgebieten.
+Die Zahlen sind Laborvorgaben, keine gemessenen Laufzeiten. Für gut lesbare Papierzeitachsen verkürzen wir später die Heartbeat-Periode ausdrücklich auf vier Millisekunden. Rollen und Prioritätsordnung bleiben identisch; die Papierwerte dürfen nicht als Messergebnis des Boards gelesen werden.
 :::
 
-## Der Markt für Echtzeitbetriebssysteme
+## Was ein RTOS leistet — und was Sie planen müssen
 
-- Kommerziell u. a. VxWorks, QNX; im Auto oft AUTOSAR-OS
-- Offen u. a. Zephyr und FreeRTOS
-- „Marktführer“ oder „safety-zertifiziert“ nur mit benannter Quelle und Konfiguration
-- Wir nutzen FreeRTOS, weil Cube es für den STM32 anbindet — nicht als Beweis einer Frist
+- Kernel: Ausführung auswählen, Kontext sichern, Warten verwalten
+- Anwendung: Prioritäten, Arbeitsumfang und Ereignisverhalten festlegen
+- Kosten: Verwaltungszeit und Speicher pro Thread
+- Fristen bleiben nachzuweisen: $R_i \le D_i$
+
+Ein eigener Stack ist noch kein Speicherschutz.
 
 ::: notes
-Die Namen sind Produkte, keine erfundenen Akronyme. VxWorks und QNX sind kommerzielle Echtzeitbetriebssysteme. AUTOSAR steht für AUTomotive Open System ARchitecture. Ein AUTOSAR-OS ist die Betriebssystemschicht dieser Architektur und nicht dasselbe wie FreeRTOS. Zephyr und FreeRTOS sind offen verfügbare Projekte. Offen verfügbarer Code beantwortet nicht jede Zertifizierungs- oder Lizenzfrage. Aktuelle Marktanteile werden hier nicht behauptet.
+Ein RTOS, Real-Time Operating System, bietet Mechanismen für die zeitliche Organisation, keine automatische Garantie für jede Anwendung. Der Kernel ist der Betriebssystemkern. Er verwaltet ausführungsbereite und wartende Threads und führt die notwendigen Kontextwechsel aus. Die Anwendung entscheidet jedoch, wie viel Arbeit ein Thread ausführt, wann er wartet und wie hoch seine Priorität ist.
 
-Footprint meint den Programm- und Datenspeicherbedarf. Er hängt von Version, Optionen, Toolchain und Anwendung ab. Die Linker-Map des konkreten Builds zeigt reservierte Bereiche. Die Wahl von FreeRTOS im Kurs ist eine Lehr- und Integrationsentscheidung, weil STM32Cube es anbindet. Sie beweist nicht, dass der Kernel jeden Fristvertrag erfüllt.
+Aus Vorlesung 2 bezeichnet die Antwortzeit $R_i$ den Abstand von der Freigabe eines Jobs bis zu seiner Fertigstellung. Die relative Deadline $D_i$ ist seine zulässige Frist, jeweils in derselben Zeiteinheit. Die Bedingung $R_i$ kleiner oder gleich $D_i$ muss unter den relevanten Last-, Interrupt- und Sperrzeitannahmen gelten. Ein hoher Thread, der niemals wartet, kann andere Aufgaben trotz eines korrekt arbeitenden Kernels dauerhaft verdrängen.
 
-Daraus formulieren wir die Fähigkeiten, die am Ende dieses Termins beherrscht werden sollen.
+Der Stack ist ein Speicherbereich für Aufrufe und gesicherten Kontext. Separate Stacks erleichtern die Organisation, verhindern aber ohne passenden Speicherschutz keine fehlerhaften Zugriffe auf fremden Speicher. Auch die zusätzliche Verwaltungszeit und der Speicherbedarf gehören zum Entwurf. Zunächst ordnen wir ein, welche Software diese Aufgaben übernimmt.
 :::
 
-## Lernziele des heutigen Tages
-
-1. Dispatcher-Callback und RTOS-Thread unterscheiden
-2. Stack, TCB und übriges RAM grob bilanzieren
-3. Ready, Running und Blocked an einer CPU-Spur erklären
-4. Tickphase, `osDelay` und `osDelayUntil` auseinanderhalten
-5. Emergency per Thread-Flag aus einer erlaubten ISR wecken
-
-::: notes
-Jedes Ziel ist eine Handlung. Sie können einen kooperativen Callback und einen RTOS-Thread unterscheiden: Der Callback kehrt zurück, der Thread besitzt einen fortsetzbaren Kontext. Sie können den Bytebedarf aus Stack und einem angenommenen TCB überschlagen. RAM ist der Arbeitsspeicher. Sie können an einer CPU-Spur Ready, Running und Blocked lesen. Die CPU ist die zentrale Verarbeitungseinheit. Sie können erklären, warum ein Tick nur eine Zeitgrenze setzt und wie sich relatives `osDelay` vom absoluten `osDelayUntil` unterscheidet. Sie können ein Thread-Flag aus einem zulässigen Handler an Emergency übergeben.
-
-Im Labor werden diese Handlungen an Heartbeat, HeavyMath und Emergency sichtbar. Eine ruhige LED zeigt eine Beobachtung unter der gewählten Konfiguration. Sie ist keine allgemeine Fristgarantie, weil dafür begrenzte Ausführungszeiten, Prioritäten und Interruptlast benannt sein müssen. ISR steht hier für die Behandlungsroutine, CMSIS für die gemeinsame Schnittstellenschicht.
-
-Zunächst ordnen wir Kernel und Anwendung in die konkrete Dual-Core-Plattform ein.
-:::
-
-## Architektur: Bare-Metal vs. RTOS
+## Anwendung, Schnittstelle und Kernel
 
 ```{mermaid}
-%%| fig-width: 6.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF', 'mainBkg': '#FFFFFF', 'nodeBorder': '#E5E5EA', 'clusterBkg': '#F5F5F7', 'clusterBorder': '#E5E5EA', 'titleColor': '#1D1D1F', 'edgeLabelBackground': '#FFFFFF'}}}%%
-flowchart TB
-  APP[Anwendungsthreads] --> CMSIS[CMSIS-RTOS2]
-  CMSIS --> K[FreeRTOS-Kernel]
-  K --> P[CM4F-Port]
-  P --> M4[Cortex-M4]
-  HAL[HAL / Peripherie] --- M4
-  M7[CM7: Start laut Projekt] --- BUS[gemeinsame Busse / SRAM]
-  M4 --- BUS
-  style K fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF'}}}%%
+flowchart LR
+  A["Anwendung"] --> C["CMSIS-RTOS2"]
+  C --> F["FreeRTOS<br/>und Port"]
+  A --> H["STM32 HAL"]
+  F --> M["Cortex-M4"]
+  H --> M
+  style F fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
 
-- Ein Kernel auf dem CM4; Tasklisten wandern nicht zum M7
-- Zwei Kernel später wären eine eigene AMP-Entscheidung
-- Ohne MPU-Port isoliert der Stack nur organisatorisch
+Eine Schnittstelle ist noch kein Betriebssystem.
 
 ::: notes
-Die Abbildung stapelt die Softwareschichten auf dem Cortex-M4: Anwendungsthreads, der CMSIS-RTOS2-Adapter, der FreeRTOS-Kernel, der CM4F-Port und der Kern. Daneben spricht die HAL die Peripherie an. Beide Pfade enden auf derselben CPU. Der M7 bleibt in dieser Übung bei der Startfunktion. Gemeinsame Busse und SRAM, statisches RAM, können sich gegenseitig beeinflussen. Jeder Kern hat einen eigenen NVIC, den Nested Vectored Interrupt Controller, und eine eigene Vektortabelle. Auf dem M7 läuft kein zweiter Scheduler dieser Übung.
+Die Abbildung wird von links nach rechts gelesen. Die Anwendung ruft Betriebssystemfunktionen über CMSIS-RTOS2 auf. CMSIS steht für Common Microcontroller Software Interface Standard; RTOS2 bezeichnet die zweite Version seiner Betriebssystem-Schnittstelle. Eine Programmierschnittstelle, englisch Application Programming Interface oder API, legt Namen, Parameter und Verhalten der Funktionen fest. Der Adapter bildet diese Aufrufe auf FreeRTOS ab. FreeRTOS ist der tatsächliche Kernel, der die Zustände und die Auswahl verwaltet.
 
-Ein eigener Threadstack ordnet Daten einem Thread zu. Ohne MPU, Memory Protection Unit, schützt er sie nicht gegen fehlerhafte Zugriffe. Aus dem gemeinsamen Chip folgt kein gemeinsamer Ready-Pool.
+Der Port ist die Anpassung des Kernels an Prozessor und Werkzeugkette. Er übernimmt unter anderem das Sichern und Wiederherstellen des Kontextes auf dem Cortex-M4. Der rote Rahmen hebt den Kernel hervor, nicht eine höhere Ausführungsgeschwindigkeit. Der zweite Pfad führt von der Anwendung zur STM32 Hardware Abstraction Layer, kurz HAL, der Hardware-Abstraktionsschicht für Peripheriezugriffe. Eine HAL-Funktion ist nicht allein durch ihren Namen ein Betriebssystem-Warteaufruf.
 
-Die Struktur beantwortet noch nicht, wie groß die Reaktionszeit wird.
+Beide Pfade laufen auf demselben Kern. Die native FreeRTOS-Schnittstelle und CMSIS-RTOS2 sind verschiedene Schnittstellen; wir verwenden im Labor durchgehend CMSIS-RTOS2 und mischen ihre Einheiten und Aufrufsignaturen nicht.
 :::
 
-## Das Kernparadigma: Latenz vs. Determinismus
-
-Synthetische Antwortzeiten, Deadline $D = 10\,\mathrm{ms}$:
-
-- Folge $2/4/6/8\,\mathrm{ms}$: Schwankung, aber kein Miss
-- Ein Lauf mit $R = 12\,\mathrm{ms}$: Miss
-- Hohe Priorität ist keine Obergrenze
-- Konstante Zusatzlatenz ist kein Jitter
-
-Bestandteile von $R$, ohne hier die RTA zu wiederholen: eigener CPU-Bedarf, höherpriore Arbeit, IRQs, Blocking, Dispatcher.
-
-::: notes
-C ist der eigene CPU-Bedarf im genannten Modell, R die Zeit von Release bis Abschluss, D die relative Deadline. Eine hohe Priorität allein setzt keine obere Schranke. Die Folge 2, 4, 6 und 8 ms hat eine Spanne von 6 ms und hält alle vier gezeigten Fristen von 10 ms ein. Ein Lauf mit 12 ms verletzt die angenommene Frist. Wenige Werte liefern keine universelle Obergrenze.
-
-Zur Antwortzeit gehören eigener Bedarf, höherpriore Arbeit, Interruptlast, Blockieren an einer Ressource und Kosten des Dispatchers. Die volle Antwortzeitanalyse, RTA, leiten wir hier nicht erneut ab. Eine konstante Zusatzverzögerung verschiebt alle Antworten, erzeugt aber allein keine Schwankung.
-
-Frage: Welche Grenzen brauchen wir für einen belastbaren Nachweis? Beschränkte Ausführungszeiten, eine benannte Prioritätsordnung, modellierte Interrupt- und Sperrzeiten und kein unbegrenztes Warten. Mehr Stichproben ersetzen diese Annahmen nicht.
-
-Ein einzelner Job veranschaulicht zunächst Startverzögerung und Antwortzeit.
-:::
-
-## Visualisierung: Startverzögerung und Antwortzeit
-
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "RTOS-Job" as J
-concise "Deadline" as DL
-@0
-J is Release
-DL is offen
-@2
-J is Start
-@8
-J is fertig
-@10
-DL is "d = 10"
-@enduml
-```
-
-- Die Skizze zeigt einen gehaltenen Job mit $R = 8\,\mathrm{ms}$
-- Eine Bare-Metal-ISR kann dieselbe Frist mit weniger Dispatcheranteil halten
-- Der Vergleich ist nicht „Super-Loop schlecht, RTOS gut“
-
-::: notes
-Die Zeitachse zeigt einen Job, keine Messreihe. Bei Release r = 0 darf er rechnen. Der Start liegt bei 2 ms, die Fertigstellung bei 8 ms, die absolute Deadline bei 10 ms. Die Startverzögerung ist 2 ms, die Antwortzeit R = 8 ms, die Reserve 2 ms. Ein einzelner Job zeigt keinen Jitter, weil Schwankung mindestens zwei vergleichbare Ausführungen braucht. Die Deadline-Spur markiert nur, dass die Frist bis 10 ms offen und dann erreicht ist.
-
-Eine Bare-Metal-ISR kann denselben kleinen Auftrag mit einer anderen Softwarekette erfüllen. Das ist keine Rangfolge „Super-Loop schlecht, RTOS gut“. Alle Zahlen sind synthetische Lehrwerte.
-
-Nun betrachten wir die konkrete Kernelplattform, die im Labor diese Ausführungen verwaltet.
-:::
-
-## Einführung in FreeRTOS
-
-- Richard Barry, später Amazon/AWS; Lizenz MIT
-- Portierbar, deshalb der STM32-Cube-Standard in diesem Kurs
-- Konkrete ROM-/RAM-Größe: Linker-Map der **verwendeten** `FreeRTOSConfig.h`
-- Version von Kernel, CMSIS-Wrapper und CubeH7 am Projekt ablesen
-
-::: notes
-FreeRTOS ist ein Kernelprojekt mit Ports und einem konfigurierbaren Funktionsumfang. Richard Barry hat es begonnen. Amazon Web Services, kurz AWS, hat das Projekt später übernommen. Diese historische Einordnung beschreibt nicht jede heutige Unternehmensrolle. Die MIT-Lizenz ist eine permissive Lizenz: Nutzung, Änderung und Weitergabe sind unter ihren Bedingungen erlaubt. Dieselbe Lizenz gilt nicht automatisch für jeden Wrapper und jeden Treiber im Cube-Paket.
-
-ROM meint hier den nichtflüchtigen Programmspeicher, praktisch das Flash-Image. RAM ist der beschreibbare Arbeitsspeicher. `FreeRTOSConfig.h` schaltet Optionen, aber die tatsächlichen Größen entstehen erst im Build und stehen in der Linker-Map. Kernel, CMSIS-Wrapper, STM32CubeH7 und Compiler sind getrennte Stände. Ein öffentlicher main-Zweig belegt nicht den Laborstand.
-
-Die Architektur zeigt, wo welche Software im Aufrufpfad liegt.
-:::
-
-## Die FreeRTOS Architektur
-
-- Anwendung → CMSIS-RTOS2 → Kernel → Port → Cortex-M4
-- `tasks.c`, `list.c`, `queue.c`, `heap_4.c` o. ä. nach Rolle
-- PendSV/SVC im Port; SysTick ist eine übliche Tickquelle, keine Pflicht
-- CMSIS macht nicht jeden Backendwechsel ohne Anpassungen möglich
-
-::: notes
-Ein Aufruf von `osDelay` läuft durch die Schichten. Die Anwendung ruft die CMSIS-Funktion. Der Wrapper bildet sie auf die native Kernelverwaltung ab. Der Kernel setzt den Thread auf Blocked und merkt sich den Aufwachzeitpunkt. Der Port führt die passende Sicherung und Umschaltung aus, wenn ein anderer Thread die CPU bekommen soll. Die CPU führt danach dessen Befehle aus.
-
-Heapwahl, Prioritätsabbildung und Tickquelle sind Konfigurationsentscheidungen. CMSIS bietet eine gemeinsame Schnittstelle und beseitigt keine Einschränkungen des Backends. HAL-Funktionen bilden einen anderen Pfad zur Peripherie. Beide Pfade laufen auf derselben CPU und können sich deshalb zeitlich beeinflussen.
-
-Die Strukturvorteile gehen mit mess- und planbaren Kosten einher.
-:::
-
-## Zusammenfassung: Warum ein RTOS?
-
-- Struktur: Threads statt einer Flag-Suppe
-- Kosten: Ticks, Wechsel, Stacks, Fehlersuche
-- Keine automatische Pünktlichkeit und kein automatischer Speicherschutz
-- Präemption ersetzt kooperative Rückkehrpflicht, nicht die Analyse
-
-::: notes
-Getrennte fortsetzbare Threads brauchen je einen Stack und ein Verwaltungsobjekt. Prioritäten und Warten brauchen Kernelarbeit bei Tick, Wechsel und Listenpflege. Nebenläufigkeit macht die Fehlersuche anspruchsvoller, weil der Unterbrechungspunkt nicht mehr nur in einer Schleife liegt. Präemption ersetzt die Pflicht, freiwillig zurückzukehren. Sie ersetzt nicht die Begrenzung höherpriorer Last. Eigene Stacks sind noch keine Isolation durch eine MPU.
-
-Die Formel „weniger Geschwindigkeit gegen garantierte Pünktlichkeit“ ist falsch. Ein Kernel kann Verwaltungszeit hinzufügen und trotzdem keine Frist beweisen, wenn ein hoher Thread dauerhaft bereit bleibt.
-
-Frage: Was passiert, wenn der höchstpriore Thread nie blockiert? Niedrigere Threads werden nicht ausgewählt, auch wenn der Kernel korrekt läuft.
-
-Der Strukturgewinn beruht darauf, dass jeder Thread einen fortsetzbaren Ausführungskontext besitzt. Deshalb betrachten wir jetzt, wie seine Eintrittsfunktion und sein Stack aufgebaut sind.
-:::
-
-## Das FreeRTOS Task-Modell
-
-- Native Task-Funktion kehrt nicht normal zurück
-- Ende über `vTaskDelete(NULL)`; CMSIS: `osThreadExit()`
-- Ein bloßes `return` führt portabhängig oft in eine Assert- oder Fehlerschleife, nicht zwingend in den HardFault
-- Labor-Threads: `for (;;)` und RTOS-Warten
+## Ein Thread lebt länger als ein Job
 
 ```c
-void Heartbeat(void *arg) {
-    (void)arg;
+/* C: Eintrittsfunktion; Ausschnitt, noch ohne Zeithelfer */
+void Heartbeat(void *argument)
+{
+    (void)argument;
     for (;;) {
-        /* Arbeit, dann osDelay / osDelayUntil */
+        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+        osDelay(period_ticks);
     }
 }
 ```
 
-::: notes
-Die Signatur `void Heartbeat(void *arg)` ist die Eintrittsfunktion eines Threads. `arg` ist ein frei nutzbarer Zeiger, den `osThreadNew` übergibt. `(void)arg` unterdrückt nur die Warnung, dass das Argument unbenutzt ist. `for (;;)` ist die Endlosschleife. Die Task besitzt einen eigenen Fortsetzungszustand und wartet regelmäßig über die RTOS-API. Sie ist keine endliche `step`-Funktion mehr.
-
-Ein gewöhnliches C-`return` beendet eine FreeRTOS-Task nicht zuverlässig korrekt. Nativ beendet `vTaskDelete(NULL)` die laufende Task. In CMSIS übernimmt das `osThreadExit`. Eine Rückkehr aus der Eintrittsfunktion führt portabhängig in eine definierte Fehlerroutine, nicht zwingend in den HardFault. Der gespeicherte Program Counter liegt im Kontextframe auf dem Stack. Der TCB verweist auf diesen Kontext, er enthält den PC nicht als loses Feld.
-
-Der TCB enthält die Verwaltungsdaten, die der Kernel für diese Task benötigt.
-:::
-
-## Der Task Control Block (TCB) in FreeRTOS
-
-- `pxTopOfStack`: Oberkante des gesicherten Kontexts
-- Listenelemente: Ready, Delayed, …
-- `uxPriority`: nativ `UBaseType_t`, nicht pauschal `uint8_t`
-- CMSIS sieht `osPriority_t`; der Wrapper bildet ab und kann Werte ablehnen
+Eine Schleifeniteration: Aktion und Warten. Der Thread bleibt bestehen.
 
 ::: notes
-TCB steht für Task Control Block, das Verwaltungsobjekt einer Task. `pxTopOfStack` speichert den Stackzeiger auf den gesicherten Kontext. Die Listenelemente hängen die Task in Ready- oder Wartelisten ein. `uxPriority` ist die native Priorität. Der Typ ist im Port ein `UBaseType_t`, nicht pauschal `uint8_t`. Felder und Größe hängen von Version und Optionen ab.
+Der C-Code zeigt die Eintrittsfunktion eines Threads, keinen vollständigen Firmwarestart. Heartbeat ist der Funktionsname. argument ist der Zeiger, den die Threadanlage als frei wählbares Argument übergibt; die Umwandlung zu void kennzeichnet ihn als absichtlich unbenutzt. for mit zwei leeren Bedingungen ist eine Endlosschleife. Die Variable period_ticks muss vor der Verwendung mit einer positiven Tickzahl initialisiert sein; ihre Umrechnung erklären wir später.
 
-Der laufende Process Stack Pointer, PSP, kann sich gegenüber dem zuletzt gespeicherten Wert verändern. Beim Wechsel wird er wieder in den TCB geschrieben. Der Main Stack Pointer, MSP, gehört zu Handlern und zum Startkontext. CMSIS-Prioritätssymbole bildet der Wrapper auf native Werte ab und kann unpassende Werte ablehnen. Drei Threads haben drei Taskstacks und drei TCBs, aber keinen eigenen Prozessor.
+HAL heißt Hardware Abstraction Layer, Hardware-Abstraktionsschicht. HAL_GPIO_TogglePin schaltet einen General-Purpose Input/Output, also einen allgemeinen Ein-/Ausgangspin, um. GPIOE ist Port E und GPIO_PIN_1 dessen Pin 1; im Labor ist dort die gelbe Leuchtdiode angeschlossen. osDelay ist der CMSIS-RTOS2-Warteaufruf für relative Kernelticks. Er blockiert den Thread und kehrt später zurück, sodass die nächste Schleifeniteration beginnt.
 
-Wie viel Speicher jeder Stack benötigt, muss bewusst geplant werden.
+Eine einzelne periodische Aktivierung ist ein Job. Der Thread besteht über viele Jobs hinweg und besitzt seinen eigenen Fortsetzungszustand. Ein normales return ist hier kein geplantes Threadende. Unsere Labor-Threads bleiben bestehen und warten wiederholt. Das Beispiel nutzt zunächst relatives Warten; für einen stabilen periodischen Sollplan ersetzen wir es später durch ein absolutes Ziel.
 :::
 
-## Speichermanagement: Der Stack
+## Freigabe, Start und Fertigstellung eines Jobs
 
-- Lokale Variablen und Aufrufe liegen auf dem **Task-Stack**
-- Hardware-Frame: R0–R3, R12, LR, PC, xPSR; Software zusätzlich R4–R11, portabhängig FPU
-- 128 Einträge `StackType_t` × 4 Byte = **512 Byte**
-- CMSIS `stack_size = 512` bedeutet **512 Byte**, nicht 512 Wörter
-- Cube-Feld gegen den generierten Wert prüfen
+Papierbeispiel für einen Heartbeat-Job:
+
+| Zeitpunkt | Wert | Bedeutung |
+|---|---:|---|
+| Freigabe $r$ | 4 ms | darf ab jetzt arbeiten |
+| Start $s$ | 5 ms | erhält tatsächlich den Prozessor |
+| Fertigstellung $f$ | 6 ms | Aktion beendet |
+| Absolute Deadline $d=r+D$ | 8 ms | letzte zulässige Fertigstellung |
+
+$R=f-r=2\,\mathrm{ms}$; Startverzögerung $s-r=1\,\mathrm{ms}$.
 
 ::: notes
-Ein Stack ist der Speicher für Aufrufe und gesicherten Zustand. Verschachtelte Aufrufe erhöhen den Bedarf. Der Compiler kann lokale Werte auch in Registern halten. Sie liegen nicht zwingend im RAM. Der einfache Hardwareframe sichert R0, R1, R2, R3, R12, das Link Register LR, den Program Counter PC und das xPSR, zusammen acht Wörter. Software sichert bei Bedarf zusätzlich R4 bis R11. Ein Gleitkommakontext der FPU, Floating-Point Unit, kommt nur hinzu, wenn der Port ihn mitsichert. Die Unterbrechung eines Threads kann den Hardwareframe auf dem PSP ablegen. Weiterer C-Code des Handlers nutzt danach typischerweise den MSP.
+Ein Job ist eine einzelne Aktivierung einer Aufgabe, hier eine Heartbeat-Aktion. Die Tabelle verwendet das Papiermodell mit einer relativen Deadline D von vier Millisekunden. Alle Werte sind didaktische Annahmen, keine Messung. Die Freigabe r bei vier Millisekunden macht die Aufgabe arbeitsfähig. Der Start s liegt erst bei fünf Millisekunden, weil wir eine Millisekunde vorherige höherpriore Arbeit annehmen. Die Fertigstellung f bei sechs Millisekunden beendet die Aktion.
 
-128 Elemente vom Typ `StackType_t` sind im M4-Port üblicherweise je 4 Byte, also 512 Byte. CMSIS `stack_size = 512` ist bereits die Byteeinheit, nicht 512 Wörter. Das Cube-Feld muss gegen den generierten Wert geprüft werden. Ein statisch reservierter Puffer beweist nicht, dass er tief genug ist.
+Die absolute Deadline d liegt bei r plus D, also vier plus vier gleich acht Millisekunden. Die Antwortzeit R ist f minus r, hier sechs minus vier gleich zwei Millisekunden. Die Startverzögerung s minus r beträgt eine Millisekunde. Im vereinfachten Modell ohne weitere Unterbrechung beträgt der reine Prozessorbedarf f minus s eine Millisekunde. Mit Interrupts oder Präemption wäre diese Gleichsetzung nicht automatisch zulässig; Präemption ist das Verdrängen durch eine andere Aufgabe.
 
-Zusätzlich zum Stack benötigen TCB, Kernel und andere Objekte RAM.
+Der Job hält seine Frist, weil R kleiner oder gleich D ist. Eine spätere Prozessorzuteilung ist daher nicht automatisch eine Deadlineverletzung. Der langlebige Thread kann nach der Fertigstellung bereits wieder auf seine nächste Freigabe warten. Diese Unterscheidungen erklären, warum wir im nächsten Schritt Bereitschaft und tatsächliche Ausführung als getrennte Zustände benötigen.
 :::
 
-## Berechnung des RAM-Bedarfs
+## Drei Zustände beantworten drei Fragen
 
-Annahme, ausdrücklich nicht die Map-Datei: TCB ≈ 80 Byte.
+| Zustand | Bedeutung | Wird ausgewählt? |
+|---|---|---|
+| Ready | Arbeit möglich, wartet auf Prozessor | ja, nach Priorität |
+| Running | gerade zugeteilter Thread | bereits ausgewählt |
+| Blocked | wartet auf Zeit oder Ereignis | nein |
 
-| Position | Byte |
-|----------|-----:|
-| Stack 512 + TCB 80 | 592 |
-| Drei Threads 512 / 1024 / 1024 + 3×80 | **2800** |
-
-Dazu, oft **andere** Pools: Idle, Timer-Task, Queues, Heap-Metadaten, Alignment, MSP.
-
-- Das gesamte H755-SRAM ist kein frei zusammenhängender CM4-Heap
-- Dynamische Anlage kann scheitern; statische Reservierung verlagert die Planung nach vorn
+Auf einem Kern höchstens ein zugeteilter Thread; Interrupts können ihn unterbrechen.
 
 ::: notes
-Ein Thread mit 512 Byte Stack und einem angenommenen TCB von 80 Byte braucht 592 Byte. Drei Lehrthreads mit 512, 1024 und 1024 Byte Stack plus dreimal 80 Byte ergeben 512+1024+1024+240 = 2800 Byte. Die 80 Byte sind eine Lehrannahme. Der tatsächliche TCB hängt von Version und Optionen ab. Idle-Task, eine optionale Timer-Task, Queue-Objekte, Heap-Metadaten, Alignment und der MSP kommen hinzu und liegen oft in anderen Bereichen.
+Ready bedeutet ausführungsbereit: Die Aufgabe könnte weiterarbeiten, bekommt aber möglicherweise noch keine Prozessorzeit. Running bedeutet, dass der Scheduler, also die Auswahlfunktion des Betriebssystems, diesem Thread aktuell den Prozessor zugeteilt hat. Blocked bedeutet, dass eine Wartebedingung noch nicht erfüllt ist. Ein wartender Thread wird bei der Auswahl übergangen, unabhängig davon, wie hoch seine Priorität ist.
 
-Der STM32H755 hat mehrere SRAM-Bereiche, nicht einen automatisch frei zusammenhängenden CM4-Heap. `configTOTAL_HEAP_SIZE` reserviert einen Heap. Taskblöcke, die darin liegen, dürfen nicht noch einmal als unabhängiger RAM addiert werden. Statische Puffer außerhalb des Heaps zählen separat. Die Zuordnung steht im Linkerskript und in der Map.
+Die Ereignis-Task ist deshalb zu Beginn Blocked. Heartbeat kann laufen, obwohl die Ereignis-Task höher priorisiert ist. Nach dem periodischen Warteaufruf ist auch Heartbeat Blocked, sodass HeavyMath rechnen kann. Wichtig ist die Trennung von Ready und Running: Eine abgelaufene Wartezeit erlaubt die Ausführung, garantiert aber noch nicht deren Beginn.
 
-Statische und dynamische Anlage verschieben die Reservierung an unterschiedliche Stellen.
+Ein Interruptbehandler kann den zugeteilten Thread unterbrechen. Dabei rechnen keine zwei Threads gleichzeitig auf demselben Kern. In einfachen Taskzustandsskizzen bleibt der unterbrochene Thread der zugeteilte Running-Kontext, während die tatsächliche Prozessorbelegung vorübergehend Interruptarbeit zeigt. Im nächsten Bild kennzeichnen wir die Übergänge zwischen den drei Grundzuständen; weitere Verwaltungszustände werden hier bewusst nicht benötigt.
 :::
 
-## Speicherallokation: Statisch vs. Dynamisch
-
-- Dynamisch: `osThreadNew` kann `NULL` liefern
-- Statisch: Speicher ist vorher da, Stacktiefe bleibt eine Messfrage
-- Große Puffer brauchen Eigentümer und Lebensdauer
-- Eine globale Variable ist keine automatische Safety-Lösung
-- MPU-Isolation nur mit dem dafür gebauten Port und passender Konfiguration
-
-::: notes
-Dynamisch reserviert `osThreadNew` Stack und Verwaltungsobjekt bei der Anlage und kann `NULL` liefern, wenn die Reservierung scheitert. Statisch müssen dauerhaft lebende Puffer für Stack und TCB schon vorher existieren, mit passender Größe, Alignment und aktivierter Unterstützung `configSUPPORT_STATIC_ALLOCATION`. Ein lokales Array in der Anlagefunktion stirbt beim Verlassen der Funktion und taugt nicht als späterer Taskstack. Globale Puffer leben lang genug, lösen aber weder Zugriffskonflikte noch eine Sicherheitsanforderung.
-
-Heap-Erschöpfung ist zunächst ein behandelbarer Anlagefehler, kein zwangsläufiger HardFault. Eine MPU-Isolation braucht einen dafür gebauten Port und einen passenden Entwurf. Ein eigener Stack allein isoliert nicht.
-
-Ist der Speicher korrekt reserviert und die Task angelegt, ist sie noch nicht ständig aktiv. Der Kernel führt sie durch Zustände, die festlegen, ob sie ausgeführt werden darf.
-:::
-
-## Das FreeRTOS Zustandsmodell
+## Zustandswechsel: bereit werden ist noch nicht laufen
 
 ```{.plantuml}
 @startuml
@@ -405,80 +232,91 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
 skinparam StateBackgroundColor #FFFFFF
 skinparam StateBorderColor #E5E5EA
-[*] --> Ready
-Ready --> Running : Dispatch
-Running --> Ready : Präemption oder Yield
-Running --> Blocked : Delay, Flag, Queue
-Blocked --> Ready : Timeout oder Ereignis
-Ready --> Suspended : vTaskSuspend
-Suspended --> Ready : vTaskResume
+[*] --> Ready : angelegt
+Ready --> Running : Scheduler teilt Prozessor zu
+Running --> Ready : höhere Priorität wird bereit
+Running --> Blocked : osDelay / FlagsWait
+Blocked --> Ready : Zeit abgelaufen / Flag gesetzt
 @enduml
 ```
 
-- Suspend ist administrativ, nicht dasselbe wie Warten auf ein Ereignis
-- CMSIS `osThreadState_t` hat **kein** eigenes Suspended; die Abfrage zeigt das oft als Blocked
-- Blocked: der Task führt keine eigenen Befehle aus; Tick und Wakeup kosten trotzdem Zeit
-
 ::: notes
-Die Pfeile bedeuten: Nach der Anlage ist die Task Ready, also ausführungsbereit. Die Auswahl macht sie Running, den aktuell zugeteilten Kontext. Präemption oder Yield legt sie wieder nach Ready. Ein Warteaufruf macht sie Blocked. Ein Ereignis oder Timeout bringt sie zurück nach Ready. Suspend und Resume sind ein eigener administrativer Vorgang und nicht dasselbe wie das sachliche Warten auf ein Flag. Interne Listen und die öffentlich abgefragte CMSIS-Zustandsmenge `osThreadState_t` sind nicht identisch. CMSIS hat in diesem Enum kein eigenes Suspended. Der konkrete Wrapper kann einen nativen Suspend-Zustand als Blocked anzeigen.
+Die Abbildung ist ein Zustandsdiagramm, keine Zeitachse. Die Kästen sind die Zustände Ready, Running und Blocked; die beschrifteten Pfeile nennen die Ursachen. Ready heißt ausführungsbereit, Running heißt zugeteilt und Blocked heißt wartend. Der Anfangspfeil zeigt die vereinfachte Anlage eines noch nicht wartenden Threads. Erst die Auswahl durch den Scheduler macht aus Ready den zugeteilten Running-Thread.
 
-Je Kern rechnet höchstens ein Taskkontext. Interrupt- und Kernelarbeit ist davon getrennt.
+osDelay ist ein relativer Zeitwarteaufruf. FlagsWait steht verkürzt für osThreadFlagsWait, das Warten auf Hinweisbits des eigenen Threads. Ein solcher Aufruf führt von Running nach Blocked. Der Ablauf der Wartezeit oder das Setzen eines passenden Bits führt nach Ready. Von dort muss die Prozessorzuteilung noch erfolgen. Wird währenddessen eine höhere Priorität bereit, gelangt der verdrängte Thread zurück nach Ready und bewahrt seinen Fortschritt.
 
-Frage: Ist Ready schon Running? Nein. Ready erlaubt die Ausführung, der Scheduler muss die CPU noch zuteilen.
-
-Zunächst betrachten wir den Zustand, in dem der Thread eigene Befehle ausführt.
+Administrative Vorgänge wie Suspendieren oder Löschen sind nicht Teil dieses Grundbilds. Insbesondere ist Blocked kein Fehlerzustand. Verständnisfrage: Die Wartezeit einer niedrigen Aufgabe endet, während eine höhere dauerhaft rechnet. Wohin wechselt sie? Nach Ready; sie bleibt dort, bis die Auswahl ihr tatsächlich Zeit zuteilt.
 :::
 
-## Der „Running“-Zustand
+## Welche Aufgabe läuft als Nächstes?
 
-- Genau ein Thread hat die CPU
-- Idle rechnet, wenn niemand sonst Ready ist
-- `HAL_Delay` ist in der üblichen HAL ein Busy-Wait: Zustand bleibt Running, höherpriore Threads können trotzdem präemptieren
-- Busy-Wait ist Last, kein automatisches „Echtzeit zerstört“ — im Labor trotzdem `osDelay`
+1. Wartende Aufgaben aus der Auswahl ausschließen
+2. Höchste bereite Taskpriorität auswählen
+3. Ihren Kontext auf dem Prozessor fortsetzen
 
-::: notes
-Running ist der Taskkontext, dem die CPU gerade gehört. Eine ISR kann ihn unterbrechen. Dadurch rechnet kein zweiter Thread parallel. Die Handlerbefehle gehören zur Interruptarbeit, nicht zu einem zweiten Running-Thread. Wenn kein höherpriorer Anwenderthread Ready ist, kann die Idle-Task laufen.
-
-`HAL_Delay` wartet in der üblichen HAL aktiv auf deren Zeitbasis. Der Thread wird dadurch nicht über die Kernel-Warte-API Blocked. Er bleibt ausführungsbereit und kann von höheren Threads oder IRQs unterbrochen werden. Eine Zustandsskizze mit Running beschreibt den Taskkontext. Während des Handlers führt die CPU dessen Befehle aus.
-
-Andere ausführungsbereite Threads befinden sich in Ready.
-:::
-
-## Der „Ready“-Zustand
-
-- Will rechnen, wartet auf Zuteilung
-- Nach Timeout kann ein höherpriorer Thread nach IRQ-Ende und PendSV **sofort** laufen
-- Ready heißt nicht „noch einen ganzen Tick warten“
-- Maskierung oder eine laufende höhere ISR verzögern den Wechsel
+- Höhere bereite Priorität verdrängt die laufende niedrigere
+- Nicht jede Tickgrenze erzeugt einen Wechsel
+- Ereignisse können Wechsel auch zwischen Ticks auslösen
 
 ::: notes
-Ready bedeutet, dass keine bekannte Wartebedingung die Ausführung verhindert. Der Scheduler muss trotzdem CPU-Zeit zuteilen. Ein niedriger Ready-Thread wartet, solange ein höherer Running ist. Wird ein höherpriorer Thread durch Timeout oder Flag bereit, kann der Wechsel bei der nächsten zulässigen Gelegenheit erfolgen. Er muss nicht auf den nächsten ganzen Tick warten.
+Die Regeln gelten für unseren präemptiven FreeRTOS-Betrieb mit festen Prioritäten und einem Kern. Präemptiv bedeutet, dass der laufende Thread ohne eigene Rückkehr verdrängt werden kann. Eine Taskpriorität beschreibt ihre Rangfolge gegenüber anderen Tasks. Entscheidend ist nicht die höchste angelegte, sondern die höchste ausführungsbereite Priorität. Eine hoch priorisierte Aufgabe in Blocked gehört nicht zur Ready-Auswahl.
 
-Die Dispatcherverzögerung beginnt, wenn der Thread Ready wird, und endet, wenn seine nächste Anweisung läuft. Maskierung, höhere IRQs und andere bereite Arbeit verlängern dieses Intervall. Es ist keine pauschale Millisekunde Wechselkosten.
+Im Normalbetrieb wartet die Ereignis-Task auf den Taster. Heartbeat wird periodisch bereit und verdrängt die niedrigere HeavyMath-Aufgabe. Nach seinem Warteaufruf übernimmt HeavyMath wieder. Ein Kernel-Tick ist die periodische Zeiteinheit des Betriebssystems. Er kann abgelaufene Wartebedingungen erkennen; wenn daraus keine neue Auswahl folgt, läuft derselbe Thread weiter.
 
-Blocked ist dagegen noch nicht ausführungsbereit.
+Ein zugelassenes Interrupt-Ereignis kann ebenfalls eine höhere Aufgabe bereit machen. Deren Start muss dann nicht bis zum nächsten Tick warten, wohl aber bis zum Ende erforderlicher Interrupt- und Kontextwechselarbeit. Die abstrakte Auswahlregel aus Vorlesung 2 bleibt somit erhalten. Das RTOS ergänzt die technische Fähigkeit, den ausgewählten Kontext zu unterbrechen und fortzusetzen.
 :::
 
-## Der „Blocked“-Zustand (Die Magie des RTOS)
+## Die Ready-Auswahl gemeinsam durchführen
 
-- Eigene Auslastung des wartenden Threads: keine Instruktionen
-- Gesamt-CPU kann durch HeavyMath trotzdem voll sein
-- `osDelay` / `osThreadFlagsWait` blockieren; `HAL_Delay` nicht
-- Aus der ISR kein `osDelay` und kein Mutex-Warten
+Momentaufnahme, strikte Prioritätsordnung:
+
+| Aufgabe | Priorität | Zustand |
+|---|---|---|
+| Ereignis-Task | hoch | Blocked |
+| Heartbeat | mittel | Ready |
+| HeavyMath | niedrig | Ready |
+
+1. Wer erhält den Prozessor?
+2. Tasterhinweis kommt: Welche Auswahl folgt?
+3. Ereignis-Task wartet erneut: Wer darf fortsetzen?
 
 ::: notes
-Blocked heißt: Der Thread wartet auf ein Delay oder ein Thread-Flag und führt keine eigenen Instruktionen aus. Der Kernel merkt sich die Bedingung und kann andere Ready-Threads wählen. Dass HeavyMath die CPU voll auslastet, widerspricht dem Blocked-Zustand von Heartbeat nicht. Ticks und das Aufwecken kosten trotzdem Kernelzeit. „Keine eigenen Befehle“ ist nicht „keine Kernelarbeit“.
+Ready heißt ausführungsbereit und Blocked heißt wartend. Die Tabelle ist eine Momentaufnahme, keine vollständige Zeitachse. Wir nehmen einen präemptiven Kernel mit drei verschiedenen Prioritäten und zulässigen Kontextwechseln an. Präemptiv bedeutet, dass die laufende niedrigere Aufgabe ohne ihre freiwillige Rückkehr verdrängt werden kann.
 
-`osDelay` und `osThreadFlagsWait` sind passende Warteaufrufe im Thread. `HAL_Delay` lässt den Thread bereit und verbraucht aktiv Zeit. Eine ISR darf weder `osDelay` benutzen noch auf einen Task-Mutex warten.
+Die erste Auswahl fällt auf Heartbeat. Die Ereignis-Task hat zwar die höchste angelegte Priorität, ist aber Blocked und gehört nicht zur Auswahl. HeavyMath ist bereit, hat jedoch die niedrigere Priorität. Zweitens macht ein Tasterhinweis die Ereignis-Task Ready. Nach der erforderlichen Interrupt- und Wechselarbeit erhält sie als höchste bereite Aufgabe den Prozessor. Der Heartbeat-Kontext wird gesichert, damit er fortgesetzt werden kann; seine Bereitschaft geht dadurch nicht verloren.
 
-Die Zustandszeitachse kombiniert diese drei Fälle in einem Ablauf.
+Drittens blockiert die Ereignis-Task nach ihrer kurzen Reaktion wieder. Solange Heartbeat seine Aktion noch nicht beendet und seinen Warteaufruf nicht ausgeführt hat, läuft Heartbeat weiter. Erst nach dessen Blockieren kommt HeavyMath zum Zug. Die Fragen verlangen keine Kenntnis einer internen Listenimplementierung. Entscheidend sind allein die Wartebedingungen und die höchste verbleibende Priorität. Genau diese Auswahl wiederholt sich in der folgenden Zeitachse.
 :::
 
-## Visualisierung: Task-Zustände im Zeitverlauf
+## Eine Zeitachse für das Beispiel
 
-A höher als B. A läuft, ruft Delay, B läuft, A wird Ready und läuft nach zulässigem Wechsel wieder.
+Papiermodell: Heartbeat-Periode $4\,\mathrm{ms}$, Aktionszeit $1\,\mathrm{ms}$; Tasterereignis bei $2\,\mathrm{ms}$, Reaktion $1\,\mathrm{ms}$. Wechsel- und Interruptkosten hier $0$. HB = Heartbeat, HM = HeavyMath, E = Ereignis-Task.
 
 ```{.plantuml}
 @startuml
@@ -486,205 +324,136 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-robust "Task A" as A
-robust "Task B" as B
-concise "CPU" as CPU
+concise "CPU (ms)" as CPU
 @0
-A is Running
-B is Ready
-CPU is A
+CPU is HB
+@1
+CPU is HM
 @2
-A is Blocked
-B is Running
-CPU is B
+CPU is E
+@3
+CPU is HM
+@4
+CPU is HB
 @5
-A is Running
-B is Ready
-CPU is A
+CPU is HM
+@8
+CPU is HB
+@9
+CPU is HM
+@10
+CPU is Ende
 @enduml
 ```
 
-- Bei $t = 5$ rechnet A, nicht „A wartet noch bis $t = 6$“
-- Kurze PendSV-Zeit im Detail denken, nicht als 1-ms-Balken messen
-
 ::: notes
-A ist höher priorisiert als B. Von 0 bis 2 ist A Running und B Ready, die CPU zeigt A. Bei 2 blockiert A. B wird Running und behält die CPU bis 5. Bei 5 wird A wieder bereit und übernimmt, weil der Wechsel in diesem idealisierten Bild ohne extra aufgelöste Kosten gezeichnet ist. Deshalb steht die Zustandsspur von A ab 5 auf Running und B wieder auf Ready. Die CPU-Spur lautet A, B, A. Alle Spuren gehören zum selben Kern und zum selben Zeitbezug.
+CPU steht für Central Processing Unit, die zentrale Verarbeitungseinheit. Die Abbildung zeigt ausschließlich deren Belegung auf dem betrachteten Kern. Die horizontale Achse ist Zeit in Millisekunden. HB bezeichnet Heartbeat, HM HeavyMath und E die Ereignis-Task. Heartbeat wird bei 0, 4 und 8 Millisekunden freigegeben und arbeitet jeweils eine Millisekunde. Die Ereignis-Task wartet zunächst; bei 2 Millisekunden wird sie bereit und arbeitet bis 3 Millisekunden. HeavyMath ist dauerhaft bereit und füllt die übrigen Intervalle. Der rote Signalverlauf gehört zum einheitlichen Diagrammstil, nicht zu einer zusätzlichen Prioritätsskala.
 
-Ein Balken von einer Millisekunde wäre keine gemessene PendSV-Dauer. Kurze Wechselkosten gehören auf eine eigene Detailachse.
+Wir nehmen alle Kontextwechsel- und Interruptkosten mit null an und zeichnen deshalb den Wechsel unmittelbar am Ereignis. Das ist eine Modellrechnung, keine Boardmessung. Im Labor gilt weiterhin die Periode von 500 Millisekunden. Die kurzen Papierwerte dienen der übersichtlichen Rechnung.
 
-Die Zeitachse zeigt, dass A nach dem Warten wieder B verdrängt. Verantwortlich dafür ist die Auswahl der höchsten ausführungsbereiten Priorität.
+Von 0 bis 10 Millisekunden bekommt Heartbeat insgesamt drei Millisekunden, die Ereignis-Task eine und HeavyMath sechs. Die Unterbrechung bei 2 Millisekunden macht aus HeavyMath Ready, nicht Blocked: Seine Arbeit wäre möglich, aber die höhere Priorität erhält den Prozessor. Das Beispiel verbindet Zustände und Auswahl und bereitet die selbstständige Papieraufgabe vor.
 :::
 
-## FreeRTOS Scheduler-Konfiguration
+## Prüfen Sie die Zustände selbst
 
-- Höchste nichtleere Ready-Priorität gewinnt
-- Lineare Suche oder Bitmap. Das umschaltende Makro, nur der Lesbarkeit halber umbrochen:
+Im vorigen Papiermodell:
 
-```text
-configUSE_PORT_OPTIMISED_
-TASK_SELECTION
-```
-
-- Das ist ein Bezeichner. Deshalb keine universelle Taktzahl für den Scheduler
-- `configMAX_PRIORITIES` und der CMSIS-Wrapper gemeinsam prüfen
+1. Welche Zustände haben die drei Tasks bei $t=1{,}5\,\mathrm{ms}$?
+2. Welche Zustände haben sie bei $t=2{,}5\,\mathrm{ms}$?
+3. Taster zusätzlich genau bei $t=4\,\mathrm{ms}$: Wann beginnt Heartbeat?
+4. Bleibt seine Deadline $D=4\,\mathrm{ms}$ eingehalten?
 
 ::: notes
-Der Scheduler wählt die höchste Prioritätsstufe, deren Ready-Liste nicht leer ist. Bei der normalen Suche geht er die Stufen durch. Die optimierte Variante nutzt eine Bitmap und findet die höchste gesetzte Stufe schneller. Welcher Weg aktiv ist, steuert das eine Makro `configUSE_PORT_OPTIMISED_TASK_SELECTION`. Auf der Folie ist der Name nur umbrochen, damit er im Kasten bleibt. Aus der Datenstruktur folgt keine universelle Zykluszahl, weil Port, Speicher und Compiler dazukommen.
+Eine Task ist eine vom Kernel verwaltete Aufgabe. Die Zustände heißen Ready, also ausführungsbereit, Running, also zugeteilt, und Blocked, also wartend. Es gelten weiterhin die Prioritäten Ereignis-Task über Heartbeat über HeavyMath und die vernachlässigten Wechselkosten. Die Fragen lassen sich durch die höchste bereite Priorität beantworten, nicht durch die Reihenfolge in einer Quellcodedatei.
 
-`configMAX_PRIORITIES` ist die Zahl nativer Stufen. Sie muss die Abbildung des CMSIS-Wrappers tragen. Zu wenige Stufen können je nach Version schon bei der Konfiguration oder beim Anlegen zu einer Zurückweisung oder zu zusammengeklemmten Prioritäten führen. Nach dem Anlegen die tatsächliche Priorität abfragen.
+Bei 1,5 Millisekunden ist Heartbeat nach seiner Aktion Blocked, die Ereignis-Task wartet ebenfalls und ist Blocked, HeavyMath ist Running. Bei 2,5 Millisekunden ist die Ereignis-Task Running, Heartbeat noch Blocked und HeavyMath Ready. Für das zusätzliche Ereignis bei 4 Millisekunden nehmen wir an, dass die vorherige Reaktion beendet ist. Heartbeat und die Ereignis-Task werden dann gleichzeitig bereit. Die höhere Ereignis-Task läuft von 4 bis 5; Heartbeat erst von 5 bis 6 Millisekunden.
 
-Bei der Konfiguration muss man die gegensätzliche Zahlenrichtung von Task- und IRQ-Prioritäten beachten.
+Die Antwortzeit des Heartbeat-Jobs ist damit R gleich 6 minus 4 gleich 2 Millisekunden. D bezeichnet seine relative Deadline, hier vier Millisekunden. Weil R kleiner oder gleich D ist, hält dieser Job die Modellfrist ein. Ein verspäteter Start ist also nicht automatisch eine Deadlineverletzung. Mit einer Deadline von einer Millisekunde würde derselbe Job dagegen scheitern.
 :::
 
-## Prioritäten in FreeRTOS (Achtung: Falle!)
+## Starvation: der Kernel arbeitet, eine Task wartet vergeblich
 
-| Skala | Richtung |
-|-------|----------|
-| Native FreeRTOS-Task | größere Zahl = dringender |
-| CMSIS `osPriority_t` | ebenso, andere Symbole |
-| NVIC, logisch | kleinere Zahl = dringendere IRQ |
+Änderung: HeavyMath $>$ Heartbeat; HeavyMath bleibt Ready.
 
-Labor-Ordnung: Emergency $>$ Heartbeat $>$ HeavyMath $>$ Idle.
-
-- Konkrete Abbildung steht in der verwendeten `cmsis_os2.c`
-- „Oft 7 Stufen“ nicht mit einem Wrapper mischen, der mehr CMSIS-Stufen erwartet
-- `osThreadYield`: hohe Priorität bleibt Ready und wird wieder gewählt
+- Heartbeat wird bereit, bekommt aber keine Prozessorzeit
+- `osThreadYield()` in HeavyMath hilft der niedrigeren Priorität nicht
+- Die LED bleibt in ihrem zuletzt erreichten Zustand
+- Keine gemeinsame Ressource: keine Priority Inversion
 
 ::: notes
-Drei Skalen dürfen nicht ineinander umgerechnet werden, ohne den Wrapper zu lesen. Bei nativen FreeRTOS-Taskprioritäten ist die größere Zahl dringender. CMSIS-Symbole `osPriority_t` haben dieselbe Rangrichtung, aber andere Namen und nicht automatisch dieselben Zahlen. Beim NVIC ist die kleinere logische Zahl der dringendere Interrupt. Die Laborordnung ist Emergency über Heartbeat über HeavyMath über Idle. Eine konkrete Zahlentabelle steht nur in der eingesetzten `cmsis_os2.c` und muss nach dem Anlegen geprüft werden.
+Starvation bedeutet Aushungern: Eine ausführungsbereite Task erhält über unbegrenzte Zeit keine Prozessorzeit. Eine Task ist die verwaltete Aufgabe. Mit HeavyMath über Heartbeat wählt der Scheduler immer wieder HeavyMath, solange die noch höhere Ereignis-Task wartet. Heartbeat bleibt nach seiner Freigabe Ready, also ausführungsbereit, statt Running, also tatsächlich zugeteilt. Eine zuvor eingeschaltete Leuchtdiode muss nicht dunkel werden; sie kann einfach eingeschaltet bleiben.
 
-`osThreadYield` fordert eine neue Auswahl an. Solange HeavyMath höher priorisiert und Ready bleibt, hilft das Heartbeat nicht. Yield kann gleichprioren Threads eine Gelegenheit geben. `configUSE_TIME_SLICING` betrifft den Gleichstand innerhalb einer Stufe und ist ein anderer Fall. Eine höhere Emergency-Taskpriorität verlangt nicht, dass sein IRQ oberhalb der erlaubten Kernel-API-Schwelle liegt.
+osThreadYield fordert über CMSIS-RTOS2 eine erneute Auswahl an. CMSIS heißt Common Microcontroller Software Interface Standard, RTOS2 dessen Betriebssystem-Schnittstelle. Yield macht HeavyMath nicht wartend und garantiert keine Zuteilung an niedrigere Prioritäten. Eine gleich hohe bereite Aufgabe wäre ein anderer Fall.
 
-Idle besitzt die niedrigste native Priorität und übernimmt Hintergrundaufgaben des Kernels.
+Priority Inversion, Prioritätsinversion, setzt hier das Warten auf eine gemeinsame Ressource voraus, die eine niedrigere Aufgabe hält. Eine mittlere Aufgabe kann deren Freigabe verzögern. Das kommt in diesem Versuch nicht vor. Deshalb diagnostizieren wir Starvation. Im Labor wird die normale Prioritätsordnung anschließend durch Neukonfiguration und Neustart wiederhergestellt. Das Problem zeigt, warum wir neben Prioritäten auch das Warteverhalten planen müssen.
 :::
 
-## Die Idle-Task (Prio 0)
+## Eine falsche Priorität gezielt reparieren
 
-- Idle hat die niedrigste native Priorität, muss sie aber nicht allein besitzen
-- Dauerhaft bereites HeavyMath **oberhalb** Idle verhindert Idle-Lauf, Cleanup und Idle-Schlaf
-- Hooks und das Löschen beendeter Tasks sind konfigurationsabhängig
-- `WFI` ist kein automatischer Standardpfad jeder `FreeRTOSConfig.h`
+HeavyMath $>$ Heartbeat, beide Ready:
+
+| Änderung | Hilft Heartbeat? |
+|---|---|
+| `osThreadYield()` in HeavyMath | ? |
+| HeavyMath unter Heartbeat setzen | ? |
+| HeavyMath zeitweise blockieren | ? |
+
+Welche Änderung erfüllt weiterhin „Hintergrundrechnung nutzt freie Zeit“?
 
 ::: notes
-Der Kernel braucht einen Idle-Thread, damit immer mindestens ein Thread ausgewählt werden kann, wenn alle Anwenderthreads warten. Native Priorität 0 ist die niedrigste Stufe. Andere Tasks dürfen sie ebenfalls benutzen. Idle hat sie nicht exklusiv. Im Normalversuch bleibt HeavyMath oberhalb von Idle dauerhaft Ready. Deshalb kommt Idle nicht zum Zug, und damit auch kein Idle-Hook und kein Aufräumen, das nur im Idle-Kontext läuft. Hooks und das Freigeben gelöschter Taskressourcen sind versions- und konfigurationsabhängig. Es gibt keine unbegrenzte Aufräumgarantie.
+Ready bedeutet ausführungsbereit. HeavyMath ist die Hintergrundrechnung und Heartbeat die periodische Lebensanzeige. Die Ausgangslage ist Starvation, das Aushungern der niedrigeren bereiten Aufgabe. Zur Diagnose verändern wir jeweils genau eine Eigenschaft, damit die Wirkung nachvollziehbar bleibt.
 
-WFI, Wait For Interrupt, und energiearmes Warten entstehen nur bei passender Port- und Anwendungskonfiguration.
+osThreadYield ist der Yield-Aufruf der CMSIS-RTOS2-Schnittstelle. CMSIS steht für Common Microcontroller Software Interface Standard. Yield fordert eine erneute Auswahl an, lässt HeavyMath aber Ready. Deshalb wird dieselbe höchste bereite Priorität erneut gewählt: Diese Änderung hilft Heartbeat nicht.
 
-Wenn die CPU wirklich nichts höherprior Bereites hat, kann Tickless Idle periodische Wakeups reduzieren.
+Eine niedrigere HeavyMath-Priorität hilft unmittelbar. Sobald Heartbeat bereit wird, gewinnt es; HeavyMath nutzt weiter alle Lücken. Das passt zum beabsichtigten Rollenmodell. Zeitweises Betriebssystem-Warten in HeavyMath kann Heartbeat ebenfalls Zeit verschaffen, weil HeavyMath dann Blocked, also wartend, ist. Bei weiterhin höherer HeavyMath-Priorität hängt das Heartbeat-Zeitverhalten jedoch von Häufigkeit und Dauer dieser Lücken ab. Eine beliebig kurze Pause ist kein neuer Fristnachweis.
+
+Ein Kernel ist also nicht falsch, nur weil er die konfigurierte Auswahl korrekt durchsetzt. Die Reparatur muss den Entwurf von Rangfolge und Warteverhalten treffen. Der nächste Fall betrachtet bewusst gleiche Prioritäten; diese dürfen nicht mit der hier benutzten strikten Ordnung verwechselt werden.
 :::
 
-## Strom sparen: Tickless Idle
+## Gleiche Priorität und Idle: zwei andere Fälle
 
-- Tickless unterdrückt geeignete Kernel-Ticks, wenn alle relevanten Threads warten
-- Der übliche CM4F-Port verlängert SysTick und bucht die vergangene Zeit, unter anderem mit `vTaskStepTick`. Nicht zusätzlich noch einmal korrigieren
-- SysTick hat 24 Bit. Die Reichweite hängt von seiner Eingangsfrequenz ab, nicht vom MCU-Maximum
-- Lehrrechnung: etwa $167{,}8\,\mathrm{ms}$ bei $100\,\mathrm{MHz}$, $69{,}9\,\mathrm{ms}$ bei $240\,\mathrm{MHz}$, $83{,}9\,\mathrm{ms}$ bei der Reihenannahme $200\,\mathrm{MHz}$
-- Der Port begrenzt die Zahl unterdrückbarer ganzer Ticks zusätzlich. Ein Delay von $500\,\mathrm{ms}$ kann mehrere Intervalle umfassen
-- LPTIM oder RTC brauchen eine eigene Integration. Deep Sleep braucht PWR, Takt und beide Kerne
-- Ein weiterlaufender TIM6 kann trotzdem wecken. HeavyMath lässt Idle im Normalversuch nicht laufen
+- Gleich hohe Ready-Tasks: Verhalten hängt von Zeitscheiben-Konfiguration ab
+- `osThreadYield()` kann einer gleich hohen bereiten Task Gelegenheit geben
+- Idle ist die Kernel-Aufgabe mit niedrigster nativer Priorität
+- Dauerbereites HeavyMath oberhalb von Idle verhindert dessen Ausführung
+
+Tickless Idle ist eine spätere Vertiefung.
 
 ::: notes
-Tickless Idle setzt voraus, dass alle relevanten Anwenderthreads warten und der Kernel den nächsten benötigten Termin kennt. Der Port verlängert oder unterdrückt passende Tickereignisse. Eine zulässige Quelle weckt den Kern. Die vergangene Kernelzeit wird konsistent verbucht. Im passenden Standard-Port geschieht das bereits, unter anderem über `vTaskStepTick`. Eine zweite Korrektur würde die Zeit doppelt zählen. Ein neuer Low-Power-Port muss denselben Zeitfortschritt selbst herstellen.
+Ready heißt ausführungsbereit. Native Priorität bezeichnet die FreeRTOS-interne Zahlenstufe; größere Zahlen bedeuten höhere Dringlichkeit. Gleiche Prioritäten sind kein Fall der vorigen strikten Ordnung. configUSE_TIME_SLICING legt in FreeRTOS fest, ob bereite Aufgaben derselben Stufe durch Tick-Zeitscheiben rotieren. Andere Ereignisse und explizites Yield können ebenfalls zu einer neuen Auswahl führen. osThreadYield ist der Schnittstellenaufruf dafür; daraus entsteht keine allgemeine Fairnessgarantie für niedrigere Stufen.
 
-SysTick ist ein 24-Bit-Zähler. Seine Reichweite ist ungefähr $2^{24}$ geteilt durch die eigene Eingangsfrequenz, nicht durch den maximalen MCU-Takt. Bei 100 MHz sind das etwa 167,8 ms, bei 240 MHz etwa 69,9 ms. Unter der Reihenannahme Cortex-M4 mit 200 MHz und SysTick gleich Kerntakt sind es etwa 83,9 ms je Zählerintervall. Der Port begrenzt zusätzlich, wie viele ganze Ticks auf einmal unterdrückt werden. Ein Delay von 500 ms kann deshalb mehrere Intervalle umfassen und ist nicht unmöglich. LPTIM, ein Low-Power-Timer, oder die RTC, die Real-Time Clock, brauchen eine passende Integration. Deep Sleep braucht zusätzlich den Power-Control-Block, Takt und beide Kerne. Ein weiterlaufender TIM6 kann trotzdem wecken. HeavyMath verhindert die Idle-Voraussetzung, deshalb demonstriert der Normalversuch Tickless Idle nicht.
+Idle bedeutet Leerlauf. Die Idle-Task ist eine Kernelaufgabe, die mit der niedrigsten nativen Priorität existiert, damit auch ohne bereite Anwenderaufgabe ein ausführbarer Kontext vorhanden ist. Sie kann konfigurationsabhängig Aufräumarbeiten übernehmen. HeavyMath ist im Normalversuch darüber und ständig bereit. Daher läuft Idle nicht und die hohe Gesamtauslastung ist erwartbar, obwohl Heartbeat oft wartet.
 
-Tickless verändert die Zahl tatsächlicher Tickinterrupts, hält aber den logischen Zeitfortschritt konsistent. Im normalen Betrieb sehen wir zunächst, welche Granularität die konfigurierte Tickrate vorgibt.
+Tickless Idle bezeichnet das Unterdrücken geeigneter periodischer Kernel-Ticks in längeren Leerlaufphasen. Es setzt passende Bedingungen und eine Timerintegration voraus; das Einschalten allein spart bei unserem dauerbereiten HeavyMath keine Leerlaufenergie. Detaillierte Energiesparrechnung ist für das Grundmodell heute nicht notwendig.
 :::
 
-## Der RTOS-Herzschlag: Die Tick-Rate
+## Zeitscheiben bei gleicher Priorität
 
-- `configTICK_RATE_HZ` setzt die **Kernel**-Tickperiode, nicht die Wanduhr allein
-- `osDelay(1)` endet an einer Tickgrenze
-- Aufruf bei $0{,}1\,\mathrm{ms}$: Ready bei $1\,\mathrm{ms}$ (Dauer $0{,}9\,\mathrm{ms}$)
-- Aufruf bei $0{,}9\,\mathrm{ms}$: Ready bei $1\,\mathrm{ms}$ (Dauer $0{,}1\,\mathrm{ms}$)
-- Danach kann höherpriore Arbeit den echten Start noch schieben
-
-::: notes
-Der Kernel verwaltet Wartezeiten in Ticks. `configTICK_RATE_HZ` legt fest, wie viele solcher Zeitschritte pro Sekunde vorgesehen sind. Bei 1000 Hz liegt zwischen zwei Tickgrenzen eine Millisekunde. Das heißt nicht, dass jeder Aufruf mit einem Tick eine vollständige Millisekunde Wandzeit wartet.
-
-In einem idealen Raster mit Grenzen bei 0, 1, 2 und 3 ms bleibt bei `osDelay(1)` um 0,1 ms eine Restzeit von 0,9 ms bis zur Grenze bei 1 ms. Ein Aufruf erst bei 0,9 ms wartet nur noch 0,1 ms. `osDelay` erwartet eine Tickzahl. Die Zahlenwerte stimmen mit Millisekunden nur bei einer passenden Tickrate überein.
-
-Während des Delays ist der Thread Blocked. Läuft die Zeit ab, wird er Ready, nicht zwangsläufig im selben Moment Running. Höherpriore Arbeit, ein Interrupt oder eine Maskierung können die Zuteilung noch schieben. Eine höhere Tickrate verkleinert die Granularität und kann zusätzliche Tickarbeit erzeugen. Sie ist keine Genauigkeit der physikalischen Uhr. Die Laborbeispiele dokumentieren die Kernel-Tickfrequenz getrennt von der HAL-Zeitbasis.
-
-Als Nächstes sehen wir, wie Millisekunden so in Ticks umgerechnet werden, dass kleine positive Werte nicht versehentlich zu null werden.
-:::
-
-## Zeit-Umrechnung (Die goldene Regel)
-
-Aufrundender Helfer, nicht `pdMS_TO_TICKS` ungeprüft:
-
-```c
-typedef enum { CONV_OK, CONV_BAD_ARG, CONV_BAD_FREQ, CONV_TOO_FAR } conv_status_t;
-
-conv_status_t ms_to_ticks_ceil(uint32_t ms, uint32_t *out) {
-    uint32_t f = osKernelGetTickFreq(); /* Hz */
-    uint64_t ticks;
-    if (out == NULL || ms == 0) return CONV_BAD_ARG;
-    if (f == 0) return CONV_BAD_FREQ;
-    ticks = ((uint64_t)ms * f + 999u) / 1000u;
-    if (ticks == 0 || ticks > 0x7fffffffu) return CONV_TOO_FAR;
-    *out = (uint32_t)ticks;
-    return CONV_OK;
-}
-```
-
-| ms | 1000 Hz | 100 Hz, ceil |
-|---:|--------:|-------------:|
-| 1 | 1 | 1 |
-| 5 | 5 | 1 |
-| 100 | 100 | 10 |
-| 500 | 500 | 50 |
-
-- Ceil vermeidet 0 Ticks für kleine positive ms, garantiert aber keine Mindest-Wandzeit
-- `pdMS_TO_TICKS` rundet je nach Makro ab: 1 ms oder 5 ms bei 100 Hz können 0 sein
-- `vTaskDelay(0)` yieldet; `osDelay(0)` ist nicht dieselbe Warte-API
-
-::: notes
-`ms_to_ticks_ceil` rechnet Millisekunden in Kernel-Ticks. `osKernelGetTickFreq` liefert die Frequenz in Hz. Die Multiplikation läuft in `uint64_t`, damit ein 32-Bit-Zwischenprodukt nicht überläuft. Die Addition von 999 vor der Division durch 1000 rundet nichtnegative Ganzzahlen auf. Bei 1000 Hz werden 1, 5, 100 und 500 ms zu 1, 5, 100 und 500 Ticks. Bei 100 Hz werden dieselben Werte zu 1, 1, 10 und 50 Ticks. Ein Tick bei 100 Hz ist 10 ms. Eine Aufrundung auf einen Tick garantiert deshalb keine Mindestwartezeit von 10 ms, weil der Aufruf auch kurz vor der nächsten Grenze liegen kann.
-
-Erfolg und Fehler sind getrennt. `CONV_BAD_ARG` gilt für einen Nullzeiger oder ms = 0. `CONV_BAD_FREQ` gilt für die Frequenz 0. `CONV_TOO_FAR` gilt, wenn das 64-Bit-Ergebnis 0 wäre oder größer als $2^{31}-1$ ist, die übliche Obergrenze für einen Until-Abstand. Es wird nicht auf einen gerade noch ungültigen Wartewert gesättigt. Ein positives ms ergibt bei Erfolg mindestens einen Tick. `pdMS_TO_TICKS` muss in der eingesetzten Version gelesen werden. Es rundet nicht in jedem Stand auf. `vTaskDelay(0)` hat native Yield-Semantik. `osDelay(0)` ist bei CMSIS kein zulässiger Delay-Parameter.
-
-Außer der Granularität kostet das Umschalten selbst Zeit.
-:::
-
-## Der Context Switch (Overhead-Analyse)
-
-- Lehrannahme 150–300 Zyklen, **kein** Messwert
-- Bei $100\,\mathrm{MHz}$: $1{,}5$–$3\,\text{µs}$
-- 200 Zyklen, 500 Wechsel/s, $100\,\mathrm{MHz}$: $0{,}1\,\%$ CPU, Tick und ISRs extra
-- Hardware-Frame, Software-Register, PSP setzen, EXC_RETURN
-- FPU nur wenn der Port den Kontext mitsichert
-
-::: notes
-Ein Wechsel auf dem M4F sichert zuerst den Hardwareframe des unterbrochenen Threads. Der Port sichert weitere Register und, wenn konfiguriert, den FPU-Kontext. Den PSP schreibt er in den TCB. Danach wählt der Scheduler den nächsten TCB, lädt dessen Kontext, setzt den PSP und kehrt über EXC_RETURN aus der Ausnahme zurück. EXC_RETURN ist eine kodierte Rücksprungkennung, keine gewöhnliche Funktionsadresse. Der Hardware-Eintritt und der spätere Taskwechsel sind zwei Schritte. Der MSP bleibt der Stack für Handler und den Startkontext.
-
-150 bis 300 Zyklen sind eine Lehrannahme, kein Messwert. Bei 100 MHz sind das 1,5 bis 3 µs. Für 200 Zyklen und 500 Wechsel je Sekunde gilt $200 \times 500 / 100\,000\,000 = 0{,}001$, also 0,1 Prozent der CPU. Tickarbeit, IRQs, Cache und Speicherzugriffe stecken in dieser Rechnung nicht automatisch. 100 MHz ist nicht der angenommene M4-Takt der Reihe.
-
-Ein Wechsel kann aus mehreren verschiedenen Ereignissen folgen.
-:::
-
-## Wann wechselt der Scheduler?
-
-- Tick, Yield, Blockieren, oder eine ISR, die einen höheren Thread bereit macht
-- Der Wechsel läuft in PendSV, wenn die IRQ-Priorität das zulässt
-- Nicht jeder Wechsel wartet auf den nächsten Tick
-- SysTick und PendSV im üblichen Port: niedrigste IRQ-Priorität (VL2)
-
-::: notes
-Vier Auslöser sind zu unterscheiden. Ein Tick kann abgelaufene Wartezeiten und, bei Zeitscheibe, einen Gleichstand bearbeiten. Nicht jeder Tick wechselt tatsächlich den Thread. `osThreadYield` fordert eine erneute Auswahl an. Blockieren nimmt den laufenden Thread aus der Ready-Menge, sodass ein anderer gewählt werden muss. Eine zulässige Funktion in einer ISR kann einen höherprioren Thread bereit machen. Der Wechsel wartet dann nicht auf den nächsten Tick.
-
-PendSV wird nur angefordert. Es läuft, wenn seine Ausnahme-Priorität drankommt. Pending heißt anstehend, nicht bereits ausgeführt. Im üblichen M4F-Port liegen SysTick und PendSV auf niedriger IRQ-Priorität. Die konkrete Integration im Projekt ist zu prüfen.
-
-Die wichtigste Laborentscheidung ist, ob ein Thread wartet oder aktiv Zeit verbraucht.
-:::
-
-## vTaskDelay vs. HAL_Delay
+Lehrmodell: A und B gleich hoch, ständig ausführbar; Tick $1\,\mathrm{ms}$, Zeitscheiben aktiv, Start mit A, Zusatzkosten $0$.
 
 ```{.plantuml}
 @startuml
@@ -692,327 +461,261 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-concise "HAL_Delay" as H
-concise "osDelay" as O
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+scale 1 as 120 pixels
+concise "CPU (ms)" as C
 @0
-H is Busy
-O is Blocked
+C is A
+@1
+C is B
+@2
+C is A
 @3
-H is "präemptiert"
-O is "andere oder Idle"
-@6
-H is Busy
-O is wieder
+C is B
+@4
+C is Ende
 @enduml
 ```
 
-- Busy-Wait: eigene Last, Zustand Running, präemptierbar
-- `osDelay`: Blocked, CPU für Ready oder Idle
-- Laborregel für diese Threads: CMSIS-Warten
+Eine niedrigere Ready-Task kommt in diesem Modell weiterhin nicht dran.
 
 ::: notes
-Der Titel nennt die native Funktion `vTaskDelay`. Im CMSIS-Labor verwenden wir `osDelay` und `osDelayUntil`. Die Zeitachse stellt beide Wartearten nebeneinander. `HAL_Delay` prüft in einer aktiven Schleife die HAL-Zeitbasis. Der Thread bleibt ausführungsbereit und kann unterbrochen werden, verbraucht aber selbst CPU, solange er läuft. `osDelay` setzt ihn auf Blocked und gibt anderen Ready-Threads die Gelegenheit. Im Normalversuch nutzt HeavyMath genau diese freigewordene Zeit. Die Gesamtauslastung sinkt deshalb nicht zwingend.
+Die Abbildung zeigt die tatsächliche Prozessorbelegung im vereinfachten Zeitscheibenmodell. A und B sind zwei Aufgaben derselben Prioritätsstufe und bleiben ständig ausführbar: Eine ist Running, also zugeteilt, die andere Ready, also ausführungsbereit. Die horizontale Achse ist Zeit in Millisekunden. Ein Tick, die Kernel-Zeiteinheit, entspricht hier einer Millisekunde. Wir nehmen aktivierte Zeitscheiben, keine dritte gleichpriore Aufgabe und einen Start mit A an.
 
-Eine falsch stehende HAL-Zeitbasis kann `HAL_Delay` hängen lassen. Daraus folgt keine allgemeine Unverträglichkeit von HAL und FreeRTOS. Die Laborwahl trennt die Zeitbasen, wie die nächste Timerfolie zeigt.
+A läuft von null bis eins, B von eins bis zwei, dann wieder A bis drei und B bis vier Millisekunden. Der Wechsel erfolgt hier an jeder Tickgrenze. Das ist keine Aussage, dass jeder Tick in jeder Anwendung einen Kontextwechsel auslösen muss. In FreeRTOS steuert configUSE_TIME_SLICING die Tickrotation gleichpriorer bereiter Aufgaben. Präemption, das Verdrängen, ist im Modell ebenfalls aktiviert. Kosten für Verwaltung und Registerwechsel sind mit null angesetzt.
 
-Blockieren spart die eigenen Warteschleifen. Wenn wir aber nach jeder Arbeit relativ warten, verlängert deren Dauer weiterhin den Startabstand. Absolute Ziele vermeiden diese systematische Addition.
+Eine niedrigere bereite Aufgabe bleibt trotzdem ausgeschlossen, solange auf dieser höheren Stufe jemand bereit ist. Zeitscheiben schaffen also eine Aufteilung innerhalb einer Stufe, keine allgemeine Fairness über alle Prioritäten. Mit deaktivierten Zeitscheiben folgt die eingezeichnete Rotation nicht allein aus den Ticks; Blockieren oder explizites Yield können dennoch neue Auswahlgelegenheiten schaffen. Diese Abbildung ist eine Modellspur, keine aus dem Board gewonnene Messung.
 :::
 
-## Drift-freies Timing: vTaskDelayUntil
-
-Ideales Modell, Tick 1 ms, Störungen 0. Arbeit $2/4/1\,\mathrm{ms}$, danach relatives Delay 10 Ticks:
-
-- Starts $0/12/26/37\,\mathrm{ms}$
-- Absolutes Sollraster $0/10/20/30\,\mathrm{ms}$; die Arbeiten passen hier vor den nächsten Punkt
-- Tatsächliche Starts können $0/10{,}4/20{,}2/30{,}6\,\mathrm{ms}$ sein: Raster gleich, Zuteilung schwankt
-
-```c
-uint32_t next = osKernelGetTickCount();
-uint32_t misses = 0;
-for (;;) {
-    do_work();
-    next += period_ticks;                 /* Wrap in uint32_t */
-    if ((next - osKernelGetTickCount()) >= 0x80000000u) {
-        misses++;                         /* Ziel schon erreicht oder vorbei */
-        next = osKernelGetTickCount() + period_ticks;
-    }
-    if (osDelayUntil(next) != osOK) { Error_Handler(); }
-}
-```
-
-- `osDelayUntil` erwartet den **absoluten** Tick; native `xTaskDelayUntil` hat eine andere Signatur
-- Überlast: Miss zählen und neu synchronisieren oder die Aktivierung verwerfen — keine stille Aufholschleife
-- Grenze der Until-API: Abstand höchstens $2^{31}-1$ Ticks; ein kleinerer Zähler kann nach Wrap in der Zukunft liegen
-
-::: notes
-„Driftfrei“ meint hier ein stabiles Sollraster im Tickmodell, keine exakte physikalische Startperiode. Quarzfehler und Dispatcherverzögerung bleiben. Im idealisierten Beispiel dauert die Arbeit nacheinander 2, 4 und 1 ms, danach folgen relativ 10 Ticks. Die Starts liegen bei 0, 12, 26 und 37 ms, weil die Arbeit zur Pause addiert wird. Ein absolutes Raster setzt die Ziele 0, 10, 20 und 30 ms. Die tatsächlichen Starts 0, 10,4, 20,2 und 30,6 ms zeigen, dass die Zuteilung trotzdem schwanken kann. Alle Zahlen gelten nur in diesem Modell mit 1-ms-Ticks und ohne weitere Störungen.
-
-`next` ist ein absoluter Tick. `osDelayUntil` wartet bis zu diesem Wert. Die native Funktion `xTaskDelayUntil` hat eine andere Signatur und darf nicht denselben Aufruf bekommen. Ein umlaufender 32-Bit-Zähler kann numerisch kleiner und trotzdem in der Zukunft liegen. Der Code prüft den vorzeichenlosen Abstand. Liegt das Ziel schon hinter uns, zählt `misses` eine verpasste Aktivierung, setzt `next` auf jetzt plus Periode und wartet mit `osDelayUntil`, bevor die Schleife die nächste Arbeit startet. Es gibt kein unmittelbares zweites Aufholen. `osError`, `osErrorISR` und ein Parameterfehler sind andere Klassen als ein gezählter Miss. `osErrorParameter` allein beweist den Miss nicht. Die Ursache kann auch ein zu weites Ziel sein.
-
-Auch dieses Raster setzt eine definierte Tickzeit voraus. Die Config-Datei legt die dafür genutzten Kernelfunktionen und Interruptgrenzen fest.
-:::
-
-## Die Datei FreeRTOSConfig.h
-
-- Tickrate, Heap, maximale Prioritäten, Assert, Stack-Overflow-Check
-- `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`: logische API-Schwelle
-- `configMAX_SYSCALL_INTERRUPT_PRIORITY`: derselbe Wert in die Registerbits geschoben
-- Bei vier implementierten Bits wird die logische Schwelle 5 für die Portkonstante zu $5 \ll 4 = \mathtt{0x50}$
-- In diesem Beispiel dürfen logische Stufen 0–4 keine Kernel-API rufen. Stufen 5–15 nur dokumentierte ISR-Operationen
-- CMSIS und HAL bekommen in `SetPriority` typischerweise die logische Zahl. Das illustrative 2+2-Grouping aus VL1 nicht ungeprüft in den FreeRTOS-Port übernehmen
-
-::: notes
-`FreeRTOSConfig.h` schaltet Kernelverhalten, sie ist kein unkommentiertes Makrorätsel. `configTICK_RATE_HZ` setzt die Tickfrequenz. `configTOTAL_HEAP_SIZE` die Heapgröße, wenn dynamisch reserviert wird. `configMAX_PRIORITIES` die Zahl nativer Stufen. `configUSE_PREEMPTION` erlaubt das Verdrängen. `configUSE_TIME_SLICING` teilt gleiche Priorität in Zeitscheiben. `configCHECK_FOR_STACK_OVERFLOW` und `configASSERT` prüfen Annahmen zur Laufzeit. Ein Assert bricht ab, wenn eine vorausgesetzte Bedingung verletzt ist.
-
-Taskpriorität und IRQ-API-Schwelle sind unabhängig. `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` ist die logische Schwelle. `configMAX_SYSCALL_INTERRUPT_PRIORITY` ist dieselbe Schwelle in Registerbitposition. Bei vier implementierten Bits, `__NVIC_PRIO_BITS` gleich 4, wird aus der logischen 5 der Wert $5 \ll 4 = \mathtt{0x50}$. Logische Prioritäten 0 bis 4 dürfen in diesem Beispiel keine Kernel-API rufen. 5 bis 15 nur die dokumentierten ISR-Operationen. `SetPriority` von CMSIS und HAL erwartet typischerweise die logische Zahl. Das 2+2-Grouping aus der NVIC-Einführung wird nicht ungeprüft in den FreeRTOS-Port übernommen.
-
-Die bisher eingeführten Regeln lassen sich nun gemeinsam auf eine periodische Anwendung anwenden.
-:::
-
-## Zusammenfassung: Scheduler und Timing
-
-- Auswahl: höchste bereite Taskpriorität, Kosten konfigurationsabhängig
-- Tickphase erklärt kurze `osDelay(1)`-Reste
-- Until hält das Sollraster, nicht jeden Startzeitpunkt
-- Idle arbeitet nur, wenn niemand darüber dauerhaft Ready ist
-
-::: notes
-Die höchste Ready-Priorität gewinnt. Blockieren nimmt einen Thread aus dieser Menge. Die Tickphase erklärt, warum `osDelay(1)` kürzer als eine volle Tickperiode sein kann. Absolute Ziele halten das Sollraster, nicht jeden tatsächlichen Start. Idle läuft nur, wenn niemand darüber dauerhaft Ready bleibt.
-
-Frage: Hilft Yield dem niedrigen Thread gegen einen hohen, der Ready bleibt? Nein, die Auswahl nimmt wieder den hohen. Frage: Garantiert `osDelay(1)` eine Millisekunde? Nein, nur die Wartezeit bis zur nächsten passenden Tickgrenze. Frage: Garantiert Until einen exakten Start? Nein, nur ein Freigabeziel. Der CPU-Start hängt vom Scheduler ab. Frage: Läuft Idle, wenn HeavyMath dauerhaft Ready bleibt? Nein.
-
-Im Labor nutzen wir diese Mechanismen über die CMSIS-RTOS2-API.
-:::
-
-## FreeRTOS API vs. CMSIS-RTOS v2
-
-- CMSIS-RTOS2 ist der Adapter, den Cube für STM32 erzeugt
-- Weniger direkte Abhängigkeit von `vTask…`, aber nicht jedes RTOS bietet dieselben Objekte
-- Thread-Flags: ein Bit signalisiert; wiederholtes Setzen **zählt nicht** verlustfrei
-- Rückgabe von `osThreadFlagsWait` sind Flag-Bits, Fehler über gesetzte Fehlerbits — nicht mit `osOK` vergleichen
-
-::: notes
-Die native Kernel-API spricht FreeRTOS direkt an. CMSIS-RTOS2 ist die standardisierte Schnittstelle. Ein Adapter, im Cube oft `cmsis_os2.c`, bildet sie auf das Backend ab. Die API ist nicht selbst der Kernel, und die Zahlenabbildung ist versionsabhängig. Eine kleine Zuordnung mit Einheiten: Eine Taskanlage wird zur Threadanlage. Native Stackangaben sind oft Elemente, CMSIS `stack_size` ist Byte. Ein relatives Delay wird zu einem relativen Tickdelay. Until hat nativ eine andere Signatur als das absolute CMSIS-Ziel. Prioritätszahlen sind nicht universell gleich.
-
-Thread-Flags sind Bits eines bestimmten Threads, kein Ereigniszähler. `osThreadFlagsSet` darf nach dem CMSIS-Vertrag aus einer ISR aufgerufen werden, aber nur wenn die FreeRTOS-Port-Priorität Kernelaufrufe erlaubt. `osThreadFlagsWait` gehört in einen Thread. Die Wait-Rückgabe sind Flagbits. Fehler erkennt man am reservierten Fehlerbit, nicht durch Vergleich mit `osOK`.
-
-Welche Adapterdateien tatsächlich erzeugt werden, hängt vom ST-Projektstand ab.
-:::
-
-## STMicroelectronics und CMSIS
-
-- Heute: Kernel auf dem CM4, CMSIS_V2
-- Ab CubeIDE 2.0 oft: CubeMX separat, Projekt importieren
-- Ältere IDE: Device Configuration Tool innen
-- Menüpunkte an der **installierten** Version prüfen, nicht auswendig
-- Generierte Thread-Funktionen können in `main.c` oder `freertos.c` liegen
-
-::: notes
-CMSIS_V2 ist in Cube die Auswahl der CMSIS-RTOS2-Schnittstelle über dem FreeRTOS-Backend. Ab STM32CubeIDE 2.0 konfiguriert und erzeugt STM32CubeMX getrennt. CubeIDE importiert, baut und debuggt. In älteren IDE-Ständen steckt das Device Configuration Tool noch in der IDE. Welche Variante installiert ist, steht im Repository nicht. Nachgesehen werden Kernel-, Wrapper-, CubeH7- und IDE-Stand sowie die generierten Dateien `main.c` und `freertos.c`.
-
-Eine `.ioc` fehlt in den vorliegenden Unterlagen. Ein neu angelegtes Projekt ist deshalb nicht automatisch das bereits verifizierte Kursprojekt.
-
-Die nächste Folie zeigt den eigentlichen API-Code zur Anlage eines Threads.
-:::
-
-## Ein CMSIS-Thread im Code
-
-```c
-osThreadId_t hHb;
-const osThreadAttr_t attrHb = {
-    .name = "Heartbeat",
-    .priority = osPriorityNormal,
-    .stack_size = 512   /* Byte, generierten Wert gegenprüfen */
-};
-
-void app_create(void) {
-    if (osKernelInitialize() != osOK) { Error_Handler(); }
-    hHb = osThreadNew(Heartbeat, NULL, &attrHb);
-    if (hHb == NULL) { Error_Handler(); }
-    if (osKernelStart() != osOK) { Error_Handler(); }
-    /* Erfolg: hier kommt man üblicherweise nicht an */
-}
-```
-
-::: notes
-`hHb` hat den Typ `osThreadId_t` und ist das Handle. `attrHb` ist eine konstante Attributstruktur `osThreadAttr_t`. Die benannten Initialisierer setzen Name, CMSIS-Priorität und Stackgröße. 512 ist hier Byte. Die Struktur erzeugt noch keinen Thread. `osKernelInitialize` bereitet den Kernel vor und liefert `osStatus_t`, bei Erfolg `osOK`. `osThreadNew` erhält Funktionszeiger, Argument und Attribute und liefert das Handle oder `NULL`. Alle drei Laborthreads werden vor dem Start angelegt und geprüft. `osKernelStart` übergibt im Erfolgsfall die Ausführung an den Scheduler und kehrt nicht zum Aufrufer zurück. Eine Rückkehr ist ein Fehler und muss behandelt werden.
-
-Der Code ist ein Anlagegerüst. Er wird nicht zusätzlich neben einen bereits generierten Kernelstart gesetzt.
-
-Der gesamte Startablauf muss Peripherie und IRQ-Freigabe in die richtige Reihenfolge bringen.
-:::
-
-## Starten des Betriebssystems
-
-1. Takt, GPIO, EXTI konfigurieren; Taster-IRQ bleibt aus
-2. `osKernelInitialize` erfolgreich
-3. Alle drei Threads anlegen und Handles prüfen
-4. `osKernelStart` — bei Erfolg keine Rückkehr nach `main`
-5. Emergency gibt EXTI einmalig frei, bevor es auf das Flag wartet
-
-Tickfrequenz kommt aus der Config, nicht automatisch aus „immer 1 ms“.
-
-```c
-void Emergency(void *arg) {
-    (void)arg;
-    if (hEm == NULL) { Error_Handler(); }
-    /* alte Pending-Flags gemäß Startpolitik behandeln */
-    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); /* Pin am Board prüfen */
-    for (;;) {
-        uint32_t flags = osThreadFlagsWait(0x1, osFlagsWaitAny, osWaitForever);
-        if ((flags & osFlagsError) != 0) { Error_Handler(); }
-        /* kurze Reaktion, dann erneut warten */
-    }
-}
-```
-
-Die IRQ-Nummer ist ein Muster. Sie muss zur tatsächlichen EXTI-Leitung des Tasters passen.
-
-::: notes
-Vor dem Kernel müssen Takt, GPIO und die EXTI-Konfiguration stehen. EXTI ist der External Interrupt/Event Controller. Der Taster-IRQ bleibt aus, solange er ein noch ungültiges Handle oder einen noch nicht laufenden Kernel treffen könnte. Danach folgen erfolgreiches `osKernelInitialize`, das Anlegen aller drei Threads und `osKernelStart`. Bei Erfolg gibt es keinen Rücksprung nach `main`, an dem man die EXTI freigeben könnte.
-
-Die Freigabe steht deshalb einmalig am Anfang von Emergency, bevor die Warteschleife beginnt. Der Thread ist der höchstpriore Laborthread und kommt damit zum Zug. Eine Idle-Hook oder ein Thread unterhalb von HeavyMath würde im Normalversuch nicht laufen. Emergency prüft `hEm`, behandelt alte Pending-Flags nach der gewählten Startpolitik und ruft dann `HAL_NVIC_EnableIRQ` mit der zum Taster passenden Leitung auf. `EXTI15_10_IRQn` ist nur ein Muster für Leitungen 10 bis 15, etwa PC13. Die konkrete Leitung muss am Board geprüft werden. Ein unmittelbar danach eintreffendes gültiges Ereignis wird von der anschließenden Wait-Schleife angenommen, statt beim Löschen der Startflags verloren zu gehen.
-
-Der korrekte Ablauf setzt erfolgreiche Anlage und gültige Handles voraus. Wir müssen deshalb verstehen, wie ein Fehler erkannt wird, bevor ein Interrupt einen ungültigen Thread adressiert.
-:::
-
-## Fehlerbehandlung: Wenn RAM fehlt
-
-- `osThreadNew` → `NULL`: Heap, Stackgröße oder Priorität
-- Assert, Overflow-Hook, High-Water-Mark in der Einheit der API
-- Heap-Reste und Linker-Map, nicht „Stack verdoppeln“
-- HardFault hat viele Ursachen; Overflow beschädigt zuerst Speicher und faultet nicht zuverlässig
-
-::: notes
-`osThreadNew` liefert `NULL`, wenn die Anlage scheitert. Die Ursache kann der Heap, ein Attribut, eine nicht erlaubte Priorität oder eine Wrappergrenze sein. Sie steht nicht in der Null selbst. Heap-Erschöpfung und ein Stacküberlauf sind verschiedene Fehler. Ein Überlauf beschädigt zuerst Speicher und führt nicht zuverlässig sofort zum HardFault. Ein HardFault hat viele mögliche Ursachen. Eine feste Häufigkeit wird nicht behauptet.
-
-Die Map zeigt reservierte Bereiche. Assert und Overflow-Hook prüfen Annahmen, wenn `configASSERT` und `configCHECK_FOR_STACK_OVERFLOW` aktiv sind. Die native Funktion `uxTaskGetStackHighWaterMark` zählt im üblichen Port freie Stackelemente. `osThreadGetStackSpace` ist die CMSIS-Funktion und gibt Byte zurück, sofern der Wrapper sie implementiert. Ein Fehler oder eine nicht unterstützte Abfrage ist keine gemessene Reserve von null. Eine endliche Testreihe sieht nur ausgeführte Pfade und beweist keinen sicheren Stackbedarf für alle Eingaben.
-
-Das Labor beginnt mit einer expliziten, kontrollierbaren Projektkonfiguration.
-:::
-
-## Schritt 1: STM32CubeIDE-Setup
-
-- Board NUCLEO-H755ZI-Q, MCU STM32H755ZIT6, FreeRTOS nur für den CM4, Interface CMSIS_V2
-- Heap so groß wählen, dass die drei Threads plus Idle/Timer laut Map passen — 16 KB ist ein Startwert, kein Beweis
-- LED LD2 = PE1 (MB1363); Tasterpin und EXTI am Schaltplan prüfen
-- Prioritäten anlegen und in `cmsis_os2.c` nachsehen, ob sie unverändert ankommen
-
-::: notes
-Der versionsgerechte Weg ab CubeIDE 2.0 legt das Board NUCLEO-H755ZI-Q mit dem MCU STM32H755ZIT6 in CubeMX an, erzeugt den Code und importiert ihn in CubeIDE. In CubeIDE 1.x steckt die Konfiguration in der IDE. Beide Projektteile werden angelegt. Der M7 übernimmt den dokumentierten Start. FreeRTOS mit CMSIS_V2 liegt nur auf dem CM4. Ein Heapstart von 16384 Byte, also 16 KiB, ist ein Anfangswert und kein erprobtes Minimum. 1 KiB sind 1024 Byte. Ob er für drei Threads, Idle und optionale Timer-Task reicht, zeigt erst die Map.
-
-LD2 ist die gelbe LED an PE1, Port E Pin 1, auf dem Board MB1363. Taster und EXTI werden gegen UM2408, die Bestückung und den generierten Code geprüft. Die Prioritätsordnung wird angelegt und danach im Wrapper nachgesehen. Der Normalversuch und das spätere Starvation-Experiment, HeavyMath auf `osPriorityAboveNormal` unter Emergency, sind getrennte Konfigurationen. Stehen zwei Threads auf derselben hohen Stufe, kommen Zeitscheibe und Gleichstand zusätzlich ins Spiel.
-
-HAL und Kernel brauchen eine konsistente Zeitbasisintegration.
-:::
-
-## Schritt 2: Der Konflikt der Timer
-
-Gewählte Laborkonfiguration, kein Naturgesetz:
-
-- SysTick: Kernel-Tick
-- TIM6, falls frei: HAL `uwTick`
-- Beide auf dem CM4, Priorität und Handlerkette prüfen
-- Ein gemeinsamer SysTick ist bei korrekter Integration möglich
-- FreeRTOS kann auch einen anderen Tick-Timer nutzen
+## Warum kann ein Thread mitten im Code weiterlaufen?
 
 ```{mermaid}
-%%| fig-width: 5.5
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B', 'secondaryColor': '#F5F5F7', 'tertiaryColor': '#FFFFFF'}}}%%
 flowchart LR
-  ST[SysTick] --> K[Kernel-Tick]
-  T6[TIM6] --> H[HAL uwTick]
-  K --> M4[CM4]
-  H --> M4
+  S["A: Kontext sichern"] --> W["Scheduler: B wählen"]
+  W --> L["B: Kontext laden"]
 ```
 
-::: notes
-SysTick ist der Systemtimer und in dieser Laborwahl die Quelle des Kernel-Ticks. TIM6, sofern der Pin und die Instanz frei sind, liefert `uwTick`, den HAL-Zähler. Bei passender Zeitbasis zählt `uwTick` Millisekunden. Die Kernel-API zählt Kernelticks. Das Flussdiagramm zeigt zwei Quellen, die beide auf dem CM4 Interrupts auslösen. Getrennte Timer vermeiden, dass sich HAL und Kernel dieselbe Behandlungsroutine teilen müssen. Sie kosten zusätzliche IRQ-Arbeit und können einen Tickless-Schlaf stören, weil TIM6 weiter wecken kann.
-
-Ein gemeinsam korrekt integrierter SysTick ist möglich. Ein gemeinsamer Timer stürzt nicht automatisch ab. Zu prüfen sind doppelte Callbacks und eine HAL-Zeitbasis, die nicht mehr fortschreitet.
-
-Auf dieser Plattform legen wir nun Aufgaben, Prioritäten und Warteverhalten fest.
-:::
-
-## Schritt 3: Task-Design für das Labor
-
-| Thread | Priorität | Verhalten |
-|--------|-----------|-----------|
-| Emergency | hoch | wartet auf Flag, kurze Reaktion |
-| Heartbeat | normal | Sollraster 500 ms, Toggle PE1 |
-| HeavyMath | darunter | dauerhaft Ready, Ergebnis benutzen |
-| Idle | nativ 0 | kommt im Normalversuch nicht dran |
-
-- Vollständiger LED-Zyklus bei Toggle alle 500 ms: etwa 1 s
-- Emergency keine Endlos-Ready-Schleife und kein `printf` als Messmarker
+Kontext = Registerzustand + Stackbezug + nächste Ausführung.
 
 ::: notes
-Emergency wartet auf ein Flag, reagiert kurz und wartet wieder. Er bleibt nicht dauerhaft Ready. Heartbeat schaltet PE1 auf einem Sollraster von 500 ms. Zwei Umschaltungen ergeben einen vollständigen LED-Zyklus von etwa einer Sekunde. HeavyMath bleibt darunter Ready und rechnet in den Lücken. Idle hat native Priorität 0 und kommt im Normalversuch nicht dran, weil HeavyMath höher und bereit ist.
+Ein Thread ist ein fortsetzbarer Ablauf. Sein Kontext ist der Zustand, der für dieselbe Fortsetzung benötigt wird: Registerwerte, Bezug auf seinen Stack und die nächste auszuführende Anweisung. Der Stack ist der Speicher für Aufrufzustand und gesicherte Werte. Die Abbildung ist ein Ablaufbild; die Pfeile zeigen die logische Reihenfolge, keine gemessenen Zeitabstände.
 
-In der Lehrübersicht von 0 bis 1100 ms liegen Heartbeat-Ziele bei 0, 500 und 1000 ms und ein angenommenes Ereignis bei 750 ms. Reale Startpunkte können abweichen. Die Balken sind keine gemessenen Kernelzeiten. Emergency ist ein Übungsname, keine Sicherheitsfunktion.
+Auf dem Cortex-M4 bewirkt der Eintritt in eine Systemausnahme zunächst einen Teil der Registersicherung durch die Hardware. Der FreeRTOS-Port, die Prozessoranpassung des Kernels, ergänzt die nötige Sicherung. PendSV bedeutet Pendable Service, eine aufschiebbare Systemausnahme, über die der übliche Port den eigentlichen Kontextwechsel organisiert. Der Scheduler wählt den nächsten Thread. Dessen gesicherte Werte werden wiederhergestellt, sodass er an seiner eigenen Fortsetzungsstelle weiterläuft.
 
-Diese Rollen werden in den vorhandenen generierten Threadfunktionen implementiert.
+Das RTOS, Real-Time Operating System, hat damit mehr Möglichkeiten als ein gewöhnlicher C-Aufruf einer anderen Funktion. Es genügt nicht, nur einen Speicherpuffer für jede Aufgabe zu reservieren; der Port muss den zugehörigen Kontext tatsächlich aktivieren. Wir benötigen hier keine Assemblerimplementierung. Wichtig ist die Konsequenz: Diese Fortsetzbarkeit benötigt je Thread Speicher und Verwaltungsarbeit.
 :::
 
-## Code-Struktur nach Generierung
+## Kontextwechsel kosten Zeit: eine Modellrechnung
 
-Code in den Funktions-`USER CODE`-Block, nicht in `Header_…`-Kommentare. Keine zweite Definition derselben Thread-Funktion.
+Lehrannahmen: $C_{\mathrm{sw}}=200$ Zyklen pro Wechsel,
+$f_{\mathrm{CPU}}=200\,\mathrm{MHz}$,
+$N_{\mathrm{sw}}=500$ Wechsel pro Sekunde.
 
-```c
-/* USER CODE BEGIN StartHeartbeatTask */
-uint32_t next = osKernelGetTickCount();
-uint32_t period = 0;
-uint32_t misses = 0;
-if (ms_to_ticks_ceil(500, &period) != CONV_OK) { Error_Handler(); }
-for (;;) {
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2, PE1 */
-    next += period;
-    if ((next - osKernelGetTickCount()) >= 0x80000000u) {
-        misses++;
-        next = osKernelGetTickCount() + period;
-    }
-    if (osDelayUntil(next) != osOK) { Error_Handler(); }
-}
-/* USER CODE END StartHeartbeatTask */
-```
+$$
+t_{\mathrm{sw}}=\frac{C_{\mathrm{sw}}}{f_{\mathrm{CPU}}}
+=1\,\text{µs}
+$$
+
+$$
+U_{\mathrm{sw}}=\frac{C_{\mathrm{sw}}N_{\mathrm{sw}}}{f_{\mathrm{CPU}}}
+=0{,}0005=0{,}05\,\%
+$$
+
+Tick- und Interruptarbeit sind hier zusätzlich zu bilanzieren.
 
 ::: notes
-Der Code gehört in genau einen vorhandenen USER-CODE-Block der Heartbeat-Funktion, nicht in eine zweite Definition und nicht in einen Header-Kommentar. `uint32_t` ist der 32-Bit-Zählertyp. `next` ist das absolute Freigabeziel in Ticks, nicht eine Messung in Millisekunden. `period` kommt aus dem geprüften Helfer für 500 ms. Schlägt die Umrechnung fehl, wird nicht mit einer Nullperiode weitergemacht.
+Ein Kontextwechsel sichert den Zustand eines Threads und lädt den eines anderen. CPU steht für Central Processing Unit, zentrale Verarbeitungseinheit. Die Wechselarbeit beansprucht Prozessorzeit, die der eigentlichen Anwendung in diesem Moment nicht zur Verfügung steht. Wir rechnen ausdrücklich mit einer angenommenen vollständigen Wechselkostenposition von 200 Prozessorzyklen; dieser Wert wurde nicht auf dem STM32 gemessen.
 
-Nach dem Toggle wird `period` addiert. Ist der vorzeichenlose Abstand von jetzt bis `next` mindestens $2^{31}$, liegt das Ziel schon hinter uns oder ist im Until-Sinn nicht mehr ein kurzer Zukunftsabstand. Dann zählt `misses` die verpasste Aktivierung, `next` wird auf jetzt plus Periode gesetzt, und `osDelayUntil` wartet, bevor die Schleife erneut umschaltet. Es gibt kein zweites Toggle im selben Durchlauf. `osOK` bedeutet, dass die Wartefunktion erfolgreich zurück ist. `osErrorISR` und `osError` sind andere Fehlerklassen und führen in `Error_Handler`. Ein Miss-Zähler ist ein Lehrinstrument, keine aus einer Messung abgeleitete Garantie. Der LED-Zyklus bleibt an die erfolgreichen Wartepunkte gebunden. Verpasste Ziele werden übersprungen, nicht in einer Aufholserie nachgeholt.
+$C_{\mathrm{sw}}$ bezeichnet die Zyklen pro Wechsel, $f_{\mathrm{CPU}}$ die Zyklenzahl pro Sekunde. 200 Megahertz bedeutet 200 Millionen Zyklen pro Sekunde. Die Division von 200 durch 200 Millionen ergibt 0,000001 Sekunden, also eine Mikrosekunde je Wechsel. $N_{\mathrm{sw}}$ ist die Rate der Wechsel, hier 500 pro Sekunde. Multipliziert mit 200 Zyklen entstehen 100000 Zyklen pro Sekunde Verwaltungsarbeit. Deren Anteil $U_{\mathrm{sw}}$ ist 100000 geteilt durch 200 Millionen, also 0,0005 beziehungsweise 0,05 Prozent.
 
-Die zweite Task erzeugt eine kontrollierte ständig bereite Hintergrundlast.
+Diese geringe Modellzahl erlaubt keine universelle Latenz- oder Fristgarantie. Sie enthält die angenommene Wechselposition, nicht automatisch jeden Tick und jeden Interrupt. Auch Speicherzugriffe, Port, Compiler und verwendeter Kontext beeinflussen die tatsächlichen Kosten. Beim Bilanzieren darf dieselbe Arbeit nicht mehrfach als Wechsel- und Tickkosten gezählt werden. Zusätzlich zur Zeit benötigt die Kontextverwaltung Speicher pro Thread; diesen betrachten wir anschließend.
 :::
 
-## Code-Skelett: Die HeavyMath-Task
+## Stack und TCB gehören zu jedem Thread
 
-```c
-/* USER CODE BEGIN StartHeavyMathTask */
-static volatile uint32_t acc;
-for (;;) {
-    acc = acc * 1664525u + 1013904223u; /* benutztes Ergebnis */
-}
-/* USER CODE END StartHeavyMathTask */
-```
+| Speicher | Zweck |
+|---|---|
+| Stack | Aufrufe, benötigte lokale Daten, Kontext |
+| TCB | Verwaltungsdaten, Priorität, Listenbezug |
+| Gemeinsamer Speicher | globale Daten, Kernelobjekte, Peripherie |
 
-- Kein `osDelay`, keine IRQ-Sperre, kein GPIO-Aufruf
-- `acc` bleibt durch `volatile` ein beobachtbarer Speicherzugriff; die Rechnung läuft modulo $2^{32}$
+- CMSIS `stack_size`: Byte
+- Native Stacktiefe: `StackType_t`-Elemente; im betrachteten Port meist 4 Byte
 
 ::: notes
-`static` gibt `acc` eine Lebensdauer über die Schleife hinaus und legt die Variable nicht als großen automatischen Stackpuffer an. `volatile` macht die Zugriffe für den Compiler beobachtbar, damit die Schleife nicht als nutzlos entfernt wird. `uint32_t` rechnet vorzeichenlos modulo $2^{32}$. Der Ausdruck `acc * 1664525u + 1013904223u` ist dafür definiert und braucht kein GPIO. Die Schleife enthält keinen Schreibzugriff auf eine LED und kein Delay.
+TCB steht für Task Control Block, den Verwaltungsblock einer Aufgabe. Er hält unter anderem Priorität, Listenbezüge und einen Verweis auf den gesicherten Stackkontext. Stack heißt Aufrufstapel. Er wird für verschachtelte Aufrufe, benötigte automatische Objekte und Kontextinformationen genutzt. Nicht jede lokale C-Variable liegt zwangsläufig im Speicher; der Compiler kann sie in einem Prozessorregister halten. Globale Daten haben dagegen nicht automatisch einen separaten Besitzer pro Thread.
 
-Der Thread bleibt absichtlich Ready. Seine niedrigere Priorität erlaubt Heartbeat und Emergency trotzdem den Vortritt. `volatile` macht die Zugriffe nicht atomar und synchronisiert `acc` nicht mit einem anderen Thread. Im Modell verändert nur HeavyMath diese Variable. Der Code kann präemptiert werden, weil keine IRQ-Sperre eingebaut ist.
+CMSIS, Common Microcontroller Software Interface Standard, verwendet in seiner Betriebssystem-Schnittstelle für das Attribut stack_size die Einheit Byte. Die native FreeRTOS-Threadanlage zählt Stackelemente des Typs StackType_t. Im üblichen hier betrachteten Cortex-M4-Port sind diese Elemente vier Byte groß. Daher bedeuten 128 native Elemente 512 Byte, während CMSIS stack_size gleich 512 bereits 512 Byte bedeutet.
 
-HeavyMath ist absichtlich ständig bereit. Emergency soll dagegen nur nach einem Ereignis rechnen. Ein Thread-Flag bildet genau diesen Übergang ab.
+Der im Konfigurationswerkzeug sichtbare Wert muss gegen den generierten Code geprüft werden. Eine nominelle Größe sagt außerdem noch nichts über ausreichende Reserve aus. Tiefe Aufrufketten und verwendete Bibliotheksfunktionen können den Bedarf erhöhen. Verwaltungsblock und Stack ermöglichen den Wechsel, bleiben aber ohne passenden Speicherschutz für fehlerhaften Anwendungscode zugänglich.
 :::
 
-## Vom Taster zum Emergency-Thread
+## Papieraufgabe: Speicher planen
+
+Lehrannahme: TCB pro Thread $80\,\mathrm{Byte}$.
+
+| Thread | Stack |
+|---|---:|
+| Heartbeat | 512 Byte |
+| HeavyMath | 1024 Byte |
+| Ereignis-Task | 1024 Byte |
+
+1. Wie viel Speicher benötigen diese drei Paare aus Stack und TCB?
+2. Warum beweist dieser Wert noch keinen ausreichenden Heap?
+
+::: notes
+TCB bedeutet Task Control Block, der Verwaltungsblock eines Threads. Die angenommenen 80 Byte sind ein didaktischer Wert, keine durch einen Firmwarebuild ermittelte Größe. Ein Thread ist ein fortsetzbarer Ablauf; zu jedem gehören Stack und Verwaltungsobjekt. Wir addieren die drei Stacks: 512 plus 1024 plus 1024 gleich 2560 Byte. Drei Verwaltungsblöcke ergeben 3 mal 80 gleich 240 Byte. Insgesamt sind das 2800 Byte, entsprechend 2800 geteilt durch 1024 gleich 2,734375 Kibibyte.
+
+Der Heap ist ein Speicherbereich für dynamische Reservierungen. Die Rechnung lässt Idle, eine eventuell konfigurierte Timer-Task, weitere Kernelobjekte und Verwaltungszuschläge sowie Ausrichtung der Speicherblöcke weg. Auch der Handlerstack und sonstige globale Anwendungsdaten müssen in der Gesamtspeicherbilanz vorkommen. Der STM32H755 hat mehrere Speicherbereiche; diese werden nicht automatisch zu einem frei verfügbaren, zusammenhängenden Threadheap.
+
+Werden die Taskblöcke dynamisch innerhalb eines bereits reservierten Heaps angelegt, darf man sie in der Linker-Speicherbilanz nicht zusätzlich außerhalb desselben Heaps zählen. Die Map-Datei, der Speicherbericht des Linkers, zeigt die tatsächlichen reservierten Bereiche. Eine erfolgreiche Anlage beweist ferner noch nicht, dass ein Stack unter jeder Eingabe ausreichend tief ist.
+:::
+
+## Reservierter Stack und beobachtete Reserve
+
+Didaktischer Diagnosefall, kein Messwert:
+
+- Reservierter Stack: 1024 Byte
+- Native High-Water-Mark: 120 Elemente zu je 4 Byte
+- Beobachtete Reserve: $120\cdot4=480\,\mathrm{Byte}$
+- Bisherige größte Belegung nach diesem Indikator: $1024-480=544\,\mathrm{Byte}$
+
+Dürfen Sie den Stack sofort auf 544 Byte verkleinern?
+
+::: notes
+Ein Stack ist der Aufrufstapel und Speicher für benötigte lokale Daten sowie gesicherten Kontext. High-Water-Mark bezeichnet einen Indikator für die bisher kleinste unbenutzte Stackreserve. Die native FreeRTOS-Abfrage uxTaskGetStackHighWaterMark liefert im betrachteten Port freie Stackelemente; CMSIS-RTOS2 verwendet für osThreadGetStackSpace Byte, sofern diese Abfrage unterstützt wird. CMSIS heißt Common Microcontroller Software Interface Standard.
+
+Im ausdrücklich angenommenen Diagnosefall sind 1024 Byte reserviert und noch 120 Elemente zu vier Byte als frei markiert. Die Reserve beträgt damit 480 Byte. 1024 minus 480 ergibt 544 Byte bisher beobachtete größte Belegung nach diesem Indikator. Diese Zahl beantwortet eine andere Frage als die Speicherreservierung: Reserviert ist der gesamte Bereich, tatsächlich beobachtet wurde nur ein Teil.
+
+Die Antwort auf die Verkleinerungsfrage lautet deshalb nein. Ein noch nicht getesteter Fehlerpfad, andere Eingaben oder zusätzliche verschachtelte Aufrufe können mehr Speicher benötigen. Außerdem hängt der Indikator davon ab, wie unbenutzter Speicher erkannt wird; eine endliche Testreihe beweist keinen maximalen Bedarf aller Pfade. Eine Reserve muss begründet geplant und mit den relevanten Bedingungen geprüft werden. Die Übung verwendet Startgrößen, keine bereits nachgewiesenen Minima. Verwechseln Sie weder Elemente mit Byte noch Beobachtung mit vollständigem Nachweis.
+:::
+
+## Zeit in Ticks statt automatisch in Millisekunden
+
+$$
+T_{\mathrm{tick}}=\frac{1}{f_{\mathrm{tick}}},\qquad
+n=\left\lceil\frac{t_{\mathrm{ms}}f_{\mathrm{tick}}}{1000}\right\rceil
+$$
+
+| Gewünschter Wert | 1000 Hz | 100 Hz |
+|---|---:|---:|
+| 5 ms | 5 Ticks | 1 Tick |
+| 500 ms | 500 Ticks | 50 Ticks |
+
+`osKernelGetTickFreq()` liefert die Kernel-Tickfrequenz.
+
+::: notes
+Ein Tick ist ein logischer Zeitschritt des Betriebssystems. $f_{\mathrm{tick}}$ bezeichnet die Anzahl dieser Schritte pro Sekunde in Hertz. Seine Periodendauer $T_{\mathrm{tick}}$ ist der Kehrwert und hat zunächst die Einheit Sekunden. Bei 1000 Hertz ergibt sich eine Millisekunde, bei 100 Hertz zehn Millisekunden. Der CMSIS-RTOS2-Aufruf osKernelGetTickFreq liefert diese Kernelfrequenz. CMSIS steht für Common Microcontroller Software Interface Standard, RTOS2 für seine Betriebssystem-Schnittstelle.
+
+Für einen gewünschten Wert $t_{\mathrm{ms}}$ in Millisekunden berechnen wir die Tickzahl n. Das Produkt aus $t_{\mathrm{ms}}$ und $f_{\mathrm{tick}}$ wird durch 1000 geteilt, weil eine Sekunde 1000 Millisekunden hat. Die oberen Ganzzahlklammern bedeuten Aufrunden. Damit wird ein kleiner positiver Millisekundenwert nicht zu null Ticks. Fünf Millisekunden werden bei 100 Hertz zu einem Tick; die verlangte Zeit ist in diesem Raster nicht genauer darstellbar.
+
+In C muss das Zwischenprodukt ausreichend breit sein. Der Laborhelfer nutzt deshalb einen vorzeichenlosen 64-Bit-Typ. Eine aufgerundete Tickzahl ist jedoch keine Garantie für dieselbe Mindestdauer an der Wanduhr: Die Phase des Aufrufs innerhalb des Tickintervalls kommt noch hinzu. Wir verwenden keine Nullverzögerung als Warteersatz.
+:::
+
+## Tickphase: Wie lange wartet osDelay(1)?
+
+Raster: Tickgrenzen bei $0$, $1$, $2\,\mathrm{ms}$.
+
+| Aufrufzeit | Ready ab | Ideale Blockierdauer |
+|---:|---:|---:|
+| 0,1 ms | 1 ms | 0,9 ms |
+| 0,9 ms | 1 ms | 0,1 ms |
+
+Ready ist noch kein garantierter Start. Höherpriore Arbeit kann ihn weiter verzögern.
+
+::: notes
+osDelay ist der CMSIS-RTOS2-Aufruf zum relativen Warten in Kernelticks. CMSIS heißt Common Microcontroller Software Interface Standard. Die Tabelle verwendet eine angenommene Kernel-Tickfrequenz von 1000 Hertz; die Tickgrenzen liegen also im Abstand von einer Millisekunde. Die Eins im Funktionsaufruf bedeutet ein Tick, nicht unabhängig von der Konfiguration eine Millisekunde Wandzeit.
+
+Erfolgt der Aufruf bei 0,1 Millisekunden, ist die nächste Tickgrenze bei 1 Millisekunde. Der Thread ist idealisiert 0,9 Millisekunden Blocked, also wartend. Beim Aufruf bei 0,9 Millisekunden bleiben nur 0,1 Millisekunden. Interrupt- und Verwaltungskosten werden in dieser Phasenrechnung nicht aufgelöst. Sie beschreibt, wann die Zeitwartebedingung entfällt.
+
+Ready bedeutet anschließend ausführungsbereit. Eine höher priorisierte Ready-Task oder noch laufende Interruptarbeit kann den tatsächlichen Start weiter verschieben. Auch ein nach oben umgerechneter Wert von einem Tick garantiert deshalb keine vollständige Tickperiode Mindestwartezeit. Diese Unterscheidung zwischen Wartebedingung und Prozessorstart wird beim Vergleich von relativer und absoluter Zeitplanung besonders wichtig.
+:::
+
+## Kurzprüfung: Tickzahl, Phase und Start
+
+Kernel-Tick $100\,\mathrm{Hz}$; Aufruf eine Millisekunde vor der nächsten Tickgrenze.
+
+Welche Aussagen sind richtig?
+
+1. `osDelay(1)` blockiert garantiert mindestens 10 ms.
+2. Der Thread kann nach ungefähr 1 ms Ready werden.
+3. Ready bedeutet hier einen garantierten sofortigen Start.
+4. Ein aufgerundeter 5-ms-Wert ergibt einen Tick.
+
+::: notes
+Ein Tick ist die Zeiteinheit des Kernels. Bei 100 Hertz beträgt sein idealer Abstand zehn Millisekunden. osDelay ist der relative Tickwarteaufruf der CMSIS-RTOS2-Schnittstelle, also der Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. Die Eins zählt einen Tick und ist kein von der Tickphase unabhängiger Millisekundenwert.
+
+Aussage eins ist falsch. Der Aufruf erfolgt nach der Vorgabe eine Millisekunde vor der nächsten Grenze. Der aktuelle Rest beträgt daher nur ungefähr eine Millisekunde. Aussage zwei ist richtig: Mit Ablauf der entsprechenden Tickwartebedingung wird der Thread Ready, also ausführungsbereit. Wir vernachlässigen in dieser Phasenrechnung Verwaltungs- und Interruptkosten. Aussage drei ist falsch, denn höhere bereite Aufgaben oder noch laufende Interruptarbeit können die tatsächliche Zuteilung weiter verzögern.
+
+Aussage vier ist richtig. Fünf Millisekunden mal 100 Ticks pro Sekunde geteilt durch 1000 ergeben 0,5 Ticks. Aufrunden liefert einen Tick. Diese Umrechnung macht aus dem groben Raster aber keine garantierte fünf Millisekunden Mindestwartezeit. Lassen Sie insbesondere die Kombination aus richtiger Aussage vier und falscher Aussage eins begründen. Erst nach dieser Unterscheidung ist der Vergleich von aktivem und blockierendem Warten sinnvoll vollständig verstanden.
+:::
+
+## Aktives Warten oder den Thread blockieren?
+
+| `HAL_Delay(...)` | `osDelay(...)` |
+|---|---|
+| Übliche HAL: aktive Warteschleife | Betriebssystem-Wartebedingung |
+| Bleibt ausführungsbereit | Wird Blocked |
+| Verbraucht zugeteilte CPU-Zeit | Andere Ready-Task darf laufen |
+
+Ein wartender Heartbeat senkt nicht zwingend die Gesamtlast: HeavyMath nutzt die Lücke.
+
+::: notes
+HAL ist die Hardware Abstraction Layer, Hardware-Abstraktionsschicht von STM32. HAL_Delay prüft in der üblichen HAL aktiv den Fortschritt ihrer Zeitbasis. Der Thread bleibt ausführungsbereit und verbraucht Prozessorzeit, sobald er ausgewählt ist. Das ist Busy-Wait, aktives Warten. Höher priorisierte Threads können ihn bei aktiviertem präemptivem Betrieb trotzdem verdrängen; ein Busy-Wait deaktiviert nicht automatisch Interrupts.
+
+osDelay ist der Zeitwarteaufruf der CMSIS-RTOS2-Betriebssystem-Schnittstelle. Er setzt den aufrufenden Thread auf Blocked, also wartend. Der Scheduler kann stattdessen eine Ready-Task auswählen; Ready bedeutet ausführungsbereit. Wenn keine Anwenderaufgabe bereit ist, kann die Idle-Task des Kernels laufen.
+
+Für Heartbeat wählen wir Betriebssystem-Warten, weil seine Wartezeit nicht als Rechenlast dienen soll. HeavyMath füllt diese freigegebene Zeit absichtlich aus. Daher kann der Prozessor insgesamt weiter nahezu ausgelastet bleiben. Blockieren ist auch keine pauschale Energiespargarantie. Kernel-Ticks und andere Interrupts laufen je nach Konfiguration weiter. Die nächste Frage lautet nicht mehr, ob wir warten, sondern worauf sich der nächste periodische Termin beziehen soll.
+:::
+
+## Relative Pause oder absoluter Sollplan?
+
+Lehrmodell: Arbeit $2$, $4$, $1\,\mathrm{ms}$; Tick $1\,\mathrm{ms}$; Kosten sonst $0$.
+
+| Methode | Nächste Starts nach Start bei 0 |
+|---|---|
+| Arbeit, dann `osDelay(10)` | 12, 26, 37 ms |
+| Sollraster mit Periode 10 Ticks | 10, 20, 30 ms |
+
+`osDelayUntil(next)` wartet auf einen absoluten Tickwert.
+
+Sollraster stabil halten bedeutet nicht, jeden tatsächlichen Start zu garantieren.
+
+::: notes
+osDelay wartet relativ ab dem aktuellen Aufruf in Kernelticks. osDelayUntil ist der CMSIS-RTOS2-Aufruf für einen absoluten Zielwert desselben Tickzählers. CMSIS steht für Common Microcontroller Software Interface Standard. Die Tabelle nimmt Arbeitsenden genau auf Tickgrenzen an und vernachlässigt weitere Störungen. Sonst müsste zusätzlich die Tickphase berücksichtigt werden.
+
+Beim relativen Verfahren startet die erste Arbeit bei null und endet nach zwei Millisekunden. Zehn Ticks Warten führen zum nächsten Start bei 12. Die zweite Arbeit dauert vier Millisekunden und endet bei 16; nach der Pause startet die dritte bei 26. Sie endet bei 27, danach folgt der Start bei 37. Der Startabstand enthält also jeweils Arbeitsdauer plus Pause.
+
+Beim absoluten Verfahren addieren wir die Periode dagegen zum bisherigen Solltermin: 0, 10, 20 und 30. Die jeweilige Arbeit passt hier vor den nächsten Termin. Ihre Dauer verschiebt das Sollraster nicht. Höherpriore Arbeit kann trotzdem bewirken, dass ein Thread erst beispielsweise bei 10,4 Millisekunden tatsächlich startet. Ein stabiler Freigabeplan ist deshalb kein Nachweis einer harten Frist und auch keine Garantie gegen physikalische Uhrabweichungen.
+:::
+
+## Das Sollraster in einer Abbildung
+
+Tick $1\,\mathrm{ms}$; Arbeitsdauern $2/4/1\,\mathrm{ms}$. Zwei getrennte Versuche, Achse in Millisekunden.
 
 ```{.plantuml}
 @startuml
@@ -1020,64 +723,90 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-concise "EXTI" as E
-concise "Emergency" as T
+scale 5 as 100 pixels
+robust "Relativ" as R
+robust "Absolut" as A
 @0
-E is idle
-T is Blocked
+R is Arbeit
+A is Arbeit
 @2
-E is ISR
-T is Blocked
-@3
-E is Ende
-T is Ready
-@4
-E is idle
-T is Running
-@6
-T is Blocked
+R is Warten
+A is Warten
+@10
+A is Arbeit
+@12
+R is Arbeit
+@14
+A is Warten
+@16
+R is Warten
+@20
+A is Arbeit
+@21
+A is Warten
+@26
+R is Arbeit
+@27
+R is Warten
+@30
+A is Arbeit
+@37
+R is Arbeit
 @enduml
 ```
 
-- ISR: `osThreadFlagsSet(hEm, 0x1)` — nur wenn Handle und Kernel leben und die IRQ-Priorität es darf
-- Thread: `osThreadFlagsWait(0x1, osFlagsWaitAny, osWaitForever)`, dann kurze Reaktion, wieder warten
-- Dasselbe Bit kann mehrere Flanken zu einem Wake zusammenfassen
-- Entprellung und erlaubte Rate festlegen; der Thread wartet nicht auf den nächsten Tick
-
 ::: notes
-Der Taster wird über den External Interrupt/Event Controller, kurz EXTI, erfasst. Nach der Hardwareanforderung führt der Cortex-M4 den passenden Interruptbehandler aus. Die erzeugte HAL-Kette ruft den vorgesehenen Callback auf. Dort setzt `osThreadFlagsSet(hEm, 0x1)` Bit 0 im Flagwort von Emergency. `hEm` muss gültig sein, der Kernel muss laufen, und die IRQ-Priorität muss Kernelaufrufe erlauben. Dieselbe native Benachrichtigung `xTaskNotifyFromISR` plus `portYIELD_FROM_ISR` ist nur der Vergleich zum Port. Sie wird nicht zusätzlich in denselben CMSIS-Thread gemischt. Einen zweiten Handler neben der HAL-Kette legen wir nicht an.
+Die beiden Spuren sind getrennte Vergleichsversuche, keine gleichzeitig laufenden Aufgaben. Die horizontale Zeitachse zeigt Millisekunden unter der Lehrannahme eines Ticks pro Millisekunde. Ein Tick ist die Zeiteinheit des Kernels. Die Zustände Arbeit und Warten beschreiben die jeweilige Schleifenphase. R steht für das relative Verfahren mit zehn Ticks Pause nach jeder Arbeit, A für den absoluten Plan mit zehn Ticks Periode. Die Arbeitsdauern sind in beiden Versuchen zunächst zwei, vier und eine Millisekunde.
 
-Emergency wartet mit `osThreadFlagsWait`. `osFlagsWaitAny` genügt, wenn eines der angegebenen Bits gesetzt ist. `osWaitForever` wartet ohne Timeout. Ohne passendes Bit ist der Thread Blocked. Das Setzen macht ihn Ready. Die Zeitachse zeigt deshalb nach der ISR zuerst Ready und erst danach Running. Der Abstand ist ein schematischer Platz für PendSV, keine gemessene Millisekunde. Während der ISR läuft kein zweiter Task. Nach dem Ende der ISR und dem zulässigen Wechsel kann Emergency als höchstpriorer Laborthread laufen. Er muss nicht auf den nächsten Tick warten.
+Lesen Sie die Wechsel von Warten zu Arbeit: Oben liegen sie bei 12, 26 und 37 Millisekunden, unten bei 10, 20 und 30. Die unterschiedlichen Startpunkte entstehen bereits ohne andere Last. Der relative Versuch addiert die Arbeitsdauer zum Abstand; der absolute Versuch richtet sich weiter nach dem bestehenden Solltermin.
 
-Die Wait-Rückgabe sind Flagbits. Wir vergleichen sie nicht mit `osOK`, sondern prüfen `osFlagsError` und danach Bit 0. Ohne `osFlagsNoClear` löscht der erfolgreiche Wait die angenommenen Bits. Ein zweites blindes Löschen könnte ein neu eingetroffenes Ereignis entfernen. Mehrere Flanken können zu einem Bit verschmelzen. Entprellung und zulässige Rate gehören zur Lehrspezifikation.
-
-Im anschließenden Normalversuch prüfen wir zunächst, ob der höherpriore Heartbeat trotz HeavyMath CPU-Zeit erhält.
+Für die vierte Arbeitsphase ist nur der Beginn eingezeichnet, keine neue Ausführungsdauer angenommen. Alle Wechselkosten sind im Modell null. Das Diagramm ist kein Oszilloskopbild. Es zeigt den systematischen Unterschied der Planung. Die offene Frage ist nun: Was geschieht, wenn die Arbeit oder eine Störung den nächsten Solltermin überschreitet?
 :::
 
-## Beobachtung 1: Der Präemptions-Beweis
+## Ein verpasster Termin braucht eine Entscheidung
 
-- HeavyMath bleibt Ready und rechnet in den Lücken
-- Heartbeat wird am Sollpunkt Ready und verdrängt HeavyMath, weil die Priorität höher ist
-- Das zeigt Präemption, nicht eine harte Frist und nicht „Jitter ≈ 0“
-- Stabiles Blinken ist kein Deadline-Nachweis
+- Zielzeit schon erreicht: nicht auf einen vergangenen Tick warten
+- Laborpolitik: zählen, neu auf jetzt + Periode ausrichten, dann warten
+- Keine sofortige Serie nachgeholter LED-Umschaltungen
+- Zielverfehlung im Code ist nicht automatisch eine Deadlineverletzung
+
+32-Bit-Tickzähler: kurze Zukunftsabstände bis $2^{31}-1$ Ticks; Umlauf beachten.
 
 ::: notes
-HeavyMath bleibt bereit und rechnet in den Lücken. Heartbeat wird am Tickziel bereit und erhält als höhere Task die CPU, sobald der Wechsel zulässig ist. Das demonstriert Präemption unter dieser Prioritätsordnung. Es ist kein universeller harter Fristnachweis. Eine optisch ruhige LED löst kleine Schwankungen nicht auf.
+Der absolute Warteaufruf osDelayUntil aus CMSIS-RTOS2 benötigt einen zulässigen Zukunftsabstand. CMSIS ist der Common Microcontroller Software Interface Standard. Ein Tick ist die Kernel-Zeiteinheit. Ein 32-Bit-Zähler läuft nach seinem größten Wert wieder bei null weiter. Deshalb kann ein numerisch kleineres Ziel trotzdem in der Zukunft liegen. Für eindeutige kurze Abstände arbeiten wir mit höchstens 2 hoch 31 minus 1 Ticks.
 
-Wenn ein Oszilloskop verfügbar ist, werden Periodenabstand und die Breite eines gesonderten Arbeitsmarkers getrennt gemessen. Die ein- und ausgeschaltete Heartbeat-LED allein ist noch kein Puls um die Taskausführungszeit. Build, Tickfrequenz, IRQ-Last und Geräteauflösung gehören ins Protokoll. Ohne Messung bleiben die Zahlen leer.
+Im Labor zählt ein verpasster Warte-Sollpunkt als Zielverfehlung. Die Anwendung setzt das nächste Ziel auf den aktuellen Tick plus Periode und wartet tatsächlich darauf. Damit entsteht nach längerer Verdrängung keine sofortige Folge mehrerer Heartbeat-Umschaltungen. Diese bewusste Neuausrichtung verlässt das alte Raster. Sie ist eine einfache Überlastpolitik, keine Reparatur eines Fristnachweises.
 
-Die Übersicht zeigt zusätzlich die Ereignisreaktion von Emergency.
+Eine Deadline ist die spezifizierte Fertigstellungsfrist eines Jobs. Ein übersprungener Wartepunkt sagt ohne eigene Deadlinedefinition noch nicht, welche Frist verletzt wurde. Der Helfer im Übungsblatt prüft das positive Intervall und behandelt auch eine Zielverfehlung zwischen Prüfung und Funktionsaufruf. Andere Rückgabefehler werden nicht still ignoriert. So bleibt das Grundbeispiel einfach, ohne vergangene Ziele als unendlich langes Warten umzudeuten.
 :::
 
-## Visuelle Erklärung: Präemption im Labor
+## Überlastpolitik an einem konkreten Sollpunkt
 
-Ziele Heartbeat: $0$, $500$, $1000\,\mathrm{ms}$. Angenommenes Flag bei $750\,\mathrm{ms}$. Lehrskizze, keine Messung.
+Neues Lehrbeispiel: Periode 10 Ticks, Tick $1\,\mathrm{ms}$; erste Arbeit dauert 12 ms.
 
 ```{.plantuml}
 @startuml
@@ -1085,125 +814,424 @@ skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
 skinparam timing {
   BackgroundColor #FFFFFF
   BorderColor #E5E5EA
   LineColor #1D1D1F
   SignalColor #E2001A
 }
-concise "CPU CM4" as CPU
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+scale 5 as 100 pixels
+robust "Heartbeat (ms)" as H
 @0
-CPU is Heartbeat
-@30
-CPU is HeavyMath
-@500
-CPU is Heartbeat
-@530
-CPU is HeavyMath
-@750
-CPU is EXTI
-@770
-CPU is Emergency
-@800
-CPU is HeavyMath
-@1000
-CPU is Heartbeat
+H is Arbeit
+@12
+H is Warten
+@22
+H is Arbeit
 @enduml
 ```
 
-- Eine CPU-Spur: HeavyMath in den Lücken, kurze Heartbeat-Aktionen, nach 750 EXTI und Emergency
-- IRQ- und Kernelanteile sind in dieser Übersicht zusammengezogen. Eine Detailachse trennt Stimulus, ISR, PendSV und die erste Emergency-Anweisung
-- Zwei Toggles im Abstand von 500 ms ergeben etwa eine Sekunde LED-Zyklus
+Ziel 10 verpasst $\rightarrow$ zählen $\rightarrow$ neues Ziel $12+10=22$.
 
 ::: notes
-Die CPU-Spur ist eine Lehrskizze von 0 bis 1000 ms, keine Oszilloskopaufnahme. Bei 0 und 500 und 1000 läuft kurz Heartbeat, dazwischen HeavyMath. Bei 750 steht stellvertretend EXTI, danach Emergency, dann wieder HeavyMath. Es gibt keine zweite gleichzeitig rechnende Taskspur. Die Breiten 30 ms und ähnlich sind nur Platzhalter, damit die Zustände lesbar bleiben. Sie sind keine gemessenen Ausführungszeiten.
+Die Zeitachse ist ein neues, ausdrücklich angegebenes Überlastbeispiel. Ein Tick entspricht einer Millisekunde. Die Heartbeat-Periode soll zehn Ticks betragen, doch die erste Aktion benötigt angenommene zwölf Millisekunden ohne weitere Unterbrechung. Die Spur zeigt von null bis zwölf Arbeit und danach bis 22 Millisekunden Warten. Der Beginn der nächsten Aktion ist eingezeichnet; ihre weitere Dauer wird nicht neu angenommen.
 
-Eine Detailachse, die hier nicht als zweite Millisekundenleiste ausgemessen ist, trennt den Stimulus, die ISR, PendSV und die erste Anweisung von Emergency. Kernel- und IRQ-Arbeit steckt nicht unsichtbar in den Anwenderbalken. Die Lehrannahme von 150 bis 300 Wechselzyklen bleibt eine Rechnung bei 100 MHz und kein Balken in dieser Übersicht.
+Das ursprünglich berechnete Warteziel zehn liegt bei Arbeitsende bereits in der Vergangenheit. Unser Laborhelfer LabWaitNext zählt deshalb eine Wartezielverfehlung, setzt das Ziel auf aktuellen Tick plus Periode, also zwölf plus zehn gleich 22, und wartet tatsächlich bis dorthin. Das ist eine bewusste Neuausrichtung. Es ist keine Beibehaltung des ursprünglichen Rasters bei null, zehn, zwanzig und dreißig.
 
-Im Normalfall gewinnt Heartbeat durch seine höhere Priorität. Mit einer gezielt geänderten Ordnung können wir zeigen, dass ein Kernel allein keine faire Zuteilung an niedrigere Prioritäten garantiert.
+Eine andere spezifizierte Politik könnte den verpassten Termin überspringen und am nächsten alten Rasterpunkt zwanzig fortsetzen. Das ist nicht die hier implementierte Laborpolitik. Noch eine andere könnte einen Fehler melden. Ohne klaren Vertrag mehrere Aktionen sofort nachzuholen ist besonders bei einer sichtbaren Lebensanzeige wenig sinnvoll. Der Zähler bezeichnet zunächst verfehlte Warteziele. Ob zugleich eine Jobdeadline verletzt wurde, hängt von der separat festgelegten Fertigstellungsfrist ab.
 :::
 
-## Beobachtung 2: Starvation durch falsche Prioritäten
+## Ein Tasterereignis an einen Thread übergeben
 
-- HeavyMath auf `osPriorityAboveNormal`: über Heartbeat, unter Emergency
-- Heartbeat wird Ready und bleibt es; die LED kann an **oder** aus stehen bleiben
-- Das ist Starvation, keine Priority Inversion
-- `osThreadYield` in HeavyMath ändert nichts, solange HeavyMath Ready bleibt
-- Danach die normalen Prioritäten wiederherstellen
+- Interruptbehandler erkennt die Flanke und setzt ein Hinweisbit
+- Ereignis-Task wartet auf dieses Bit
+- Ereignis-Task reagiert kurz und wartet erneut
+- Derselbe gesetzte Bitwert zählt mehrere Flanken nicht getrennt
+
+```c
+/* ISR: nur bei gültigem Handle und erlaubter IRQ-Priorität */
+uint32_t result = osThreadFlagsSet(event_handle, 1u);
+```
 
 ::: notes
-Im zweiten Versuch bleibt Emergency oben. HeavyMath steht auf `osPriorityAboveNormal` und damit über Heartbeat. Heartbeat wird beim Timeout Ready, bekommt aber keine CPU, solange HeavyMath dauerhaft Ready bleibt. Seine LED kann je nach letztem Zustand an oder aus stehen bleiben. Emergency kann bei einem zulässigen Ereignis trotzdem laufen, weil seine Priorität höher bleibt. `osThreadYield` in HeavyMath ändert die Auswahl gegenüber der niedrigeren Priorität nicht.
+Eine ISR ist eine Interrupt Service Routine, der Interruptbehandler. Ein IRQ ist ein Interrupt Request, eine Interruptanforderung. Die ISR soll kurz bleiben und keine blockierende Betriebssystemfunktion aufrufen. Sie setzt hier nur ein Hinweisbit für die Ereignis-Task. Thread-Flags sind solche Bits im Verwaltungszustand eines einzelnen Threads; Flags bedeutet Markierungsbits.
 
-Eine gemeinsam gehaltene Ressource kommt in diesem Beispiel nicht vor. Deshalb ist es Starvation, das Verhungern einer niedrigeren Priorität, und keine Priority Inversion. Zurück zum Normalversuch geht es über einen kontrollierten Neustart mit den ursprünglichen Prioritäten, wenn ein niedriger Kontrollthread selbst nicht mehr zum Zug käme.
+Der C-Ausschnitt nutzt CMSIS-RTOS2, die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. event_handle ist die gültige Kennung der zuvor angelegten Ereignis-Task. Die Eins setzt Bit null. osThreadFlagsSet liefert einen Flagwert oder einen durch das Fehlerbit gekennzeichneten Fehler. result muss deshalb im vollständigen Programm über osFlagsError geprüft werden; ein Vergleich mit dem Statuswert osOK wäre unpassend.
 
-Eine dunkle LED verlangt trotzdem systematische Fehlersuche statt eine einzige vermutete Ursache.
+Wenn dasselbe Bit zweimal vor der Verarbeitung gesetzt wird, ist es weiter nur gesetzt. Es enthält nicht den Wert zwei. Ein mechanischer Taster kann durch Prellen mehrere Flanken erzeugen. Wir legen im Labor deshalb fest, dass das Bit nur einen ausstehenden Reaktionswunsch darstellt und keine genaue Tastendruckzahl. Für eine verlustfreie Zählung wäre eine andere Kommunikation nötig, die spätere Vorlesungen behandeln. Zuerst muss der wartende Thread korrekt eingerichtet sein.
 :::
 
-## Debugging: Stack Overflow erkennen
+## Warten auf das Flag ist keine Polling-Schleife
 
-1. Kernelstart oder Handle fehlgeschlagen?
-2. Takt, IRQ, Boot, EXTI-Priorität?
-3. Task Ready, aber verdrängt?
-4. Assert oder Overflow-Hook?
-5. Watermark, Heap, Map, Fehlerregister?
+```c
+/* C: Schleifenausschnitt innerhalb der Ereignis-Task */
+for (;;) {
+    uint32_t flags =
+        osThreadFlagsWait(1u, osFlagsWaitAny, osWaitForever);
+    if ((flags & osFlagsError) != 0u) {
+        Error_Handler();
+    }
+    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0); /* LD1 */
+}
+```
 
-- CMSIS-RTOS2 definiert `osThreadGetStackSpace` und gibt Byte zurück. Ob der konkrete Wrapper die Funktion anbietet, im Projekt prüfen. Der öffentliche Arm-Wrapper rechnet eine native Watermark auf Byte um
-- `uxTaskGetStackHighWaterMark` liefert im üblichen Port freie Stackelemente. Bei 4 Byte je Element auf Byte umrechnen
-- Ein endlicher Test und eine ungenutzte reservierte Fläche beweisen keinen sicheren Stackbedarf
+Erfolg: das angenommene Bit wird ohne `osFlagsNoClear` automatisch gelöscht.
 
 ::: notes
-Die Reihenfolge trennt Ursachen. Zuerst gültige Handles und ein gelungener Kernelstart, dann Takt, Boot und die erlaubte EXTI-Priorität, dann ob die Task Ready ist, aber nie Running wird. Ready ohne Running kann Starvation anzeigen. Danach kommen Assert, Overflow-Hook, Stack, Heap, Map und Faultregister.
+Der C-Ausschnitt ist die Warteschleife der Ereignis-Task. CMSIS-RTOS2 heißt die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. osThreadFlagsWait prüft die eigenen Hinweisbits des aufrufenden Threads. Die Eins wählt Bit null. osFlagsWaitAny bedeutet, dass eines der angegebenen Bits genügt; bei einem einzigen Bit ist die Auswahl eindeutig. osWaitForever bedeutet Warten ohne Zeitablaufgrenze. for mit leeren Bedingungen wiederholt die Verarbeitung.
 
-`configASSERT` bricht bei verletzten Annahmen ab. `configCHECK_FOR_STACK_OVERFLOW` ruft den Hook nur unter den im Port beschriebenen Bedingungen. Die native Watermark zählt freie Elemente. Bei 4 Byte je Element wird auf Byte umgerechnet. `osThreadGetStackSpace` existiert in CMSIS-RTOS2 und gibt Byte an. Liefert der konkrete Wrapper einen Fehler oder unterstützt er die Funktion nicht, ist das keine gemessene Reserve von null. Endliche Tests und eine nie beschriebene reservierte Fläche begrenzen den Nachweis. Der Compiler kann lokale Werte in Registern halten. Der Stack dient Aufrufen, automatischen Objekten soweit nötig und den Kontextframes.
+Solange kein passendes Bit gesetzt ist, ist der Thread Blocked, also wartend, und führt keine eigene Polling-Schleife aus. Nach einem erfolgreichen Aufwachen enthält flags die angenommenen Bits. uint32_t ist ein vorzeichenloser 32-Bit-Typ. Das reservierte osFlagsError-Bit kennzeichnet Fehler. Error_Handler ist die Fehlerbehandlung des Firmwareprojekts. Ein Erfolg wird nicht mit osOK verglichen.
 
-Die wichtigsten Prüfgrößen und Schlussfolgerungen werden abschließend gesammelt.
+HAL bedeutet Hardware Abstraction Layer. HAL_GPIO_TogglePin schaltet einen allgemeinen Ein-/Ausgangspin um: GPIOB ist Port B, GPIO_PIN_0 Pin null, die grüne Leuchtdiode LD1 des Kursboards. Nach der kurzen Reaktion wartet der Thread erneut. Ohne osFlagsNoClear löscht der erfolgreiche Wait das angenommene Bit automatisch. Ein zusätzliches blindes Löschen könnte ein inzwischen neu eingetroffenes Ereignis verlieren. Die LED zeigt Reaktionen, zählt aber wegen der Flagsemantik keine garantiert einzelnen Tastendrücke.
 :::
 
-## Zusammenfassung des Tages
+## Zwei Flanken, ein Hinweisbit
 
-- Kernel auf dem CM4 strukturiert Threads; Analyse bleibt nötig
-- 512 Byte Stack ≠ 128 Byte; drei Beispielthreads unter der 80-Byte-TCB-Annahme: 2800 Byte
-- Blocked spart eigene Befehle, nicht jeden Kernel-Tick
-- `osDelayUntil` setzt das Raster; Starts können trotzdem zittern
-- Emergency: Flag aus erlaubter ISR, dann kurze Arbeit
+| Schritt | Operation | Bit 0 danach |
+|---|---|---:|
+| 1 | erstes Setzen | 1 |
+| 2 | zweites Setzen vor Verarbeitung | 1 |
+| 3 | erfolgreicher Wait, automatisches Löschen | 0 |
+| 4 | neues Setzen nach dem Wait | 1 |
+
+Wie viele Hinweise wurden bei Schritt 3 angenommen?
+Wie viele physische Flanken sind daraus rekonstruierbar?
 
 ::: notes
-Der Kernel dieser Übung läuft auf dem CM4. 128 Stackelemente zu 4 Byte sind 512 Byte. Ein solcher Stack plus angenommene 80 Byte TCB sind 592 Byte. Drei Stacks von 512, 1024 und 1024 Byte plus 240 Byte Lehr-TCBs sind 2800 Byte. Heartbeat kann Blocked sein, während HeavyMath die CPU füllt. Ein relatives Delay addiert die Arbeitsdauer zur Periode. Ein absolutes Zielraster tut das nicht. Das Emergency-Flag kommt aus einer zulässigen ISR und ist kein `osOK`-Status.
+Thread-Flags sind Markierungsbits eines bestimmten Threads. Die Tabelle zeigt aufeinanderfolgende Schritte, keine zeitlich maßstäbliche Spur. Das Bit null ist anfangs gelöscht. Die ersten beiden Operationen setzen jeweils genau dasselbe Bit. Setzen bedeutet eine logische Oder-Verknüpfung mit der Eins: Aus null wird eins und aus eins bleibt eins.
 
-Die Overheadrechnung von 1,5 bis 3 µs bei 100 MHz bleibt ein separates Lehrbeispiel, nicht der Reihen-M4-Takt. Eine volle Scheduling-Analyse setzen wir nicht voraus.
+Beim erfolgreichen osThreadFlagsWait erhält der wartende Thread in Schritt drei das angeforderte Bit als gesetzten Hinweis. Diese Funktion gehört zur CMSIS-RTOS2-Schnittstelle des Common Microcontroller Software Interface Standard. Ohne die Option osFlagsNoClear werden die angenommenen Bits automatisch gelöscht. Ein neues Setzen nach dem angenommenen Wait bleibt wieder als ausstehender Hinweis erhalten; ein zusätzliches blindes Löschen ist dafür nicht vorgesehen.
 
-Frage: Hilft Yield gegen einen höheren Ready-Thread? Nein. Frage: Vergleicht man Flagbits mit `osOK`? Nein, zuerst das Fehlerbit. Frage: Ist Ready schon die Ausführung? Nein. Frage: Beweisen 2800 Byte den Heap? Nein, Idle, Queues und der MSP fehlen, und die 80 Byte sind eine Annahme.
-
-Im nächsten Termin geht es um die sichere Zusammenarbeit der Tasks.
+Die Musterantwort lautet: In Schritt drei wurde ein gesetzter Hinweis angenommen. Aus dessen Wert allein lässt sich nicht rekonstruieren, ob eine oder mehrere Flanken davor auftraten. Im konkreten tabellierten Verlauf waren es zwei, aber diese Zusatzinformation stammt aus der Aufgabenbeschreibung und nicht aus dem Bit. Ein mechanischer Taster kann durch Prellen zusätzliche Flanken liefern. Das Labor spezifiziert deshalb einen Reaktionswunsch und keinen verlustfreien Tastendruckzähler. Geeignete zählende Kommunikation und Entprellung werden damit nicht durch dieses Bit ersetzt.
 :::
 
-## Ausblick auf Termin 4
+## Vom Ereignis bis zur Reaktion
 
-- Gemeinsame Daten, Mutex, Priority Inversion
-- Bis dahin: keine blockierenden API-Aufrufe in ISRs
-- Laborprojekt mit den drei Threads mitbringen
+HM = HeavyMath; ISR = Interruptbehandler; E = Ereignis-Task. Die Achse zeigt Schritte, keine gemessenen Zeiten.
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam defaultFontSize 20
+<style>
+timingDiagram {
+  FontName SansSerif
+  robust {
+    LineColor #E2001A
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+  concise {
+    LineColor #86868B
+    BackgroundColor #FFFFFF
+    FontColor #1D1D1F
+  }
+}
+</style>
+skinparam timing {
+  BackgroundColor #FFFFFF
+  BorderColor #E5E5EA
+  LineColor #1D1D1F
+  SignalColor #E2001A
+}
+scale 1 as 110 pixels
+concise "CPU (Schritte)" as C
+robust "Ereignis-Task" as E
+@0
+C is HM
+E is Blocked
+@1
+C is ISR
+@2
+E is Ready
+@3
+C is Wechsel
+@4
+E is Running
+C is E
+@5
+E is Blocked
+C is HM
+@enduml
+```
 
 ::: notes
-Gemeinsame Daten brauchen eine Vereinbarung, wer sie wann liest und schreibt. Ein Mutex ist eine Sperre mit Eigentümerschaft. Priority Inversion entsteht, wenn ein hoher Thread auf diese Sperre wartet und ein mittlerer den niedrigen Eigentümer verdrängt. Das ist der Zweck des nächsten Termins, noch nicht seine volle Behandlung.
+Die Abbildung ist eine schematische Ablaufdarstellung mit zwei Spuren. Die Zahlen auf der horizontalen Achse markieren nur aufeinanderfolgende Schritte, keine Millisekunden und keine gemessenen Laufzeiten. CPU heißt Central Processing Unit, die zentrale Verarbeitungseinheit. ISR heißt Interrupt Service Routine, der Interruptbehandler. Die obere Spur zeigt, welche Art von Arbeit den Prozessor benutzt: HM ist HeavyMath, ISR der Interruptbehandler, Wechsel der Kontextwechsel und E die Ereignis-Task. Die untere Spur zeigt den Zustand der Ereignis-Task.
 
-Die Thread-Flag-Übergabe heute ist die bereits nötige Minimalform, damit Emergency auf den Taster reagieren kann. Sie ist keine Queue und zählt Flanken nicht verlustfrei. In einer ISR bleibt ein blockierender Aufruf unzulässig. Erlaubte nichtblockierende Übergaben werden an ihrem Vertrag geprüft.
+Zunächst rechnet HeavyMath und die Ereignis-Task ist Blocked, also wartend. Der Taster löst die ISR aus. Nach dem Setzen des passenden Flags ist die Ereignis-Task Ready, also ausführungsbereit, aber die ISR muss erst fertig werden. Es folgt der zulässige Kontextwechsel. Dann ist die Ereignis-Task Running und führt ihre Reaktion aus. Sie wartet danach erneut und HeavyMath setzt seine Rechnung fort.
 
-Aufbewahrt werden die `.ioc`, die CM4- und CM7-Quellen, der Stand von Config und Wrapper, Build- und Debugeinstellungen und ein Messprotokoll, sobald es tatsächlich Zahlen enthält.
-
-Quellen helfen, zwischen API-Vertrag, Portmechanismus und eigener Messung zu unterscheiden.
+Diese Leserichtung zeigt, warum ein Thread nicht während der ISR gleichzeitig auf demselben Kern rechnet. Sie zeigt auch, warum er nicht erst auf eine nächste Tickgrenze warten muss. Interruptmaskierung und andere höhere Interruptarbeit können den realen Beginn dennoch verzögern. Das sichere Zusammenwirken setzt eine passende Interruptpriorität und ein gültiges Threadhandle voraus.
 :::
 
-## Quellen
+## Taskpriorität und Interruptpriorität getrennt prüfen
 
-- Arm CMSIS-RTOS2: Kernel, Threads, Wait, Thread Flags
-- ARM-software/CMSIS-FreeRTOS, Stand am Wrapper prüfen
-- FreeRTOS-Kernel, Port GCC/ARM_CM4F; Dokument zu Delays, Stack, Tickless, Cortex-M-Prioritäten
-- ST AN5361, PM0214, UM2408, RM0399 — Revision am verwendeten PDF
+| Skala | Höhere Dringlichkeit |
+|---|---|
+| FreeRTOS-Taskpriorität | größere Zahl |
+| CMSIS-Threadpriorität | höheres Symbol, etwa `osPriorityHigh` |
+| Logische NVIC-Interruptpriorität | kleinere Zahl |
+
+Beispielschwelle 5 bei vier Prioritätsbits:
+IRQ-Stufen 0–4 ohne Kernelaufruf; 5–15 nur erlaubte ISR-Aufrufe.
 
 ::: notes
-CMSIS-RTOS2 prüft den Vertrag von Kernelstart, Warten und Thread-Flags. Der Wrapper prüft Einheiten und die Prioritätsabbildung. Der FreeRTOS-Kernel und der CM4F-Port prüfen Kontextwechsel, Interruptmaskierung und Tickless Idle. ST-Dokumente prüfen das Board und die Peripherie. RM ist das Reference Manual, PM das Programming Manual, UM das User Manual und AN eine Application Note. AN5361 betrifft Dual-Core-Projekte, PM0214 den Cortex-M4, UM2408 das Board MB1363 und RM0399 den STM32H745/755. Seitennummern werden nicht erfunden. Die geöffnete Revision und die eingesetzten Softwarestände werden am Projekt notiert.
+FreeRTOS verwaltet Tasks, CMSIS-RTOS2 nennt sie Threads. CMSIS steht für Common Microcontroller Software Interface Standard. Seine Prioritätssymbole werden vom verwendeten Adapter auf native Kernelstufen abgebildet; ihre Zahlen dürfen nicht ungeprüft als FreeRTOS-Zahlen eingesetzt werden. osPriorityHigh ist ein solches höheres Threadprioritätssymbol.
 
-Ein öffentlicher main-Zweig belegt einen Mechanismus und ist nicht die Laborversion. Ein Lehrbeispiel, eine statische Quellprüfung, ein erfolgreicher Build und eine Oszilloskopmessung sind verschiedene Evidenzarten. In diesen Unterlagen fehlen Firmwareprojekt und Messwerte.
+NVIC bedeutet Nested Vectored Interrupt Controller, die Interruptsteuerung des Cortex-M. Dort ist eine kleinere logische Zahl dringender. Diese Interruptskala ist unabhängig von der Taskskala. Ein hoch priorisierter Ereignis-Thread benötigt deshalb nicht einen Interrupt oberhalb der für Kernelaufrufe zulässigen Schwelle.
 
-Ein verlässlicher Entwurf verbindet richtiges Warteverhalten, gültige Prioritäten, geprüfte Speicherplanung und klar definierte Zeitannahmen.
+Im ausdrücklich angenommenen Beispiel gibt es vier implementierte Prioritätsbits und die logische Bibliotheksschwelle fünf. Dringlichere Stufen null bis vier dürfen den Kernel nicht aufrufen. Stufen fünf bis fünfzehn dürfen nur Funktionen nutzen, die für ISR-Kontext erlaubt sind; ISR heißt Interrupt Service Routine. osThreadFlagsSet ist eine solche Operation, osThreadFlagsWait und osDelay sind es nicht. Das Projekt muss Prioritätsgruppierung und tatsächliche Schwelle bestätigen. Der in Registerbitposition verschobene Portwert ist nicht die Zahl, die man blind in die logische NVIC-Konfiguration einträgt.
+:::
+
+## Die Firmware entsteht mit CubeMX und VS Code
+
+1. STM32CubeMX: Board, Takt, Pins und FreeRTOS konfigurieren
+2. CMake-Projekt für beide Kerne erzeugen
+3. VS Code mit STM32 VS Code Extension: Build und Debug
+4. Beide Images laden; Cortex-M4-Anwendung untersuchen
+
+Board: NUCLEO-H755ZI-Q, MCU STM32H755ZIT6. Kein fertiges Firmwareprojekt im Repository.
+
+::: notes
+STM32CubeMX ist das Konfigurations- und Generierungswerkzeug von STMicroelectronics. Visual Studio Code, kurz VS Code, ist der Editor; die STM32 VS Code Extension ergänzt die STM32-Entwicklungswerkzeuge. CMake beschreibt den Build, also das Übersetzen und Verknüpfen der Quellen. MCU bedeutet Microcontroller Unit, Mikrocontroller. Das genaue Board heißt NUCLEO-H755ZI-Q und trägt den STM32H755ZIT6.
+
+Die Dual-Core-Plattform besitzt Cortex-M7 und Cortex-M4. Deshalb müssen zwei passende Programme erzeugt, geladen und in der dokumentierten Startfolge ausgeführt werden. Das CM4-Programm ist unser FreeRTOS-Programm; CM4 bezeichnet den Projektteil des Cortex-M4. Der andere Teil enthält die System- und Startfunktion. Die Boardauswahl allein beweist nicht, dass eine installierte Werkzeugversion beide CMake-Ziele und die gewünschte Middleware unterstützt.
+
+Im Übungsblatt sind deshalb Versions- und Generierungskontrollen vorgeschaltet. Wenn der installierte Generator die Kombination nicht unterstützt, wird das als Werkzeugproblem dokumentiert und mit einem dazu passenden aktuellen Werkzeugstand oder bereitgestellten Dual-Core-CMake-Projekt gelöst. Wir wechseln nicht still zu STM32CubeIDE. Das Kursrepository enthält kein fertiges Firmwareprojekt; weder ein Hardwarebuild noch ein Flashversuch wird hier als bereits erfolgt behauptet.
+:::
+
+## Zwei Programme, ein untersuchter Kernel
+
+| Projektteil | Aufgabe in diesem Labor |
+|---|---|
+| CM7 / Cortex-M7 | System- und Startfunktion |
+| CM4 / Cortex-M4 | FreeRTOS und die drei Threads |
+
+- Beide Images müssen zu ihrer Zieladresse passen
+- Bootfreigabe und Resetfolge prüfen
+- Für Threadzustände den CM4-Kontext untersuchen
+- Nur einen Kernelstart im CM4-Projekt verwenden
+
+::: notes
+CM7 und CM4 sind die Projektteile für die Prozessorkerne Cortex-M7 und Cortex-M4 des STM32H755. Ein Image ist das übersetzte und verknüpfte Programm mit seinen Ladeadressen. Die Tabelle beschreibt unsere gewählte Rollenverteilung: Der M7 übernimmt Systeminitialisierung und die dokumentierte Startfunktion, der M4 den FreeRTOS-Kernel und unsere drei Threads. Ein Kernel ist der Betriebssystemkern.
+
+Zwei Kerne bedeuten hier nicht, dass ein einziger Scheduler seine Threadliste automatisch über beide verteilt. Der betrachtete Scheduler trifft seine Auswahl ausschließlich für den Cortex-M4. Welche Bootfreigabe und Resetfolge erforderlich sind, hängt vom erzeugten Dual-Core-Projekt ab und muss mit dessen Dokumentation geprüft werden. Der Grundstart wird deshalb vor dem Termin vorbereitet, statt während der kurzen Threadintegration erst entdeckt zu werden.
+
+Bei der Fehlersuche muss der Debugger, das Untersuchungswerkzeug, den richtigen Kern anhalten und dessen Variablen anzeigen. Ein erfolgreich geladenes M7-Programm beweist noch keinen gestarteten M4-Kernel. Analog führt ein zusätzlich hineinkopierter osKernelStart-Aufruf nicht zu einer besseren Initialisierung; dieser Schnittstellenaufruf startet den bereits vorbereiteten Kernel genau einmal. Die anschließende Konfigurationsfolie bezieht sich auf diesen geprüften CM4-Grundstand.
+:::
+
+## Konfiguration vor dem ersten Thread
+
+- CM4: FreeRTOS mit Schnittstelle `CMSIS_V2`
+- Präemption aktiv; Kernel-Tick als Laborvorgabe 1000 Hz
+- SysTick für den Kernel, freier TIM6 für HAL-Zeitbasis
+- LD2/PE1 und LD1/PB0 dem CM4 zuweisen
+- Taster PC13: passende EXTI-Konfiguration und erlaubte IRQ-Priorität
+
+Taktraten und Bootfolge wie in Vorlesung 1, am Projekt prüfen.
+
+::: notes
+CM4 bezeichnet den Cortex-M4-Projektteil. CMSIS_V2 heißt im Konfigurationswerkzeug die Auswahl der CMSIS-RTOS2-Schnittstelle des Common Microcontroller Software Interface Standard über dem FreeRTOS-Kernel. Die Kernelkonfiguration muss präemptive Auswahl erlauben und in unserem Labor eine Tickfrequenz von 1000 Hertz liefern. Das ist eine Lehrvorgabe, keine aus dem Boardnamen folgende Eigenschaft.
+
+SysTick ist der Systemtimer des Cortex-M. TIM6 ist ein anderer Timer. In unserer Laborvariante liefert SysTick die Kernelzeit, während ein freier TIM6 die Zeitbasis der Hardware Abstraction Layer, kurz HAL, fortschreibt. Ein korrekt integrierter gemeinsamer SysTick wäre ebenfalls möglich; die Trennung ist eine Konfigurationsentscheidung. Frequenzen, Handler und Prioritäten beider Quellen sind zu prüfen.
+
+LD2 und LD1 sind die gelbe und grüne Leuchtdiode; PE1 bedeutet Port E Pin eins, PB0 Port B Pin null. PC13 ist Port C Pin dreizehn für den Benutzer-Taster. EXTI ist der External Interrupt/Event Controller für externe Ereignisse. Sein IRQ, Interrupt Request, bleibt zunächst gesperrt. Die Lehrtaktraten von Cortex-M7 mit 400 und Cortex-M4 mit 200 Megahertz sowie die Startfolge aus Vorlesung 1 werden am erzeugten Projekt geprüft, statt als automatische Generatorwerte vorausgesetzt.
+:::
+
+## Threads anlegen: Attribute sind noch keine Ausführung
+
+```c
+/* C: Anlageausschnitt; nach osKernelInitialize */
+const osThreadAttr_t heartbeat_attr = {
+    .name = "Heartbeat",
+    .priority = osPriorityNormal,
+    .stack_size = 512u /* Byte */
+};
+osThreadId_t heartbeat_handle =
+    osThreadNew(Heartbeat, NULL, &heartbeat_attr);
+if (heartbeat_handle == NULL) {
+    Error_Handler();
+}
+```
+
+Alle drei Handles prüfen, bevor der Kernel gestartet wird.
+
+::: notes
+CMSIS-RTOS2 ist die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. Im C-Ausschnitt beschreibt osThreadAttr_t die Attribute des neuen Threads. name ist sein lesbarer Name, priority seine Prioritätsklasse und stack_size seine Stackgröße in Byte. Stack heißt Aufrufstapel. Eine solche Struktur reserviert allein noch keine Threadausführung.
+
+osThreadNew erhält die Eintrittsfunktion Heartbeat, hier kein Argument, also NULL, und den Zeiger auf die Attribute. Es liefert eine Kennung vom Typ osThreadId_t. Dieses Handle wird für spätere Abfragen verwendet. NULL als Rückgabe bedeutet, dass die Anlage gescheitert ist, zum Beispiel wegen fehlenden Speichers oder unzulässiger Attribute. Error_Handler ist die Fehlerfunktion des Projekts.
+
+osKernelInitialize muss vorher die Kernelverwaltung vorbereitet haben. Wir legen anschließend auch HeavyMath und die Ereignis-Task an. osKernelStart übergibt dann die Ausführung an den Scheduler; bei erfolgreichem Start kehrt der Aufruf in der üblichen FreeRTOS-Integration nicht zurück. Der Ausschnitt wird nicht als zweiter Kernelstart neben die von CubeMX erzeugte Sequenz gesetzt. Im Labor werden die vorhandenen generierten Stellen benutzt und ihre Handles geprüft.
+:::
+
+## Startfolge: keinen Taster auf ein ungültiges Handle schicken
+
+1. Takt, Pins und EXTI konfigurieren; Taster-IRQ gesperrt
+2. Kernel initialisieren
+3. Threads anlegen und Handles prüfen
+4. Kernel starten
+5. Ereignis-Task behandelt alte Pending-Flags und gibt IRQ frei
+6. Auf das Thread-Flag warten
+
+::: notes
+EXTI ist der External Interrupt/Event Controller. IRQ heißt Interrupt Request, also Interruptanforderung. Der Taster darf seine kernelbezogene Behandlungsfunktion erst erreichen, wenn das zugehörige Threadhandle gültig und der Kernel gestartet ist. Ein Handle ist die Kennung eines vom Kernel angelegten Objekts. Die Reihenfolge verhindert, dass eine zufällige Startflanke eine noch nicht existierende Ereignis-Task adressiert.
+
+Zunächst werden Takt und General-Purpose Input/Output, also die allgemeinen Ein-/Ausgangspins, eingerichtet. Nach der EXTI-Konfiguration bleibt dessen NVIC-Freigabe aus; NVIC ist der Nested Vectored Interrupt Controller. osKernelInitialize bereitet die Verwaltung vor, osThreadNew legt die Threads an und osKernelStart startet den Scheduler.
+
+Die höchste Ereignis-Task kommt zuerst zum Zug. Sie behandelt vor der Freigabe alte anstehende, also pending, Interruptmarkierungen nach der Laborpolitik: Vor dem Betriebsbeginn liegende Flanken werden verworfen. Anschließend gibt sie den IRQ frei und wartet auf das Hinweisbit. Ein nach der Freigabe eintreffendes Bit darf nicht zusätzlich blind gelöscht werden. Der vollständige Code im Übungsblatt ordnet diese Schritte dem bestehenden HAL-Callback zu und erzeugt keine zweite Interruptbehandlungsroutine.
+:::
+
+## Heartbeat: kurze Arbeit, dann absolutes Warten
+
+```c
+/* C: Ausschnitt der generierten Heartbeat-Funktion */
+uint32_t next = osKernelGetTickCount();
+const uint32_t period = LabMsToTicks(500u);
+for (;;) {
+    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+    LabWaitNext(&next, period);
+}
+```
+
+`LabWaitNext`: Ziel erhöhen, Zielverfehlung behandeln, tatsächlich warten. Vollständiger Helfer im Übungsblatt.
+
+::: notes
+Der C-Ausschnitt ist der Körper der Heartbeat-Threadfunktion. CMSIS-RTOS2 ist die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. osKernelGetTickCount liest den aktuellen Kernel-Tickzähler. uint32_t ist ein vorzeichenloser 32-Bit-Typ, next der bisherige Solltermin. LabMsToTicks ist unser Laborhelfer zur geprüften, aufrundenden Umrechnung von Millisekunden in Ticks. Die 500 ist die gewünschte Heartbeat-Periode in Millisekunden, period die daraus entstehende positive Tickzahl.
+
+HAL bedeutet Hardware Abstraction Layer. HAL_GPIO_TogglePin schaltet Port E Pin eins um. LabWaitNext ist eine Hilfsfunktion des Übungsblatts, kein erfundener Kernelaufruf. Sie erhöht next um period, prüft den kurzen vorzeichenlosen Zukunftsabstand und ruft osDelayUntil auf. Bei einer Zielverfehlung zählt sie diese, richtet neu aus und wartet, bevor sie zurückkehrt.
+
+Der erste Toggle erfolgt bei der ersten tatsächlichen Ausführung des Threads. Die folgenden Solltermine beziehen sich auf diesen Initialwert, nicht auf ein global garantiertes Startsignal. Die Leuchtdiode zeigt Lebenszeichen; ihre sichtbare Ein-Zeit ist keine Messung der kurzen Threadarbeitsdauer. Eine Folge stabil wirkender Toggles beweist daher weder die größte Ausführungszeit noch einen vollständigen Fristnachweis.
+:::
+
+## HeavyMath macht Präemption beobachtbar
+
+```c
+/* C: Körper der generierten HeavyMath-Funktion */
+static volatile uint32_t accumulator;
+for (;;) {
+    accumulator = accumulator * 1664525u + 1013904223u;
+}
+```
+
+- Kein Delay und keine Interruptsperre
+- Ergebnis bleibt als Speicherzugriff beobachtbar
+- Normalpriorität unterhalb Heartbeat
+
+::: notes
+Die HeavyMath-Task ist eine absichtlich dauerhaft bereite Hintergrundlast. Task bezeichnet die vom Kernel verwaltete Aufgabe. for mit leeren Bedingungen ist eine Endlosschleife. uint32_t ist ein vorzeichenloser 32-Bit-Zahlentyp; seine Rechnung läuft definiert modulo zwei hoch 32. Die Konstanten erzeugen eine fortgesetzte Ganzzahlrechnung, kein physikalisches Modell.
+
+static gibt accumulator eine dauerhafte Lebensdauer und initialisiert ihn einmal mit null. volatile schreibt vor, dass die Zugriffe als beobachtbare Speicherzugriffe erhalten bleiben. Dadurch kann der Compiler die gesamte Schleife nicht einfach als unbenutzte Rechnung entfernen. volatile ist keine Synchronisation zwischen Threads und macht zusammengesetzte Operationen nicht atomar. In diesem Beispiel bearbeitet nur HeavyMath diese Variable.
+
+Der Code enthält weder Warteaufruf noch Interruptsperre noch Zugriff auf eine Leuchtdiode. Dennoch kann der höher priorisierte Heartbeat laufen, wenn er bereit wird: Der präemptive Kernel verdrängt HeavyMath und setzt ihn danach fort. Im Gegensatz dazu würde derselbe nicht zurückkehrende Körper als step-Funktion den kooperativen Dispatcher aus Vorlesung 2 festhalten. Genau diesen Unterschied soll das Hardwareexperiment zeigen.
+:::
+
+## Beobachtung begründen, Fehler getrennt diagnostizieren
+
+| Beobachtung | Mögliche Erklärung / Prüfung |
+|---|---|
+| Heartbeat trotz HeavyMath aktiv | Präemption unter gewählter Ordnung |
+| Heartbeat bleibt stehen | Ready ohne Zuteilung oder anderer Fehler |
+| Threadanlage liefert NULL | Attribute und Speicher prüfen |
+| Taster reagiert nicht | Boot, Pin, IRQ, Handle, Flagpfad prüfen |
+
+Build und Boardmessung sind unterschiedliche Nachweise.
+
+::: notes
+Heartbeat ist die periodische Lebensanzeige, HeavyMath die Hintergrundlast. Seine unveränderte Bereitschaft zusammen mit tatsächlichen Heartbeat-Aktionen ist unter den bekannten Prioritäten ein Hinweis auf Präemption, also Verdrängung. Ein stehender Heartbeat beweist dagegen allein noch keine Starvation. Ready ohne Zuteilung passt dazu; ein fehlerhafter Kernelstart oder Pinzugriff kann äußerlich ähnlich aussehen.
+
+NULL ist ein ungültiger Zeigerwert. Bei fehlgeschlagener Threadanlage werden Attribute, unterstützte Prioritäten und Heap, der dynamische Speicherpool, geprüft. Ein Stacküberlauf betrifft dagegen die Tiefe des Aufrufstapels während der Ausführung. Beide Probleme haben verschiedene Ursachen. Eine High-Water-Mark beschreibt die bisher beobachtete minimale freie Stackreserve. Die native FreeRTOS-Abfrage zählt im üblichen Port Elemente, die CMSIS-Abfrage osThreadGetStackSpace liefert Byte, sofern sie unterstützt wird. Eine endliche Testreihe ist kein Nachweis für alle möglichen Ausführungspfade.
+
+IRQ heißt Interrupt Request. Beim Taster werden zuerst Bootfolge, korrekter Pin, Interruptfreigabe, erlaubte Priorität und Handle geprüft. Ein Build prüft Übersetzung und Verknüpfung; er ersetzt keine Messung auf der Hardware. Beobachtungswerte werden nur eingetragen, wenn der Versuch tatsächlich durchgeführt wurde.
+:::
+
+## Was Sie auf Papier und am Board abgeben
+
+- Zustands- und Zeitachse mit begründeter Prozessorwahl
+- Tick-/Periodenrechnung und Speicherbilanz mit Annahmen
+- CubeMX-`.ioc`, CM4-/CM7-Quellen, CMake- und Debugkonfiguration
+- Normal- und Starvation-Versuch mit unverändertem Arbeitscode
+- Beobachtung und Nachweisgrenze getrennt dokumentieren
+
+::: notes
+Die Papieraufgaben verlangen mehr als das Wiedergeben von Zustandsnamen. Sie begründen jede Auswahl mit den bereiten Prioritäten und unterscheiden Wartebeginn, Bereitschaft und tatsächlichen Start. Die Tickrechnung benennt Frequenz und Phase; die Speicherbilanz unterscheidet Annahmen von dem tatsächlichen Linkerbericht.
+
+CubeMX ist das Konfigurationswerkzeug. Seine ioc-Datei speichert die Projektkonfiguration. CM4 und CM7 bezeichnen die beiden Projektteile für Cortex-M4 und Cortex-M7. CMake ist das Buildsystem; die Debugkonfiguration legt die Untersuchung und das Laden der Programme fest. Diese Dateien und die Werkzeugversionen müssen zusammen aufbewahrt werden, damit der Hardwareversuch nachvollziehbar bleibt.
+
+Im Normal- und Starvation-Versuch bleibt die Arbeitsfunktion von HeavyMath gleich. Nur ihre Priorität wird gezielt verändert und danach zurückgesetzt. So lässt sich die Änderung der Auswahlregel als Ursache untersuchen. Beobachtungen beschreiben, was tatsächlich gesehen wurde. Eine angenommene Ausführungszeit ist dagegen eine Modellannahme; fehlende Hardwareversuche werden als nicht durchgeführt dokumentiert. Das zugehörige Quiz prüft dieselben Unterscheidungen in kurzen Fragen, ersetzt aber die begründete Aufgabenlösung nicht.
+:::
+
+## Quiz: Entscheidung zuerst, Begründung danach
+
+15 Minuten für das Quiz mit 17 Fragen:
+
+1. Antworten zunächst einzeln wählen
+2. Bei Unsicherheit Zustand, Einheit oder Prioritätsregel notieren
+3. Zwei besonders strittige Antworten gemeinsam begründen
+
+Leitfragen: Wer ist Ready? Was zählt ein Tick? Was speichert ein Flag?
+
+::: notes
+Das Quiz im Ordner quizacademy enthält 17 Fragen zum gleichen Lernpfad. Die erste Auswahl erfolgt einzeln, damit die eigene Vorstellung sichtbar wird. Rund zwölf Minuten stehen für die Antworten und drei Minuten für die gemeinsame Besprechung besonders strittiger Fragen zur Verfügung. Das ist eine Unterrichtsplanung, keine feste Prüfungszeit. Neue Begriffe oder umfangreiche Hardwareinbetriebnahme werden in dieser Phase nicht eingeführt.
+
+Ready bedeutet ausführungsbereit. Bei einer Zustandsfrage wird zuerst geprüft, ob eine sachliche Wartebedingung besteht, und danach die höchste bereite Priorität ausgewählt. Ein Tick ist die Kernel-Zeiteinheit; bei Zeitfragen werden Frequenz, Umrechnung und Aufrufphase getrennt betrachtet. Ein Flag ist ein Markierungsbit, kein verlustfreier Zähler wiederholter Ereignisse. Diese drei Leitfragen helfen, die Antworten zu begründen statt nur ein bekanntes Stichwort zu suchen.
+
+Eine häufige Fehlannahme ist, dass höhere angelegte Priorität immer laufen muss; die Wartebedingung schließt sie jedoch aus. Eine zweite ist, dass ein absolutes Ziel den Prozessorstart garantiert. Eine dritte ist das Verwechseln von Statuswerten und zurückgegebenen Flagbits. Die Erläuterungen der Quizdatei liefern die jeweiligen Begründungen. Fragen Sie beim Abschluss nach einer begründeten Prioritätsentscheidung und einem Unterschied zwischen Modellannahme und tatsächlicher Beobachtung.
+:::
+
+## Zusammenfassung und Brücke zu Vorlesung 4
+
+- Thread: fortsetzbarer Ablauf; Job: einzelne Aktivierung
+- Nur Ready-Tasks konkurrieren nach Priorität
+- Blockieren gibt Zeit frei; Yield beseitigt keine niedrigere Priorität
+- Absolutes Tickziel hält den Sollplan, kein Startversprechen
+- Flagübergabe: zulässige ISR, gültiges Handle, wartender Thread
+
+Nächste Frage: Wie schützen mehrere Threads gemeinsame Daten?
+
+::: notes
+Ein Thread ist der fortsetzbare Ablauf, ein Job seine einzelne Aktivierung. Ready bedeutet ausführungsbereit; Blocked bedeutet wartend. Der präemptive Scheduler wählt die höchste bereite Priorität und kann eine niedrigere unterbrechen. Eine ständig bereite hohe Task kann niedrigere Tasks aushungern. osThreadYield fordert eine neue Auswahl, verändert diese Rangfolge aber nicht.
+
+Das absolute Ziel von osDelayUntil bleibt am vorhandenen Tickplan orientiert. Ein Tick ist die Kernel-Zeiteinheit. Daraus folgt kein garantierter physikalischer Startzeitpunkt; Last und Interruptarbeit bleiben relevant. Ein Thread-Flag ist ein Hinweisbit. Die ISR, Interrupt Service Routine, darf es nur bei gültigem Threadhandle und zulässiger Interruptpriorität übergeben. Der wartende Thread verarbeitet den Hinweis und blockiert danach wieder.
+
+In Vorlesung 4 kommen gemeinsam benutzte Daten und Ressourcen hinzu. Ein Mutex ist eine Sperre mit Eigentümerschaft; er ist kein beliebiger Warteaufruf für eine ISR. Dort erklären wir auch Priority Inversion, das Verzögern einer hohen Aufgabe durch die Ressourcenabhängigkeit zu einer niedrigeren. Die heutige Starvation ohne gemeinsame Ressource bleibt davon zu unterscheiden. Bewahren Sie für diesen Anschluss Ihr dokumentiertes Drei-Thread-Projekt auf.
+:::
+
+## Quellen und Gültigkeitsgrenzen
+
+- Buttazzo: *Hard Real-Time Computing Systems* — Task- und Zeitmodell
+- [Arm CMSIS-RTOS2](https://arm-software.github.io/CMSIS_6/latest/RTOS2/index.html): Threads, Wait, Thread Flags
+- [CMSIS-FreeRTOS-Adapter](https://github.com/ARM-software/CMSIS-FreeRTOS): Einheiten und Rückgaben
+- [FreeRTOS-Dokumentation](https://www.freertos.org/Documentation/): Scheduler und Cortex-M-Port
+- ST: UM2408, RM0399, AN5361; [STM32 VS Code Extension](https://www.st.com/en/development-tools/stm32-vscode-extension.html)
+
+Kernel-, Adapter-, CubeH7- und Werkzeugversion am eigenen Projekt festhalten.
+
+::: notes
+Die zentrale Literatur von Giorgio C. Buttazzo ordnet Taskmodelle und Fristnachweise ein. CMSIS heißt Common Microcontroller Software Interface Standard; seine RTOS2-Dokumentation beschreibt die zweite Betriebssystem-Schnittstelle. Sie ist die Quelle für Parameter, Tickeinheiten und zugelassene Aufrufkontexte. Der CMSIS-FreeRTOS-Adapter zeigt deren Abbildung auf den konkreten Kernel. Sein öffentlicher aktueller Stand ist nicht automatisch die Version des erzeugten STM32-Projekts.
+
+STMicroelectronics liefert das Boardhandbuch UM2408, User Manual, das Referenzhandbuch RM0399, Reference Manual, und die Anwendungsschrift AN5361, Application Note, für Dual-Core-Aspekte. Die Dokumentrevision und die tatsächliche Boardbestückung sind zu berücksichtigen. Die STM32 VS Code Extension dokumentiert die jeweilige Entwicklungswerkzeug-Integration; konkrete Menünamen können mit der Version wechseln.
+
+Die Zeitachsen und Speicherwerte dieser Vorlesung sind ausdrücklich didaktische Modelle. Das Repository enthält Kursmaterial, kein vollständiges Firmwareprojekt und keine Boardmessungen. Ein Dokumentrender prüft die Ausgabe, ein Firmwarebuild die Übersetzbarkeit und ein Hardwareversuch nur die tatsächlich untersuchten Bedingungen. Diese verschiedenen Nachweise dürfen nicht miteinander gleichgesetzt werden.
 :::
