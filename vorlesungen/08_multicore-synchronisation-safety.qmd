@@ -1,1281 +1,952 @@
 ---
 title: "08 · Multicore-Synchronisation & Safety"
-subtitle: "HSEM, Watchdogs und MPU-Grenzen · EZS · DHBW Stuttgart"
+subtitle: "Besitz, Fortschritt und Speicherrechte · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Vortrag:  quarto preview vorlesungen/08_multicore-synchronisation-safety.qmd
-# Handout:  quarto render vorlesungen/08_multicore-synchronisation-safety.qmd --profile handout --to pdf
-format: revealjs
+format:
+  revealjs:
+    title: ""
+    pagetitle: "08 · Multicore-Synchronisation & Safety"
+    css: ../assets/styles/lecture08.css
+center: false
 ---
 
-## Willkommen in der Welt der Robustheit!
+## 08 · Konkurrenz und Fehler beherrschen
 
-- Achter Termin: Besitz, Sichtbarkeit, Frist und Speichergrenze
-- Dieselbe Plattform: STM32H755, M7 Bare Metal, M4 FreeRTOS
-- Vier Fähigkeiten: Lost Update, Warten ohne Verlust, Fensterrechnung, MPU-Grenze
-- Lehrbeispiele sind keine Messung und keine Freigabe
-
-::: notes
-Vorlesung 7 hat gefragt, was eine Zeitmessung belegt. Zwei Programme können trotzdem dieselbe Stelle zerstören oder ihren Fortschritt verlieren, obwohl beide Takte laufen. Der Cortex-M7 arbeitet Bare Metal, also ohne Echtzeitkernel. Der Cortex-M4 nutzt FreeRTOS. CMSIS-RTOS2, Common Microcontroller Software Interface Standard in Version 2, ist die Schnittstelle zu diesem Kernel, nicht ein Scheduler über beide Kerne. CPU meint hier den jeweiligen Prozessorkern.
-
-HSEM, Hardware Semaphore, ist ein Hardware-Schloss für eine Ressource. Ein Watchdog prüft, ob rechtzeitig aufgefrischt wird. Die MPU, Memory Protection Unit, prüft Regionen eines Kerns. Die vier Lernziele sind beobachtbar: ein Lost Update erklären, ein Warten ohne verlorenes Aufwecken skizzieren, ein Fenster aus dem zugehörigen Takt rechnen und eine MPU-Grenze benennen. Takte und die installierte HAL-Version, Hardware Abstraction Layer, sind offene Projektwerte. Sie hindern die Begriffe nicht.
-
-Zuerst kommen Ressourcenkonflikte, danach Fehlererkennung und Schutz.
-:::
-
-## Agenda für heute
-
-1. Gemeinsamer Zugriff und Lost Update
-2. HSEM: Besitz, Warten, Recovery
-3. Watchdog: Nachweis, IWDG, WWDG
-4. EWI-Budget und MPU-Grenzen
-5. Drei Laborteile, Beobachtung offen
-
-Boot-HSEM und Nutzdaten-HSEM sind zwei IDs. ID 0 bleibt dem Start, wenn das Template sie nutzt.
+- Multicore-Synchronisation und Safety auf dem STM32H755
+- Besitz, Fortschritt und Speicherrechte unterscheiden
+- HSEM, Watchdogs und MPU verständlich einsetzen
+- Rechnen auf Papier und zwei getrennte Hardwareversuche
 
 ::: notes
-Die fünf Blöcke bauen aufeinander auf. Zuerst, wer eine gemeinsame Stelle anfassen darf. Dann, wie ein Schloss genommen, erwartet und im Fehlerfall nicht mit halben Daten weiterverwendet wird. Danach, welcher Nachweis einen Watchdog füttern darf. Anschließend, was eine Speichergrenze wirklich abfängt. Das Labor folgt derselben Trennung: Zähler, Fenster, kurze Reaktion und MPU-Test.
+Dieser Termin ergänzt den Datenaustausch und die Zeitmessung der vorherigen Vorlesungen um drei Schutzfragen. Wer darf eine gemeinsame Ressource verändern? Woran erkennen wir ausbleibenden Fortschritt? Welche Speicheradresse darf ein Kern benutzen? HSEM bedeutet Hardware Semaphore, ein im Chip verwaltetes Schloss. Ein Watchdog ist ein Wächter mit ablaufendem Zähler. MPU bedeutet Memory Protection Unit, die Speicherschutzeinheit eines Kerns.
 
-Aus Vorlesung 6 brauchen wir den nicht cachebaren Shared-Block, das Zustandsprotokoll und die Barriere. Aus Vorlesung 7 die Trennung von Beobachtung und Beweis. Wir wiederholen nicht die ganze Cache-Vorlesung. HSEM, Hardware Semaphore, ID 0 ist der Boot, wenn das Startprotokoll sie benutzt. ID 1 ist die Lehrressource für den Zähler, nur wenn sie frei ist. RTOS ist das Echtzeitbetriebssystem auf dem M4.
-
-Das Ping-Pong-Protokoll beantwortet bereits, wer wann schreiben darf.
+Die Plattform bleibt das NUCLEO-H755ZI-Q mit dem STM32H755: Cortex-M7 ohne Echtzeitkernel und Cortex-M4 mit FreeRTOS, dem bisher verwendeten Echtzeitbetriebssystem. Safety bezeichnet den Schutz vor unvertretbaren Folgen einer Fehlfunktion. Die Übung führt Mechanismen vor und begründet ihre Grenzen. Ein funktionierender Lehrversuch allein ist keine Freigabe für eine sicherheitskritische Anlage. Zuerst betrachten wir einen überschaubaren gemeinsamen Zähler; anschließend folgen Fortschrittsfristen und Speicherrechte.
 :::
 
-## Recap: Der Ping-Pong Datenaustausch
+## Was Sie aus Vorlesungen 1–7 mitbringen
 
-VL6, nicht „zwei Flags“ als Universalrezept. Ein Block `ipc` in SRAM4:
-
-- `ipc.magic`, `ipc.state`, `ipc.payload`, Offsets 0, 4, 8
-- Zustände `TURN_M7`, `REQUEST_M4`, `RESPONSE_M7`
-- Payload schreiben, Barriere, dann Zustand veröffentlichen
-- Basisregion nicht cachebar: `0x38000000`, 64 KiB
+| Bekannt | Neue Frage |
+|---|---|
+| Deadline und Antwortzeit | Wie schnell wird ein Fehler beherrscht? |
+| Task, Mutex, Interrupt | Wer schützt gegen den zweiten Kern? |
+| Shared Memory und Cache | Reicht ein Schloss für Sichtbarkeit? |
+| Messvertrag und Trace | Was belegt der Fehlerexperiment-Lauf? |
 
 ::: notes
-Die vorige Folie hat zwei Schlösser getrennt. Hier steht der Datenvertrag, den das Schloss später umschließt. SRAM, Static Random Access Memory, ist der Speicher. SRAM4 ist die Bank ab `0x38000000`, 64 KiB, kein vierter Kern. `ipc` ist der gemeinsame Block aus Vorlesung 6, nicht ein zweites Layout. `volatile` hindert den Compiler, eine Pollschleife aus einem Register zu wiederholen. Es erzeugt keine Cache-Kohärenz und keine Sperre. DMB, Data Memory Barrier, ordnet sichtbare Speicherzugriffe. Es schreibt keine schmutzige Cache-Zeile zurück. Die Basisregion ist auf dem M7 nicht cachebar: TEX 001, C 0, B 0, S 1. Der M4 muss dieselbe Adresse erreichen. Die Attribute des M4 prüfen wir im Projekt.
+Eine Deadline ist die geforderte Abschlussfrist einer konkreten Aktivierung, die Antwortzeit der Abstand von ihrer Freigabe bis zum Abschluss. Eine Task ist ein vom Echtzeitkernel verwalteter Ausführungspfad. Ein Mutex ist eine Sperre mit Besitzer innerhalb des verwendeten Kernels. Ein Interrupt unterbricht den normalen Ablauf für einen Handler. Shared Memory ist gemeinsam erreichbarer Speicher; ein Cache hält lokale Kopien. Ein Trace ist eine geordnete Ereignisaufzeichnung. Der Messvertrag benennt Anfang, Ende, Zeitquelle und Bedingungen einer Messung.
 
-Beim gemeinsamen Inkrement genügt das Ping-Pong nicht automatisch. Dort schreibt abwechselnd genau ein Berechtigter. `shared_count++` ist Lesen, Rechnen und Schreiben. Beide dürfen gleichzeitig lesen. Das Protokoll sagt für diesen Zähler nichts.
-
-Als Nächstes zerlegen wir genau dieses Inkrement.
+Diese Begriffe genügen als Einstieg. Das Zustandsprotokoll aus Vorlesung 6 gibt immer einem Teilnehmer Schreibrecht. Heute ändern wir die Anforderung: Beide Kerne wollen denselben Zähler unabhängig erhöhen. Eine einzelne Variable ersetzt das alte Protokoll nicht. Auch die Zeitmessung aus Vorlesung 7 bleibt nützlich: Ein beobachteter Reset zeigt eine Reaktion, aber noch keine maximale Reaktionszeit für alle möglichen Fehler. Wir führen die neuen Mechanismen daher jeweils mit Voraussetzung, Beispiel und Aussagegrenze ein.
 :::
 
-## Das ungelöste Problem
+## Fünf überprüfbare Lernziele
 
-- Ein FreeRTOS-Mutex gilt für Tasks dieses Kernels
-- `__disable_irq` maskiert nur den lokalen Kern
-- `shared_count++` ist Lesen, Addieren, Schreiben
-- Software-Synchronisation zwischen Kernen ist möglich, hier aber nicht der Lehrweg
-- HSEM ist die gewählte Hardware-TryLock-Lösung
+1. Ein verlorenes Inkrement Schritt für Schritt erklären
+2. HSEM-Besitz und Datensichtbarkeit gemeinsam begründen
+3. Eine Freigabe ohne verlorenes Aufwecken erwarten
+4. Watchdog-Fenster und Reaktionsbudgets berechnen
+5. MPU-Schutz von einer sicheren Fehlerreaktion unterscheiden
 
 ::: notes
-Das Ping-Pong hat einen Besitzer je Phase. Der Zähler hat zwei Schreiber ohne diese Phase. Ein Mutex ist ein gegenseitiger Ausschluss im lokalen Kernel. Der M7 ruft ihn nicht auf. `__disable_irq` sperrt Unterbrechungen des Kerns, der den Befehl ausführt. Der andere Kern läuft weiter. Read-Modify-Write heißt: alten Wert laden, im Register ändern, zurückschreiben. Zwischen den drei Schritten kann der andere Kern denselben Wert gelesen haben.
+Ein verlorenes Inkrement, auch Lost Update genannt, entsteht durch überlappende Lese-Änderungs-Schreibfolgen. Die Erklärung muss deshalb die privaten Registerkopien und den gemeinsamen Speicher getrennt verfolgen. HSEM, Hardware Semaphore, entscheidet den Besitz einer Ressource, aber macht keine Cachekopien aktuell. Datensichtbarkeit benötigt zusätzlich den Vertrag aus Vorlesung 6.
 
-Ein Protokoll oder geeignete atomare Zugriffe können Kerne ebenfalls ordnen. Das ist keine generelle Unmöglichkeit von Software. Ob ein Zugriff auf diesem Chip atomar und sichtbar ist, hängt von Breite, Ausrichtung, Speicherattribut und Toolchain ab. `volatile` ist dafür kein portabler Ersatz. Wir wählen HSEM, Hardware Semaphore, weil der Erwerb in Hardware entschieden wird und der Vertrag im Labor kurz bleibt. HAL, Hardware Abstraction Layer, ist die Treiberschicht um die Register.
-
-Welches Mittel welchen Konflikt abdeckt, zeigt die nächste Tabelle.
+Verlorenes Aufwecken bezeichnet eine Freigabe, die vor dem Warten stattfindet und nicht gespeichert wird. Ein speicherndes Ereignis löst dieses Problem, überträgt jedoch keinen Besitz. Ein Watchdog-Fenster begrenzt den erlaubten Zeitpunkt des Nachladens nach unten und oben. Das Reaktionsbudget addiert die tatsächlich nacheinander liegenden Verzögerungen bis zur geforderten Reaktion. Die MPU, Memory Protection Unit, prüft Adressregionen eines Kerns. Sie versteht weder die Länge eines C-Arrays noch die Sicherheit einer angeschlossenen Maschine. Diese Unterscheidungen werden in Papieraufgaben, dem Labor und dem abschließenden Quiz überprüft.
 :::
 
-## Warum ein FreeRTOS-Mutex hier versagt
+## Vier Schulstunden sinnvoll aufteilen
 
-| Bedarf | Mittel |
-|--------|--------|
-| M7 gegen M4 | HSEM plus Sichtbarkeit aus VL6 |
-| zwei M4-Tasks | lokaler Mutex, zusätzlich |
-| ISR und Task, dieselbe Kennung | kein blockierender Mutex in der ISR |
-
-`HAL_HSEM_FastTake` setzt ProcessID 0. Zwei Nutzer mit derselben Kennung sind für HSEM ununterscheidbar.
+| Tätigkeit | Minuten |
+|---|---:|
+| Konkurrenz, Besitz und Warten · Folien 1–23 | 45 |
+| Fortschritt, Watchdogs und Schutz · Folien 24–50 | 45 |
+| Vier Papieraufgaben mit Auswertung | 50 |
+| Vorbereiteter STM32-Versuch | 25 |
+| Quiz und gemeinsame Klärung | 15 |
+| Gesamt | 180 |
 
 ::: notes
-Die vorige Folie hat den lokalen Geltungsbereich genannt. Die Tabelle ordnet ihn zu. Ein FreeRTOS-Mutex bleibt richtig, wenn zwei Tasks des M4-Kernels denselben Puffer teilen. Er sieht den M7 nicht. Kommen beide Ebenen vor, gilt eine globale Sperrreihenfolge für lokale Mutexes und HSEM-IDs gemeinsam. ISR, Interrupt Service Routine, darf keine blockierende RTOS-API nehmen. RTOS ist das Echtzeitbetriebssystem, API die Programmierschnittstelle.
+Vier Schulstunden zu je 45 Minuten ergeben 180 Minuten. Der Plan enthält die Erklärzeit, die Übungen und das Quiz; zusätzliche Einrichtungszeit für eine neue Entwicklungsumgebung ist darin nicht enthalten. STM32 bezeichnet die hier verwendete Mikrocontrollerfamilie. Der Programmierteil setzt ein vorbereitetes, gemeinsam startendes Dual-Core-Projekt voraus. Dual Core heißt zwei Prozessorkerne auf dem Chip.
 
-FastTake ist das Ein-Schritt-Verfahren und trägt ProcessID 0. ProcessID ist eine softwaregewählte 8-Bit-Kennung, keine Core-ID und kein Task-Handle. Zwei M4-Tasks, die beide FastTake auf dieselbe ID rufen, kann das Schloss nicht trennen. Der einfache Versuch hat deshalb genau einen Worker je Kern. Eine ISR nimmt diese ID nicht nebenbei.
-
-Frage: Warum schützt der M4-Mutex den M7 nicht? Weil der M7 das Protokoll dieses Kernels nicht benutzt. Frage: Warum hilft `__disable_irq` auf dem M4 nicht gegen den M7? Weil der M7 weiterläuft.
-
-Ohne diese Ebenen genügen zwei Inkremente für den Fehler.
+Die ersten 45 Minuten enden mit einer kurzen Transferfrage zum Zähler. Die zweiten 45 Minuten führen vom Fortschrittsnachweis zu den zeitlichen und räumlichen Grenzen des Schutzes. In den 50 Übungsminuten rechnen Sie vier Aufgaben auf Papier und vergleichen Ihre Begründungen. Der Hardwareteil nutzt vorrangig den HSEM-Zähler; HSEM ist das Hardware-Schloss. Eine vorbereitete Watchdog-Station kann zusätzlich das Fenster zeigen. Bei fehlender Hardware bleibt die vollständige Pflichtübung auf Papier lösbar. Das Quiz dient anschließend dazu, die häufigen Verwechslungen anhand konkreter Fälle zu klären.
 :::
 
-## Die Multicore Race Condition
+## Ein Beispiel, drei verschiedene Schutzfragen
 
-Startwert 5. Zwei Inkremente. Erwartet 7. Die Schritte sind nacheinander, kein gemeinsamer Takt.
+Zwei Kerne erhöhen einen gemeinsamen Zähler.
 
-| Reihenfolge | M7-Register | M4-Register | SRAM |
-|-------------|------------:|------------:|-----:|
+| Frage | Mechanismus |
+|---|---|
+| Wer darf jetzt ändern? | Besitzprotokoll und HSEM |
+| Wird notwendige Arbeit abgeschlossen? | Fortschrittsfristen und Watchdog |
+| Ist dieser Kernzugriff erlaubt? | MPU-Regionen |
+
+Ein richtiges Ergebnis braucht zusätzlich eine fachliche Prüfung.
+
+::: notes
+Wir verwenden einen gemeinsamen Zähler als durchgängiges Beispiel. Jeder Kern soll eine endliche Zahl von Erhöhungen ausführen. HSEM, Hardware Semaphore, kann die Änderung serialisieren, also die beiden kritischen Abschnitte nacheinander zulassen. Ein Watchdog kann einen ausbleibenden Refresh, das Nachladen seines Zählers, erkennen. Die Software muss den Refresh an den Abschluss der erforderlichen Arbeit binden. MPU, Memory Protection Unit, verhindert Zugriffe dieses Kerns auf ausdrücklich verbotene Regionen.
+
+Diese Mechanismen ergänzen sich, beantworten aber verschiedene Fragen. Ein korrekt verriegelter Abschnitt kann endlos laufen. Ein rechtzeitig abgeschlossener Abschnitt kann den falschen Wert berechnen. Ein Überlauf innerhalb einer erlaubten Speicherregion kann von der Speicherschutzeinheit unbemerkt bleiben. Umgekehrt würde ein Watchdog nicht melden, dass eine falsche Rechnung pünktlich beendet wurde. Wir beginnen mit der ersten Frage, weil der Fortschrittsnachweis auf einer sauber definierten Arbeit aufbauen muss.
+:::
+
+## Warum zwei Inkremente nur eines ergeben
+
+Startwert 5 · Erwartung nach zwei Inkrementen: 7.
+
+| Schritt | M7-Kopie | M4-Kopie | Speicher |
+|---|---:|---:|---:|
 | M7 liest | 5 | — | 5 |
 | M4 liest | 5 | 5 | 5 |
-| beide rechnen | 6 | 6 | 5 |
+| beide addieren privat | 6 | 6 | 5 |
 | M7 schreibt | 6 | 6 | 6 |
-| M4 schreibt | 6 | 6 | **6** |
+| M4 schreibt | 6 | 6 | 6 |
 
-Geschützt und nacheinander: der zweite liest 6 und schreibt 7.
-
-::: notes
-Die Tabelle zeigt ein Lost Update, einen verlorenen Fortschritt. SRAM ist der gemeinsame Speicher, nicht das Register im Kern. Beide laden 5 in ihre private Kopie, addieren eins und schreiben 6. Zwei Schreibvorgänge ergeben 6, nicht 7. Die leeren Zellen der ersten Zeile sind „noch nicht gelesen“, nicht ein gleichzeitiger Takt. Die Reihenfolge ist didaktisch. Sie ist kein Trace und keine Nanosekundenmessung.
-
-In der geschützten Variante hält der M7 das Schloss, liest 5, schreibt 6 und gibt frei. Der M4 nimmt danach neu, liest 6 und schreibt 7. Eine alte Registerkopie bleibt falsch, auch wenn das Schloss erst um das letzte Schreiben gelegt wird. Der Verlierer muss nach dem Erwerb neu laden.
-
-Abbildung A stellt beide Verläufe nebeneinander.
-:::
-
-## Lost Update: zwei Inkremente, ein Ergebnis
-
-Abbildung A. Schema, keine Messung. Links bleibt der SRAM bei 6. Rechts wird nach dem Erwerb neu gelesen.
-
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "M7 ungeschuetzt" as A
-concise "M4 ungeschuetzt" as B
-concise "SRAM" as S
-@0
-A is "liest 5"
-B is "idle"
-S is "5"
-@1
-A is "reg 6"
-B is "liest 5"
-@2
-A is "schreibt"
-S is "6"
-@3
-B is "schreibt"
-S is "6"
-@enduml
-```
-
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "M7 mit HSEM" as A
-concise "M4 mit HSEM" as B
-concise "SRAM" as S
-@0
-A is "liest 5"
-B is "wartet"
-S is "5"
-@1
-A is "schreibt"
-S is "6"
-@2
-A is "frei"
-B is "liest 6"
-@3
-B is "schreibt"
-S is "7"
-@enduml
-```
+Logische Reihenfolge, kein gemessener Zeitverlauf.
 
 ::: notes
-Abbildung A hat zwei Kernspuren und den gemeinsamen Speicher. Links lesen beide 5, beide bilden 6, der SRAM bleibt 6. Rechts wartet der M4, bis der M7 freigibt, und liest den neuen Wert. Die Kanten sind eine logische Reihenfolge. Die Achse ist kein Zeitmaßstab in Nanosekunden. HSEM, Hardware Semaphore, serialisiert hier den Erwerb. Die Sichtbarkeit des geschriebenen Wortes kommt zusätzlich aus der nicht cachebaren Region und der Barriere, nicht aus dem Schloss allein.
+Das Inkrement in der Programmiersprache C besteht hier aus Lesen, Addieren und Schreiben. M7 und M4 bezeichnen den Cortex-M7 und Cortex-M4. Ihre Register sind privat; der gemeinsame Speicher ist eine andere Stelle. Beide lesen den alten Wert fünf. Beide bilden privat sechs. Der zweite Schreibvorgang überschreibt sechs durch sechs. Daher enthält der Speicher am Ende sechs, obwohl zwei Inkremente ausgeführt wurden. Das fehlende Inkrement heißt Lost Update, verlorene Aktualisierung. Der Gedankenstrich bedeutet, dass der M4 noch nicht gelesen hat.
 
-Frage: Warum reicht ein Schloss nur um das letzte Schreiben nicht? Weil die Registerkopie schon veraltet ist. Der Besitzer muss den Speicher nach dem Erwerb neu lesen und daraus rechnen.
-
-Als Nächstes stehen die Eigenschaften, die dieses Schloss haben muss.
+Die Tabelle zeigt eine mögliche logische Reihenfolge, keine Messung und keine gemeinsame Taktflanke. Eine andere Reihenfolge kann zufällig sieben ergeben. Dieser günstige Lauf beweist keine Freiheit von Konkurrenzfehlern. Auch ein ausgerichtetes 32-Bit-Wort löst das Problem nicht: Ein einzelner Lesezugriff kann ungeteilt sein, während die ganze Lese-Änderungs-Schreibfolge weiter unterbrechbar bleibt. Ebenso hindert volatile den Compiler an bestimmten Optimierungen, schützt aber keine Folge gegen den zweiten Kern.
 :::
 
-## Die Anforderung: Ein Hardware-Schloss
+## Der ganze Abschnitt gehört unter das Schloss
 
-- Exklusiver Erwerb, erkennbare Kennung, kurzer Abschnitt, geordnete Freigabe
-- Der Hardwareentscheid ist atomar. Der HAL-Aufruf ist es nicht automatisch
-- `HAL_OK`: Erwerb nach der Rückleseprüfung. `HAL_ERROR`: nicht bekommen
-- Keine Warteschlange, keine Priority Inheritance, keine feste Latenz
+| Falscher Schutz | Richtiger Schutz |
+|---|---|
+| alten Wert außerhalb lesen | Schloss nehmen |
+| Schloss nehmen | aktuellen Wert lesen |
+| alte Kopie erhöhen und schreiben | erhöhen und schreiben |
+| freigeben | freigeben |
+
+Mit Schutz: erster Besitzer schreibt 6, zweiter liest 6 und schreibt 7.
 
 ::: notes
-Die Abbildung hat den zweiten Schreiber warten lassen. Dafür brauchen wir vier Eigenschaften. Genau ein Besitzer hält die Ressource. Die Kennung ist prüfbar. Der geschützte Abschnitt bleibt kurz. Die Freigabe ist geordnet und gehört zum Besitzer. HSEM, Hardware Semaphore, liefert auf dieser Familie 32 Schlösser, IDs 0 bis 31. Das steht in RM0399, Kapitel Hardware Semaphore. Die installierte Revision des Handbuchs prüfen wir am Projekt. RM meint Reference Manual.
+Ein kritischer Abschnitt ist die Folge, während der eine gemeinsame Invariante erhalten werden muss. Eine Invariante ist eine Eigenschaft, die zwischen den erlaubten Änderungen immer gelten soll. Hier lautet sie: Jede erfolgreich geschützte Änderung erhöht den gemeinsamen Zähler genau einmal. Zum kritischen Abschnitt gehören deshalb das Lesen, das Rechnen und das Schreiben.
 
-Atomar ist die Entscheidung im Schloss: nicht zwei Besitzer durch ein zerrissenes Lesen-Ändern-Schreiben des Lock-Worts. `HAL_HSEM_Take` schreibt und liest zurück. Das sind zwei Schritte der API, Application Programming Interface. `HAL_HSEM_FastTake` ist ein Schritt und ProcessID 0. Ein erfolgreicher HAL-Aufruf ist deshalb nicht „eine Busoperation“. TryLock heißt: sofort ja oder nein, ohne den Aufrufer in eine Faire-Warteschlange zu legen. Priority Inheritance gibt es hier nicht. Eine Erwerbszeit in Takten sagen wir nicht zu. `HAL_ERROR` ist ein fehlgeschlagener Erwerb, kein Busfehler und kein Deadlock.
-
-Das Peripheriegerät speichert den Besitz.
+Wer fünf außerhalb des Schlosses liest, kann später mit gültigem Besitz trotzdem einen veralteten Wert schreiben. Das Schloss ist dann nur um den letzten Zugriff gelegt und schützt die falsche Grenze. Der richtige Ablauf beginnt mit dem Erwerb. Erst danach wird der aktuelle Speicherwert geladen. Der erste Besitzer schreibt sechs und gibt frei. Der zweite erwirbt anschließend und liest sechs statt seiner alten Kopie. Sein Schreibwert ist sieben. Die Ordnung der Zugriffe und ihre Sichtbarkeit müssen beide gelten. Bevor wir diese Sichtbarkeit ergänzen, klären wir, warum bekannte lokale Sperren gegen einen zweiten Kern nicht automatisch helfen.
 :::
 
-## Einführung in Hardware Semaphores (HSEM)
+## Lokaler Mutex und lokale Interruptsperre
 
-Abbildung B. Frei oder belegt. Der Besitzer ist das Paar aus Core-ID und ProcessID. Recovery liegt daneben.
+| Maßnahme | Geltungsbereich |
+|---|---|
+| FreeRTOS-Mutex auf M4 | Teilnehmer dieses Kernels |
+| `__disable_irq()` auf M4 | maskierbare Interrupts dieses Kerns |
+| HSEM | kooperierende Benutzer auf beiden Kernen |
+
+Ein lokaler Mutex bleibt nötig, wenn mehrere lokale Tasks dieselbe HSEM-Kennung nutzen.
+
+::: notes
+Ein FreeRTOS-Mutex ist eine Sperre des Echtzeitkernels auf dem Cortex-M4. Der Cortex-M7 ohne Kernel nimmt an diesem Mutexprotokoll nicht teil und kann weiter schreiben. Der Aufruf __disable_irq ist eine intrinsische Funktion zum lokalen Maskieren von Interrupts. Er hält den anderen Kern nicht an. HSEM bedeutet Hardware Semaphore und bietet auf dem STM32H755 einen gemeinsamen Hardwareentscheid über eine Ressourcenkennung.
+
+HSEM ersetzt dennoch nicht jede lokale Sperre. Die Hardware kennt eine Kernkennung und eine softwaregewählte Prozesskennung. Benutzen zwei Tasks desselben Kerns dasselbe Paar, kann sie beide nicht als unterschiedliche Besitzer unterscheiden. In diesem Fall serialisiert ein lokaler Mutex zuerst diese Tasks; anschließend wird die gemeinsame Hardwaresperre erworben. Eine Interruptroutine, kurz ISR für Interrupt Service Routine, darf keinen blockierenden Mutexaufruf verwenden. Der Pflichtversuch verwendet daher genau einen Worker, einen arbeitenden Ausführungspfad, pro Kern und keinen Zugriff auf sein Schloss aus einer Interruptroutine.
+:::
+
+## Was das HSEM tatsächlich speichert
+
+32 Ressourcen · Nummern 0 bis 31 · keine Task-Warteschlange.
 
 ```{mermaid}
-%%| fig-width: 8.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  F["frei"] -->|"Take oder FastTake"| L["belegt: Core-ID, ProcessID"]
-  L -->|"Release, passende Kennung"| F
-  L -->|"ReleaseAll, Key, anderer Weg"| R["Recovery, Daten ungeprueft"]
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
+stateDiagram-v2
+ direction LR
+ Frei --> Belegt: erfolgreicher Take
+ Belegt --> Frei: Release durch Besitzer
+ Belegt: Core-ID + ProcessID
+
 ```
 
-| Begriff | Lehrwert | ist nicht |
-|---------|----------|-----------|
-| HSEM-ID | 1, wenn frei | Task-Handle |
-| ProcessID | `0x37` / `0x34` | Core-ID |
-| Maske für ID 1 | `1u << 1` | die Zahl 1 |
-
 ::: notes
-HSEM heißt Hardware Semaphore. Der Automat hat zwei Zustände, die uns angehen: frei und belegt. Belegt trägt die Core-ID des Busmasters und die ProcessID, eine softwaregewählte Kennung von 0 bis 255. Reguläres Release verlangt dasselbe Paar. ReleaseAll ist ein anderer, schlüsselbasierter Weg für alle Schlösser, die der genannte Kern hält. Er steht nicht auf dem normalen Pfeil, weil er Nutzdaten nicht repariert. Ein HSEM-Schloss ist keine FreeRTOS-Counting-Semaphore und hat keine Task-Warteschlange.
+HSEM heißt Hardware Semaphore. Auf dem STM32H755 gibt es 32 einzeln adressierte Ressourcen. Die Nummer wählt das Schloss, nicht den geschützten Speicher. Der Zugriff auf die Nutzdaten folgt erst im Programm. Das Diagramm ist ein Zustandsautomat, kein Schedulingverlauf: Von links nach rechts führt ein erfolgreicher Take, der Erwerb, vom freien in den belegten Zustand. Ein Release, die Freigabe durch den passenden Besitzer, führt zurück. Der belegte Zustand enthält die Core-ID, also die hardwareseitige Kernkennung, und die ProcessID, eine softwaregewählte Kennung.
 
-ID 0 reservieren wir, wenn der Boot aus Vorlesung 6 sie nutzt. ID 1 ist die Zählerressource nur, wenn sie frei ist. Die Lehrkennungen `0x37` für den M7 und `0x34` für den M4 sind ProcessIDs, keine Core-ID-Konstanten. Die Bitmaske der Notification für ID 1 ist `1u << 1`, also `0x00000002`, nicht die Maske 1.
-
-Die nächste Folie trennt die drei Kennungen in den HAL-Funktionen.
+Ein fehlgeschlagener Take verändert den fremden Besitz nicht und erscheint deshalb nicht als Zustandswechsel. Die Hardwareentscheidung verhindert zwei unterschiedliche Besitzer zur selben Zeit. Es gibt keine Task-Warteschlange, keine Zusage einer fairen Reihenfolge und keine Priority Inheritance, also automatische Prioritätsanhebung eines Besitzers wegen eines dringenderen Wartenden. Die zwei Schritte einer Treiberfunktion sind außerdem nicht mit einer einzigen Busoperation gleichzusetzen. Die drei Kennungen des Aufrufs müssen deshalb sorgfältig getrennt werden.
 :::
 
-## HSEM Architektur im STM32H755
+## Drei Kennungen, eine Maske
 
-- `HAL_HSEM_Take(id, processId)`: schreiben, zurücklesen
-- `HAL_HSEM_FastTake(id)`: ein Schritt, ProcessID 0
-- Dieselbe Kennung noch einmal: Rückleseprüfung kann `HAL_OK` liefern
-- Das ist kein Rekursionszähler und kein lokaler Taskbesitz
+| Begriff | Lehrwert | Bedeutung |
+|---|---|---|
+| HSEM-ID | 1, vorher als frei reservieren | Ressource |
+| ProcessID M7 / M4 | `0x37` / `0x34` | gewählte Nutzerkennung |
+| Core-ID | hardwareseitig | zugreifender Kern |
+| Notification-Maske für ID 1 | `1u << 1` = `0x2` | Bit für diese Ressource |
 
-| Aufruf | Ergebnis | Bedeutung |
-|--------|----------|-----------|
-| fremder Besitzer | `HAL_ERROR` | nicht bekommen |
-| frei, passende ID | `HAL_OK` | neuer Besitz |
-| selber Besitzer, noch einmal | oft `HAL_OK` | derselbe Besitz, nicht plus eins |
-| ein Release | frei | kein „decrement“ |
-
-Der öffentlich geprüfte STM32H7-HAL-Referenztreiber zeigt die Rückleseprüfung. Im Repo liegt dieser Treiber nicht. Die Cube-Version bleibt offen.
+Boot-Schloss und Nutzdaten-Schloss getrennt halten.
 
 ::: notes
-Drei Namen bleiben getrennt. Die HSEM-ID ist die Ressource. Die Core-ID kommt aus der Hardwarezuordnung des Busmasters. Die ProcessID übergibt die Software an Take. `0x37` ist die Lehrkennung des M7-Workers, `0x34` die des M4-Workers. Frage: Warum ist `0x37` keine Core-ID? Weil wir sie wählen. Die Core-ID setzt der Zugriffsweg.
+HSEM, Hardware Semaphore, verwendet die HSEM-ID als Ressourcenindex. ID bedeutet Identifier, Kennung. Für den Lehrversuch reservieren wir die Nummer eins, sofern das vorbereitete Projekt sie noch nicht verwendet. Das Boot-Schloss aus dem Startprotokoll bleibt separat, häufig Nummer null. ProcessID ist eine Softwarekennung von null bis 255. Die Lehrwerte 0x37 und 0x34 sind hexadezimal 55 und 52; sie sind weder die Core-ID noch ein Task-Handle, die Referenz auf eine Task.
 
-Take ist zwei Schritte: Register schreiben, Besitz zurücklesen. FastTake liest das Lock-Register in einem Schritt und verwendet ProcessID 0. Wenn derselbe Besitzer erneut Take ruft, kann die Rückleseprüfung denselben Zustand bestätigen und `HAL_OK` liefern. Es entsteht kein zweiter unabhängiger Besitz und kein Zähler, den ein Release herunterzählen würde. Ein normales Release gibt frei. Frage: Warum ist das kein rekursiver Mutex? Weil nichts mitzählt, wie oft genommen wurde.
-
-Zwei lokale Tasks mit derselben Kennung unterscheidet HSEM nicht. Sie brauchen zusätzlich einen lokalen Mutex. Der einfache Versuch hat einen Worker je Kern.
-
-Besitz stoppt den anderen Kern nicht und ordnet den Cache nicht.
+M7 und M4 bezeichnen die zwei Cortex-Kerne. Die Hardware ordnet einen Zugriff seiner Core-ID zu. Eine Notification ist eine Meldung über eine Freigabe. Ihre Maske ist ein Bitfeld: Für Ressourcenindex eins muss Bit eins gesetzt sein, also eins um eine Position nach links verschoben, Wert zwei. Die Zahl eins als Maske würde Ressourcenindex null adressieren. Auch die späteren Freigabeaufrufe müssen dieselbe Ressourcen- und Prozesskennung wie der Erwerb tragen. Diese Zuordnung ist Teil des Programms und keine automatisch aus dem Tasknamen abgeleitete Eigenschaft.
 :::
 
-## Atomarität auf Silizium-Ebene
+## Der geschützte Zugriff in C
 
-1. Take erfolgreich
-2. Barriere, dann Nutzdaten
-3. Barriere, dann Release
-4. Sichtbarkeit bleibt der Vertrag aus VL6
-
-DMB ordnet Zugriffe. Clean schreibt eine schmutzige Zeile zurück. Die Basisregion ist nicht cachebar. Beides nicht verwechseln.
-
-::: notes
-Der Hardwareentscheid und die Sichtbarkeit der Nutzdaten sind zwei Verträge. Nach erfolgreichem Take folgt eine Data Memory Barrier, DMB, damit der anschließende Zugriff auf `shared_count` nicht vor dem beobachteten Besitz sichtbar wird. Vor Release erneut DMB, damit das geschriebene Wort nicht hinter der Freigabe sichtbar wird. DSB, Data Synchronization Barrier, wartet auf den Abschluss. ISB, Instruction Synchronization Barrier, leert die Befehlspipeline. Für diesen Zähler brauchen wir die DMB an den zwei Stellen, nicht ein unkommentiertes DSB/ISB-Paar. Ob die HAL selbst Barrieren enthält, setzen wir nicht voraus. Der Referenztreiber ist nicht die installierte Cube-Version.
-
-Die Region bleibt die aus Vorlesung 6: SRAM4, `0x38000000`, 64 KiB, auf dem M7 nicht cachebar. Ein DMB entfernt keine Dirty-Line. HSEM schaltet den Cache nicht kohärent. Eine cachebare Variante bräuchte einen eigenen Vertrag mit Clean, Invalidate, Ausrichtung und ohne False Sharing. Den zeigen wir hier nicht als Labor.
-
-Gegenbeispiel: Der M7 hat 6 nur in einer Write-Back-Kopie. Der M4 liest im SRAM weiter 5, obwohl das Schloss inzwischen frei ist. Der nächste Besitzer inkrementiert die alte Sicht.
-
-Der kleine Zählercode setzt genau diese Reihenfolge um.
-:::
-
-## Die HAL-API für HSEM
-
-Lehrbeispiel, ungebaut. Ein Worker, ID 1 frei, Region nicht cachebar.
+Aus dem vollständigen Zählermodul · M7-Kennung 0x37.
 
 ```c
-if (HAL_HSEM_Take(1, 0x37u) == HAL_OK) {
+if (HAL_HSEM_Take(LAB08_HSEM_ID, 0x37u) == HAL_OK) {
     __DMB();
-    shared_count += 1u;
+    lab08_shared.count += 1u;
     __DMB();
-    HAL_HSEM_Release(1, 0x37u);
+    HAL_HSEM_Release(LAB08_HSEM_ID, 0x37u);
+    ++hits;
 } else {
-    /* kein Besitz, Zaehler nicht anfassen */
+    ++misses;
 }
 ```
 
-`shared_count` ist ein ausgerichtetes `uint32_t` im Shared-Block, einmal vor beiden Workern auf 0 gesetzt. Im Abschnitt kein Delay und kein `printf`.
+Warten, Ausgabe und Abschlussmeldung liegen außerhalb.
 
 ::: notes
-Jede Zeile hat eine Rolle. Die ID 1 ist die Ressource, `0x37` die ProcessID des M7, nicht die Core-ID. `HAL_OK` heißt, die Rückleseprüfung hat den Besitz gesehen. Danach ordnet `__DMB` den folgenden Schreibzugriff hinter diesen Erwerb. `shared_count += 1u` ist nur innerhalb dieses Besitzes das geschützte Inkrement. Die zweite Barriere liegt vor Release, damit die Freigabe den neuen Wert nicht überholt. Release verwendet dieselbe ID und dieselbe ProcessID. Im `else` gibt es keinen Nutzdatenzugriff. `HAL_ERROR` ist der nicht erhaltene Besitz.
+Der C-Ausschnitt zeigt den eigentlichen Zugriff des Cortex-M7, kurz M7, aus dem Labor. HAL bedeutet Hardware Abstraction Layer, die Treiberschicht von STMicroelectronics. HSEM bedeutet Hardware Semaphore. LAB08_HSEM_ID ist die reservierte Ressourcenkennung eins. HAL_HSEM_Take schreibt die Besitzanforderung und prüft durch Rücklesen, ob sie erfolgreich war. HAL_OK bezeichnet diesen Erfolg; bei einem fremden Besitzer erhält der Aufrufer HAL_ERROR. Ohne Erfolg bleibt count, das gemeinsame Zählerwort, unangetastet.
 
-Der Zähler liegt im gemeinsamen, nicht cachebaren Block. Die genaue Adresse ist die aus Vorlesung 6 beziehungsweise ein offener Projektparameter, keine ausgedachte Linker-Adresse. Der Abschnitt bleibt das eine Inkrement. Eine Ausgabe oder ein Warten darunter würde das Schloss festhalten und andere aushungern. HSEM ist nicht fair. Busy-Wait kann den Bus belasten. Der M4 verwendet `0x34` an derselben ID.
-
-Erwerb kann scheitern. Daraus wird die Frage, wie man wartet, ohne eine Freigabe zu verlieren.
+DMB bedeutet Data Memory Barrier, eine Barriere zur Ordnung von Speicherzugriffen. Die erste Barriere steht nach dem bestätigten Erwerb, die zweite vor HAL_HSEM_Release. Die Freigabe verwendet dieselbe Kennung 0x37. hits zählt private Erfolge, misses private Fehlschläge. Sie befinden sich außerhalb des gemeinsamen Blocks und haben genau einen lokalen Schreiber. Der Zähler ist ausgerichtet und auf dem M7 nicht cachebar abgebildet. Ein Worker ist pro Kern der einzige Nutzer dieser Kennung. Initialisierung, Endlichkeit und Abschlussprüfung stehen im vollständigen Modul. Das Warten außerhalb verhindert, dass der Besitzer das Schloss während einer Pause festhält.
 :::
 
-## Flowchart: HSEM Take
+## Erneutes HAL_OK ist kein zweiter Besitz
+
+- `Take(id, processId)`: Schreiben und Rücklesen
+- `FastTake(id)`: Erwerb per Lesen, ProcessID 0
+- Derselbe Besitzer kann erneut `HAL_OK` erhalten
+- Ein Release gibt frei: kein Rekursionszähler
+
+Zwei lokale Tasks mit derselben Kennung erscheinen als derselbe Besitzer.
+
+::: notes
+HAL ist die Hardware Abstraction Layer, die Treiberschicht; HAL_OK ist ihre Erfolgsrückgabe. HSEM bedeutet Hardware Semaphore. Take verwendet die Ressourcenkennung id und die softwaregewählte processId. FastTake verwendet im Ein-Schritt-Verfahren ProcessID null. Der öffentlich geprüfte STM32H7-Referenztreiber vergleicht nach Take den Registerinhalt mit der erwarteten Kern- und Prozesskennung einschließlich Besitzbit. Steht dasselbe Paar bereits im Register, kann diese Rückleseprüfung erneut Erfolg liefern.
+
+Daraus entsteht kein weiterer Besitz und insbesondere kein rekursiver Mutex. Ein rekursiver Mutex würde mitzählen, wie oft derselbe Besitzer ihn erworben hat, und entsprechend viele Freigaben verlangen. Das Hardware-Schloss führt keinen solchen Zähler. Eine passende Freigabe beendet den Besitz. Das Gegenbeispiel mit zwei lokalen Tasks erklärt die praktische Gefahr: Task A besitzt das Schloss, Task B benutzt dasselbe Kennungspaar und erhält eine Bestätigung desselben Besitzes. Beide könnten dann den kritischen Abschnitt betreten. Deshalb verlangt der Laborvertrag nur einen Worker pro Kern. Die installierte Cube-Treiberversion wird zusätzlich mit dem Referenzverhalten verglichen.
+:::
+
+## Besitz macht den Cache nicht kohärent
+
+Basis aus Vorlesung 6:
+
+- SRAM4 ab `0x38000000`, 64 KiB exklusiv reserviert
+- M7: Normal Memory, nicht cachebar, gemeinsam erreichbar
+- Nach Take und vor Release: `__DMB()`
+- Beide Linker und Startsequenzen verwenden denselben Vertrag
+
+Eine Barriere schreibt keine schmutzige Cachezeile zurück.
+
+::: notes
+SRAM bedeutet Static Random Access Memory, statischer Arbeitsspeicher. SRAM4 ist die Speicherbank ab der genannten Adresse mit 64 Kibibyte, also 65536 Byte. M7 ist der Cortex-M7. Seine MPU, Memory Protection Unit, beschreibt diese Basisregion als normalen, nicht cachebaren Speicher. Die in Vorlesung 6 verwendete Kodierung ist TEX eins, C null, B null und S eins: TEX ist das Speicherartfeld, C das Cacheattribut, B das Pufferattribut und S das Shareable-Attribut. Shareable kennzeichnet gemeinsam nutzbaren Speicher, erzeugt aber keine automatische Kohärenz zwischen Cache und anderem Kern.
+
+HSEM bedeutet Hardware Semaphore und ordnet Besitzer. DMB bedeutet Data Memory Barrier und ordnet Zugriffe. Eine Dirty Line ist eine geänderte Cachezeile, die noch nicht in den Speicher zurückgeschrieben wurde. DMB ersetzt dieses Zurückschreiben, Clean genannt, nicht. Hält der M7 den neuen Wert sechs nur in einer solchen Zeile, könnte der andere Kern im Speicher weiterhin fünf lesen. Im Basisversuch vermeiden wir diesen zusätzlichen Vertrag durch die nicht cachebare Abbildung. Die Linker müssen das gemeinsame Objekt an dieselbe Adresse legen; private Daten und die Startinitialisierung dürfen den reservierten Bereich nicht überschreiben.
+:::
+
+## Take scheitert: Daten bleiben unberührt
+
+Ein TryLock liefert sofort Erfolg oder Misserfolg.
 
 ```{mermaid}
-%%| fig-width: 7.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TD
-  T["Take"] --> Q{"HAL_OK?"}
-  Q -->|ja| W["Zugriff, Barriere, Release"]
-  Q -->|nein| N["kein Zugriff"]
-  N --> R["erneut nehmen oder speichernd warten"]
-  R --> T
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
+flowchart LR
+ T["Take"] --> Q{"Besitz?"}
+ Q -->|ja| W["Zugriff"]
+ W --> R["Release"]
+ Q -->|nein| N["kein Zugriff"]
+ N --> P["warten"]
+ P --> T
+ style W fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+
 ```
 
-Ein dritter Teilnehmer kann nach einer Freigabe zuerst gewinnen. `HAL_ERROR` ist kein Fault.
-
 ::: notes
-Das Diagramm ist die Entscheidung, kein Zeitverlauf. Erfolg bedeutet: Daten anfassen, Barriere, freigeben. Fehlschlag bedeutet: die Nutzdaten nicht anfassen. Danach darf der Aufrufer erneut versuchen oder auf ein speicherndes Ereignis warten. Vor jedem Zugriff wird der Besitz neu geprüft. Eine Notification, also die Meldung einer Freigabe, ist kein Besitz. Ein dritter Kern oder Worker kann zwischen Freigabe und eigenem Take gewinnen.
+TryLock bezeichnet einen sofort beantworteten Erwerbsversuch. Das HSEM, Hardware Semaphore, legt einen erfolglosen Aufrufer nicht selbst in eine Kernelwarteschlange. Das Flussdiagramm liest sich zunächst von links nach rechts: Take fragt den Besitz an. Der obere Ja-Zweig erlaubt die Datenänderung und führt anschließend zur Freigabe, Release. Die rote Umrandung markiert den erlaubten Datenzugriff. Der Nein-Zweig überspringt ihn und führt zum Warten außerhalb des Schlosses. Der Rückpfeil bedeutet einen neuen Versuch, keine Zusage über seine Dauer oder Reihenfolge.
 
-`HAL_ERROR` aus Take ist der nicht erhaltene Erwerb. Es ist kein MemManage, kein HardFault und kein Beweis für einen defekten Bus. Ein HardFault wäre eine Exception, keine Rückgabe dieser Funktion. Polling, wiederholtes Fragen, belastet Kern und Bus. Ein Interruptweg ist nicht automatisch überlegen. Er hat eigene Lücken, wenn das Aufwecken verloren geht.
-
-Diese Lücke ist der nächste Ablauf.
+HAL_ERROR aus diesem Take ist die Rückgabe für einen nicht erhaltenen Besitz. HAL bedeutet Hardware Abstraction Layer. Die Rückgabe ist keine Prozessor-Exception wie HardFault, der schwere Fehlerhandler. Ein endlicher Versuch darf nach einem Fehlschlag seine private Fehlerzahl erhöhen und später weitergehen. Soll hingegen jede geplante Änderung garantiert versucht werden, braucht er eine begrenzte Wiederholungsstrategie und einen passenden Abbruchpfad. Im Labor zählen wir eine feste Zahl von Versuchen und unterscheiden deshalb Erfolge von Versuchen. Diese Unterscheidung macht den Endwert überhaupt erst interpretierbar.
 :::
 
-## Warten auf den HSEM: Polling vs. Interrupts
+## Endlicher Zähler: Was ist der Sollwert?
 
-Falsch: Take scheitert, der andere gibt frei, erst dann wird die Notification scharf, danach wird unendlich gewartet. Die Freigabe ist weg.
+Je Kern $N=100$ Erwerbsversuche.
 
-Richtig, ein wartender M4-Task, speicherndes Thread-Flag, eine Gesamtdeadline:
+$$c_{\mathrm{Ende}}=h_7+h_4$$
 
-1. Handle gültig, alte Ereignisse der eigenen ID klären
-2. Notification der Maske `1u << 1` aktivieren
-3. Take erneut
-4. Erfolg: Notification aus, kurz arbeiten
-5. Fehler: Flag nicht löschen, mit Restzeit warten
-6. Nach dem Wecken erneut scharf und erneut Take
-7. Timeout: aufräumen, nicht anfassen
+- $h_7$: erfolgreiche Inkremente des M7
+- $h_4$: erfolgreiche Inkremente des M4
+- Beispiel: $h_7=97$, $h_4=95$ → Erwartung 192
+- 200 gilt nur bei 200 Erfolgen, ohne Überlauf
+- Erst nach beiden veröffentlichten Abschlussmeldungen lesen
 
 ::: notes
-Polling fragt in einer Schleife. Es erkennt den freien Zustand, solange es läuft, kostet aber CPU und Bus. Der Interruptweg soll schlafen. IRQ ist die Unterbrechungsanforderung. Das falsche Muster verliert das Aufwecken, Lost Wakeup: Die Freigabe passiert, bevor jemand sie speichert. Abbildung C zeigt denselben M7-Besitzer, dasselbe Schloss und denselben M4-Wartenden in beiden Spuren.
+N bezeichnet die Zahl der Versuche pro Kern, h sieben und h vier die gezählten erfolgreichen Inkremente des Cortex-M7 und Cortex-M4. c Ende ist der abschließende gemeinsame Zählerwert. Bei Startwert null, genau einer Erhöhung pro Erfolg, korrekt gehaltenem Schloss und gültiger Sichtbarkeit ist der Sollwert die Summe der Erfolge. Die Lehrwerte 97 und 95 ergeben 192. Sie sind ein Rechenbeispiel, keine Messung. Bei 100 Erfolgen auf jeder Seite ergäbe sich 200. Die geringe Zahl vermeidet den Überlauf des 32-Bit-Zählers.
 
-Das Flag ist ein RTOS-Thread-Flag des wartenden Tasks. Es wird nicht zwischen dem letzten fehlgeschlagenen Take und dem Wait gelöscht. Sonst kann ein Callback in genau dieser Lücke das neue Signal wieder austragen. Aufwecken beweist keinen Besitz. Es erlaubt höchstens einen neuen Take. Ein veraltetes Flag auch. Die Deadline ist eine Frist für den ganzen Versuch. Jeder neue IRQ setzt sie nicht auf den vollen Wert zurück. Die Restzeit bleibt `deadline - jetzt`.
-
-Der Referenz-HAL-Handler schaltet ausgelöste Notification-Bits ab, löscht die Flags und ruft den Callback mit einer Semaphormaske. Deshalb muss der Wartepfad danach neu scharfschalten. Die Cube-Version im Projekt kann abweichen. Wir zeichnen das Rearming deshalb ausdrücklich.
-
-Der konkrete Pfad vom M7-Release bis zum Flag folgt jetzt.
+Jeder Kern schreibt nur seine eigene Erfolgszahl und seine eigene Abschlussmeldung. Zuerst veröffentlicht er die Erfolgszahl, dann nach einer Speicherbarriere das Abschlusswort. Der Beobachter wartet auf beide Abschlusswörter und verwendet vor dem Lesen der Ergebnisse ebenfalls eine Barriere. Ein Zwischenwert ist keine Abschlussprüfung. Bei Timeout, einer abgelaufenen Wartefrist, gibt es keinen gültigen finalen Vergleich. Der ungeschützte Vergleich kann denselben Sollwert zufällig erreichen, zeigt aber durch einen einzigen günstigen Lauf keine Freiheit von Konkurrenzfehlern. Das Labor dokumentiert beide Fälle getrennt.
 :::
 
-## HSEM Interrupts: M7 weckt M4-Task
+## Polling oder gespeicherte Freigabe?
 
-Abbildung C. Oben geht die Freigabe verloren. Unten liegt sie im Flag, bevor gewartet wird.
+| Polling | Notification mit Task-Ereignis |
+|---|---|
+| wiederholt Take versuchen | auf Freigabemeldung warten |
+| einfach für den Pflichtversuch | zusätzliche Interrupt- und Kernelregeln |
+| belastet Kern und Bus | Ereignis muss bis zum Warten gespeichert sein |
+
+Jede Freigabemeldung führt zu einem neuen Take.
+
+::: notes
+Polling bedeutet wiederholtes Abfragen. Der Labor-Worker versucht den HSEM-Erwerb, HSEM bedeutet Hardware Semaphore, und wartet danach außerhalb des Schlosses. Auf dem M7 ohne Kernel ist HAL_Delay ein aktives Warten auf die laufende Millisekundenzeitbasis; HAL bedeutet Hardware Abstraction Layer. Auf dem M4 kann osDelay über CMSIS-RTOS2 den Task blockieren. CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. Ihr Delay wird in Kernelticks angegeben.
+
+Eine Notification ist eine Hardwaremeldung über die Freigabe. Sie kann einen Interrupt auslösen, dessen Handler ein speicherndes Task-Ereignis setzt. Der Task kann dann schlafen, ohne ständig die Ressource zu fragen. Die zusätzliche Komplexität lohnt sich erst, wenn Start, Masken, Prioritäten, erneutes Scharfschalten und Gesamtfrist korrekt behandelt werden. Die Meldung ist keine Reservierung: Ein anderer Benutzer kann zuerst gewinnen. Im Pflichtversuch bleibt deshalb Polling der kurze nachvollziehbare Weg. Den Interruptweg betrachten wir als Protokollaufgabe und führen zuerst seinen typischen Fehler vor.
+:::
+
+## Die Lücke des verlorenen Aufweckens
+
+Freigabe in Schritt 1 · Modellschritte 0–4, ohne Zeiteinheit.
 
 ```{.plantuml}
 @startuml
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontSize 16
 skinparam defaultFontColor #1D1D1F
 skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
 skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
+ BackgroundColor #FFFFFF
+ BorderColor #E5E5EA
+ LineColor #1D1D1F
+ SignalColor #E2001A
 }
-concise "falsch: M4" as F
-concise "HSEM" as H
+<style>
+timingDiagram {
+ FontName sans-serif
+ concise {
+  FontName sans-serif
+  LineColor #1D1D1F
+  BackGroundColor #F5F5F7
+  FontColor #1D1D1F
+ }
+}
+</style>
+scale 1 as 100 pixels
+concise "falsch" as F
+concise "richtig" as R
 @0
-F is "fehlt"
-H is "belegt"
+F is "Take"
+R is "scharf"
 @1
-H is "frei"
 F is "blind"
+R is "Flag"
 @2
-F is "schlaeft"
-H is "weg"
-@enduml
-```
-
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "richtig: M4" as G
-concise "Flag" as L
-@0
-G is "scharf"
-L is "leer"
-@1
-G is "fehlt"
-L is "Flag"
-@2
-G is "Wait"
+F is "Wait"
+R is "Wait"
 @3
-G is "Take"
+F is "Block"
+R is "Take"
+
 @enduml
 ```
 
-Lehrhinweis, ungebaut: Callback setzt das Flag des vorher gültigen Handles. Keine RTOS-Blockierung in der ISR. NVIC-Priorität auf der erlaubten Seite der Syscall-Grenze. Niedrigere Zahl ist höhere Dringlichkeit.
-
 ::: notes
-Der M7 gibt mit passender Kennung frei. Die Hardware setzt den Status der ID. Der NVIC, Nested Vectored Interrupt Controller, des M4 nimmt den HSEM-IRQ an, wenn er freigegeben und nicht maskiert ist. Der Referenzhandler deaktiviert die ausgelösten Notification-Bits, löscht deren Flags und übergibt dem Callback die Maske. Für ID 1 ist das Bit 1, Maske `0x00000002`. Der Callback ruft eine ISR-taugliche Funktion, zum Beispiel `osThreadFlagsSet` auf das Handle des einen wartenden Tasks. Ein nackter Task-Name ist kein Handle. Das Handle existiert, bevor die Notification aktiv wird.
+Das Timing-Diagramm vergleicht zwei Protokolle. M4 ist der Cortex-M4 mit einem wartenden Task. Die waagerechte Achse läuft von Modellschritt null bis vier ohne physikalische Zeiteinheit; die Aktionen bei null bis drei werden jeweils bis zur nächsten Marke gezeigt. Beide Zeilen erleben zwischen dem ersten fehlgeschlagenen Erwerb und dem Warten dieselbe Freigabe. In der oberen Zeile scheitert Take, der Erwerb, bei Schritt null. In Schritt eins ist der Wartende blind: Die Notification, die Freigabemeldung, ist noch nicht aktiviert. Anschließend wird sie aktiviert und Wait aufgerufen. Block bezeichnet das unnötige Blockieren auf eine möglicherweise nie wieder kommende Freigabe.
 
-In der ISR wird nicht gewartet und kein Mutex genommen. Ob der Aufruf erlaubt ist, hängt von der Priorität relativ zur Syscall-Grenze des Ports ab. Die Grenze steht im verwendeten FreeRTOS-Port, nicht als erfundene Zahl. Nach dem Aufwecken schaltet der Task die Notification neu scharf und ruft Take. Verliert er, wartet er mit der restlichen Deadline weiter.
-
-Frage: Was garantiert die Notification? Dass eine Freigabe beobachtet wurde. Den neuen Besitz holt nur Take.
-
-Ein Aufwecken verhindert noch keinen zyklischen Lockkonflikt.
+Unten wird zuerst scharfgeschaltet. Nach dem erfolglosen Erwerb setzt die Freigabe ein Flag, also ein gespeichertes Ereignis. Wait findet dieses Ereignis auch dann, wenn es vor dem Aufruf eingetroffen ist, und der Task kann erneut Take versuchen. Das Flag darf in der Lücke nicht gelöscht werden. Die kurzen Zustandsnamen zeigen den Ablauf, nicht tatsächliche Kernellaufzeiten. Sie behaupten auch keinen Besitz nach dem Aufwecken. Ein erneuter Erwerbsversuch ist weiterhin erforderlich.
 :::
 
-## Multicore Deadlock-Gefahr
+## Ein Warteprotokoll ohne diese Lücke
 
-Zwei Ressourcen, zwei Kerne, entgegengesetzte Reihenfolge.
+Ein Wartender, ein gespeichertes Thread-Flag, eine Gesamtfrist:
+
+1. Gültiges Task-Handle bereitstellen, alte eigene Ereignisse klären
+2. Notification aktivieren, danach Take versuchen
+3. Erfolg: Notification aus, kurzer Zugriff, Release
+4. Misserfolg: Flag stehen lassen, mit Restzeit warten
+5. Nach dem Aufwecken neu scharfschalten und erneut Take
+6. Timeout: aufräumen, Nutzdaten unverändert lassen
+
+::: notes
+Ein Thread-Flag ist ein vom Kernel gespeichertes Ereignisbit für einen bestimmten Ausführungspfad. Das Task-Handle ist dessen gültige Referenz. Notification bezeichnet die HSEM-Freigabemeldung; HSEM ist Hardware Semaphore. Das Handle muss existieren, bevor eine Meldung den Callback, die Rückruffunktion, erreichen kann. Alte Ereignisse der ausschließlich diesem Wartenden zugeordneten Ressource werden vor dem neuen Protokoll geklärt. Danach gilt die entscheidende Reihenfolge: scharfschalten, Erwerb versuchen, erst bei Misserfolg warten.
+
+Kommt die Freigabe vor dem Erwerb, kann Take bereits gewinnen. Kommt sie nach dem erfolglosen Erwerb, speichert das Flag sie für Wait. Deshalb wird das Flag in dieser Lücke nicht gelöscht. Ein veraltetes Ereignis führt höchstens zu einem zusätzlichen Erwerbsversuch. Die öffentlich geprüfte HAL, Hardware Abstraction Layer, deaktiviert im HSEM-Interrupt-Handler die ausgelösten Meldungsbits. Daher schaltet der Wartepfad nach jeder Meldung neu scharf. Die Gesamtfrist beginnt nur einmal. Ein Timeout bedeutet, dass diese Frist abgelaufen ist; der Wartende beendet sein Protokoll ohne Zugriff auf die fremden Daten. Das Labor implementiert diesen Zusatzweg nicht neben dem einfachen Zähler.
+:::
+
+## Vom Release zum wartenden Task
+
+Der Callback meldet ein Ereignis, er erwirbt das Schloss nicht.
 
 ```{mermaid}
-%%| fig-width: 7.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  M7["M7 haelt ID 1"] --> W2["M7 will ID 2"]
-  M4["M4 haelt ID 2"] --> W1["M4 will ID 1"]
-  W2 --> M4
-  W1 --> M7
+ A["M7: Release"] --> B["HSEM-Status"]
+ B --> C["M4: IRQ / HAL"]
+ C --> D["Callback: Flag setzen"]
+ D --> E["Task: neuer Take"]
+
 ```
 
-Globale Ordnung, zum Beispiel immer ID 1 vor ID 2, und lokale Mutexes in derselben Ordnung. Timeout ohne Freigabe der eigenen Schlösser beendet den Zyklus nicht.
-
 ::: notes
-Deadlock heißt: jeder wartet auf etwas, das ein anderer in der Runde hält, und niemand kommt weiter. Die vier Coffman-Bedingungen sind hier sichtbar. Wechselseitiger Ausschluss: jede ID hat einen Besitzer. Halten und Warten: der M7 hält ID 1 und will ID 2. Kein Entzug: ein normaler Take nimmt dem Besitzer nichts weg. Zyklisches Warten: die Kanten schließen sich. Fehlt eine Bedingung, entsteht dieser Zyklus so nicht. Die Gegenmaßnahme im Entwurf ist eine globale Reihenfolge für alle Schlösser, einschließlich der lokalen FreeRTOS-Mutexes. Wer ID 2 braucht, hält ID 1 schon oder nimmt sie zuerst. Nie umgekehrt.
+M7 und M4 bezeichnen die Cortex-Kerne, HSEM die Hardware Semaphore. Das Architekturdiagramm läuft von links nach rechts. Ein passendes Release des M7 setzt den Freigabestatus der Ressource. IRQ bedeutet Interrupt Request, Unterbrechungsanforderung. Auf dem M4 nimmt der NVIC, Nested Vectored Interrupt Controller, die freigegebene Anforderung an. Die HAL, Hardware Abstraction Layer, bearbeitet sie in ihrem HSEM-Handler, löscht die ausgelösten Statusflags und ruft den Callback mit einer Ressourcenmaske auf. Der Callback setzt das gespeicherte Flag des vorher gültigen Task-Handles. Erst der Task versucht anschließend einen neuen Take.
 
-Der andere Kern und unbeteiligte Tasks laufen weiter. Das ist kein Stillstand des Chips. Ein Timeout am Warten beendet nur das Warten. Das bereits gehaltene Schloss bleibt, bis es freigegeben oder der Versuch mit Rollback abgebrochen wird. Rollback heißt: eigene Teilschritte zurücknehmen und eigene Schlösser freigeben. Halb geschriebene Nutzdaten bleiben sonst liegen.
-
-Wie man auf einen vermissten Besitzer reagiert, ist die nächste Grenze.
+Mit CMSIS-RTOS2, der Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei, kann ein dafür zulässiges osThreadFlagsSet verwendet werden. Die Interruptroutine blockiert dabei nicht. Ihre Priorität muss auf der erlaubten Seite der Systemaufrufgrenze des verwendeten FreeRTOS-Ports liegen. Eine kleinere numerische Interruptpriorität bedeutet höhere Dringlichkeit. Eine beliebig hoch dringliche Interruptroutine darf daher nicht automatisch Kernelaufrufe verwenden. Die Pfeile zeigen den Meldeweg und keine gemessene Interruptlatenz oder garantierte Startzeit des Tasks.
 :::
 
-## Recovery: Schlossfreigabe repariert keine Daten
+## Restzeit statt ständig neuer Deadline
 
-`HAL_HSEM_ReleaseAll` gibt mit einem Key alle vom genannten Kern gehaltenen HSEM frei. Das ist kein normales Release einer ID und kein kryptografischer Nachweis.
+Lehrmodell einer einzigen Wartefrist:
 
-Abbildung D. Verdacht ist kein Beweis, dass CPU, ISR und DMA aufgehört haben zu schreiben.
+| Ereignis | Zeitpunkt | verbleibend bis 20 ms |
+|---|---:|---:|
+| Start | 0 ms | 20 ms |
+| erste Freigabemeldung | 8 ms | 12 ms |
+| neuer Take scheitert | 9 ms | 11 ms |
+| nächste Meldung | 17 ms | 3 ms |
+
+Jede Meldung erneut um 20 ms zu verlängern, verletzt den Vertrag.
+
+::: notes
+Eine Deadline ist eine Abschlussfrist. Hier beginnt eine einzige Gesamtfrist von 20 Millisekunden am Start des Warteversuchs. Die Zahlen sind ein Lehrmodell mit gemeinsamer lokaler Zeitbasis, keine Boardmessung. Bei acht Millisekunden bleiben zwölf, bei neun elf und bei 17 noch drei Millisekunden. Auch nach einer Freigabemeldung darf der nächste Erwerb scheitern. Die neue Wartezeit wird daher aus der ursprünglichen Frist berechnet, nicht wieder mit 20 Millisekunden gestartet.
+
+In einem Programm kann eine vorzeichenlose Differenz zwischen aktueller Zeit und Start die verstrichene Dauer liefern. Dafür müssen Zeitbasis und Umlaufgrenze gelten: Der betrachtete Zeitraum muss kürzer als eine volle Zählerperiode sein. Unterschiedliche Kernelticks und Millisekundenticks dürfen nicht ohne Umrechnung gemischt werden. Bei abgelaufener Frist werden die ausschließlich eigenen Meldebits aufgeräumt. Fremde Besitzer werden nicht gewaltsam freigegeben. Eine Softwarefrist wird außerdem nur geprüft, solange der prüfende Code und seine Uhr tatsächlich laufen. Für einen vollständig hängenden Pfad benötigen wir später den Hardware-Wächter.
+:::
+
+## Zwei Schlösser können einen Zyklus bilden
+
+Entgegengesetzte Reihenfolge: beide halten und warten.
 
 ```{mermaid}
-%%| fig-width: 8.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  V["Heartbeat fehlt"] --> U["Besitzer vielleicht aktiv"]
-  U --> X["Shared-Block vielleicht halb"]
-  X --> S["Lehrpfad: System-Reset"]
-  S --> I["neu initialisieren, Handshake"]
+ A["M7 hält 1"] -->|will 2| B["M4 hält 2"]
+ B -->|will 1| A
+
 ```
 
-Kein „Timeout, ReleaseAll, weiterzählen“.
-
 ::: notes
-Der Titel der älteren Folie klang nach einer Lösung. ReleaseAll repariert keine Daten. Ein Key ist die technische Freigabebedingung im Register, kein Sicherheitsbeweis. Ein fehlender Heartbeat, ein ausbleibendes Lebenszeichen, ist ein Verdacht. Der andere Kern kann in einer ISR stehen, und DMA, Direct Memory Access, kann als eigener Busmaster weiter schreiben. Geben wir die Schlösser frei, während das noch passiert, können zwei Seiten sich für Besitzer halten. Teilweise geschriebene Felder werden dann veröffentlicht.
+Das Diagramm ist ein Wartegraph. M7 und M4 sind die beiden Cortex-Kerne; eins und zwei sind Ressourcenkennungen der HSEM, Hardware Semaphore. Der obere Teilnehmer hält Schloss eins und wartet auf Schloss zwei, das der andere hält. Der Rückpfeil zeigt den umgekehrten Bedarf. Die Pfeile geben Abhängigkeiten an, keine Übergaben. Der geschlossene Kreis ist ein Deadlock, eine gegenseitige Blockade.
 
-Wenn wir den Besitzer nicht zuverlässig anhalten und den Speicher nicht prüfen können, ist der Lehrpfad ein geordneter System-Reset, eine neue Initialisierung des Shared-Blocks und der Handshake von vorn. System-Reset ist nicht der Verlust jedes Backup- oder Debug-Zustands. Die Anwendungsdaten im Shared-Block gelten danach als ungültig, bis der Boot sie neu aufsetzt. Ein sicherer Ausgangszustand der Anlage hängt von der Anwendung ab. Den erfinden wir hier nicht.
-
-Frage: Warum ist ReleaseAll nach einem Timeout keine allgemeine Reparatur? Weil der vermeintliche Besitzer oder DMA weiter schreiben kann und halbe Daten inkonsistent bleiben.
-
-Die Zusammenfassung setzt die Voraussetzungen in eine Reihenfolge.
+Die vier klassischen Bedingungen sind hier erfüllt: wechselseitiger Ausschluss, Halten bei gleichzeitigem Warten, kein regulärer Entzug vom Besitzer und zyklisches Warten. Eine globale Sperrordnung, beispielsweise immer eins vor zwei, verhindert diesen Kreis im Entwurf. Lokale Mutexes, Sperren mit Besitzer im Kernel, müssen in dieselbe globale Ordnung einbezogen werden. Ein Timeout beendet zwar das Warten, gibt ein bereits gehaltenes Schloss aber nicht von selbst frei. Der Abbruchpfad muss seine eigenen Schlösser geordnet freigeben und bereits erfolgte Teilschritte behandeln. Andere Tasks können während dieses Deadlocks weiterlaufen. Die Ausführung der Leerlauf-Task beweist daher später gerade nicht den Fortschritt dieser beiden Worker.
 :::
 
-## Zusammenfassung Hardware-Semaphoren
+## Ein fremdes Schloss freigeben repariert nichts
 
-- Lokal serialisieren, dann Inter-Core-Besitz nehmen
-- Sichtbarkeit aus VL6, kurz arbeiten, passend freigeben
-- Warten nur mit gespeichertem Ereignis und erneutem Take
-- ReleaseAll ist Recovery, nicht der Ping-Pong
+`HAL_HSEM_ReleaseAll(key, coreId)` ist ein gesonderter Eingriff.
 
-Frage: Warum ist eine Notification kein Besitz? Weil danach Take verlieren kann. Frage: Warum ersetzt die ProcessID keinen Task-Mutex? Weil dieselbe Kennung zwei Tasks nicht trennt.
+- gibt die vom bezeichneten Kern gehaltenen HSEM frei
+- prüft keine halbfertigen Nutzdaten
+- stoppt weder den alten Schreiber noch DMA
+- verlangt einen geprüften Wiederanlaufvertrag
 
-::: notes
-Der gedankliche Ablauf ist eine Kette. Zwei Tasks eines Kerns serialisiert der lokale Mutex. Den anderen Kern schließt das HSEM aus, wenn die Kennungen verschieden sind und nur ein Worker je Kern nimmt. Nach dem Erwerb gilt die nicht cachebare Region und die DMB um den Zähler. Der Abschnitt bleibt kurz. Release benutzt dieselbe ProcessID. Wer warten muss, schaltet die Notification scharf, versucht Take erneut, löscht das Flag nicht vor dem Wait und behandelt Aufwecken als Anlass für einen neuen Take. Die Gesamtdeadline wird nicht bei jedem IRQ verlängert.
-
-Die zwei Fragen haben feste Antworten. Die Notification meldet eine Freigabe, nicht den neuen Besitzer. Die ProcessID ist eine 8-Bit-Kennung des Aufrufs, kein FreeRTOS-Handle. Dieselbe Kombination aus Core-ID und ProcessID ist für das Schloss ein Nutzer. Recovery bleibt die Grenze der vorigen Folie: ohne gesicherte Ruhe des alten Besitzers kein Weiterbetrieb auf halben Daten.
-
-Wenn der Fortschritt ausbleibt, braucht es zusätzlich eine Fehlererkennung.
-:::
-
-## Was ist „Safety“ in Embedded Systems?
-
-Safety ist der Schutz vor unvertretbaren Folgen einer Fehlfunktion. Security, der Schutz vor absichtlichem Missbrauch, ist ein anderes Ziel und hier nicht das Thema.
-
-Ein Lehrbeispiel, keine Anlage: ein Ausgang muss innerhalb einer genannten Frist einen definierten Pegel annehmen. Ob das 10 ms oder 1 s sind, legt die Anwendung fest. Dieselben Zahlen sind hier nur Platzhalter.
-
-`100` ist `0x0064`. Bit 15 gesetzt ergibt `0x8064` = 32868, nicht 65535 und nicht die Umkehrung aller Bits.
+Lehrpfad bei unklarer Lage: gemeinsamer Neustart und Neuinitialisierung.
 
 ::: notes
-Die Schlösser haben Konkurrenz geordnet. Sie haben nicht geprüft, ob die Arbeit noch lebt oder das Ergebnis stimmt. Safety bezeichnet hier diese zweite Frage. Ein Lock, ein Watchdog oder eine MPU sind Mechanismen. Ein Sicherheitsnachweis wäre eine argumentierte Kette aus Anforderung, Maßnahme und Prüfung. Die haben wir für keine konkrete Maschine. „Normen verlangen immer einen Reset“ sagen wir nicht.
+HAL bedeutet Hardware Abstraction Layer, HSEM Hardware Semaphore. ReleaseAll ist ein anderer Weg als die normale Freigabe einer einzelnen Ressource. key ist ein Registerschlüssel und coreId die Kernkennung des zu lösenden Besitzes. Der Schlüssel ist eine technische Freigabebedingung, kein kryptografischer Nachweis einer ungefährlichen Situation. Die Funktion repariert keine Nutzdaten.
 
-Das Bitbeispiel zeigt, warum eine Plausibilitätsprüfung nötig sein kann. Ein `uint16_t` mit dem Wert 100, hexadezimal `0x0064`, bleibt 100, solange nur die unteren Bits gemeint sind. Setzt ein Fehler Bit 15, entsteht `0x8064`, dezimal 32868. Das ist kein Überlauf auf 65535. Die Prüfung kann in Software den Wertebereich vergleichen. Sie kann auch eine unabhängige Zeitgrenze nutzen. Beides erkennt Verschiedenes.
-
-Der nächste Block ordnet Fehler und die Frage, ob ein Watchdog sie sieht.
+Ein ausbleibendes Lebenszeichen beweist nicht, dass der alte Schreiber nicht mehr arbeitet. Er kann in einer Interruptroutine stehen, oder DMA, Direct Memory Access, kann als eigener Busmaster weiter Speicher ändern. Ein zwangsweise freigegebenes Schloss könnte dann zwei Programme glauben lassen, sie hätten exklusiven Zugriff. Selbst bei angehaltenem Besitzer können mehrere Felder nur teilweise aktualisiert sein. Ein weiterführender Recovery-Entwurf, also eine Wiederherstellung, müsste zuerst alle Schreiber sicher anhalten, den Datenzustand beurteilen und einen neuen Initialisierungsvertrag durchlaufen. Im Lehrversuch ohne solchen Nachweis wird nicht einfach weitergezählt: Ein gemeinsamer Neustart initialisiert den Block vor dem erneuten Start beider Worker. Das ist kein allgemeiner Beweis eines sicheren Anlagenzustands.
 :::
 
-## Ursachen für System-Crashes
+## Transferfrage: Welche Aussage ist tragfähig?
 
-| Fehler | Watchdog sieht ihn? |
-|--------|---------------------|
-| CPU-Hog, niemand füttert | ja, die Frist läuft ab |
-| Worker tot, Idle füttert | oft nein |
-| Ergebnis falsch, Takt stimmt | nein |
-| anderer Kern tot, dieser füttert | nein |
+Ein Lauf meldet:
 
-Drei Sätze bleiben getrennt: der Handler läuft, die Runde ist abgeschlossen, das Ergebnis ist richtig.
+- M7: 97 erfolgreiche Inkremente, Abschluss gesetzt
+- M4: 95 erfolgreiche Inkremente, Abschluss gesetzt
+- gemeinsamer Endwert: 192
+
+Was zeigt das? Was zeigt ein ungeschützter Lauf mit denselben Zahlen nicht?
 
 ::: notes
-Ein CPU-Hog belegt den Kern, ohne den Watchdog aufzufrischen. Wenn kein anderer Pfad füttert, läuft die Frist ab. Ein Deadlock zweier Tasks lässt die Idle-Task weiterlaufen. Füttert Idle, bleibt der Fehler unsichtbar. Eine Schleife, die pünktlich füttert und fachlich falsch rechnet, besteht die Zeitprüfung. Stirbt der andere Kern, während dieser Kern weiter einen frischen eigenen Nachweis meldet und füttert, sieht der Hund den fremden Ausfall nicht. Die Spalte hängt also an der Refresh-Policy, nicht am Baustein allein.
+M7 und M4 sind die Cortex-Kerne. Unter dem vereinbarten Speicher- und Besitzvertrag zeigt der Endwert 192 eine zum Erfolgsprotokoll dieses endlichen Laufs passende Summe: 97 plus 95 ist 192. Beide Abschlussmeldungen müssen nach ihren Erfolgszahlen geordnet veröffentlicht worden sein. Der Beobachter liest sie mit gültiger Sichtbarkeit und liest danach den gemeinsamen Zähler. Ohne diese Voraussetzungen wäre schon die Deutung der Zahlen nicht gesichert.
 
-Heartbeat ist ein Lebenszeichen. Fortschritt ist eine abgeschlossene Runde. Ein richtiges Ergebnis ist eine fachliche Prüfung. Der Watchdog prüft nur, ob rechtzeitig aufgefrischt wurde. Die Software muss ihm die Gesundheitsbedingung liefern. Abbildung F zeigt dieselben drei Verläufe gleich anschließend beim Fütterungsort.
-
-Der Hardwarezähler liefert die Frist. Die Software entscheidet, wann sie ihn zurücksetzt.
+Ein ungeschützter Lauf kann ebenfalls 192 ergeben, wenn sich die Lese-Änderungs-Schreibfolgen in diesem Lauf zufällig nicht schädlich überlappen. Er beweist deshalb nicht, dass alle möglichen Reihenfolgen korrekt sind. Ein Wert unter der Erfolgssumme würde bei ansonsten gültiger Versuchsgrundlage zum Lost-Update-Modell passen; die genaue Ursache bleibt trotzdem anhand des Programms und der Bedingungen zu untersuchen. Die Papieraufgabe verlangt die Begründung beider Aussagen. Nach der Besitzfrage folgt nun die andere mögliche Störung: Der Zähler wird korrekt geschützt, aber ein notwendiger Worker schließt überhaupt keine Runde mehr ab.
 :::
 
-## Das Konzept des Hardware-Watchdogs
+## Safety beginnt mit einer Anforderung
 
-Der Zähler läuft abwärts. Refresh setzt ihn in den erlaubten Bereich zurück. Ohne rechtzeitigen Refresh folgt ein Reset.
+Lehranforderung für einen isolierten Ausgang:
 
-Auf dem STM32H755 sind IWDG1, IWDG2, WWDG1 und WWDG2 dokumentierte Quellen eines System-Resets. Das steht in RM0399, Rev. 5, bei den RCC-Resetursachen. RCC ist Reset and Clock Control.
+„Nach erkanntem Ausfall eines Workers bleibt ENABLE inaktiv, bis ein neuer geprüfter Start erfolgt.“
 
-System-Reset löscht nicht jeden Backup- und Debug-Zustand. Die Resetflags sichern, bevor Boot oder HAL sie löschen.
+Dazu gehören:
 
-Abbildung E, Taktpfade. Der Resetpfeil ist der System-Reset, nicht eine offene Kernfrage.
+- ein klarer Fortschrittsnachweis
+- eine maximal erlaubte Reaktionszeit
+- ein definierter Ausgang während Fehler, Reset und Start
+
+::: notes
+Safety meint den Schutz vor unvertretbaren Folgen einer Fehlfunktion. Security meint dagegen den Schutz vor absichtlichem Missbrauch und ist hier nicht das Thema. ENABLE ist der Name eines gedachten Freigabesignals. Im Labor verwenden wir eine isolierte Anzeige oder einen unbelasteten Messpunkt, keine reale Leistungsfreigabe. Die Lehranforderung ist zunächst qualitativ. Für eine konkrete Anlage müssten Pegel, Last, maximale Reaktionszeit und Fehlerannahmen festgelegt werden.
+
+Ein aktiver Low-Pegel vor dem Reset reicht beispielsweise nicht, wenn der Pin während des Resets hochohmig wird und die angeschlossene Schaltung dadurch einschaltet. Ein externer Pull-down, ein Widerstand zum inaktiven Pegel, und eine gesperrte Boot-Freigabe können den Zustand über diesen Übergang halten. Die genaue Schaltung muss dazu passen. Die Anforderung verbindet deshalb Softwareentscheidung und äußeres Verhalten. Ein Watchdog ist nur ein Baustein darin: Er erkennt Zeitbedingungen, nicht automatisch einen falschen Stellwert oder einen defekten Ausgang.
+:::
+
+## Was ein Watchdog wirklich erkennen kann
+
+| Fehlerbild | Mit blindem Refresh sichtbar? |
+|---|---|
+| Kern hängt, kein anderer füttert | ja, Zähler läuft ab |
+| Worker blockiert, Timer füttert | nein |
+| anderer Kern steht, eigener füttert | nein |
+| falsches Ergebnis rechtzeitig fertig | nein |
+
+Handler läuft ≠ Runde fertig ≠ Ergebnis richtig.
+
+::: notes
+Refresh bezeichnet das Nachladen des Watchdog-Zählers; blind heißt ohne Prüfung der vereinbarten Gesundheitsbedingung. Ein Watchdog erkennt ausbleibenden Refresh, solange sein Takt läuft und er nicht angehalten wird. Er weiß nicht, welche Arbeit den Refresh gerechtfertigt hat. Im ersten Fall hängt der Kern und niemand anders füttert. Der Zähler kann ablaufen. Im zweiten Fall arbeitet nur der Timer-Handler weiter und verdeckt den blockierten Worker. Im dritten Fall wird der andere Kern gar nicht überwacht. Im vierten Fall stimmt der zeitliche Ablauf, aber die Rechnung ist falsch.
+
+Die drei Aussagen am unteren Rand sind deshalb unterschiedlich stark. Ein Handler ist eine Routine zur Behandlung einer Unterbrechung. Eine abgeschlossene Runde ist der vertraglich definierte Fortschritt eines Workers. Ein richtiges Ergebnis braucht zusätzlich seine fachliche Prüfung, beispielsweise eine Bereichs- oder Konsistenzprüfung. Die Hardware kann nur die von der Software gelieferte Refresh-Entscheidung zeitlich beurteilen. Um ihre Zeitbedingungen zu verstehen, ordnen wir zuerst die zwei Watchdog-Arten ihren Taktquellen zu.
+:::
+
+## Zwei Taktpfade, vier Watchdog-Instanzen
+
+Die Instanz bestimmt den Takt. Alle vier können System-Reset auslösen.
 
 ```{mermaid}
-%%| fig-width: 8.6
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  LSI["LSI"] --> I1["IWDG1"]
-  LSI --> I2["IWDG2"]
-  A3["APB3, D1"] --> W1["WWDG1"]
-  A1["APB1, D2"] --> W2["WWDG2"]
-  I1 --> SR["System-Reset"]
-  I2 --> SR
-  W1 --> SR
-  W2 --> SR
+ L["LSI"] --> I["IWDG1 / IWDG2"]
+ A["APB3"] --> W1["WWDG1"]
+ B["APB1"] --> W2["WWDG2"]
+ I --> R["System-Reset"]
+ W1 --> R
+ W2 --> R
+
 ```
 
 ::: notes
-Ein Hardware-Watchdog ist ein eigener Zähler. Die Software muss ihn innerhalb der konfigurierten Frist bedienen. Sonst löst er aus. IWDG, Independent Watchdog, hängt am internen langsamen Takt. WWDG, Window Watchdog, hängt am APB seiner Instanz. APB ist der Advanced Peripheral Bus. D1 und D2 sind Strom- und Takt-Domänen des STM32H7, keine eigenen Resetklassen. Die Zuordnung erklärt, welcher Takt gilt. Sie ändert nicht die dokumentierte Wirkung: alle vier Instanzen können einen System-Reset auslösen. EWI, Early Wakeup Interrupt, ist eine Unterbrechung vor dem späten Ablauf und kein anderer Resetumfang.
+LSI heißt Low-Speed Internal, der interne langsame Oszillator. IWDG heißt Independent Watchdog, unabhängiger Watchdog. WWDG heißt Window Watchdog, Fenster-Watchdog. APB bedeutet Advanced Peripheral Bus. APB3 gehört hier zur Domäne D1, APB1 zur Domäne D2; die Domänen sind Takt- und Versorgungsbereiche des STM32H755. Das Architekturdiagramm zeigt von links nach rechts die Taktquelle, die damit betriebene Instanz und ihren möglichen System-Reset. Es ist kein Zeitdiagramm. Das Labor verwendet separat WWDG2 am APB1-Takt.
 
-System-Reset startet die Kerne neu und setzt viel Peripherie zurück. Backup-Register und Debug-Logik können erhalten bleiben. Pins können hochohmig oder analog werden. Ob ein Ausgang dabei sicher ist, hängt von externen Pull-Widerständen und der Bootsequenz ab. Der Reset beweist weder die Fehlerursache noch einen sicheren Anlagenzustand. Die Flags in RCC unterscheiden die Quelle nur, wenn wir sie lesen, bevor sie gelöscht werden.
-
-Was die Software zum Refresh berechtigt, ist die nächste Pflicht.
+Unabhängig bedeutet beim IWDG insbesondere ein anderer Taktpfad als der schnelle Kerntakt. Es bedeutet nicht Unabhängigkeit von jedem Fehler, etwa einer gemeinsamen Versorgung. Laut RM0399, dem Reference Manual für diese Familie, sind alle vier Watchdog-Instanzen System-Resetquellen. System-Reset startet die Kerne neu und setzt viele Bausteine zurück, löscht aber nicht jeden Backup- oder Debugzustand. Die Resetursachen im RCC, Reset and Clock Control, werden früh gesichert, bevor sie gelöscht werden. Die Zahl der Instanzen ist keine automatische Sicherheitsredundanz: Ein falsch informierter Supervisor kann mehrere Wächter gleich falsch bedienen.
 :::
 
-## Die Pflicht der Software (Kicking)
+## IWDG: Nachladewert in Zeit übersetzen
 
-Kick oder Refresh heißt: den Watchdogzähler in den erlaubten Bereich zurücksetzen. Im Entwurf nur nach einem abgeschlossenen, noch frischen Nachweis.
+Fensterfunktion für dieses Lehrbeispiel ausgeschaltet.
 
-Nicht „niemals in der ISR“. Eine ISR, die immer füttert, verdeckt einen Hänger. Eine ISR darf füttern, wenn sie die Gesundheitsbedingung wirklich geprüft hat und die API dort erlaubt ist.
+$$t_{\mathrm{nom}}=\frac{(R+1)P}{f_{\mathrm{LSI,nom}}}$$
 
-Unterschiedliche Workerperioden brauchen eigene Fristen. Ein gemeinsamer Haken „beide neu seit der letzten Abfrage“ ist ein engeres Modell.
+$R=500$, $P=32$, $f_{\mathrm{LSI,nom}}=32000\,\mathrm{Hz}$.
+
+$$t_{\mathrm{nom}}=\frac{501\cdot32}{32000}\,\mathrm{s}
+=501\,\mathrm{ms}$$
+
+Nennrechnung, keine garantierte Ablaufzeit.
 
 ::: notes
-Die Hardware zählt, ob gefüttert wurde. Sie weiß nicht, ob der Regler einen Schritt beendet hat. Der Supervisor, eine prüfende Stelle, liefert diese Bedingung. Ein Lebenszähler des Workers steigt nach einer abgeschlossenen Runde, einschließlich der vorgesehenen Prüfungen. Eine Runde ohne neues Sensorereignis kann trotzdem gültiger Fortschritt sein. Ein Hochzählen am Schleifenanfang oder in einer ISR ohne abgeschlossene Arbeit ist keiner.
+IWDG bedeutet Independent Watchdog, unabhängiger Watchdog. LSI bedeutet Low-Speed Internal, der interne langsame Oszillator. R ist der Reload, der Nachladewert, P der wirksame Vorteiler und f die Frequenz in Hertz, also Schwingungen pro Sekunde. Der Zähler benötigt im Modell R plus eins Schritte. Mit R gleich 500 und P gleich 32 sind das 16032 Oszillatortakte. Bei nominell 32000 Hertz ergibt die Division 0,501 Sekunden, gleich 501 Millisekunden.
 
-Ein Bitfeld, das man liest und später ganz löscht, verschluckt Bits, die dazwischen gesetzt wurden. Ein atomares Exchange, ein Tausch in einem Zugriff, vermeidet das nur, wenn der Zugriff für diesen Speicher und diese Kerne wirklich atomar ist. Im Lehrbeispiel schreiben zwei Kerne getrennte Wörter. Jeder ist der einzige Schreiber seines Zählers. Zwei getrennte Lesevorgänge sind kein Schnappschuss eines Paares. Die Sichtbarkeit bleibt der Vertrag aus Vorlesung 6.
-
-Frage: Warum ist eine unveränderte Epoche bei einer schnellen Abfrage kein automatischer Fehler? Weil die erlaubte Workerperiode länger sein darf als der Abstand der Abfragen. Entscheidend ist die Frischefrist.
-
-Der erste Baustein rechnet diese Frist aus dem LSI.
+Der Nennwert ist keine Messung und kein garantierter Grenzwert. Der interne Oszillator streut mit Temperatur und Versorgung. Für die früheste und späteste Ablaufzeit sind daher die passenden Frequenzgrenzen des Datenblatts notwendig. Zusätzlich braucht die Refreshplanung Abstand zur Grenze und eine Betrachtung der Initialisierungs- und Übernahmezeiten. Der STM32H755-IWDG unterstützt auch eine Fensterfunktion. Wir schalten sie in diesem einfachen Timeoutbeispiel ausdrücklich aus. Der Satz „IWDG kann nie frühes Füttern erkennen“ wäre für diese Familie falsch. Der nächste Rechenfall macht die Streuung sichtbar, ohne Datenblattwerte zu erfinden.
 :::
 
-## Watchdog Typ 1: Independent Watchdog (IWDG)
+## LSI-Streuung: eine Modellrechnung
 
-$$t_{\mathrm{nom}} = (R + 1) \times P / f_{\mathrm{LSI}}$$
+Didaktische Annahme, keine Datenblattgrenzen:
 
-Lehrannahme: $R = 500$, $P = 32$, $f_{\mathrm{LSI,nom}} = 32000\,\mathrm{Hz}$.
+$f_{\mathrm{LSI,min}}=28000\,\mathrm{Hz}$, $f_{\mathrm{LSI,max}}=36000\,\mathrm{Hz}$.
 
-$$501 \times 32 / 32000 = 0{,}501\,\mathrm{s} = 501\,\mathrm{ms}$$
+$$t_{\min}=\frac{16032}{36000}=445{,}33\,\mathrm{ms}$$
 
-Frühestes Ende bei der höchsten LSI-Frequenz, spätestes bei der niedrigsten:
+$$t_{\max}=\frac{16032}{28000}=572{,}57\,\mathrm{ms}$$
 
-$$t_{\min} = (R+1)\,P / f_{\mathrm{LSI,max}},\quad t_{\max} = (R+1)\,P / f_{\mathrm{LSI,min}}$$
-
-Die Zahlengrenzen stehen im Datenblatt zur Temperatur und Versorgung. DS12919 Rev. 3 trennt unter anderem eine 25-°C-Zeile von breiteren Bereichen. Ein Raumtemperaturwert ist kein Worst Case. Im Hauptbeispiel bleibt das Fenster des IWDG aus. Die Familie kann ein Fenster. Das ist ein getrenntes Beispiel.
+Höhere Frequenz → früheres Ende. Projektgrenzen im Datenblatt prüfen.
 
 ::: notes
-LSI, Low-Speed Internal, ist ein interner RC-Oszillator, kein Quarz. RC meint Widerstands-Kondensator-Schaltung. Die Frequenz streut mit Temperatur und Versorgung. $R$ ist der Reload, der Nachladewert. $P$ ist der Vorteiler. Die Formel teilt die Anzahl der LSI-Takte durch die Frequenz und ergibt Sekunden. 501 mal 32 ist 16032. Geteilt durch 32000 ist 0,501 s, also 501 ms. Das ist der Nennwert, keine Messung und keine garantierte Deadline. Dazu kommen Übernahme der Register, Quantisierung und eine Refresh-Marge, ein Abstand zu beiden Enden.
+LSI heißt Low-Speed Internal. Die beiden Frequenzen sind ausdrücklich erfundene didaktische Grenzen eines Rechenmodells, keine Behauptung über das Kursboard. Wir behalten 16032 Oszillatortakte aus dem IWDG-Beispiel bei; IWDG heißt Independent Watchdog. Die höchste Frequenz führt zur kürzesten Zeit: 16032 geteilt durch 36000 ist 0,445333 Sekunden, gerundet 445,33 Millisekunden. Die niedrigste Frequenz ergibt 0,572571 Sekunden, gerundet 572,57 Millisekunden. Die Rundung erfolgt erst am Ende.
 
-Warum die höchste Frequenz früher abläuft: derselbe Zählerstand wird in kürzerer Zeit erreicht. Die konkreten Minima und Maxima übernehmen wir nur mit der Zeile des Datenblatts, die zur Bedingung passt. Sie stehen nicht als eine einzige Zahl in dieser Folie, solange die Projektbedingungen fehlen.
-
-Der STM32H755-IWDG hat eine Fensteroption. Für das einfache Beispiel schalten wir sie aus und sagen das dazu. Sonst würde ein zu früher Refresh je nach Betrieb ebenfalls auslösen. „IWDG grundsätzlich ohne Fenster“ wäre falsch.
-
-Die Takttrennung ist nützlich und begrenzt.
+Für rechtzeitigen Refresh ist die früheste mögliche Ablaufzeit maßgeblich, für die späteste Fehlerreaktion die späteste. Der Nominalwert 501 Millisekunden liegt dazwischen, ersetzt aber keinen der beiden Grenzen. Im Projekt sind die Minima und Maxima mit Temperaturbereich, Versorgung und Datenblattrevision aus DS12919 zu übernehmen. DS bezeichnet Data Sheet, Datenblatt. Ein Raumtemperaturwert genügt nicht für einen anderen Betriebsbereich. Diese Rechnung ist eine vollständige Papieraufgabe, auch wenn kein Watchdog auf der Hardware konfiguriert wurde.
 :::
 
-## Der Vorteil des LSI
+## Der erste Refresh gehört schon zum Vertrag
 
-Der IWDG hängt nicht am HSE, High-Speed External, dem externen schnellen Takt. Ein Ausfall dieses Takts ist nicht automatisch ein Ausfall der Versorgung oder des LSI.
+Vor dem Start klären:
 
-Clock-Security und Fallback können den CPU-Takt auf eine andere Quelle legen. Ob das konfiguriert ist, steht im Projekt. Gemeinsame Fehler, zum Beispiel die Versorgung, treffen LSI und Kern zusammen. „Unabhängig“ heißt hier: anderer Taktpfad, nicht universelle Rettung.
+1. Instanz, Takt, Vorteiler und Nachladewert
+2. Fensterfunktion und Start durch Option-Bytes
+3. erste vollständige Worker-Runde im Startbudget
+4. Rückgaben der Initialisierung und Registerübernahme
+5. Debug-Freeze und frühe Sicherung der Resetursache
+
+Ein gestarteter Watchdog lässt sich nicht wie eine Task pausieren.
 
 ::: notes
-Abbildung E hat den LSI neben den APB-Takten gezeichnet. Fällt der externe Takt aus, kann der IWDG weiterzählen, solange sein Oszillator und die Versorgung leben. Der Kern kann gleichzeitig stehen oder auf einem Fallback weiterlaufen. Beides ist nicht dasselbe Bild. Eine Clock-Security-Funktion meldet den Ausfall des überwachten Takts und kann umschalten. Wir behaupten sie nur, wenn das Projekt sie einschaltet. Die genaue Wirkung steht im RCC-Kapitel der gelesenen Revision, nicht als pauschale Rettung.
+Ein Refresh ist das Nachladen des Watchdog-Zählers. Sein erster zulässiger Zeitpunkt hängt davon ab, wann der Watchdog tatsächlich gestartet wurde. Option-Bytes sind nichtflüchtige Hardwarekonfigurationswerte; sie können einen Wächter bereits beim Reset starten. Wird er dagegen per Software aktiviert, muss die Initialisierung einschließlich der ersten nötigen Fortschrittsnachweise zu seiner ersten Ablaufzeit passen. Bei aktivem Fenster ist außerdem ein sofortiger Refresh möglicherweise zu früh.
 
-Ein Watchdog, dessen Takt mit ausgefallen ist, rettet diesen Ausfall nicht. Darum ist der getrennte Pfad der Vorteil und zugleich die Grenze. Für das Labor bleibt der IWDG das lange Timeout mit ausgeschaltetem Fenster. Der WWDG bleibt das kurze Fenster am APB.
-
-Wirksam wird das nur, wenn Start und Registerübernahme stimmen.
+Debug-Freeze ist die konfigurierte Möglichkeit, den Watchdog beim Anhalten durch den Debugger einzufrieren. Ein Lauf mit Freeze beantwortet eine andere Frage als freier Betrieb. Die Initialisierung ist auf Rückgabewerte und die vorgesehenen Übernahmebits zu prüfen. Eine erfolgreiche Treiberrückgabe allein ist bei manchen Refreshfunktionen kein Nachweis des legalen Zeitpunkts. Die Resetursache wird früh gelesen und anschließend gezielt gelöscht; mehrere gesetzte Bits können aus einer Historie stammen. Die Laborfirmware startet den Fensterwächter erst in ihrem bereits laufenden Versuchstask. Dadurch werden lange Kernel- und Projektinitialisierungen nicht unbemerkt in sein erstes kurzes Fenster geschoben.
 :::
 
-## Konfiguration des IWDG
+## Woran darf der Supervisor Gesundheit erkennen?
 
-Reihenfolge als Lehrfolge, Symbole am Header der vorhandenen HAL prüfen:
+Ein Worker erhöht seine Epoche nach einer vollständig geprüften Runde.
 
-1. Instanz wählen, LSI verfügbar
-2. Prescaler und Reload schreiben
-3. Fenster für dieses Beispiel aus
-4. Start, auf die Übernahmebits warten, dann Refresh
-5. Debug-Freeze bewusst an oder aus
-6. RCC-Resetursache lesen, bevor sie gelöscht wird
+| Schwacher Nachweis | Aussage |
+|---|---|
+| Timer-ISR läuft | dieser Handler erhält Rechenzeit |
+| Idle-Task läuft | dieser lokale Leerlaufpfad erhält Rechenzeit |
+| Worker-Epoche geändert | vereinbarte Runde wurde veröffentlicht |
 
-Rückgabe prüfen. Ein stiller Fehler beim Start ist kein laufender Hund.
+Frische und fachliche Prüfung bleiben Teil des Vertrags.
 
 ::: notes
-Die beste Formel hilft nicht, wenn der Zähler nie startet oder der Debugger ihn einfriert. Die Instanz ist IWDG1 oder IWDG2. Welche zum Versuch gehört, tragen wir ein. Der Prescaler und der Reload sind die Werte der 501-ms-Rechnung nur, wenn wir genau dieses Beispiel fahren. Das Fensterregister lassen wir im Hauptbeispiel unbenutzt und dokumentieren das. Der Referenztreiber aktualisiert manche Register nur nach einer Statusprüfung. Die Reihenfolge Start und Refresh nicht umdrehen, ohne den Treiber gelesen zu haben. Die installierte HAL liegt nicht im Repo. Option-Bytes, die den Watchdog schon aus dem Reset starten, behaupten wir nicht.
+Ein Supervisor ist eine überwachende Stelle. Eine Epoche ist hier ein fortlaufender Rundenzähler, keine Uhr. Der Worker erhöht sie erst nach dem Abschluss seiner vereinbarten Arbeit und der vorgesehenen Ergebnisprüfung. Ein Zähler am Schleifenanfang wäre schwächer, weil ein anschließender Hänger trotzdem ein neues Lebenszeichen erzeugt hätte. ISR bedeutet Interrupt Service Routine, Interruptroutine. Idle bezeichnet die Leerlauf-Task des Kernels. CPU, Central Processing Unit, ist der Prozessorkern.
 
-Debug-Freeze hält den Zähler an, solange der Kern steht. Eine Messung mit Debugger ist dann ein anderer Versuch als ohne. Low-Power kann den Takt ebenfalls ändern. Das gehört in die Bedingung, nicht in eine vermutete Option. Die Resetflags sichern wir in einer frühen Stelle des Starts. Eine spätere HAL-Init kann die Historie löschen. SRAM-Inhalt und der M7-Cache überleben einen Reset nicht automatisch als gültiger Logsatz.
-
-Die Konfiguration ist nutzlos, wenn die falsche Stelle füttert.
+Weder die Timer-Interruptroutine noch Idle belegen den Workerfortschritt. Zwei Worker können aufeinander warten, während Idle weiterläuft. Ihre Ausführung belegt auch keinen neuen periodischen Tick: Der Kernel kann ticklosen Leerlauf verwenden. Ein blinder Refresh an diesen Stellen verdeckt einen Stillstand. Ein Refresh aus einer Interruptroutine ist allerdings nicht grundsätzlich falsch, sofern sie die vollständige Gesundheitsbedingung prüft und ihre Schnittstellenaufrufe bei der gewählten Priorität erlaubt sind. Im Lehrmodell hält jeder Worker genau einen Zähler als einziger Schreiber; der Supervisor beobachtet diese Wörter mit dem vereinbarten Sichtbarkeitsvertrag.
 :::
 
-## Die Gefahr im RTOS: Wo füttern wir?
+## Unterschiedliche Perioden brauchen eigene Fristen
 
-Dieselbe hängende Worker-Runde, drei Policies. Abbildung F.
+Der Supervisor merkt je Worker den letzten beobachteten Fortschritt.
 
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "Worker" as W
-concise "blinde ISR" as I
-concise "Idle" as D
-concise "Supervisor" as S
-@0
-W is "arbeitet"
-I is "kick"
-D is "kick"
-S is "kick"
-@2
-W is "haengt"
-I is "kick"
-D is "kick"
-S is "Frist"
-@4
-W is "haengt"
-I is "kick"
-D is "kick"
-S is "kein Kick"
-@enduml
-```
+| Worker | letzter neuer Nachweis | Frischefrist | bei jetzt = 25 ms |
+|---|---:|---:|---|
+| A | 20 ms | 10 ms | Alter 5 ms, frisch |
+| B | 10 ms | 30 ms | Alter 15 ms, frisch |
 
-Ein Watchdog-Task, der nur existiert, genügt nicht. Er muss die Nachweise sehen und selbst rechtzeitig laufen.
+Unverändert seit der letzten Abfrage bedeutet noch nicht ausgefallen.
 
 ::: notes
-Die drei Streifen starten mit einem gesunden Worker und demselben Ausfall. Die blinde Timer-ISR füttert weiter, weil ihr Handler lebt. Idle füttert weiter, weil dieser Pfad CPU-Zeit bekommt, obwohl die Worker blockiert sind. Der Supervisor stellt fest, dass der Nachweis älter ist als die Frist, verriegelt den Fehler und füttert nicht mehr. Die Zeiten auf der Achse sind Schritte des Schemas, keine Produkt-Deadlines.
+Ein Worker ist ein arbeitender Ausführungspfad. A und B sind Lehrnamen, keine festgelegten Taskprioritäten. Die Frischefrist ist das maximal erlaubte Alter des zuletzt vom Supervisor beobachteten Rundenfortschritts. Alle Zeiten in der Tabelle stammen aus derselben lokalen Supervisor-Uhr. Bei jetzt gleich 25 Millisekunden hat A ein Alter von fünf und B von 15 Millisekunden. Beide liegen innerhalb ihrer jeweiligen Frist, auch wenn seit der unmittelbar vorherigen Abfrage keine neue Epoche eingetroffen sein sollte.
 
-Der Supervisor ist selbst eine Task oder ein geprüfter Kontext. Wenn er nicht läuft, füttert niemand aus dem richtigen Grund, und der Hund läuft ab. Das ist erwünscht, sobald die Frist seines eigenen Ausfalls eingehalten ist. Sieht er den anderen Kern nicht, weil die Sichtbarkeit fehlt, darf er nicht so tun, als sei der fremde Zähler frisch. Unterschiedliche Perioden und ein Startup-Budget, bevor der erste vollständige Nachweis da ist, gehören zum nächsten Code.
-
-Zuerst das ISR-Muster im Kleinen.
+Der Supervisor speichert bei jeder erkannten Änderung den neuen Zählerstand und die eigene Beobachtungszeit. Er benötigt dafür keinen synchronisierten Zeitstempel des anderen Kerns. Kommunikationsverzug und Abfrageabstand verlängern jedoch die Zeit zwischen tatsächlichem Stillstand und Erkennung und müssen im Reaktionsbudget auftauchen. Ein einfacheres Kohortenmodell würde beide Zähler nur nach einem akzeptierten gemeinsamen Nachweis als verbraucht markieren. Es darf sie nicht nach jeder erfolglosen Prüfung zurücksetzen, sonst verliert es den gültigen Fortschritt des schnelleren Workers. Für unterschiedliche Perioden verwenden wir hier die getrennten Fristen.
 :::
 
-## Anti-Pattern: Füttern im Timer-Interrupt
+## Eine Frischeprüfung als Pseudocode
+
+Ein Beobachter · ein Schreiber pro Epoche · lokale Zeit in Millisekunden.
 
 ```c
-void TIM_IRQ(void) {
-    kick(); /* auch wenn der Worker steht */
+if (current != worker.last) {
+    worker.last = current;
+    worker.seen_at = now;
+    worker.armed = true;
 }
+healthy = worker.armed
+       && (uint32_t)(now - worker.seen_at) <= worker.fresh_ms;
 ```
 
-Der Handler beweist, dass dieser IRQ bedient wird. Er beweist nicht, dass eine Anwendungsschleife eine Runde beendet hat.
+Erster Nachweis im Startbudget. Danach Fehler verriegeln und nicht weiter normal füttern.
 
 ::: notes
-Der Code ist absichtlich kurz. `TIM_IRQ` steht für eine periodische Interruptroutine. `kick` steht für den Refresh des Watchdogs. Beides sind Lehrnamen, keine geprüften Symbole des Projekts. Die Routine läuft, solange der Takt der Timerquelle läuft, die Priorität das zulässt und der Handler nicht selbst blockiert. Ein Regler, der in seiner Task auf ein Schloss wartet, ändert daran nichts. Die Kicks gehen weiter. Der Hund sieht einen gesunden Takt.
+Der C-nahe Pseudocode erklärt die Frischeprüfung und ist kein zusätzlicher vollständiger Firmwarebaustein. current ist die gelesene Epoche eines Workers. worker.last ist der zuletzt beobachtete Stand, seen_at die lokale Zeit dieser Beobachtung, armed die Markierung eines ersten vollständigen Nachweises und fresh_ms die erlaubte Frischefrist in Millisekunden. now ist die aktuelle lokale Zeit. healthy ist die daraus berechnete Gesundheitsbedingung. uint32_t ist ein vorzeichenloser 32-Bit-Typ.
 
-Daraus folgt nicht, dass jeder Refresh in einer ISR falsch ist. Falsch ist der Refresh ohne die vereinbarte Gesundheitsbedingung. Wenn der Handler die Nachweise selbst geprüft hat, die Prüfung kurz ist und die Priorität stimmt, kann der Ort die ISR sein. Im Labor ist das nicht das Beispiel. Wir zeigen den verdeckten Hänger, damit die Policy sichtbar wird.
-
-Dieselbe Grenze hat das Füttern in der Idle-Task, mit einem anderen falschen Beweis.
+Der Vergleich benutzt Ungleichheit statt größer, sodass ein normaler Umlauf der Epoche nicht automatisch als Rückschritt interpretiert wird. Ganze nicht beobachtete Zählerumläufe oder ein unangekündigter Worker-Neustart bleiben außerhalb des Vertrags. Die vorzeichenlose Zeitdifferenz ist bei einem betrachteten Alter unter einer vollen Zeitgeberperiode sinnvoll. Noch nicht armed heißt hier nicht gesund; die Startsteuerung wartet innerhalb eines eigenen Budgets auf erste Nachweise. Ein erkannter Ausfall wird verriegelt: Spätere sporadische Änderungen heben den Fehler nicht stillschweigend auf. Ein vollständiger Supervisor bewertet alle erforderlichen Worker und das Hardwarefenster, bevor er Refresh erlaubt.
 :::
 
-## Begrenzt: Füttern in der Idle-Task
+## Vom Stillstand zur sicheren Reaktion rechnen
 
-Idle-Ausführung zeigt: dieser lokale Pfad bekommt CPU-Zeit. Sie zeigt keinen neuen Scheduler-Tick und keinen Workerfortschritt.
+Lehrmodell mit ausdrücklich gesetzten Höchstwerten:
 
-Zwei Tasks können aufeinander warten. Idle läuft weiter und würde weiter füttern. Tickless Idle kann sogar ohne periodischen Tick in diesen Pfad kommen. Ein Idle-Hook darf nicht blockierend aufrufen.
+$$t_{\mathrm{Reaktion}}\le F+Q+D+W+B$$
+
+| Anteil | Obergrenze |
+|---|---:|
+| Frischefrist $F$ | 30 ms |
+| Abfrageverzug $Q$ / Meldeverzug $D$ | 5 ms / 2 ms |
+| Watchdogrest $W$ / Startreaktion $B$ | 21 ms / 8 ms |
+
+$$30+5+2+21+8=66\,\mathrm{ms}$$
 
 ::: notes
-Die vorige ISR hat den Handler mit der Anwendung verwechselt. Idle verwechselt „der Scheduler konnte etwas Niedriges ausführen“ mit „die Arbeit ist vorangekommen“. Der frühere Satz, Idle beweise einen Tick, stimmt nicht. Der Kernel kann Idle auch im ticklosen Leerlauf betreten. Ein Tick ist der periodische Zeittakt des RTOS, nicht die Idle-Schleife.
+t Reaktion ist der Abstand vom tatsächlichen Stillstand bis zur geforderten sicheren Reaktion. F bezeichnet die Frischefrist, Q den maximalen Verzug bis zur nächsten Supervisorprüfung und D den maximalen Verzug eines bereits abgeschlossenen, noch eintreffenden Fortschrittsnachweises. W ist die maximal verbleibende Watchdogzeit nach dem letzten noch erlaubten Refresh. B ist die maximale Zeit nach dem Reset bis zum geforderten Zustand im Startpfad. Alle Werte sind didaktische Annahmen, keine Messwerte oder garantierten STM32-Zeiten.
 
-Konkretes Gegenbeispiel: Task Hoch hält ein Schloss und wird von einer mittleren Aufgabe verdrängt, Task Niedrig wartet auf das Schloss. Beide Worker kommen nicht voran. Idle läuft, sobald die mittlere Aufgabe wartet oder endet, und ein Hook darin füttert. Der Watchdog sieht kein Problem. Das ist eine schwache Policy, kein gelungener Nachweis. Idle beweist nur den eigenen Ausführungspfad.
-
-Wenn ein Hook gezeigt wird, gelten die Grenzen des Ports: kein `osDelay`, kein Warten auf ein Schloss, kurze Arbeit. Für blockierte Worker brauchen wir deren eigene Zähler.
-
-Diese Zähler liest der Supervisor.
+Der ungünstige Fall lässt kurz nach dem Stillstand noch eine alte, vorher fertiggestellte Meldung eintreffen. Dadurch wird deren Beobachtung um D später und die Frischefrist beginnt später. Die nächste Prüfung kann um Q versetzt sein. Danach bleibt höchstens W bis zum Reset und B für die Startreaktion. Die Summe beträgt 66 Millisekunden. Unter diesen Annahmen wäre eine Forderung von 60 Millisekunden nicht erfüllt, eine von 70 nur mit vollständigem Nachweis aller angenommenen Grenzen. Wird der Ausgang bereits vor dem Reset sicher gesetzt, braucht diese konkrete Reaktion eine andere, passend abgegrenzte Kette.
 :::
 
-## Supervisor mit Fortschrittsfristen
+## WWDG: Der Bus bestimmt den Zählschritt
 
-Gegenbeispiel, Kohorte, Start `seen = 0`. Unbedingt nach der Prüfung zu speichern, verbraucht Fortschritt:
+WWDG2 verwendet APB1-PCLK, nicht den M4-Kerntakt.
 
-- Abfrage A: `e4 = 1`, `e7 = 0`. Gemeinsam nicht frisch.
-- Setzt A trotzdem `seen4 = 1`, wirkt Abfrage B mit `e4 = 1`, `e7 = 1` wie „M4 ohne neuen Schritt“.
+$$\Delta t=\frac{4096P}{f_{\mathrm{PCLK}}}$$
 
-Richtig im Kohortenmodell: `seen` erst nach akzeptiertem gemeinsamen Nachweis nachziehen. Das ist die Vereinfachung „beide neu seit dem letzten Erfolg“.
+Lehrannahme: $P=8$, $f_{\mathrm{PCLK}}=100\,\mathrm{MHz}$.
 
-Hauptmodell bei verschiedenen Perioden: jeder Worker hat einen eigenen Zähler und eine eigene Frischefrist. Ein einmal unveränderter Zähler in einer schnellen Abfrage ist noch kein Fehler.
+$$\Delta t=0{,}32768\,\mathrm{ms}=327{,}68\,\text{µs}$$
+
+Bei 50 MHz verdoppelt sich der Schritt.
 
 ::: notes
-Die alte Folie hat `seen_m4` und `seen_m7` auch nach einem fehlgeschlagenen gemeinsamen Test überschrieben. Damit gilt der Fortschritt des schnelleren Workers als verbraucht, obwohl noch nicht gefüttert wurde. Die nächste Abfrage verlangt von ihm einen weiteren Schritt, den die Policy nicht verlangen dürfte. Die Korrektur der Kohorte speichert die gesehenen Werte nur im erfolgreichen Zweig. Eine erfolglose Abfrage lässt `seen` stehen. Die Bedingung bezieht sich auf die letzte akzeptierte Kohorte.
+WWDG heißt Window Watchdog, Fenster-Watchdog. APB heißt Advanced Peripheral Bus, PCLK Peripheral Clock, der Takt der gewählten Businstanz. Der zweite Fensterwächter benutzt hier APB1. M4 bezeichnet den Cortex-M4. Sein Kerntakt und ein eventuell verdoppelter Timertakt sind nicht automatisch die Watchdogquelle. P ist der wirksame Vorteiler, Delta t die Dauer eines Abwärtsschritts.
 
-Für ungleiche Perioden ist das Kohortenmodell zu grob. Ein schneller Worker darf mehrere Runden machen, während der langsame noch in seiner Frist liegt. Der Supervisor liest je Worker ein Wort, als einziger Beobachter seiner Kopie. Ändert sich der Wert, merkt er den neuen Stand und die lokale Zeit `now`. Die Zeitbasis ist die des Supervisors, nicht eine mit dem anderen Kern synchronisierte Uhr. Ein Zeitstempel im Shared-Block würde diese Synchronisation extra brauchen. Wird `now - seen_at` größer als die Frist, wird der Fehler verriegelt und nicht mehr normal gefüttert. Vor dem ersten Nachweis gilt ein Startup-Budget. Danach ist fehlende Meldung ein Fehler.
-
-Dieselbe frische Runde darf mehrere Abfragen überstehen, solange die Frist reicht. Es ist nicht behauptet, dass jeder Refresh eine neue gemeinsame Epoche verbraucht. Die Policy muss zur maximalen Reaktionszeit passen: Frist plus restlicher Watchdog plus Reaktion.
-
-Der Code steht auf der nächsten Unterfolie, damit die Zeilen sichtbar bleiben.
+4096 mal acht ergibt 32768. Bei 100 Millionen Hertz ergeben sich 0,00032768 Sekunden, gleich 0,32768 Millisekunden oder 327,68 Mikrosekunden. Bei 50 Millionen Hertz sind es 0,65536 Millisekunden. Die 100 Megahertz sind eine Lehrannahme und müssen in der echten Clock-Konfiguration bestätigt werden. Zulässige Busgrenzen sind abhängig vom Bauteil und Leistungsmodus anhand des Datenblatts zu prüfen. Das HAL-Makro für den Vorteiler ist eine Registerkodierung; HAL bedeutet Hardware Abstraction Layer. Sein Zahlenwert muss deshalb nicht acht sein. Für die Rechnung zählt der tatsächlich wirksame Teiler.
 :::
 
-## Fristenbeispiel, zu Folie Supervisor
+## WWDG: Das erlaubte Fenster
 
-Lehrpseudocode, ungebaut. Ein Schreiber je Zähler. `now` ist die lokale Zeit des Supervisors.
+$R=127$ (`0x7F`), $W=80$ (`0x50`), $T$: aktueller Stand.
+
+$$63<T\le80$$
+
+- $R$: Nachladewert, $W$: obere Refreshgrenze
+- EWI bei $T=64$, Reset beim Schritt nach $T=63$
+- $T=80$ ist erlaubt; im Betrieb Abstand zur Kante
+- Geprüft wird der Stand vor dem Nachladen
+
+::: notes
+WWDG bedeutet Window Watchdog, Fenster-Watchdog. R ist der Nachladewert, W der konfigurierte Fensterwert und T der aktuelle Stand des abwärts laufenden Zählers. Die hexadezimalen Schreibweisen 0x7F und 0x50 bedeuten 127 und 80. Nach einem Refresh wird 127 geladen. Solange T größer als 80 ist, wäre der nächste Refresh zu früh. Erlaubt ist ein Stand größer als 63 und höchstens gleich 80. Damit gehört Gleichheit an der oberen Grenze zum erlaubten Bereich, ist aber kein sinnvoller Betriebspunkt ohne Reserve.
+
+EWI heißt Early Wakeup Interrupt, vorgezogene Warnunterbrechung. Bei T gleich 64 kann diese Meldung ausgelöst werden, wenn sie aktiviert ist. Ein Zählschritt später erreicht T den Wert 63 und löst den Ablaufreset aus. Der Zähler läuft für diesen Reset nicht erst bis null. Ein Refresh bei 64 kann hardwareseitig noch möglich sein, lässt aber kaum zeitliche Reserve und kann bereits ein Warnereignis haben. Im Resetversuch wird dort bewusst nicht mehr nachgeladen. Die folgende Tabelle rechnet diese Stände unter einer benannten Anfangsphase in Zeiten um.
+:::
+
+## Vom Zählerstand zum Zeitpunkt
+
+Idealmodell: erster Abwärtsschritt einen vollen Tick nach dem Start.
+
+| Schritte $n$ | $T=127-n$ | $t=n\cdot0{,}32768$ ms |
+|---:|---:|---:|
+| 0 | 127 | 0 |
+| 47 | 80 | 15,40096 |
+| 54 | 73 | 17,69472 |
+| 63 | 64 · EWI | 20,64384 |
+| 64 | 63 · Reset | 20,97152 |
+
+18 ms liegt nominal bei $T=73$.
+
+::: notes
+n ist die Zahl der abgeschlossenen Abwärtsschritte, T der aktuelle WWDG-Zählerstand und t die vergangene Zeit. WWDG heißt Window Watchdog, EWI Early Wakeup Interrupt. Die Schrittdauer 0,32768 Millisekunden stammt aus dem angenommenen Bustakt von 100 Megahertz und dem Vorteiler acht. Mit Startwert 127 sind bis zur oberen erlaubten Grenze 80 genau 47 Schritte nötig. 47 mal 0,32768 ergibt 15,40096 Millisekunden. Nach 54 Schritten steht 73 und nach 63 Schritten 64, das Warnereignis. Schritt 64 erreicht 63 und löst den Reset aus.
+
+Nach 18 Millisekunden sind bei dieser idealisierten Anfangsphase 54 volle Schritte vergangen: 18 geteilt durch 0,32768 liegt zwischen 54 und 55. Daher ist T nominal 73. Die Tabelle ist keine Messkurve. Ein frei laufender Vorteiler kann den ersten Abwärtsschritt nach dem Registerschreiben früher als nach einem ganzen Tick auslösen. Diese Phase verschiebt die absoluten Grenzen um bis zu etwa einen Schritt. Hinzu kommen die Softwareverzögerungen, die bei einer geplanten Refreshzeit nicht ignoriert werden dürfen.
+:::
+
+## Warum 18 Ticks noch kein Timing-Nachweis sind
+
+Lehrkonfiguration: 100 MHz, Teiler 8, Reload 127, Fenster 80.
+
+| geplante Wartezeit | Modellbewertung |
+|---|---|
+| 5 ms | zu früh, Reset ohne vorherigen EWI möglich |
+| 18 ms | im Fenster mit Abstand, tatsächlichen Pfad prüfen |
+| 25 ms | ohne Refresh liegt der Reset vorher |
+
+`osDelay(18)` sind 18 Kernel-Ticks. Takt, Phase und Aufwachverzug gehören in den Vertrag.
+
+::: notes
+Ein Tick ist eine Einheit des verwendeten Zeitgebers. osDelay gehört zu CMSIS-RTOS2, der Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei, und benutzt Kernelticks. Nur bei 1000 Hertz Tickfrequenz entsprechen 18 Ticks nominell 18 Millisekunden. Die Position des Aufrufs zur nächsten Tickflanke und die spätere Einplanung des Tasks verändern die wirkliche Wartezeit. WWDG bedeutet Window Watchdog, EWI Early Wakeup Interrupt.
+
+Unter der Lehrannahme sind fünf Millisekunden deutlich vor der Öffnung bei etwa 15,4 Millisekunden. Ein solcher Refresh kann unmittelbar zurücksetzen, ohne dass vorher ein EWI bei Stand 64 kam. 18 Millisekunden zielen in die Mitte des Fensters. Sie sind keine Zusage, dass die reale Ausführung rechtzeitig dort ankommt. 25 Millisekunden liegen hinter dem Ablauf bei etwa 20,97 Millisekunden, sofern Zähler und Takt weiterlaufen. Das Modul benutzt für den gültigen Verlauf absolute Zielticks mit osDelayUntil, damit relative Wartezeiten nicht jede Runde weiter driften. Es prüft zusätzlich den Zähler direkt vor Refresh. Das Modul maskiert lokale Interrupts kurz zwischen Prüfung und Registerschreiben und stellt den vorherigen Maskenzustand wieder her. Der Hardwarezähler läuft dabei weiter. Auch dieser kurze Abschnitt braucht für einen Zeitnachweis eine obere Dauergrenze.
+:::
+
+## EWI und Reset sind einen Schritt auseinander
+
+Idealmodell · Spuren von oben: Ticktakt, EWI-Anforderung, Resetanforderung.
+
+```{.wavedrom}
+{"signal":[{"name":" ","wave":"p..."},{"name":" ","wave":"01x."},{"name":" ","wave":"0.1."}],"head":{"text":"WWDG: Ereignisse an Zählschritten"},"foot":{"tick":62,"text":"Ein Raster = 327,68 µs · Modell"},"config":{"hscale":3}}
+```
+
+::: notes
+EWI heißt Early Wakeup Interrupt, vorgezogene Warnunterbrechung. WWDG heißt Window Watchdog, Fenster-Watchdog. Die drei digitalen Spuren zeigen von oben den idealen Zählschritt-Takt, die Warnanforderung und die Resetanforderung. Die waagerechte Achse trägt Schrittmarken 62 bis 66 seit dem Nachladen von 127; die Marken nach dem Reset zeigen nur das Ende des grafischen Rasters. Ein Raster entspricht unter der Lehrannahme 327,68 Mikrosekunden. Bei Schritt 62 steht der Zähler 65, bei 63 steht er 64 und die Warnanforderung wird aktiv. Bei Schritt 64 fällt der Stand auf 63 und die Resetanforderung wird aktiv.
+
+Der schraffierte unbekannte Bereich in der Warnspur ab dem Reset bedeutet, dass der weitere Warnzustand nach dem Neustart hier nicht modelliert wird. Die Resetspur markiert die logische Anforderung, nicht eine vermessene äußere Pinform oder Resetpulsbreite. Der Takt ist eine grafische Darstellung der idealen Schritte, kein gemessenes Taktsignal. Das Diagramm zeigt insbesondere noch keinen Handler-Eintritt. Von der Warnanforderung bis zum tatsächlich laufenden Callback kann Zeit vergehen. Diese Eintrittslatenz verkleinert das nutzbare Arbeitsbudget.
+:::
+
+## Das EWI-Budget ist kleiner als ein Tick
+
+Lehrannahmen, keine gemessenen Höchstwerte:
+
+$$B_{\mathrm{Arbeit}}=327{,}68-40-20-30=237{,}68\,\text{µs}$$
+
+| Anteil | Annahme |
+|---|---:|
+| Eintrittslatenz | 40 µs |
+| Handler-Grundarbeit | 20 µs |
+| zusätzliche Reserve | 30 µs |
+
+Der IRQ ist maskierbar. Ein verhindertes EWI liefert keine Abschaltung.
+
+::: notes
+EWI bedeutet Early Wakeup Interrupt. B Arbeit ist das verbleibende Zeitbudget für die kurze Fehlerreaktion. IRQ bedeutet Interrupt Request, Unterbrechungsanforderung. Der Abstand vom Warnereignis bis zum nächsten Zählschritt beträgt in der Lehrkonfiguration nominal 327,68 Mikrosekunden. Davon ziehen wir angenommene 40 Mikrosekunden bis zum Handler-Eintritt, 20 für seine Grundarbeit und 30 als Reserve ab. Es bleiben 237,68 Mikrosekunden. Alle Teilwerte sind ein Rechenmodell und keine gemessenen maximalen Latenzen auf dem Board.
+
+Ein EWI ist ein gewöhnlicher maskierbarer Interrupt, kein NMI, Non-Maskable Interrupt. Ist er deaktiviert, zu lange maskiert oder von dringlicheren Handlern verdrängt, kann der Reset eintreten, bevor die gewünschte Reaktion läuft. Eine hohe Taskpriorität allein verhindert einen freigegebenen dringlichen Hardware-Interrupt nicht. Die zulässige kurze Arbeit schließt lange Ausgaben, Flashschreiben und blockierende Wartefunktionen aus. Ein realer Nachweis müsste die höchsten Latenzen unter den tatsächlichen Maskierungs- und Prioritätsbedingungen begrenzen. Der sichere Ausgang darf deshalb nicht ausschließlich vom Erfolg dieses Callbacks abhängen.
+:::
+
+## Eine eindeutige EWI-Policy im Labor
+
+Für den Resetversuch:
+
+- zuvor konfigurierten ENABLE-Ausgang inaktiv setzen
+- EWI-Marker setzen und Handler verlassen
+- keine Ausgabe, kein Delay, kein Kernelaufruf
+- nicht erneut füttern, System-Reset zulassen
+
+Eine spätere Freigabe erfolgt erst im geprüften Startpfad.
+
+::: notes
+EWI heißt Early Wakeup Interrupt. Eine Policy ist die vereinbarte Handlungsregel. ENABLE ist das aktive High-Freigabesignal des isolierten Lehrversuchs. GPIO heißt General Purpose Input/Output, frei konfigurierbarer digitaler Ein- oder Ausgang. Der Callback, die Rückruffunktion, setzt den bereits vorbereiteten ENABLE-Pin auf Low und einen separaten EWI-Marker auf High. Danach kehrt er zurück. Im vollständigen Modul ist diese Funktion kurz und verwendet weder Echtzeitkernel noch formatierte Ausgabe oder Wartefunktion.
+
+Bei Zählerstand 64 wäre ein hardwareseitig erlaubter Refresh noch möglich. Die Policy des Resetversuchs unterlässt ihn bewusst, damit der nächste Schritt den Reset auslöst. Ein anderer Versuch könnte dort gezielt nachladen, müsste aber als Wiederherstellung mit neuem Budget erklärt werden. Die beiden Policies dürfen nicht gleichzeitig behauptet werden. Der EWI-Marker zeigt nur, dass der Callback diesen Pin verändert hat. Er ist keine dauerhafte Fehleraufzeichnung: Seine GPIO-Konfiguration kann beim Reset verloren gehen. Die externe Ausgangsbeschaltung und der Bootpfad übernehmen deshalb den inaktiven Zustand auch dann, wenn dieser Callback gar nicht läuft.
+:::
+
+## Ein Low-Pegel vor dem Reset reicht nicht
+
+Für das isolierte aktive High-Signal ENABLE:
+
+| Phase | geforderte Wirkung |
+|---|---|
+| normale Freigabe | bewusst High |
+| erkannter Fehler | Low und verriegelt |
+| Reset / hochohmiger Pin | externer Pull-down hält inaktiv |
+| Start | Low bis zur erneuten Prüfung |
+
+LED-Marker und sicherer Anlagenzustand sind verschiedene Aussagen.
+
+::: notes
+ENABLE ist der Name eines aktiven High-Signals: High erlaubt, Low sperrt. Ein Pull-down ist ein externer Widerstand zum Low-Pegel. Während des Resets kann der Mikrocontrollerpin hochohmig oder anders konfiguriert werden. Der zuvor geschriebene Low-Wert ist dann keine dauerhafte Zusage über die Spannung am Anschluss. Der Pull-down und eine dazu passende unbelastete Lehrschaltung halten die inaktive Richtung über diesen Übergang. Für einen realen Aktor müssten elektrische Grenzwerte, mögliche Leitungsfehler und Lastverhalten zusätzlich geprüft werden.
+
+Im Startpfad wird der Ausgang zuerst inaktiv initialisiert. Eine Freigabe findet erst nach den vereinbarten Prüfungen statt. Im gültigen Watchdog-Verlauf demonstriert das Modul diese Freigabe nach den Konfigurationsprüfungen unmittelbar vor dem Watchdogstart; am Ende des endlichen Versuchs setzt es den Ausgang wieder inaktiv. Die LED, Light-Emitting Diode oder Leuchtdiode, beziehungsweise ein Messmarker zeigen einen Programmablauf. Sie beweisen keine Sicherheit einer angeschlossenen Maschine. Für eine Klausur genügt hier die begründete Kette aus Fehlerreaktion, Resetzustand und gesperrter Startfreigabe.
+:::
+
+## Die HAL startet den Fensterwächter bereits
+
+Aus dem separaten M4-Versuchsmodul:
 
 ```c
-if (cur != w->last) {
-    w->last = cur;
-    w->seen_at = now;
-    w->armed = 1;
+watchdog.Instance = WWDG2;
+watchdog.Init.Prescaler = WWDG_PRESCALER_8;
+watchdog.Init.Window = 80u;
+watchdog.Init.Counter = 127u;
+watchdog.Init.EWIMode = WWDG_EWI_ENABLE;
+if (HAL_WWDG_Init(&watchdog) != HAL_OK) {
+    Error_Handler();
 }
-if (!w->armed)
-    return now <= startup_deadline;
-return (uint32_t)(now - w->seen_at) <= w->fresh;
 ```
 
-Refresh nur, wenn jeder nötige Worker so frisch ist und das Hardwarefenster offen ist. Sonst Fehler verriegeln und nicht füttern.
+Start erst im laufenden Task · EWI über `WWDG_IRQn`.
 
 ::: notes
-`cur` ist die stabile Kopie eines `uint32_t`, den nur dieser Worker schreibt. `last` und `seen_at` gehören dem Supervisor. `armed` wird eins, sobald die erste Runde angekommen ist. Vorher entscheidet das Startup-Budget, ob der Hund schon laufen darf und ob fehlende Meldungen schon Fehler sind. Wann der Watchdog gestartet wird, muss in dieses Budget passen: Initialisierung und erste Runden müssen vor dem ersten möglichen Ablauf fertig sein. Danach vergleicht die Subtraktion ohne Vorzeichen das Alter mit `fresh`. Ein Wrap der Supervisor-Zeit ist über das übliche Tick-Intervall definiert, solange das Alter kürzer als eine volle Zählerperiode ist. Der Worker-Zähler selbst darf umlaufen. Der Vergleich ist „ungleich“, nicht „größer“.
+HAL heißt Hardware Abstraction Layer, WWDG Window Watchdog, EWI Early Wakeup Interrupt. M4 ist der Cortex-M4. watchdog ist ein dauerhaft vorhandenes privates Handle, die Verwaltungsstruktur für WWDG2. Instance wählt die zweite Instanz, Prescaler den wirksamen Vorteiler acht, Window die obere Refreshgrenze 80 und Counter den Nachladewert 127. EWIMode aktiviert die Warnunterbrechung. HAL_OK ist die erwartete Erfolgsrückgabe; Error_Handler ist der generierte Projektfehlerpfad.
 
-Zwei Lesevorgänge zweier Worker sind kein atomares Paar. Jeder wird für sich bewertet. Ein Event-Bitset mit Exchange wäre ein anderes Muster und nur zulässig, wenn der Zugriff die Atomarität wirklich hat. „Lesen und später alles löschen“ verschluckt neue Bits. Das Fristenmodell löscht den Worker-Zähler nicht.
-
-Kommunikationsverzug, ein Neustart mitten in der Frist und das Intervall, in dem der Supervisor selbst nicht läuft, bleiben Annahmen. Sie stehen neben der Zahl `fresh`, nicht unsichtbar darin. Der IWDG mit ausgeschaltetem Fenster sieht zusätzlich nicht, ob absurd oft gefüttert wird.
-
-Diese Lücke ist der nächste Punkt.
+Der öffentlich geprüfte Treiber schreibt während HAL_WWDG_Init bereits das Aktivierungsbit und den Zähler. Daher startet das kurze Fenster hier und nicht erst bei einem späteren Refresh. Das vollständige Modul konfiguriert vorher die benötigten Ausgänge, den Takt und den Interruptcontroller und startet erst im laufenden Versuchstask. Der H755-Geräteheader nennt WWDG_IRQn für die Warnunterbrechung. IRQ steht in diesen Namen für Interrupt Request, Unterbrechungsanforderung. WWDG_RST_IRQn bezeichnet eine andere Resetmeldung und wird für diesen Callback nicht verwendet. Der generierte WWDG_IRQHandler ruft den Modul-Handler auf. Der öffentliche Refresh-Treiber schreibt den Nachladewert und liefert HAL_OK, ohne den vorigen Fensterstand zu validieren. HAL_OK allein ist deshalb kein Nachweis eines legalen Refreshzeitpunkts.
 :::
 
-## Die Schwäche des IWDG
+## MPU: Rechte und Attribute einer Region
 
-Hauptfall dieser Vorlesung: IWDG mit ausgeschaltetem Fenster. Eine Schleife, die alle paar Millisekunden füttert, hält den Zähler am Leben, auch wenn die eigentliche Arbeit nur noch aus dem Füttern besteht.
+- Die MPU prüft Zugriffe des jeweiligen Kerns
+- Region: Basis, Größe, Zugriff, Ausführbarkeit, Speicherattribute
+- Bei Überlappung gewinnt die höhere Regionsnummer
+- Explizites No-Access gilt auch für privilegierte Zugriffe
 
-Eine konfigurierte IWDG-Fensterfunktion kann frühes Füttern zusätzlich ablehnen. Das ist ein anderer Betriebszustand, keine Eigenschaft jedes IWDG-Bausteins.
-
-Der Vergleich mit dem WWDG braucht dessen Takt, Fenster und die gewünschte Reaktionszeit. Beides gleichzeitig „strenger“ zu nennen, ohne diese Zahlen, ist leer.
+Sie prüft keine C-Arraylänge und überwacht keinen DMA-Busmaster.
 
 ::: notes
-Timeout bedeutet: zu spät ist sichtbar, zu früh ist es im fensterlosen Betrieb nicht. Der Hund wird immer wieder nachgeladen, bevor 501 ms Nennzeit ablaufen. Fachlich kann die Schleife leer sein. Darum hängt der Nutzen an der Policy und, wenn gewollt, an einem Fenster. Das Fenster des IWDG auf dem H755 nicht mit dem Satz „IWDG kann das nie“ abtun. Wir haben es im Hauptbeispiel ausgeschaltet und benennen den Vergleich so.
+MPU heißt Memory Protection Unit, Speicherschutzeinheit. Eine Region ist ein adressierter Bereich mit den für Armv7-M vorgesehenen Größen- und Ausrichtungsregeln sowie Zugriffsrechten und Speicherattributen. No-Access bedeutet, dass weder privilegierte noch unprivilegierte Datenzugriffe in dieser aktiven Region erlaubt sind. Ein Ausführungsverbot verhindert das Ausführen von Befehlen aus einer entsprechend markierten Region. Die Speicherattribute bestimmen unter anderem, ob Zugriffe cachebar sind; diese zweite Aufgabe kennen wir aus Vorlesung 6.
 
-Der WWDG zwingt das Füttern in ein Zeitfenster. Dafür hängt er am APB-Takt, nicht am LSI, und seine Frist ist kurz. Welche Reaktion die Anwendung braucht, entscheidet, ob der lange unabhängige Timeout, das kurze Fenster oder beide gemeint sind. Beide lösen auf diesem Baustein einen System-Reset aus. Sie sind keine automatisch unabhängige Sicherheitsarchitektur. Ein falsch informierter Supervisor kann beide füttern.
-
-Der APB-getaktete Fensterwächter ist der nächste Baustein.
+Bei mehreren treffenden Regionen hat die höhere Regionsnummer Vorrang. Eine versehentlich überlagernde erlaubte Region kann daher eine geplante Sperre unwirksam machen. C ist die Programmiersprache; die MPU kennt die Länge eines dort deklarierten Arrays nicht. Liegt ein Zugriff hinter dem Array, aber weiterhin in erlaubtem Speicher, löst die Region keinen Fehler aus. DMA heißt Direct Memory Access und benutzt einen eigenen Busmaster. Die MPU eines Kerns prüft weder dessen Zugriffe noch die des anderen Kerns. Für den Test müssen Region, tatsächliche Zugriffsstelle und aktiver Schutz des betreffenden Kerns gemeinsam feststehen.
 :::
 
-## Typ 2: Window Watchdog (WWDG) Einführung
+## Privilegiert heißt nicht von No-Access befreit
 
-WWDG1 an APB3 in D1. WWDG2 an APB1 in D2. Das M4-Lehrteil benutzt WWDG2.
+Aktive passende Region auf diesem Kern:
 
-$$t_{\mathrm{tick}} = 4096 \times P / f_{\mathrm{PCLK}}$$
+| Zugriff | No-Access wirksam? |
+|---|---|
+| privilegierter / unprivilegierter Thread | ja |
+| gewöhnlicher Interrupt-Handler | ja |
+| HardFault / NMI / FAULTMASK | abhängig von HFNMIENA |
+| DMA / anderer Kern | nein |
 
-Lehrannahme, kein Messwert: $f_{\mathrm{PCLK}} = 100\,\mathrm{MHz}$, $P = 8$. $P$ ist der Teiler, nicht der Zahlenwert eines HAL-Makros.
-
-$$4096 \times 8 / 10^{8} = 0{,}32768\,\mathrm{ms}$$
-
-Bei 50 MHz: 0,65536 ms. Nicht 200 MHz. Die zulässige APB-Grenze hängt von Bauteil und VOS ab. VOS ist der Spannungs- und Leistungsmodus.
+PRIVDEFENA erlaubt Hintergrundzugriffe in Lücken, hebt keine passende Sperrregion auf.
 
 ::: notes
-PCLK, Peripheral Clock, ist der Takt des Busses dieser Instanz, nicht der CPU-Takt und nicht ein verdoppelter Timer-Takt. Für WWDG2 ist das APB1. Ob der Baum im Projekt 100 MHz oder 50 MHz liefert, ist offen. Die Rechnung bleibt als Lehrannahme gekennzeichnet. Der Teiler 8 entsteht aus der Kodierung im Register. Ein Makro wie ein Prescaler-Symbol kann einen Bitfeldwert tragen, der nicht gleich 8 ist. Wir rechnen mit dem wirksamen Teiler 8 und prüfen das Symbol am Header.
+No-Access ist das vollständige Zugriffsverbot einer MPU-Region; MPU bedeutet Memory Protection Unit. Thread Mode ist der normale Programmausführungsmodus und kann privilegiert oder unprivilegiert sein. Gewöhnliche Interrupt-Handler laufen privilegiert im Handler Mode, unterliegen aber ebenfalls einer passenden aktiven Sperrregion. HardFault ist der schwere Fehlerhandler. NMI bedeutet Non-Maskable Interrupt, nicht maskierbare Unterbrechung. FAULTMASK ist die besondere Ausnahmemaske. Das MPU-Steuerbit HFNMIENA bestimmt, ob der Schutz auch in diesen besonderen Zuständen aktiv bleibt.
 
-4096 mal 8 ist 32768. Geteilt durch 100 Millionen ist 0,00032768 s, also 0,32768 ms je Abwärtsschritt. Bei halbem PCLK verdoppelt sich der Schritt. Ein APB von 200 MHz übernehmen wir nicht. Das Datenblatt begrenzt die Busfrequenzen abhängig von VOS. Die konkrete Grenze steht in DS12919 zur gelesenen Revision und zur gewählten Spannung. Sie ist keine Folienkonstante über 120 MHz hinaus, und 100 MHz bleibt eine Annahme innerhalb eines noch zu prüfenden Baums.
-
-Aus dem Tick werden Reload und Window erst das erlaubte Intervall.
+PRIVDEFENA ist das Steuerbit für den privilegierten Hintergrundadressraum. Es erlaubt privilegierten Zugriff auf Adressen, die keine aktive Region trifft. Es setzt die Rechte einer tatsächlich treffenden No-Access-Region nicht außer Kraft. DMA, Direct Memory Access, und der andere Kern, hier der Cortex-M4 oder M4, liegen außerhalb der lokalen Prüfung. Die Tabelle trennt damit drei oft vermischte Fragen: Programmmodus, Privileg und Zugehörigkeit zum überwachten Kern. Ein privilegierter gewöhnlicher Handler darf nicht einfach in die Guard schreiben. Eine Guard ist der im nächsten Beispiel bewusst gesperrte Randbereich eines Stacks.
 :::
 
-## Das Fenster-Konzept (Window Watchdog)
+## Eine Stack-Guard ist eine räumliche Grenze
 
-Lehrkonfiguration, überall dieselbe: WWDG2, Teiler 8, $T$ startet bei 127 = `0x7F`, Fenster $W = 80$ = `0x50`, EWI bei $T = 64$ = `0x40`, Reset beim Übergang nach $T = 63$ = `0x3F`.
-
-Erlaubt vor dem Refresh: der Zähler ist größer als `0x3F` und höchstens gleich $W$. Bei $T = 80$ ist die obere Grenze erreicht und der Refresh erlaubt, nicht „noch zu früh“.
-
-Idealisiert, erster Schritt einen vollen Tick nach dem Nachladen. Der frei laufende Teiler kann den ersten Schritt früher auslösen. Das Band ist bis zu etwa ein Tick.
-
-| Schritt | T | t ideal |
-|--------:|--:|--------:|
-| 0 | 127 | 0 ms |
-| 47 | 80 | 15,401 ms |
-| 48 | 79 | 15,729 ms |
-| 54 | 73 | 17,695 ms |
-| 63 | 64 | 20,644 ms |
-| 64 | 63 | 20,972 ms |
-
-5 ms: zu früh. 18 ms: nominal $T = 73$, praktisch PCLK, Tick und Pfad prüfen. 25 ms ohne Refresh: der Reset liegt vorher, wenn der Hund läuft und nicht einfriert. `osDelay(n)` sind n Kernel-Ticks, nicht n ms.
-
-::: notes
-RM0399 Rev. 5, Abschnitte 47.3 und 47.3.4, erlaubt den Refresh, wenn der Zähler größer als `0x3F` und höchstens gleich dem Window ist. Gleichheit mit 80 ist hardwareseitig erlaubt. Im normalen Betrieb zielen wir nicht auf diese Kante und nicht auf 64. $T = 64$ liegt noch vor dem Reset und kann bei eingeschaltetem EWI die Unterbrechung schon ausgelöst haben. Der Reset folgt einen Zählschritt später, bei fortlaufendem Takt, auch wenn die absolute Zeit wegen der Teilerphase verschoben ist.
-
-Die Tabelle setzt $t = n \times 0{,}32768\,\mathrm{ms}$ an. 47 mal 0,32768 ist 15,40096 ms. Das ist der idealisierte Zeitpunkt, an dem $T$ 80 erreicht, also die obere erlaubte Grenze, nicht ein verbotener Bereich. 16 Schritte von 80 nach 64 sind nur der untere Teil bis zum EWI, nicht die ganze Zeit bis zum Reset. Der Reset ist der 64. Schritt.
-
-Nach 18 ms ist bei dieser Anfangsphase der 54. Schritt vorbei, $T = 73$, der 55. noch nicht. Eine andere Teilerphase kann einen Schritt früher liegen. „Etwa 72“ ohne Phase ist keine Rechnung. 5 ms liegen bei etwa 15 Schritten, $T$ noch weit über 80, Reset ohne EWI. 25 ms liegen hinter Schritt 64.
-
-`osDelay` wartet Kernel-Ticks. Die Frequenz kommt aus `osKernelGetTickFreq` oder der Konfiguration. Der Start relativ zur Tickflanke, das Aufwachen und Präemption verschieben den Refresh. Ein GPIO-Marker direkt am Refresh und eine benannte Zeitbasis gehören zur Beobachtung. Eine LED genügt für die Fenstergrenze nicht.
-
-Die drei Verläufe zeichnet die nächste Folie im selben Schrittmaß.
-:::
-
-## Visualisierung des WWDG-Fensters {background-color="#F5F5F7"}
-
-Abbildung G. Einheit: Zählschritte der Lehrkonfiguration. Millisekunden nur mit $0{,}32768\,\mathrm{ms}$ und der Phasenannahme. Kein EWI vor dem frühen Reset.
-
-```{.plantuml}
-@startuml
-skinparam backgroundColor transparent
-skinparam defaultFontName "Inter, sans-serif"
-skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
-skinparam timing {
-  BackgroundColor #FFFFFF
-  BorderColor #E5E5EA
-  LineColor #1D1D1F
-  SignalColor #E2001A
-}
-concise "zu frueh" as A
-concise "im Fenster" as B
-concise "kein Refresh" as C
-@0
-A is "127"
-B is "127"
-C is "127"
-@15
-A is "Reset"
-B is "zaehlt"
-C is "zaehlt"
-@54
-B is "Refresh"
-@63
-C is "EWI"
-@64
-C is "Reset"
-@enduml
-```
-
-Gleichheit $T = 80$ bei Schritt 47 ist erlaubt. Der frühe Reset im ersten Streifen liegt davor, ohne EWI.
-
-::: notes
-Die drei Spuren haben dieselbe Schrittachse. Der erste Refresh bei Schritt 15 liegt vor Schritt 47, also bei $T > 80$. Die Hardware setzt dann zurück und wartet nicht auf $T = 64$. Darum fehlt dort der EWI-Marker. Der zweite Streifen füttert bei Schritt 54, $T = 73$, innerhalb $63 < T \le 80$. Der Zähler beginnt neu bei 127. Der dritte füttert nicht. Bei Schritt 63 steht $T = 64$, das EWI-Ereignis, wenn es eingeschaltet und der IRQ bedient ist. Bei Schritt 64 folgt der Reset.
-
-Die Achse ist das idealisierte Modell „erster Abwärtsschritt einen vollen Tick nach dem Nachladen“. Der Teiler läuft schon. Die Phase beim Registerschreiben ist unbekannt. Jedes Ereignis kann bis zu etwa einen Tick früher liegen. Das ist ein Band um die Tabelle, keine zweite exakte Kurve. Software, `osDelay` und Präemption kommen zusätzlich dazu. Die Millisekunden der vorigen Folie gelten nur für 100 MHz und Teiler 8.
-
-Beide Hunde nebeneinander zu legen, ändert ihre Taktquellen nicht.
-:::
-
-## IWDG und WWDG im Doppelpack
-
-Getrennte Takte und verschiedene Zeitbedingungen. Keine automatisch unabhängige Sicherheitsarchitektur.
-
-Beide können einen System-Reset auslösen. Die RCC-Flags und der Debug-Freeze sind je Instanz zu sichern, sonst erklärt der Reset den falschen Hund.
-
-Ein Supervisor kann beide falsch informieren. Im Labor zuerst eine Instanz, die andere ausdrücklich aus oder unbenutzt. Die Kombination ist optional und erst danach.
-
-::: notes
-Der IWDG im Hauptbeispiel sieht zu spätes Füttern über den LSI, mit ausgeschaltetem Fenster. Der WWDG sieht zu frühes und zu spätes Füttern über den APB und kann vorher einen IRQ liefern. Zusammen decken sie zwei Zeitbedingungen ab. Sie bleiben abhängig von derselben Policy, wenn dieselbe Aufgabe beide füttert. Ein blinder Timer, der beide bedient, verdeckt denselben Hänger zweimal.
-
-Weil beide System-Reset erzeugen, reicht nach dem Neustart ein einziges unspezifisches „es hat zurückgesetzt“ nicht. Wir lesen die Resetursachen, bevor sie gelöscht werden, und notieren, welcher Hund einfrieren durfte. Ein gesetztes Flag aus einem früheren, nicht gelöschten Lauf ist nicht automatisch dieser Versuch. Die Historie kann mehrere Bits tragen.
-
-Der Laborweg bleibt einzeln: erst das Fenster verstehen, dann optional den zweiten Hund. Welche Fehler das Fenster nicht sieht, zeigt die nächste Gegenüberstellung.
-:::
-
-## Warum WWDG? (Fehlerhafte Ausführung)
-
-Eine Schleife, die sofort wieder füttert, scheitert am Fenster und bestünde einen reinen Timeout.
-
-Eine Schleife, die nach einer festen Wartezeit im Fenster füttert, besteht den WWDG und kann fachlich falsch sein. Ein übersprungener Rechenschritt löst keinen frühen Refresh aus, wenn danach dieselbe Pause kommt.
-
-Der Fensterwächter ist ein zeitlicher Plausibilitätsmechanismus. Er ist kein Beweis des Kontrollflusses und kein Beweis des Ergebnisses. Dafür bleiben die Fortschritts- und Plausibilitätsprüfungen zuständig.
-
-::: notes
-Der Sinn des Fensters ist die untere und die obere Zeitgrenze. Wer in einer engen Schleife nur noch füttert, kommt zu früh und fliegt beim WWDG heraus. Beim fensterlosen IWDG würde dieselbe Schleife den Zähler am Leben halten. Wer umgekehrt die Pause einhält und dazwischen den falschen Stellwert rechnet, liegt zeitlich im Fenster. Der Hund sieht die Pause. Er sieht den Stellwert nicht.
-
-Ein ausgelassener Arbeitsschritt ist deshalb nicht automatisch ein früher Refresh. Die Policy muss den Schritt selbst zählen, wie im Supervisor, und nur dann füttern. Der WWDG prüft danach nur noch, ob dieser Entschluss in das Fenster fiel. Zu selten und zu oft werden sichtbar. Falsch, aber pünktlich, bleibt unsichtbar.
-
-Kurz vor dem späten Ablauf kann ein IRQ noch eine kurze Reaktion starten. Das ist der EWI.
-:::
-
-## Das Sicherheitsnetz: EWI {background-color="#FFFFFF"}
-
-EWI, Early Wakeup Interrupt, ist ein gewöhnlicher maskierbarer IRQ, kein NMI. NMI, Non-Maskable Interrupt, wäre nicht auf diesem Weg abschaltbar.
-
-Bei der Lehrkonfiguration liegen zwischen $T = 64$ und $T = 63$ nominal $0{,}32768\,\mathrm{ms}$, also 327,68 µs. Davon gehen Eintritt, bereits verstrichene Phasenzeit und die Befehle ab. Das Softwarebudget ist kleiner. Eine gemessene Worst-Case-Latenz haben wir nicht.
-
-Zu früher Refresh setzt zurück, ohne EWI. Ein maskierter IRQ, eine ungeeignete Priorität oder ein blockierter Handler kann den Callback verhindern. Im Resetversuch bei $T = 0x40$ nicht erneut füttern.
-
-::: notes
-Abbildung H trennt das Hardwareereignis, die Eintrittslatenz, die kurze Arbeit und den nächsten Zählschritt. Die 327,68 µs sind der ideale Abstand zweier Schritte bei 100 MHz und Teiler 8, nicht die Zeit, die der Callback sicher hat. Ein Teil kann schon verstrichen sein, wenn der Handler den ersten Befehl ausführt. Kein `printf`, kein Flash, kein Delay, kein langes Warten. RTOS-Aufrufe nur, wenn API und Priorität sie erlauben. Im vereinfachten hochpriorisierten Lehrpfad nutzen wir keine RTOS-API.
-
-Ein hochpriorisierter Task sperrt einen freigegebenen, dringenderen Hardware-Interrupt nicht automatisch. Maskierung wäre eine höhere oder gleiche Priorität im NVIC-Sinn, eine globale IRQ-Sperre oder ein ausgeschalteter Interrupt. Die numerische Ordnung ist umgekehrt: eine kleinere Prioritätszahl ist dringender.
-
-Refresh bei `0x40` ist hardwareseitig noch möglich, weil $T > 0x3F$ und, bei $W = 80$, $T \le W$. Im Reset-Experiment unterlassen wir ihn bewusst. Ein anderes Recoverybeispiel darf dort füttern, muss aber eine andere Überschrift tragen und darf nicht gleichzeitig sagen, der Reset sei unvermeidlich.
-
-Welche kurze Reaktion in das Budget passt, ist die Policy der nächsten Folie.
-:::
-
-## Nutzen des EWI (Safe Shutdown)
-
-Lehrpolicy für das Reset-Experiment: Ursache merken, kurzen GPIO-Marker setzen, nicht erneut füttern, Reset zulassen.
-
-Ein sicherer Anlagenzustand braucht eine definierte Anwendung, einen Sollpegel und eine maximale Reaktionszeit. Die haben wir hier nicht. Eine LED oder ein GPIO zeigt, dass der Callback lief. Sie ist kein Sicherheitsnachweis.
-
-Pins können beim Reset hochohmig oder analog werden. Externe Pull-Widerstände und die Boot-Freigabe müssen den gewünschten Ruhepegel tragen. „Ausgänge auf Reset-Pegel“ ohne Schaltung ist keine Anweisung.
-
-::: notes
-Der Callback ist kein zweites Betriebssystem. Er darf nur tun, was in den restlichen Bruchteil des Tick-Abstands passt. Ein Marker an einem vorher konfigurierten Pin ist so eine Aktion. Logging in Flash, eine formatierte Ausgabe oder ein Warten auf den anderen Kern sind es nicht. Ein optionaler RAM-Satz überlebt nur, wenn die Speicherbank den Reset behält, der M7-Cache ihn nicht nur als Dirty-Line hält und der Start ihn nicht löscht oder als gültig missversteht. Ohne diesen Vertrag lassen wir den Satz weg.
-
-Die Policy ist eindeutig: im Resetversuch kein zweiter Refresh. Wer bei `0x40` bewusst füttert, übt Recovery und muss den Zähler neu einordnen. Beides auf einer Folie als gleichzeitig unvermeidlich und vermeidbar zu bezeichnen, widerspricht sich.
-
-Die Reaktionszeit der Anwendung wäre Frist des Nachweises plus Rest des Watchdogs plus Boot bis zur sicheren Freigabe. Der EWI verkürzt nur das Stück unmittelbar vor dem Reset, und nur wenn er wirklich läuft. Die LED beweist den Aufruf unter Laborbedingungen, nicht diese Kette.
-
-Der HAL-Pfad muss zur Instanz WWDG2 passen.
-:::
-
-## HAL-API für den WWDG
-
-Lehrfolge, ungebaut. Der Init des Referenztreibers kann den Zähler bereits starten. Die erste erlaubte Refreshzeit liegt dann im Fenster, nicht bei $T = 127$.
-
-1. Takt der Instanz an, WWDG2 für den M4-Teil
-2. Prescaler-Teiler 8, Window 80, Reload 127, EWI an
-3. NVIC und den Handler dieser Instanz, nicht einen erfundenen Namen
-4. Callback ohne RTOS, im Resetversuch ohne Refresh
-5. GPIO-Marker direkt am Vorgang, den wir meinen
-
-Rückgabewert prüfen. Debug-Freeze notieren.
-
-::: notes
-`HAL_WWDG_Init` schreibt die Konfiguration und kann den Abwärtszähler starten. Ab diesem Moment gilt das Fenster. Wer sofort füttert, ist zu früh und setzt zurück, ohne EWI. Der erste legale Refresh liegt bei der Lehrkonfiguration frühestens an $T = 80$, im Betrieb mit Abstand, zum Beispiel im inneren Bereich um Schritt 54. Die Zeit bis dorthin hängt von PCLK und Teilerphase ab. Wir beschriften sie mit der Tabelle, nicht mit einer alten festen Delay-Konstante aus einer anderen Anleitung.
-
-Der IRQ-Name und die Handlerfunktion kommen aus dem Header der Instanz. Eine geratene `WWDG_IRQHandler`-Schreibweise ohne Zuordnung zu WWDG1 oder WWDG2 kann den falschen Vektor treffen. Der Callback erhält die frühe Warnung. Er quittiert den EWI-Status so, wie der Treiber es verlangt, und füttert im Resetversuch nicht. Die NVIC-Priorität liegt im Lehrpfad so, dass keine RTOS-API nötig ist.
-
-Ein Markerpin wird im selben Kontext umgeschaltet, in dem der Refresh oder der EWI-Eintritt stattfindet. Eine LED, die der Scheduler später zeigt, datiert das Ereignis nicht. `osDelay` bleibt in der Task und nur mit bekannter Tickfrequenz. Ohne Messung bleiben die Zeiten analytische Erwartungen.
-
-Die Eigenschaften beider Hunde stehen danach in einem Beispiel nebeneinander.
-:::
-
-## Zusammenfassung: Watchdogs {background-color="#F5F5F7"}
-
-- 501 ms sind der IWDG-Nennwert bei 32 kHz, Reload 500, Teiler 32, Fenster aus
-- WWDG2, Lehr-PCLK 100 MHz, Teiler 8, Reload 127, Window 80
-- Füttern ist erlaubt, nachdem der Entwurf einen frischen Nachweis hat
-- Die Hardware prüft diese Bedeutung nicht
-- EWI ist ein maskierbarer Schritt vor dem späten Reset, nicht vor dem frühen
-
-Frage: Warum übersieht Idle einen Deadlock der Worker? Weil Idle weiterläuft. Frage: Warum kann der Reset ohne EWI kommen? Weil zu frühes Füttern nicht auf $T = 64$ wartet.
-
-::: notes
-Ein zusammenhängendes Bild: Der Supervisor füttert den WWDG2 nur, solange jeder nötige Worker frisch ist und der Zähler im Fenster liegt. Der IWDG mit ausgeschaltetem Fenster bleibt der lange Rückenfang, wenn dieser Pfad ganz ausbleibt, und nur unter der Nennrechnung von 501 ms plus Datenblattgrenzen. Der EWI gibt im späten Fall einen kurzen Marker und lässt den Reset zu. Die Hardware versteht „frischer Nachweis“ nicht. Sie versteht nur, ob der Refresh in ihrer Zeitbedingung lag.
-
-Die zwei Fragen haben kurze Antworten. Idle beweist den eigenen Pfad, nicht die blockierten Tasks und nicht einen Tick. Der frühe Fensterreset passiert, bevor der Zähler 64 erreichen muss. Speicherfehler brauchen einen anderen Mechanismus als diese Frist.
-
-Die MPU prüft Regionen, nicht die Absicht des Programms.
-:::
-
-## Speicherschutz: Die MPU (Erinnerung)
-
-Die MPU prüft konfigurierte Regionen des Kerns, der sie trägt. Sie kennt keine C-Arraylänge.
-
-Abbildung I. Das Array liegt in einer größeren erlaubten Region. Ein Zugriff hinter dem Array, aber in der Region, bleibt erlaubt. Erst die No-Access-Region verletzt das Recht.
+Adressen steigen nach oben; der Stack wächst im üblichen Cortex-M-Ablauf nach unten.
 
 ```{mermaid}
-%%| fig-width: 8.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  A["Array, erlaubt"] --> R["dieselbe Region, hinter dem Array"]
-  R --> N["No-Access, Fault"]
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
+flowchart TB
+ H["höhere Adressen: Stack"] -->|Wachstum| G["Guard: No-Access"]
+ G --> L["niedrigere Adressen: anderer Bereich"]
+ style G fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+
 ```
 
-Cache-Attribute aus VL6 sind kein Zugriffsschutz. DMA und der andere Kern brauchen eigene Maßnahmen.
-
 ::: notes
-Die Watchdogs haben die Zeit geprüft. Ein Zeiger kann trotzdem neben das Array zeigen. Die MPU, Memory Protection Unit, vergleicht die Adresse eines CPU-Zugriffs mit Regionen: Basis, Größe, Rechte und Attribute. Liegt der Zugriff in einer erlaubten Region, ist er aus Sicht der MPU legal, auch wenn er in C hinter dem letzten Element liegt. Die höhere Regionsnummer gewinnt bei Überlappung. Das ist die Armv7-M-Regel und gilt für beide Kerne jeweils auf ihrer eigenen MPU.
+Ein Stack ist der Speicher für Rücksprungadressen, gesicherte Register und lokale Daten. Die Guard ist eine ausgerichtete, gesperrte MPU-Region am unteren Rand; MPU heißt Memory Protection Unit. Das räumliche Diagramm ordnet oben höhere und unten niedrigere Adressen an. Der Wachstumspfeil führt vom erlaubten Stack zur rot umrandeten Guard. Er bedeutet wachsenden Stackverbrauch, keinen Taskwechsel und keine Zeitachse. Ein Zugriff in der Guard verletzt No-Access und kann eine Fehlerexception auslösen.
 
-Abbildung I zeichnet drei Orte in einer Adressrichtung: das Array, den Rest derselben erlaubten Region und eine anschließende verbotene Region. Nur der dritte Pfeil ist der MPU-Verstoß. Die Cache-Bits C, B und S aus Vorlesung 6 sagen, ob zwischengespeichert und gebuffert wird. Sie sind nicht die No-Access-Rechte.
-
-DMA ist ein eigener Busmaster und läuft an dieser CPU-MPU vorbei. Der andere Kern hat eine eigene MPU oder keine. Eine Region auf dem M4 schützt den M7 nicht.
-
-Ein erkannter Verstoß wird zur Exception, nicht zu einer Task-Fehlermeldung.
+Der Schutz ist begrenzt: Ein großer Sprung des Stackzeigers oder ein einzelner Zugriff kann die Guard überspringen und im darunter wieder erlaubten Bereich landen. Der gewöhnliche FreeRTOS-Cortex-M4-Port richtet außerdem nicht automatisch bei jedem Taskwechsel eine eigene Guard ein. Eine feste Guard für einen bekannten Stack kann unabhängig davon manuell konfiguriert werden. Dynamische taskbezogene Rechte brauchen den passenden MPU-Port oder eine eigene geprüfte Umschaltung. Der Ausnahmehandler benötigt selbst einen tragfähigen Stack; wenn bereits das Ablegen seines Zustands scheitert, kann der Fehler eskalieren. Eine Guard ist daher eine Schutzmaßnahme, keine automatische Wiederherstellung.
 :::
 
-## Der primäre Zweck der MPU {background-color="#FFFFFF"}
+## Ein Fault beendet nicht automatisch nur die Task
 
-Kette: verbotener CPU-Zugriff, MemManage, wenn die Exception freigegeben ist und nicht eskaliert, sonst HardFault.
+Ein kontrollierter Schutztest benötigt:
 
-Das ist kein Halt in einer festen Nanosekunde und kein sicherer Stillstand. Exception-Stacking kann scheitern, wenn der Stack schon zerstört ist. Ausgangsreaktion und Wiederanlauf sind zusätzliche Maßnahmen.
+- dokumentierte Testadresse in aktiver No-Access-Region
+- tatsächlich ausgeführten Load oder Store im Disassembly
+- erwarteten MemManage-Pfad oder HardFault-Eskalation
+- tragfähigen Exception-Stack und gesperrten Wiederanlauf
 
-::: notes
-MemManage ist die Exception für einen MPU-Verstoß, sofern sie eingeschaltet ist. HardFault ist die härtere Exception, in die ein Fault eskalieren kann, zum Beispiel wenn die MemManage-Exception gesperrt ist oder während der Annahme selbst ein Fehler auftritt. „Fault-Maske“ als ein Wort erklärt das nicht. Gemeint sind konkrete Bits: Exception aktiv, Priorität, und ob FAULTMASK oder ein NMI die Annahme verändert. Die genaue Eskalation steht in PM0214 für den M4 und PM0253 für den M7.
-
-Der Kern nimmt die Exception an, nachdem der Zugriff geprüft wurde. Das ist schnell, aber keine zugesagte Nanosekunden-Obergrenze aus diesem Kurs. Danach läuft Handler-Code, nicht „alles steht sicher“. Wenn der Stackpointer schon außerhalb des benutzbaren Stacks liegt, kann das Sichern der Register beim Exception-Eintritt erneut fehlschlagen. Dann hilft die Guard nicht mehr beim geordneten Beenden einer Task. Nur die fehlerhafte Task zu beenden, wäre eine zusätzliche Recovery des RTOS. Der gewöhnliche Port tut das nicht von selbst.
-
-Ein reproduzierbarer Test braucht eine erlaubte Annahme der Exception und einen Stack, der für diesen Fault noch tragfähig ist. Adresse 0 ist dafür ein schlechter Beweis.
-:::
-
-## Use-Case 1: Null-Pointer-Protection
-
-NULL in C ist ein Nullzeiger. Ihn zu dereferenzieren ist undefiniertes Verhalten, kein portabler Test.
-
-Ein uninitialisierter Zeiger ist nicht automatisch NULL. Adresse 0 kann auf dem H755 eine Abbildung von ITCM oder Boot sein. ITCM ist Instruction Tightly Coupled Memory. Wir raten diese Abbildung nicht.
-
-Reproduzierbarer Test: eine dokumentierte Adresse in einer No-Access-Region, Disassembly und Faultstatus prüfen. Eine erlaubende Region mit höherer Nummer schluckt den Zugriff.
+`*NULL` ist wegen undefiniertem C-Verhalten kein sauberer Schutzbeweis.
 
 ::: notes
-Der verbreitete Satz „NULL fängt die MPU ab“ mischt drei Dinge. Das C-Makro NULL bezeichnet einen Nullzeiger. Was der Compiler daraus für einen Maschinenzugriff macht, ist bei einer Dereferenz undefiniert. Er muss nicht die Adresse 0 lesen. Ein Zeiger, der nie gesetzt wurde, enthält nicht zuverlässig 0. Und die Adresse 0 im Adressraum des STM32H755 ist nicht „garantiert leer“. Sie kann eine Code-Abbildung sein. Wer das als Test benutzt, prüft eine Vermutung.
+Ein Fault ist eine Prozessor-Fehlerexception. MemManage bezeichnet die Speicherzugriffsfehler-Exception. Ist sie nicht aktiviert oder kann sie nicht angenommen werden, kann die Störung zum HardFault, dem schweren Fehlerhandler, eskalieren. No-Access ist das vollständige Zugriffsverbot der MPU, Memory Protection Unit. Ein Load liest und ein Store schreibt Speicher. Das Disassembly ist die Darstellung der tatsächlich erzeugten Maschinenbefehle. Der Schutztest muss einen dokumentierten Zugriff auf die aktiv verbotene Adresse wirklich ausführen.
 
-Der Laborzugriff geht auf eine Adresse, die in der Regionstabelle ausdrücklich No-Access ist, ausgerichtet ist und von keiner höheren Region erlaubt wird. Danach sehen wir im Disassembly den Load oder Store und im Faultstatus die Adresse. Trifft der Zugriff nicht ein, war die Region nicht aktiv, die Priorität einer Überlappung anders, oder der Compiler hat den Zugriff entfernt. `volatile` auf einem Testobjekt kann das Wegoptimieren erschweren. Es ist kein Ersatz für das Disassembly.
-
-Frage: Warum sieht die MPU nicht jeden Arrayüberlauf? Weil der Zugriff in der erlaubten Region bleiben kann. Die Länge des Arrays steht nicht in der MPU.
-
-Die Stackgrenze ist ein zweiter, ähnlich begrenzter Anwendungsfall.
+NULL bezeichnet den Nullzeiger der Sprache C. Sein Dereferenzieren ist undefiniertes Verhalten; der Compiler muss daraus keinen verlässlichen Testzugriff machen. Zusätzlich kann die numerische Adresse null auf dem Chip auf Speicher abgebildet sein. Die häufige Behauptung, jeder Nullzeigerzugriff löse automatisch MemManage aus, ist deshalb kein gültiger Nachweis. Ein Fault beendet eine FreeRTOS-Task nicht von selbst und erklärt den restlichen Zustand nicht gesund. Eine solche Recovery, Wiederherstellung, bräuchte eigens entwickelte Regeln. Die Pflichtübung entscheidet diese Fälle auf Papier; ein Hardware-Schutztest ist eine gesondert vorbereitete Erweiterung und wird nicht mit dem Watchdogversuch kombiniert.
 :::
 
-## Use-Case 2: Stack-Overflow Erkennung {background-color="#F5F5F7"}
+## Labor A: Endlicher HSEM-Zähler
 
-Der Stack wächst zu kleineren Adressen. Eine Guard liegt unterhalb, ausgerichtet, mit No-Access. Ein Sprung über sie oder ein Überlauf in eine erlaubte Nachbarregion bleibt unsichtbar.
+Vorbereitetes NUCLEO-H755ZI-Q-Projekt:
 
-Abbildung J, Zugriffsmatrix bei aktiver passender No-Access-Region:
+1. CubeMX erzeugt zwei CMake-Ziele, M7 und M4
+2. VS Code mit STM32 VS Code Extension baut beide Images
+3. `code/lab08` ersetzt den bisherigen Shared-Block
+4. Ein Worker je Kern, je 100 Versuche
+5. Nach beiden Done-Wörtern: Zähler gegen Erfolgssumme
 
-| Zugriff | durch diese Guard? |
-|---------|--------------------|
-| unprivilegierter Thread | ja |
-| privilegierter Thread | ja |
-| gewöhnlicher Handler | ja |
-| HardFault, NMI, FAULTMASK | nur mit HFNMIENA |
-| DMA | nein |
-| anderer Kern | nein |
-
-Der gewöhnliche FreeRTOS-CM4-Port legt nicht je Task eine Guard an. Eine feste Guard kann man trotzdem von Hand setzen. Dynamisch je Task braucht den MPU-Port oder eine eigene Umschaltung.
+Neuer gemeinsamer Start für jeden Vergleichslauf.
 
 ::: notes
-SP, Stack Pointer, zeigt auf die aktuelle Stackstelle. MSP und PSP sind Main und Process Stack Pointer. Welcher im Thread Mode gilt, hängt vom Port ab. Der Handler Mode benutzt den Main Stack. Die Zeichnung meint: die benutzten Adressen werden kleiner, die Guard liegt an der unteren Kante, und ihre Größe und Ausrichtung müssen zur MPU passen. Ein Zugriff, der die Guard überspringt und in einer darunter erlaubten Region landet, ist kein Treffer.
+HSEM bedeutet Hardware Semaphore. CubeMX ist das Konfigurations- und Generierungswerkzeug von STMicroelectronics. CMake beschreibt die beiden getrennten Buildziele. VS Code ist der Editor, STM32 VS Code Extension die dazugehörige Entwicklungs- und Debugerweiterung. Ein Image ist die Firmware eines Kerns. Das Board heißt NUCLEO-H755ZI-Q. M7 läuft ohne Kernel, M4 mit FreeRTOS, dem bekannten Echtzeitbetriebssystem, über CMSIS-RTOS2, die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei.
 
-Die frühere Aussage „nur die Task-Spalte sieht die Guard“ ist falsch. No-Access gilt für privilegierte und unprivilegierte Zugriffe dieses Kerns, einschließlich gewöhnlicher Interrupt-Handler, solange die Region aktiv und die MPU eingeschaltet ist. Thread Mode und Handler Mode sind nicht dasselbe wie privilegiert und unprivilegiert. Gewöhnliche Handler sind privilegiert und trotzdem nicht von der Region ausgenommen.
-
-HFNMIENA entscheidet, ob die MPU auch während HardFault und NMI sowie bei gesetztem FAULTMASK wirkt. PRIVDEFENA ist der privilegierte Hintergrund für Adressen, die keine aktive Region trifft. Er hebt eine explizite No-Access-Region nicht auf. DMA und der andere Kern stehen außerhalb dieser MPU.
-
-Eine manuelle Guard an einer festen Adresse ist möglich, ohne dass jede Task ihre eigene Region beim Kontextwechsel erhält. Beides nicht vermischen. Ein Fault beendet die Task nicht automatisch.
+Der Ordner code/lab08 enthält vollständige Anwendungsbausteine und einen Linkerabschnitt, aber kein fertiges generiertes Boardprojekt. Der neue gemeinsame Block ersetzt das Objekt aus Vorlesung 6 und darf nicht daneben an derselben Adresse liegen. Der M7 initialisiert ihn nach der Speicherattributkonfiguration und vor der vorhandenen Freigabe des noch wartenden M4. Jeder Worker führt 100 Versuche aus und meldet danach seine Erfolgszahl und Done, den Abschluss. Erst beide geordnet sichtbaren Abschlüsse erlauben den Endvergleich. Das Übungsblatt beschreibt die Dateizuordnung, Startstellen und die getrennte ungeschützte Variante. Ein Live-Neusetzen des Zählers bei laufendem Partner ist kein neuer Versuch.
 :::
 
-## Privileged vs. User Mode
+## Labor B: Drei getrennte Fensterfälle
 
-| Modus | Privileg | MPU-Region |
-|-------|----------|------------|
-| Thread, unprivilegiert | nein | aktive Region gilt |
-| Thread, privilegiert | ja | aktive Region gilt |
-| Handler | ja, gewöhnlich | aktive Region gilt |
+M4-Modul `lab08_wwdg.c` · vorbereitet, separat vom Zähler.
 
-PRIVDEFENA füllt nur die Lücken ohne Region. Ein Task-Fault lässt den Rest nicht automatisch gesund weiterlaufen. Das wäre Recovery und ist hier nicht gebaut.
+| Fall | Aktion | Erwartung |
+|---|---|---|
+| früh | nach 5 Kernel-Ticks Refresh | früher Reset, EWI nicht nötig |
+| gültig | Zielabstand 18 Ticks, zehn Refreshes | Fenster prüfen, anschließend Reset zulassen |
+| spät | 25 Ticks ohne Refresh | EWI, wenn bedient, und Reset vorher |
+
+PCLK 100 MHz und Kerneltick 1 kHz werden vor dem Start geprüft.
 
 ::: notes
-Die Matrix der vorigen Folie braucht die zwei Achsen, die oft zusammengeworfen werden. Der Thread Mode kann privilegiert oder unprivilegiert sein. Der Handler Mode der gewöhnlichen Interrupts ist privilegiert. Privilegiert heißt: Zugriff auf geschützte Systemregister und, falls PRIVDEFENA gesetzt ist, auf den Hintergrundadressraum dort, wo keine Region liegt. Es heißt nicht: die No-Access-Region ignorieren.
+M4 bezeichnet den Cortex-M4. WWDG ist der Window Watchdog, EWI der Early Wakeup Interrupt. PCLK bedeutet Peripheral Clock, Bustakt, hier APB1; APB ist Advanced Peripheral Bus. Ein Kernel-Tick ist die Zeiteinheit des Echtzeitkernels. Das Modul verlangt die Lehrkonfiguration 100 Megahertz Bustakt und 1000 Hertz Kerneltick, prüft beide Softwarewerte und startet WWDG2 erst im laufenden Task. Die tatsächliche Clock-Konfiguration und der freie Lauf bleiben trotzdem zu dokumentieren.
 
-Der FreeRTOS-Port kann Tasks unprivilegiert laufen lassen und Systemdienste über einen Wrapper in den privilegierten Code führen. Ob der vorhandene CM4-Port das tut, steht in seinen Quellen, nicht in einem beliebigen MPU-Port. Wir übertragen das nicht. Solange der Port keine geprüfte Recovery hat, endet ein Fault nicht mit dem Satz „nur diese Task ist tot“. Der Stack des Faults, die Priorität und ein möglicher zweiter Fault entscheiden, ob der Kern noch eine Schleife in HardFault erreicht oder hängen bleibt.
-
-Damit sind die drei Schutzfragen getrennt: wer darf gleichzeitig schreiben, wer rechtzeitig fertig wird, und welche Adresse dieser Kern anfassen darf.
+Im frühen Fall wird nach fünf Ticks bewusst außerhalb des Fensters nachgeladen. Ein Reset kann ohne Warncallback entstehen. Im gültigen Fall werden zehn absolute 18-Tick-Ziele verfolgt und der jeweilige aktuelle Zählerstand geprüft. Das Modul akzeptiert dafür 65 bis 80 und kein bereits gemeldetes EWI; der hardwareseitig noch legale Stand 64 wird in dieser normalen Refresh-Policy bewusst ausgeschlossen. Anschließend wird ENABLE inaktiv gesetzt und nicht weiter nachgeladen, sodass auch dieser endliche Versuch mit Reset endet. Im späten Fall sollte die geplante Rückkehr nach 25 Ticks nicht mehr erreicht werden, wenn der Wächter läuft. Ein GPIO, General Purpose Input/Output, markiert den Refreshversuch und ein anderer den EWI. Resetursache, Debug-Freeze und gemessene Marker bleiben Beobachtungen des jeweiligen Laufs, keine vorab ausgefüllten Ergebnisse.
 :::
 
-## Zusammenfassung MPU & Safety
+## Die drei Fragen bleiben getrennt
 
-- Die MPU prüft Regionen eines Kerns, nicht C-Längen
-- Ein Fault ist eine Exception, kein sicherer Zustand
-- DMA und der andere Kern brauchen eigene Maßnahmen
-- HSEM, Watchdog und MPU beantworten drei verschiedene Fragen
+| Aussage | Begründung |
+|---|---|
+| Exklusiver Zugriff | passender Besitz plus Sichtbarkeit |
+| notwendige Arbeit frisch | definierter Fortschritt plus Fristen |
+| Kernzugriff erlaubt | wirksame MPU-Region |
+| Reaktion ausreichend schnell | vollständige begrenzte Zeitkette |
 
-Frage: Warum ist die Notification kein Besitz? Weil Take danach neu entscheiden muss. Frage: Warum übersieht Idle blockierte Tasks? Weil Idle selbst läuft. Frage: Warum erzeugt ein Überlauf in einer erlaubten Region keinen Fault? Weil die Region den Zugriff erlaubt.
+Quiz: Entscheiden Sie den konkreten Fall und begründen Sie die Grenze.
 
 ::: notes
-Ein Fehlerfall verbindet die Grenzen, ohne sie zu vermischen. Zwei Kerne inkrementieren nur unter HSEM und mit der Sichtbarkeit aus Vorlesung 6. Der Supervisor füttert nur bei frischen Nachweisen und im Fenster. Die MPU fängt einen CPU-Zugriff in eine No-Access-Region dieses Kerns ab, einschließlich eines gewöhnlichen privilegierten Handlers. Sie fängt den anderen Kern, DMA und einen Überlauf innerhalb einer erlaubten Region nicht ab. Der Fault ersetzt nicht den definierten Ausgangszustand einer Anlage.
+HSEM, Hardware Semaphore, löst die gemeinsame Besitzentscheidung. Dazu gehören eindeutige Kennungen, kurze kritische Abschnitte und der Sichtbarkeitsvertrag. Ein Watchdog erkennt Zeitbedingungen des Refreshs, des Nachladens. Die Software muss diesen Refresh an die definierten frischen Nachweise aller erforderlichen Worker binden. MPU, Memory Protection Unit, prüft Zugriffsrechte und Attribute dieses Kerns. Keine dieser Aussagen ersetzt die fachliche Ergebnisprüfung oder die vollständige Reaktionszeitkette.
 
-Die drei Fragen wiederholen die häufigsten Verwechslungen und haben dieselben Antworten wie an ihrer Herkunftsstelle. Exklusiver Zugriff, zeitlicher Fortschritt und zulässige Adressen bleiben drei Nachweise. Das Labor beobachtet sie getrennt und trägt keine erfundenen Messwerte ein.
-
-Die Vorbereitung nennt die offenen Projektfelder neben den festen Lehrwerten.
+Die Quizfälle greifen die zentralen Verwechslungen auf. Ein passender Endwert eines ungeschützten Laufs beweist keine Freiheit von Konkurrenzfehlern. Ein Thread-Flag speichert eine Meldung, aber keinen Besitz. Gleichheit mit der oberen Fenstergrenze ist im Lehrfall erlaubt, trotzdem braucht die Ausführung Reserve. Die Leerlauf-Task beweist ihren eigenen Ablauf und keine abgeschlossene Worker-Runde. Ein privilegierter Handler unterliegt einer passenden No-Access-Region; der andere Kern und ein eigener Speicherbusmaster dagegen nicht. Die nächste Vorlesung kann diese Mechanismen zu einer Gesamtarchitektur zusammensetzen, weil ihre einzelnen Verträge nun ausdrücklich benannt sind.
 :::
 
-## Laborvorbereitung: Multicore-Safety {background-color="#FFFFFF"}
+## Quellen und Nachweise zum Weiterarbeiten
 
-Drei Versuche: Zähler, ein Watchdog, EWI und MPU. Nicht gleichzeitig alles einschalten.
+- Buttazzo: *Hard Real-Time Computing Systems*
+- ST: [RM0399](https://www.st.com/resource/en/reference_manual/rm0399-stm32h745755-and-stm32h747757-advanced-armbased-32bit-mcus-stmicroelectronics.pdf), [DS12919](https://www.st.com/resource/en/datasheet/stm32h755zi.pdf)
+- ST: [HSEM-Treiber](https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Src/stm32h7xx_hal_hsem.c), [WWDG-Treiber](https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Src/stm32h7xx_hal_wwdg.c), [Geräteheader](https://github.com/STMicroelectronics/cmsis-device-h7/blob/master/Include/stm32h755xx.h)
+- Arm: [Cortex-M7](https://developer.arm.com/documentation/dui0646/latest), [CMSIS-RTOS2](https://arm-software.github.io/CMSIS_6/latest/RTOS2/index.html)
 
-| Punkt | Lehrannahme | im Projekt prüfen |
-|-------|-------------|-------------------|
-| Board | nur NUCLEO-H755ZI-Q, wenn es das ist | Aufdruck |
-| HSEM Boot | ID 0, wenn das Template sie nutzt | Startup |
-| HSEM Zähler | ID 1, wenn frei | Belegung |
-| Shared | `ipc`-Bereich, nicht cachebar | Map, MPU |
-| ProcessID | M7 `0x37`, M4 `0x34` | ein Worker je Kern |
-| WWDG | WWDG2, PCLK-Annahme 100 MHz | Taktbaum |
-| Resetflags | früh lesen | vor HAL-Löschen |
-
-Abbildung K. Besitz und Veröffentlichung sind verschiedene Pfeile.
-
-```{mermaid}
-%%| fig-width: 8.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  M7["M7-Worker"] --> H["HSEM ID 1"]
-  M4["M4-Worker"] --> H
-  H --> C["shared_count"]
-  M7 --> D7["done_m7, nur M7"]
-  M4 --> D4["done_m4, nur M4"]
-  B["HSEM ID 0 Boot"] --- M4
-```
-
-Zähler einmal auf 0, bevor beide starten. Endliches $N$ mit $2N$ in `uint32_t`. Ein ungeschützter Lauf, der $2N$ trifft, beweist keine Racefreiheit.
+Modellrechnung, Quellprüfung und Boardmessung separat ausweisen.
 
 ::: notes
-Abbildung K zeigt zwei Worker, zwei HSEM-IDs und getrennte Fertigfelder. Der Boot bleibt ID 0, wenn Vorlesung 6 ihn so benutzt. Der Zähler benutzt ID 1 nur nach einer Prüfung, dass niemand sonst sie hält. `shared_count` liegt im nicht cachebaren Shared-Bereich. Jeder Kern schreibt sein eigenes Done- und Fehlerfeld. Der andere liest es mit dem Sichtbarkeitsvertrag, er schreibt es nicht mit. Lokale Zeitbasen bleiben getrennt: HAL-Tick auf dem M7, Kernel-Tick auf dem M4. Messpins sind nicht die LED.
+Giorgio C. Buttazzos Standardwerk trägt die Begriffe zu gegenseitigem Ausschluss, Fristen und vorhersagbarem Zeitverhalten. STMicroelectronics dokumentiert die konkrete Plattform: RM steht für Reference Manual, DS für Data Sheet. RM0399 behandelt Hardware-Semaphoren, Watchdogs, Resetquellen und Buszuordnung; DS12919 enthält unter anderem die zur Betriebsbedingung passenden Takt- und Oszillatorgrenzen. Die verlinkten aktuellen Dateien können eine andere Revision als eine lokale Cube-Installation haben. Deshalb wird der tatsächlich eingesetzte Projektstand im Labor notiert.
 
-$N$ ist eine kleine Lehrgrenze. $2N$ darf den 32-Bit-Bereich nicht verlassen. Der Zähler wird genau einmal initialisiert, bevor beide Worker freigegeben werden. Danach schreiben sie ihn nur innerhalb von HSEM. Die Erwartung nach zwei erfolgreichen Fertigmeldungen ist $2N$. Vorher ist jeder gelesene Wert ein Zwischenstand. Ein Lauf ohne Schloss, der zufällig $2N$ ergibt, ist kein Beweis. Ein getrennter didaktischer Lauf darf die Kollision zeigen und muss anders beschriftet sein.
-
-Der vollständige Ablauf beider Worker folgt als eigener Schritt.
+HSEM bedeutet Hardware Semaphore, WWDG Window Watchdog. Die öffentlichen Referenztreiber und der H755-Geräteheader wurden bei dieser Überarbeitung eingesehen. Die Kapitelangaben in der Integrationsanleitung beziehen sich auf die genannte Manualrevision; die tatsächlich eingesetzte Projektrevision bleibt zu prüfen. Arm beschreibt den Cortex-M7 und seine MPU, Memory Protection Unit. CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. Rechenmodelle und Tests der Anwendung auf dem Hostrechner sind von einem Ziel-Build und einer Messung auf dem Board zu unterscheiden. Das Repository enthält die Lehrmodule und Dokumentation, keine behaupteten Hardwaremesswerte.
 :::
-
-## Schritt 2: Der asynchrone Multicore-Zugriff
-
-Lehrcode, ungebaut. Nur erfolgreiche Inkremente zählen. Ein Fehlschlag ist kein Schritt.
-
-```c
-uint32_t hits = 0, t0 = HAL_GetTick();
-while (hits < N) {
-    if ((HAL_GetTick() - t0) > 2000u) {
-        m7_fail = 1;
-        break;
-    }
-    if (HAL_HSEM_Take(1, 0x37u) != HAL_OK)
-        continue;
-    __DMB();
-    shared_count += 1u;
-    __DMB();
-    HAL_HSEM_Release(1, 0x37u);
-    hits++;
-}
-__DMB();
-m7_done = hits;
-```
-
-Der M4 tut dasselbe mit `0x34`, `osKernelGetTickCount` und `osDelay(1)` außerhalb des Schlosses. 2000 Kernel-Ticks sind nicht generell 2 s. Die HAL-Zeitbasis des M7 ist eine andere Uhr. Das Gesamtbudget muss zu $N$ und den Wartezeiten passen.
-
-Gelesen wird `shared_count` erst, wenn beide Done-Felder den Erfolg melden und die Deadline hält. Sonst ist der Versuch ungültig.
-
-::: notes
-Die Timeoutzeile ist vollständig: bei Überschreitung Fehlerfeld setzen und die Schleife verlassen, nicht den Sollwert $2N$ erfinden. `HAL_GetTick` zählt die Zeitbasis der HAL. Oft ist sie 1 ms. Das ist eine Projektprüfung, keine zweite Systemuhr des M4. `osKernelGetTickCount` zählt Kernel-Ticks. Deren Länge liefert `osKernelGetTickFreq`. `osDelay(1)` gibt für einen Tick ab und steht nicht zwischen Take und Release.
-
-Der M4-Backoff mit `osDelay` ist erlaubt und nicht fair. HSEM hat keine Warteschlange. Ein globaler Versuchsrahmen muss so groß sein, dass $N$ erfolgreiche Schritte und die legalen Wartezeiten hineinpassen. Sonst erzeugt das Budget selbst den Abbruch. Jeder Kern veröffentlicht sein Done-Feld als alleiniger Schreiber, mit Barriere, in der nicht cachebaren Region. Der Auswerter wartet bis zu seiner Deadline auf beide Erfolge. Dann liest er den Zähler und vergleicht mit $2N$. Ein Abbruch, ein fehlendes Done oder ein Überlauf machen den Vergleich ungültig.
-
-Der Lost-Wakeup-Versuch ist ein zweiter, getrennter Ablauf mit Notification, Flag, Rearming und einer Gesamtdeadline. Er ist nicht diese Zählschleife. Mehrere Tasks an ID 1 bräuchten zusätzlich den lokalen Mutex. Den einfachen Versuch lassen wir bei einem Worker je Kern.
-
-Frage: Wann darf man mit $2N$ vergleichen? Nach beiden erfolgreichen Fertigmeldungen, gültiger Sichtbarkeit, ohne Abbruch und ohne Überlauf.
-
-Danach kommt ein Watchdog, zunächst nur einer.
-:::
-
-## Schritt 3: Den WWDG integrieren {background-color="#F5F5F7"}
-
-Tabelle zuerst, Delays danach. Lehrannahme, bis der Taktbaum steht:
-
-| Größe | Wert |
-|-------|------|
-| Instanz | WWDG2 |
-| PCLK | 100 MHz, Annahme |
-| Teiler | 8, nicht das HAL-Makro als Zahl |
-| Reload, Window | 127, 80 |
-| EWI, Reset | 64, Übergang nach 63 |
-| Tick | 0,32768 ms, Idealphase |
-
-Clock, Init, NVIC, Handler der Instanz, Callback. Debug-Freeze und frühe Resetflags dokumentieren. Andere Watchdogs in diesem Versuch aus oder als unbenutzt eintragen. Alte feste Delays aus einer anderen Anleitung nicht übernehmen.
-
-::: notes
-Die Initialisierung startet den Zähler möglicherweise schon in `HAL_WWDG_Init`. Die erste erlaubte Fütterung liegt im Fenster, nicht im selben Moment. Wir füllen die Tabelle aus dem tatsächlichen PCLK, sobald er bekannt ist, und rechnen die Schritte neu. Solange 100 MHz eine Annahme bleibt, bleiben 15,4 ms und 17,7 ms analytische Erwartungen dieser Annahme. Ein Delay von 5 ms, 15 ms oder 50 ms aus einer älteren Anleitung passt dazu nicht automatisch, und `osDelay` zählt außerdem Ticks.
-
-Die IRQ-Priorität und der Handler gehören zu WWDG2. Ein Freeze im Debugger unterdrückt den Reset und macht den Lauf zu einem anderen Experiment. Die Resetursache lesen wir, bevor eine Init-Funktion sie löscht. IWDG1, IWDG2 und WWDG1 schreiben wir in das Protokoll als aus oder nicht benutzt, damit ein gesetztes Flag nicht still einer anderen Instanz gehört.
-
-Die Fälle danach laufen einzeln, jeder mit eigener Erwartung und leerer Beobachtung.
-:::
-
-## Schritt 4: Den Wachhund füttern & Crashen
-
-Abbildung L. Analytische Erwartung. Beobachtung bleibt leer, bis ein Lauf sie füllt. Kein erfundener Messwert.
-
-| Fall | Erwartung | Resetursache | Zeit | Deutung |
-|------|-----------|--------------|------|---------|
-| Refresh zu früh | Reset, kein EWI nötig | offen | offen | offen |
-| Refresh im Fenster | kein Reset durch diesen Kick | offen | offen | offen |
-| kein Refresh | EWI nur wenn IRQ läuft, dann Reset | offen | offen | offen |
-| CPU-Hog, niemand füttert | Reset | offen | offen | offen |
-| Idle füttert, Worker blockiert | Hund kann schweigen | offen | offen | Policy zu schwach |
-| Frist abgelaufen | kein weiterer normaler Kick | offen | offen | offen |
-
-Marker am GPIO direkt am Refresh. Die LED ist kein Mikrosekundenmaß.
-
-::: notes
-Jeder Fall beginnt aus einer bekannten Konfiguration. Der frühe Refresh erwartet den Reset wegen der Fensterverletzung und setzt keinen EWI voraus. Der gültige Refresh erwartet, dass dieser Kick selbst nicht zurücksetzt. Ob er wirklich im Fenster lag, sagt erst der Marker gegen die dokumentierte Zeitbasis. Ohne Refresh kann das EWI kommen, wenn es eingeschaltet ist und der IRQ bedient wird. Danach folgt der Ablauf-Reset, sofern der Hund nicht einfriert. Ein CPU-Hog setzt nur zurück, wenn kein anderer Pfad weiter blind füttert. Das Idle-Beispiel ist absichtlich die schwache Policy: blockierte Worker und weiterlaufendes Füttern. Es darf nicht als „der Watchdog hat den Deadlock erkannt“ protokolliert werden. Der Supervisor-Fall beendet den Refresh, wenn die Frischefrist abgelaufen ist. Die Reaktionszeit ist Frist plus Rest des Zählers plus Boot, nicht der EWI allein.
-
-Die Resetursache wird früh gesichert. Mehrere gesetzte Bits sind eine Historie, kein einzelnes automatisches Urteil. Debugger-Freeze, tatsächlicher PCLK und Tickfrequenz gehören in die Bedingungen. Eine LED, die erst der Scheduler zeigt, datiert das Fenster nicht.
-
-Die kurze Reaktion und der MPU-Test sind getrennte letzte Schritte.
-:::
-
-## Schritt 5: Den Safe-Shutdown implementieren
-
-EWI-Policy des Resetversuchs: kurzer Marker, nicht erneut füttern, Reset zulassen. Kein Flash, kein `printf`, kein Delay. Keine RTOS-API in diesem priorisierten Pfad.
-
-Pinverhalten beim Reset nicht mit einem aktiven Ausgang vor dem Reset verwechseln. Die LED zeigt den Callback, nicht einen sicheren Anlagenzustand.
-
-MPU-Versuch getrennt: No-Access-Region, dokumentierte Adresse, Regionsnummer, Privileg, Disassembly, Faultstatus. Kein `*NULL` als Beweis. Keine erfundene Task-Recovery. Die maximale Reaktionszeit ist eine Anforderung, kein automatisches Ergebnis des EWI.
-
-::: notes
-Der Callback bleibt in dem Budget, das vom nominalen Tick-Abstand übrig ist. Er setzt einen vorher konfigurierten Pin und kehrt zurück. Der Zähler läuft auf 63 und löst den System-Reset aus. Ein RAM-Log nur mit geprüftem Überleben und einem Start, der ihn nicht als gültigen Zustand missversteht. Eine industrielle Abschaltung ohne beschriebene Anlage und ohne Sollpegel ist nicht Teil der Beobachtung.
-
-Der MPU-Versuch benutzt eine andere Vorbereitung. Die Region ist aktiv, No-Access, und keine höhere Region erlaubt die Testadresse. Der Zugriff ist ein sichtbarer Load oder Store im Disassembly. Wir wissen vorher, welcher Stack die Exception aufnehmen muss. MemManage oder HardFault wird notiert, einschließlich Eskalation. Danach behaupten wir nicht, dass die Task beendet wurde und der Rest gesund weiterläuft. Adresse 0 und ein Nullzeiger bleiben aus diesem Beweis draußen.
-
-Die Reaktionszeit einer Anwendung wäre als Soll zu nennen und mit Frist, Watchdogrest und Boot zu vergleichen. Ein gelaufener EWI beweist diese Kette nicht. Die Schlussfolie beantwortet die vier Lernziele ohne einen Hardwarelauf zu erfinden.
-:::
-
-## Die Essenz des Tages {background-color="#FFFFFF"}
-
-- Ein lokaler Mutex und `__disable_irq` schließen den anderen Kern nicht aus
-- HSEM entscheidet den Besitz. Sichtbarkeit bleibt VL6. Notification ist kein Besitz
-- 501 ms sind der IWDG-Nennwert. Das WWDG-Fenster gilt für Reload 127 und Window 80
-- $T = 80$ ist erlaubt. EWI bei 64, Reset beim Schritt nach 63
-- Die MPU prüft Regionen eines Kerns, auch für gewöhnliche privilegierte Handler
-- Das Labor demonstriert. Im Repo gibt es keinen Hardwarelauf
-
-::: notes
-Die vier Ziele haben Antworten. Ein Lost Update entsteht, weil zwei Registerkopien von 5 jeweils 6 schreiben. Das Warten verliert die Freigabe nicht, wenn das Flag vor dem Wait stehen bleibt und Take danach den Besitz neu holt. Das Fenster rechnet aus dem APB-Tick der Lehrannahme, mit benannter Teilerphase. Die MPU-Grenze ist die Region, nicht die Arraylänge und nicht der andere Kern.
-
-Dokumentiert ist die System-Resetwirkung der vier Watchdogs. Offen bleiben die installierte HAL, der echte PCLK, die LSI-Grenzen zur gewählten Temperatur und die freie HSEM-ID. ProcessID `0x37` bleibt eine Lehrkennung. ReleaseAll bleibt kein Datenreparaturweg.
-
-Frage: Warum reicht HSEM nicht gegen eine alte Cachekopie? Weil Besitz die Zeile nicht zurückschreibt. Frage: Warum ist 501 ms nicht garantiert? Weil der LSI streut. Frage: Ist $T = 80$ bei $W = 80$ zu früh? Nach der geprüften Beschreibung nein. Im Betrieb halten wir trotzdem Abstand.
-
-Der nächste Termin ist die Capstone-Architektursicht: Muster über mehrere Kerne, nicht ein neues Schloss.
-:::
-
-## Glossar und offene Punkte, zu Folie 51
-
-Nachschlagehilfe. Die lokale Erklärung auf der jeweiligen Folie bleibt maßgeblich.
-
-| Kurz | Rolle hier |
-|------|------------|
-| HSEM | Hardware-Schloss, ID 0 Boot, ID 1 Zähler |
-| ProcessID | 8-Bit-Kennung, `0x37` und `0x34` |
-| DMB | ordnet Speicherzugriffe, reinigt keinen Cache |
-| IWDG / WWDG | LSI-Timeout und APB-Fenster, beide System-Reset |
-| EWI | maskierbarer IRQ bei $T = 64$ |
-| MPU | Regionen eines Kerns, kein DMA, kein fremder Kern |
-| LSI / PCLK | 32 kHz Nennwert, 100 MHz Lehrannahme |
-
-Offen: Boardrevision, HAL-Stand, Taktbaum, Tickfrequenz, freie HSEM-ID, LSI-Min/Max zur Datenblattzeile, Debug-Freeze. Quellen der Erklärung: RM0399 Rev. 5 Kapitel HSEM, WWDG und IWDG sowie RCC-Reset, DS12919 Rev. 3, der öffentliche STM32H7-HAL-Referenztreiber, PM0214 und PM0253. Keiner dieser Stände ist als Projektkopie im Repo nachgewiesen.
-
-::: notes
-Dieser Anhang gehört zur Schlussfolie. Er wiederholt keine Herleitungen. Wer eine Abkürzung auf einer früheren Folie trifft, findet sie dort im Satz und hier als Index. Die offenen Felder ändern die dokumentierte Resetwirkung nicht. Sie ändern die Millisekunden, sobald der PCLK nicht 100 MHz ist, und die IWDG-Grenzen, sobald die Datenblattzeile gewählt ist. Ein Build des Ziels und ein Lauf auf dem Board haben nicht stattgefunden.
-:::
-
