@@ -1,126 +1,191 @@
 ---
 title: "Übungsblatt 7: Tracing und Timing-Analyse"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Studierende:  quarto render lab_07_tracing-timing-analyse.qmd --to pdf
-# Musterlösung: quarto render lab_07_tracing-timing-analyse.qmd --to pdf --profile solution
 ---
 
 ::: {.content-visible when-profile="solution"}
-> **Musterlösung**
+> Musterlösung
 :::
 
-## Zielsetzung
+## Ziele, Zeit und Voraussetzungen
 
-Sie formulieren eine Messfrage, wählen eine Quelle und nennen die Grenze des Ergebnisses. Die Software bleibt das STM32H755-Projekt aus Vorlesung 6: M7 Bare-Metal, M4 FreeRTOS. Im Kursrepository liegen kein winIDEA-Workspace, keine BlueBox-Typbezeichnung und kein Trace-Mitschnitt. Ein Debug-SWD beweist weder SWO noch parallelen Trace. Solange Adapter und Gerät nicht geprüft sind, bleiben die Aufnahmezellen leer. Erfinden Sie keine Kurven.
+Sie formulieren einen Messvertrag, rechnen Zeitgrößen und unterscheiden beobachtete Werte von einer allgemeinen Schranke. Vorausgesetzt werden Vorlesungen 1–6, insbesondere Job, Zustände, Pufferbesitz, Shared Memory und Cache. Neue Tracebegriffe werden in Vorlesung 7 eingeführt. Ein Trace ist eine geordnete Aufzeichnung ausgewählter Ereignisse. Ein Messvertrag benennt Anfang, Ende, Quelle, Einheit, Bedingungen und enthaltene Arbeit.
 
----
+**Teil A: vier klausurnahe Papieraufgaben, 32 Punkte und etwa 50 Minuten.** Alle Zahlen sind didaktische Annahmen, keine Boardmessungen. Teil B benötigt mit vorbereiteter Projektbasis etwa 30 Minuten, einschließlich fünf Minuten Projektprüfung. Erstinstallation und Dual-Core-Bootfehlersuche sind Vorbereitung der Lehrperson. Der Terminplan der Vorlesung umfasst zusammen mit Erklärung, Quiz und Abschluss 180 Minuten.
 
-## Aufgabe 1: Liste, bevor ein Kabel steckt
+Hardware ist das **NUCLEO-H755ZI-Q mit STM32H755ZIT6**. Konfiguration und Generierung erfolgen in **STM32CubeMX**, Build, Flash und Debug in **VS Code mit STM32 VS Code Extension**. Cortex-M7 bleibt Bare Metal, Cortex-M4 verwendet den bestehenden FreeRTOS-Kernel. Die Dateien in `code/lab07/` sind ein vollständiges CM7-Anwendungsmodul, kein vollständiges Firmwareprojekt. BlueBox und winIDEA sind ein optionaler zusätzlicher Traceweg.
 
-Notieren Sie, was wirklich da ist:
+## Teil A: Papieraufgaben
 
-- Board und Revision, nur NUCLEO-H755ZI-Q wenn das Projekt es ist
-- CubeH7, HAL, CMSIS, FreeRTOS, Compilerflags, beide ELF-Hashes
-- winIDEA-Version, BlueBox-Modell, Active Probe, Adapter
-- Ob SWO, parallele Trace-Pins oder nur Debug vorhanden sind; UM2408 und der Schaltplan, nicht die Hoffnung auf einen 20-poligen Trace-Stecker
-- ST-LINK abgetrennt oder nicht
-- Einschalten: BlueBox vor Target. Ausschalten: Target vor BlueBox. Stecken ohne Spannung. FNet nicht mit dem Host-Ethernet verwechseln
+### Aufgabe 1: Ausgabe und Beobachtereffekt · 8 Punkte
 
-„400 MHz“ im Tool ist keine Zeitbasis. M7-Takt, M4-Takt, Trace-Takt und Capture-Zeit getrennt eintragen. 1000 lokale Takte sind 2,5 µs bei 400 MHz und 5 µs bei 200 MHz. Die beiden Zähler nicht subtrahieren.
+Eine Funktion erledigt in einem vereinfachten Modell 10 µs eigene Arbeit. Danach gibt sie die fünf ASCII-Zeichen `Hallo` bei 115200 bit/s über UART aus: ein Startbit, acht Datenbits, keine Parität, ein Stopbit je Byte. Kein Nullterminator oder Zeilenumbruch wird übertragen. Relative Abschlussfrist ab Funktionsbeginn: 50 µs.
 
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+1. Berechnen Sie Leitungsbitzahl und reine Leitungsdauer. (2 P)
+2. Im **blockierenden Lehrfall** liegt die volle Leitungsdauer zusätzlich innerhalb des Antwortintervalls, weitere Kosten sind null. Berechnen Sie Antwortzeit und Fristabweichung. (2 P)
+3. Warum wird dieselbe Leitungsdauer bei IRQ- oder DMA-Ausgabe nicht automatisch zur gleichen CPU-Zeit? Welche Kosten oder Wartephasen können trotzdem verbleiben? (2 P)
+4. Definieren Sie einen GPIO-Messvertrag um die ursprüngliche Funktion. Nennen Sie zwei Gründe, warum ein längerer Puls keine reine Funktions-CPU-Zeit belegt, und eine geeignete Position für die Ausgabe. (2 P)
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-Ohne geprüfte Liste keine gemeinsame Zeitachse beider Kerne. Getrennte Aufnahmen bleiben getrennte Aufnahmen.
+Je Byte zehn Bits, also $5\cdot10=50$ Bit. Die Leitungsdauer ist $50/115200=0{,}0004340278$ Sekunden, etwa 434,03 µs. UART bedeutet Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle. Diese Zahl ist keine Formatierungsdauer und kein Chiphalt.
+
+Im vorgegebenen blockierenden Modell: $R=10+434{,}03=444{,}03$ µs. Die Frist 50 µs wird um etwa 394,03 µs überschritten. Anders definierte Ausgabewege dürfen nicht einfach dieselbe CPU-Rechnung übernehmen.
+
+IRQ bedeutet Interrupt Request, Interruptanforderung, DMA Direct Memory Access, Hardware-Speicherzugriff. Senderhardware kann die Leitung bedienen, während die CPU andere Arbeit erledigt. Formatierung, Pufferverwaltung, Sperren, Start-/Abschlussbehandlung und gegebenenfalls Warten auf freien Platz bleiben. DMA benötigt außerdem eine gültige Pufferlebensdauer.
+
+GPIO bedeutet General-Purpose Input/Output. Der Messvertrag läuft von der physischen steigenden bis zur physischen fallenden Flanke am geprüften Pin. Unterbrechungen zwischen den Marken, Weg über Bus/Pad und Auflösung des Messgeräts beeinflussen das Intervall. Es ist keine direkte Store-zu-Store-Zeit. Die Ausgabe liegt nach der Abschlussmarke, außerhalb des Fensters; ihre mögliche Wirkung auf spätere Jobs wird trotzdem dokumentiert.
 :::
 
----
+### Aufgabe 2: Jobspur und Interruptkette · 8 Punkte
 
-## Aufgabe 2: Versuch A, eine bekannte Variable
+**Jobmodell:** A wird bei 1 ms freigegeben, läuft 2–4 ms und 6–7 ms und ist bei 7 ms fertig. Von 4–6 ms erledigt der Prozessor fremde Arbeit. Absolute Deadline: 8 ms. Kontextwechselkosten sind in diesem Modell null.
 
-Eine Variable mit bekannter Adresse und einer festen Anzahl Schreibzugriffe. Kern, Offset, Breite und Richtung der Aufnahme notieren. Anfangswert laden. Ein fehlendes erstes Paket ist nicht die Zahl 0.
+1. Berechnen Sie eigene CPU-Zeit, Antwortzeit, Startwartezeit und Slack. Wird die Frist gehalten? Warum ist „fertig“ nicht automatisch das Ende der Tasklebensdauer? (4 P)
 
-Vergleichen Sie die programmierte Anzahl mit der decodierten Anzahl. Sync-Fehler, Overflow und Decoderwarnungen machen den Abschnitt für Summen ungültig.
+**Interruptmodell, gemeinsame hypothetische Uhr:**
 
-Die ELF ist die des geflashten Builds, mit Debuginfo. `-g` garantiert keine Zeile-für-Befehl-Abbildung. Den optimierten Lauf nicht gegen ein zweites Debug-Image tauschen.
+| Ereignis | Zeit in µs |
+|---|---:|
+| externe Flanke | 100 |
+| ISR-Eintritt | 106 |
+| Veröffentlichung | 110 |
+| Task Ready | 111 |
+| ISR-Ende | 115 |
+| Taskstart | 120 |
+| geforderte Reaktion | 128 |
 
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+2. Berechnen Sie Eintrittslatenz, ISR-Intervall, Ready-Wartezeit und Gesamtreaktion. Geben Sie eine disjunkte Zerlegung der Gesamtreaktion an und begründen Sie, warum die vier Kennzahlen nicht miteinander aufsummiert werden. (4 P)
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 2**
 
-Die Frage lautet: „Sieht diese Quelle diese Zugriffe dieses Kerns?“ Nicht: „Ist der Speicherinhalt bewiesen?“
+Eigene Arbeit: $(4-2)+(7-6)=3$ ms. Antwortzeit: $R=f-r=7-1=6$ ms. Erstes Ready-Warten: $s-r=2-1=1$ ms. Slack: $d-f=8-7=1$ ms, die Frist wird gehalten. Prüfung: Anfangswarten eins plus Verdrängung zwei plus eigene Arbeit drei sind sechs. Fremde Arbeit zählt nicht als eigene A-Arbeit. Ein Job ist eine Aktivierung; seine Task kann danach für weitere Aktivierungen bestehen bleiben. Die drei Millisekunden sind kein WCET-Nachweis.
+
+ISR bedeutet Interrupt Service Routine, Behandler. Eintritt: $106-100=6$ µs. ISR-Intervall: $115-106=9$ µs. Ready bis Start: $120-111=9$ µs. Gesamtreaktion: $128-100=28$ µs. Eine disjunkte Zerlegung lautet $(106-100)+(110-106)+(111-110)+(120-111)+(128-120)=6+4+1+9+8=28$ µs. Ready-Warten 111–120 überlappt das ISR-Intervall bis 115. Die volle ISR-Dauer darf nicht nochmals hinzugefügt werden. Der Taskstart bei 120 ist außerdem nicht schon die Reaktion bei 128.
 :::
 
----
+### Aufgabe 3: Lokaler Zähler und Aussagegrenze · 8 Punkte
 
-## Aufgabe 3: Versuch B, korrekter Ping-Pong
+DWT-CYCCNT ist hier ein vorzeichenloser 32-Bit-Zähler eines Kerns. Seine Unterstützung und sein Lauf seien für das Modell bestätigt.
 
-Non-cacheable Region, Ownership und Barrieren aus Vorlesung 6. M7 veröffentlicht, M4 erhöht. Die ersten Antworten sind 1, 3, 5, wenn der Startpayload 0 ist. Die 500-ms-Pause und `printf` liegen außerhalb eines IPC-Fensters.
-
-Running-Profil: `pxCurrentTCB` zeigt die ausgewählte M4-Task. Während der ISR läuft kein Taskcode, der Zeiger kann trotzdem stehen bleiben. `osDelay(1)` ist ein Tick, danach wieder Ready und Running. Das ist kein eingefrorener Kern.
-
-Ready/Blocked-Historie nur mit der zusätzlichen State-Konfiguration der installierten winIDEA-Version, und dann als instrumentiert kennzeichnen. Menüpfade nicht aus einer alten Anleitung raten.
-
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+1. Anfang `0xFFFFFFF0`, Ende `0x00000030`: Berechnen Sie die vorzeichenlose Modulo-Differenz. Bei hypothetisch stabilen 400 MHz: Welche Zeit entspricht ihr und wie lang ist ein voller Umlauf? Warum genügt die Differenz allein nicht für ein beliebig langes Intervall? (3 P)
+2. Tausend Takte werden einmal bei 400 MHz und einmal bei 200 MHz gezählt. Rechnen Sie beide Zeiten. Darf man den Endstand des M4 vom Anfangsstand des M7 subtrahieren? Welche Voraussetzungen fehlen? (2 P)
+3. Eine Stichprobe vollständig definierter Intervalle enthält 12, 15, 14 und 18 µs. Berechnen Sie Anzahl, Minimum, beobachtetes Maximum und Mittelwert. Warum ist das Maximum keine WCET? Warum kann ein CYCCNT-Fenster um eine Funktion auch fremde Arbeit enthalten? (3 P)
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 3**
 
-Zwei Kernspuren in einem Bild nur, wenn beide Quellen gleichzeitig und korreliert liefen. Sonst zwei Blätter und keine Differenz in Mikrosekunden.
+DWT bedeutet Data Watchpoint and Trace, CYCCNT Cycle Count. Sechzehn Takte bis zum Umlauf plus achtundvierzig danach ergeben 64 modulo $2^{32}$. $64/(400\cdot10^6)=0{,}16$ µs. Ein voller Umlauf umfasst 4294967296 Takte, also etwa 10,73741824 s bei 400 MHz. Die Differenz ist identisch, wenn zusätzliche ganze Umläufe vergangen sind. Die Umrechnung benötigt einen belegten Zeitraum kürzer als einen Umlauf, stabilen Takt und fortlaufenden Zähler; Halt oder Sleep können diese Annahme verletzen.
+
+1000 Takte entsprechen 2,5 µs bei 400 MHz und 5 µs bei 200 MHz. Die Lehrfrequenzen sind keine bestätigten Boardwerte. Zwei Kernzähler haben möglicherweise verschiedene Nullpunkte, Frequenzen und Halt-/Sleepbedingungen. Ihre Differenz benötigt eine bestätigte gemeinsame Skalierung und Zeitkorrelation; eine Dual-Core-Debugverbindung reicht nicht.
+
+Anzahl vier, Minimum zwölf, Maximum achtzehn, Mittelwert $59/4=14{,}75$ µs. WCET ist Worst-Case Execution Time, eine begründete obere Schranke für alle zulässigen Ausführungen unter Annahmen. Ungetestete Pfade oder Zustände können länger sein. Ein bei Unterbrechung weiterlaufender Zähler zählt die dazwischenliegende ISR- oder andere Taskarbeit mit. Eigene CPU-Zeit benötigt eine passende Running-/Exceptionzuordnung.
 :::
 
----
+### Aufgabe 4: Quelle, Kapazität und Datenqualität · 8 Punkte
 
-## Aufgabe 4: Versuch C, Cache, als Hypothese
-
-Eigenes Image, Neustart. D-Cache an, Shared-Region nachweislich cachebar und Write-Back. CCR und die gewinnende MPU-Region lesen. Boot, Adresse, Ownership und Barrieren bleiben korrekt.
-
-Hypothese, kein Soll-Oszillogramm: ein M7-Store mit Wert 1 kann im DWT des M7 stehen, während der M4 weiter 0 liest. Das beweist den Store des M7, nicht den SRAM-Zustand und nicht „die Leitung war flach, also hat niemand geschrieben“.
-
-Fehlt der Trace am M4, sagen Sie das. Ein Memory-Fenster des Debuggers ist ein anderer Zugriffsweg und kann den Cache anfassen. Während der Aufnahme nicht live darin blättern, oder die Störung protokollieren.
-
-Timeout wie in VL6. Kein automatisches Nullen des Blocks.
-
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+1. Ein konfiguriertes DWT-Ereignis zeigt einen M7-Store mit eins. Der Speicherbereich ist tatsächlich Write-Back-cachebar, M7 hat eine Dirty-Kopie, SRAM kann noch null enthalten. Beweist das Ereignis den vom M4 gelesenen Wert? Was muss bei einem Filter auf `ipc.payload` zusätzlich geprüft werden? Das Layout aus Vorlesung 6 hat Offsets 0/4/8. (2 P)
+2. Während eines M4-Interrupts zeigt `pxCurrentTCB` weiter auf Task A. Läuft damit A-Code? Unterscheiden Sie Taskliste, Running-Profil und Zustandshistorie. (2 P)
+3. Synthetisches Ratenmodell: 250000 Ereignisse/s mit vier Byte je Ereignis, Abfluss 600000 Byte/s, anfangs freier Puffer 64 KiB. Kein Paketoverhead, konstante Raten. Wann ist der Puffer voll? Würde doppelte Kapazität die dauerhafte Überlast lösen? (2 P)
+4. Im Trace fehlt ein Anfangspaket. Später enthält ein Abschnitt eine Verlustmarke und danach bestätigte neue Synchronisation mit passendem Kontext. Darf der Anfang als null gezeichnet und die Lücke interpoliert werden? Wie behandeln Sie den späteren vollständigen Abschnitt? (2 P)
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4**
 
-| Beobachtung | noch keine Ursache |
-|-------------|-------------------|
-| keine M7-Pakete | Filter, Adresse, Start zu spät |
-| M7 zeigt 1, M4 zeigt 0 | möglich: Write-Back; auch: falscher Offset |
-| beide zeigen 1 | Region vielleicht doch non-cacheable |
-| M4 „steht“ | oft `osDelay`, andere Tasks dürfen laufen |
+Ein M7-Storeereignis belegt einen Zugriff der ausgewählten Quelle, nicht automatisch den aktuellen SRAM-Wert oder die M4-Sicht. Dirty bedeutet lokal verändert, Write Back spätere Rückschreibung. Geprüft werden Kern, tatsächliches Image/Map, Basisadresse, Feldbreite, Offset acht für payload, Richtung und verfügbare Komparatorfunktion. Offset vier wäre state und eine andere Frage. Ein Timeout überträgt keinen Besitz am Block.
 
-Offset mit `offsetof` und der Map, nicht mit einem geratenen Symbol aus einer älteren Struktur.
+pxCurrentTCB ist der Zeiger auf den Task Control Block, Verwaltungsblock der ausgewählten Task. Während der ISR kann der Kern Exceptioncode ausführen. Eine Taskliste ist eine Momentaufnahme. Ein korrektes Running-Profil benötigt Task-/Exceptionzuordnung. Eine Ready-/Blocked-Historie benötigt zusätzlich erfasste Zustandsereignisse. ISR und PendSV werden nicht als eigene A-Arbeit gezählt.
+
+Eingang $250000\cdot4=1000000$ Byte/s. Wachstumsrate $1000000-600000=400000$ Byte/s. $64\cdot1024=65536$ Byte. Füllzeit $65536/400000=0{,}16384$ s. Doppelte Kapazität ergibt hier 0,32768 s, beseitigt aber die positive dauerhafte Wachstumsrate nicht. Das Verhalten bei Vollbelegung hängt vom tatsächlichen Pfad ab.
+
+Fehlender Anfang heißt unbekannt, nicht null. Ein Verlustabschnitt wird markiert und nicht mit einer erfundenen Geraden geschlossen. Erst nach neuer bestätigter Synchronisation, Kontext- und Zeitzuordnung kann ein späterer vollständiger Abschnitt separat gelten. Summen oder vollständige Jobantworten werden nicht ungeprüft über die Lücke gebildet.
 :::
 
----
+## Teil B: lokaler Zykluszählerversuch
 
-## Aufgabe 5: Versuch D, ein Job
+### Aufgabe 5: die vorbereitete Projektbasis prüfen
 
-Start- und Endereignis definieren. Aufschreiben, ob ISR, PendSV und Warten drin sind. Mehrere Läufe, verschiedene Eingaben. Berichten: Anzahl, Minimum, beobachtetes Maximum, Auflösung, Bedingungen.
+1. Öffnen Sie die tatsächliche .ioc-Datei in STM32CubeMX und die beiden CMake-Ziele in VS Code mit STM32 VS Code Extension. Board und Bauteil entsprechen NUCLEO-H755ZI-Q und STM32H755ZIT6. Notieren Sie CubeH7-, HAL-, CMSIS-, FreeRTOS-, Compiler- und Erweiterungsversionen sowie Optimierung und beide ELF-Dateien.
+2. Übernehmen Sie den bereits geprüften Boot-/MPU-/Shared-Memory-Vertrag aus Vorlesung 6. Cortex-M7 bleibt privilegiertes Bare Metal, Cortex-M4 verwendet seinen bestehenden Kernel. Ein vorheriger Ping-Pong-Basislauf wird abgeschlossen; die neue Referenz misst nicht nachträglich dessen Roundtrip und nullt seinen Block nicht. Zusätzliche Schreiber und unkontrollierte Ausgabe bleiben außerhalb des Versuchs.
+3. Bestätigen Sie den tatsächlichen M7-Takt über Clock-Tree und Register. Aktualisieren Sie `SystemCoreClock` mit `SystemCoreClockUpdate()`. Ein Spezifikationsmaximum oder eine alleinige Hostanzeige ist kein tatsächlicher Labortakt. Während der Aufnahme sind Taktwechsel, Debughalt und Low-Power-/Sleepwechsel ausgeschlossen; normale Interruptarbeit wird dokumentiert.
+4. Prüfen Sie im eingebundenen Cortex-M7-CMSIS-Header den DWT-Registertyp einschließlich CYCCNT, CTRL, LAR und LSR. Der Inithelper benutzt TRCENA, CYCCNTENA und die M7-Softwarelock-Konvention. Reservieren Sie die Zählerzuständigkeit mit dem Debugger: keine fremde Rücksetzung während der Aufnahme. Der Helper setzt CYCCNT nicht null und verändert keine Tracekomparatoren.
+5. Die Zeitauswertung setzt ein **Intervall kürzer als einen vollen Zählerumlauf** voraus. Die Modulo-Differenz kann zusätzliche volle Umläufe nicht erkennen. Bestätigen Sie vor der Zeitinterpretation den kurzen Arbeitsfall, fortlaufenden Zähler und stabilen Takt, gegebenenfalls mit separater geeigneter Beobachtung. Ist das nicht belegt, geben Sie nur `cycles_mod32` und die offene Annahme an, keine vermeintlich sichere Mikrosekundenzeit.
 
-Das Maximum ist kein WCET. Die Lehrzahlen der Vorlesung bleiben Lehrzahlen: „Hallo“ etwa 434 µs Leitung, Job mit 3 ms CPU, 6 ms Antwortzeit, 1 ms Slack. Nicht als Ihre Trace-Tabelle eintragen.
+### Aufgabe 6: das vollständige CM7-Modul integrieren
 
-### Ihre Lösung {.unnumbered}
+| Datei | Verwendung |
+|---|---|
+| `code/lab07/lab07_timing.h` | gemeinsame Deklaration innerhalb CM7 |
+| `code/lab07/lab07_timing.c` | genau einmal im CM7-CMake-Ziel |
 
-*(Notieren Sie Ihre Lösung hier.)*
+Die Quellen verwenden die Kernkennung `CORE_CM7`. Sie gehören nicht ins CM4-Ziel. Alle privaten Diagnosevariablen liegen außerhalb der reservierten SRAM4-Shared-Region; keine zweite Definition im Header anlegen. Der vorbereitete Firmwarestart wird nicht durch dieses Modul ersetzt.
+
+Fügen Sie C-Datei und Include-Verzeichnis dem tatsächlichen CM7-Build hinzu. Im M7-Hauptkontext, nach dem geprüften Takt-, Boot- und MPU-/Cache-Start und gegebenenfalls nach dem endlichen Basis-Ping-Pong:
+
+```c
+SystemCoreClockUpdate();
+if (Lab07_Init(SystemCoreClock) != LAB07_OK) {
+    Error_Handler();
+}
+if (Lab07_Run() != LAB07_OK) {
+    Error_Handler();
+}
+```
+
+`Error_Handler` ist der vorhandene Fehlerpfad Ihrer Projektbasis. Rufen Sie die Funktionen einmal auf, nicht bei jedem Hauptschleifenumlauf. Kein zusätzliches `osKernelInitialize` oder `osKernelStart`. Der M4-Code bleibt eigenständig. Bauen und flashen Sie die richtigen beiden Images mit der installierten STM32-Erweiterung. Prüfen Sie nach CubeMX-Regenerierung erneut die Quellenliste, Benutzerbereiche, Linkerwahl und Include-Pfade.
+
+**Was die Referenz wirklich misst:** Nach einer NOP-Laufprobe erfasst sie sieben Leerfenster und sieben Arbeitsfenster. Zwischen den Zählerlesungen liegen auch DMB/DSB-Barrieren. Work verwendet eine synthetische private volatile-32-Bit-Größe für 10000 Rotier-/Additionsschritte; diese Zugriffe gehören bewusst zur gemessenen Arbeit. Das Ergebnis wird als Digest nach dem Fenster verwendet. Erst nach der Endlesung speichert das Modul den privaten Datensatz. Kein printf, keine Kernelaufrufe, kein Heap und keine Shared-Payload im Fenster.
+
+Das ist ein **lokales Intervall**, keine reine Job-CPU-Zeit, kein IPC-Roundtrip und kein Kontrollfluss-Trace. Die Startanfrage des alten `Lab06_CM7_Run` liegt bereits vor dessen Aufruf. Auch ein Zählerfenster nur um diesen Aufruf würde nicht automatisch die vollständige erste Anforderung begrenzen.
+
+### Aufgabe 7: Diagnose auswerten und Bedingungen berichten
+
+Nach beendetem Logging lesen Sie die private Diagnose mit dem richtigen CM7-Image und einem zum M7-Cache passenden Debugzugriff. Eine rohe SRAM- oder Live-Memory-Ansicht ist nicht automatisch die vom laufenden Kern benutzte Sicht. Halt während der Aufnahme würde deren Bedingungen verändern.
+
+| Feld | Logisches Soll / Interpretation |
+|---|---|
+| `lab07_status` | LAB07_OK im gültigen Lauf |
+| `lab07_count`, `lab07_done` | 14, 1 |
+| Sequenz / Art | 1–7 EMPTY, 8–14 WORK |
+| `lab07_dropped` | null im unveränderten 14-Einträge-Lauf |
+| `core_hz` | bestätigte M7-Frequenz |
+| `digest` | EMPTY null, WORK gleiches rechnerisches Resultat |
+| `cycles_mod32` | tatsächlich beobachteter 32-Bit-Restwert |
+
+1. Ordnen Sie die sieben Werte je Gruppe zu. Berichten Sie Anzahl, Minimum und beobachtetes Maximum, zunächst in Taktresten. Rechnen Sie nur bei gültigen Zähler-/Takt-/Umlaufbedingungen mit $t=\Delta c/f_{Kern}$ um.
+2. Berichten Sie den Leerwert separat und erklären Sie, welche Kosten zum Fenster gehören. Subtrahieren Sie nicht unbemerkt einen fremden Minimalwert von jedem Arbeitswert und behaupten dann eine reine WCET.
+3. Dokumentieren Sie die beobachtete Streuung, tatsächlichen Takt, Optimierung, Cache/MPU, Last, Interruptbedingungen und Debugzustand. Ein gleiches Digest belegt dasselbe berechnete Ergebnis, keine gleiche Laufzeit und keine vollständige Fristgarantie.
+4. Der Logvertrag hat sechzehn Plätze und einen Schreiber. Als optionale **Kapazitätsprüfung nach dem abgeschlossenen Basislauf** dürfen Sie im selben M7-Hauptkontext zwei weitere `Lab07_RecordOne(LAB07_EMPTY)`-Aufrufe ausführen. Ein dritter Zusatzaufruf meldet `LAB07_FULL`, erhöht den Dropzähler und überschreibt die ersten sechzehn Datensätze nicht. Dies sind zusätzliche Versuchsaufrufe, kein Fehler des unveränderten 14-Einträge-Laufs. Keine parallelen ISR- oder Threadschreiber hinzufügen.
+5. Wenn Initialisierung oder Build scheitert, dokumentieren Sie den tatsächlichen technischen Status. Ein nicht durchgeführter Boardlauf bleibt als solcher gekennzeichnet. Mikrosekundenfelder ohne gültige Beobachtung bleiben leer.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 5**
+**Musterlösung Aufgaben 5–7**
 
-Ein Missing-Packet-Abschnitt wird verworfen, nicht interpoliert. Coverage aus dem Instruction Trace ist keine MC/DC-Bescheinigung und kein Fristnachweis. Ohne durchgeführte Aufnahme bleiben alle Zahlenfelder leer. Der Folienbau des Kurses ist kein Hardwaretest.
+Die Quellen enthalten vollständige Funktionen und Fehlerpfade; die Projektbasis liefert Takt, Boot, HAL/CMSIS und tatsächliche Speicherplatzierung. Der M7-Helper aktiviert den vorgesehenen DWT-Zähler, löst bei Bedarf seinen Softwarelock und vergleicht zwei Lesungen über 128 NOPs. Er verändert keine Komparatoren und setzt CYCCNT nicht zurück. Fehlender Fortschritt ist ein technischer Fehler. Der C-Hosttest kann diese Logik mit Registerersatz untersuchen, aber keine tatsächlichen Cortex-Takte bestätigen.
+
+Das gültige Run erfasst sieben EMPTY- und sieben WORK-Fenster. Die private volatile-Arbeitsgröße verhindert das Wegoptimieren der bewusst beobachtbaren Zugriffe; `digest` wird zusätzlich nach der Endlesung verwendet. Bei Startwert sieben und der gegebenen 32-Bit-Rotier-/Additionsfolge ist der WORK-Digest `0xbfeb1f4b` (unabhängig berechnet). Die tatsächlichen Zählerwerte sind nicht vorgegeben. DMB/DSB und Funktionskosten innerhalb der Marken bleiben enthalten. Logging folgt erst nach dem Fenster, kann aber spätere Cachebedingungen beeinflussen.
+
+Zwei Zusatzaufrufe füllen Plätze fünfzehn und sechzehn. Der nächste wird verworfen: count bleibt sechzehn, dropped wird eins, die vorhandenen Einträge bleiben erhalten. Ein einziger Schreiber und keine gleichzeitige Pufferwiederverwendung sind vorausgesetzt. Das Verfahren ist kein allgemeiner nebenläufiger Logger.
+
+Die Zeitumrechnung braucht eine bestätigte Frequenz, fortlaufenden Zähler und ein Intervall unter einer Umlaufperiode. Ein reines Modulofeld beweist das nicht selbst. Die beobachteten Minima und Maxima bleiben Stichprobenwerte, keine WCET. Kernel-/Exceptionzuordnung und vollständige Jobereignisse wären zusätzliche Informationen für eigene CPU-Arbeit oder Antwortzeit.
 :::
+
+## Optional: vorhandenen Hardwaretrace am bekannten Kanal prüfen
+
+Nur mit tatsächlich bestätigtem Gerät und Aufnahmepfad. Führen Sie nicht mehrere unbestätigte Debugserver parallel. Das Werkzeug dient hier zur zusätzlichen Aufnahme; die Firmwareentwicklung bleibt CubeMX und VS Code mit STM32-Erweiterung.
+
+1. Notieren Sie Modell, Revision, Probe/Adapter, Pins, winIDEA-Version, unterstützte Quellen und Zeitbasis. Ein SWD-Debugzugang beweist kein SWO, keinen Paralleltrace und keine gemeinsame Uhr. Anschlussablauf und Pegel richten sich nach den tatsächlichen Geräte- und Boardunterlagen.
+2. Ordnen Sie je Kern die geflashte ELF zu. Prüfen Sie zunächst einen bekannten Zugriff mit Kern, Adresse, Breite und Richtung. Fehlendes erstes Paket ist nicht null.
+3. Beobachten Sie den unveränderten nicht cachebaren Kanal aus Vorlesung 6: Antworten 1, 3, 5, Endpayload fünf und TURN_M7. Payload liegt bei Offset acht, state bei vier. Bestätigen Sie die tatsächlich erfasste Quelle statt einen DWT-Zugriff als vollständige SRAM-Historie auszugeben.
+4. Inter-Core-Abstände benötigen gleichzeitig erfasste Quellen und bestätigte Zeitkorrelation. Zwei getrennte Zähler oder Aufnahmen genügen nicht. M4-Taskzuordnung während einer ISR ist keine Task-CPU-Zeit. Zustandsereignisse und Anforderungsmarken sind zusätzliche Information.
+5. Ein cachebarer Fehlerbuild ist ein eigener gemeinsamer Neustart mit nachgewiesenen effektiven Attributen und laufendem D-Cache. Alte Werte oder Timeout sind mögliche Beobachtungen, keine vorgeschriebene Kurve. Kein Nullen des möglicherweise noch benutzten Blocks. Nach dem Vergleich stellen Sie die nicht cachebare Basis wieder her.
+
+Ohne solche Hardware wird die Interpretation mit den Papierfällen bearbeitet und die Aufnahme als nicht durchgeführt protokolliert. Eine erfüllte Datenfolge und eine aufgezeichnete Zeitfrist sind verschiedene Nachweise.
+
+## Abgabe und Quellen
+
+Teil A: vier begründete Papierlösungen, 32 Punkte. Teil B: tatsächliche Projektversionen und Takte, Quellen-/Regenerierungsprüfung, Bedingungen des Zählers, Diagnose pro Gruppe und ihre Aussagegrenzen. Trennen Sie erwartet, beobachtet, Modellrechnung und nicht durchgeführt. Optionaler Trace erhält ein eigenes Aufnahmeprotokoll.
+
+Quellen: Vorlesung 7; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*, 3. Auflage; ST RM0399, UM2408 und AN4989; tatsächliche CMSIS-M7-Header, insbesondere DWT-Register und ITM_SendChar; Dokumentation der installierten STM32 VS Code Extension und gegebenenfalls des vorhandenen winIDEA-/BlueBox-Aufbaus.
