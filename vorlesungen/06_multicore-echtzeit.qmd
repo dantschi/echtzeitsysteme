@@ -1,985 +1,872 @@
 ---
-title: "06 · Multicore-Echtzeit"
-subtitle: "AMP, Shared Memory, Cache und MPU · EZS · DHBW Stuttgart"
+title: "06 · Multicore-Echtzeit und Shared Memory"
+subtitle: "AMP, Speicherbesitz, Cache-Sicht und MPU · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Vortrag:  quarto preview vorlesungen/06_multicore-echtzeit.qmd
-# Handout:  quarto render vorlesungen/06_multicore-echtzeit.qmd --profile handout --to pdf
-format: revealjs
+format:
+  revealjs:
+    css: ../assets/styles/lecture06.css
+    title: ""
+    pagetitle: "06 · Multicore-Echtzeit und Shared Memory"
+center: false
 ---
 
-## Willkommen in der Multicore-Königsklasse!
+## 06 · Zwei Kerne, ein verlässlicher Datenvertrag
 
-- Sechster Termin: zwei Kerne, ein Chip, keine automatische Isolation
-- Labor: **M7 Bare-Metal**, **M4 FreeRTOS** (CMSIS-RTOS2)
-- HSEM kommt hier als **Boot-Handshake** vor, wenn das Template ihn erzeugt
-- HSEM als Laufzeitsperre bleibt Termin 8
-- Nächstes Mal: Tracing, nicht die volle HSEM-Vorlesung
-
-::: notes
-Zwei Kerne auf einem Chip rechnen nicht automatisch isoliert. Im Lehrbild regelt der Cortex-M4 einen Motor, der Cortex-M7 bedient Anzeige oder Kommunikation. Das ist eine Aufgabenteilung, keine Messung. Bare Metal heißt: auf dem M7 läuft kein RTOS-Kernel. FreeRTOS ist das Echtzeitbetriebssystem auf dem M4. CMSIS-RTOS2, Common Microcontroller Software Interface Standard in Version 2, ist die Schnittstelle zu diesem Kernel, nicht ein Scheduler über beide Kerne. HSEM, Hardware Semaphore, dient hier als Boot-Benachrichtigung, wenn das Template sie erzeugt. Als Laufzeitsperre kommt sie in Termin 8. Tracing folgt in Termin 7.
-
-Drei Ziele: gemeinsame Ressourcen erkennen, dasselbe Layout in beiden Programmen vereinbaren und eine Datenübergabe mit Reihenfolge und Besitz erklären. Eine fehlende `.ioc` heißt: Takte und Boardnamen stehen im generierten Cube-Projekt, nicht in dieser Folie.
-
-Dafür betrachten wir Architektur, Hardware und Kommunikation nacheinander.
-:::
-
-## Agenda für heute
-
-1. Ein Kern, SMP, AMP
-2. H755: Domänen, Bus, Boot
-3. Zwei Images, ein SRAM4-Block
-4. Cache, Ordnung, Ownership
-5. MPU und Ping-Pong
+- Multicore-Echtzeit auf dem STM32H755
+- Vom lokalen Kernel zum Austausch zwischen Firmwares
+- Zuständigkeit, Speicherbesitz und Sichtbarkeit
+- Übung: Papiermodelle und gemeinsamer Speicher
 
 ::: notes
-Die fünf Blöcke hängen voneinander ab. Ohne die Unterscheidung SMP, Symmetric Multiprocessing, und AMP, Asymmetric Multiprocessing, bleibt unklar, wer die Aufgaben plant. Ohne die Hardwarekarte bleibt unklar, welche Speicherwege geteilt sind. Ohne dasselbe Layout zeigen zwei Programme trotz gleichen Namens verschiedene Variablen. Ohne Cache- und Ordnungsmodell kommt die Übergabe nicht zuverlässig an. MPU, Memory Protection Unit, legt später fest, wie der M7 den gemeinsamen Bereich behandelt.
+Dieser Termin erweitert das bisherige Ein-Kern-Bild. Multicore bedeutet mehrere Prozessorkerne in einem System. Auf dem STM32H755 des Boards NUCLEO-H755ZI-Q betrachten wir den Cortex-M7 und den Cortex-M4. Bislang haben Threads desselben FreeRTOS-Kernels Ressourcen geschützt und Nachrichten ausgetauscht. Jetzt kommunizieren zwei getrennte Firmwareprogramme. Firmware ist das für den Mikrocontroller übersetzte und geladene Programm.
 
-Aus Vorlesung 2: EDF, Earliest Deadline First, wählt nach der frühesten Deadline. Die Auslastung ist $U = \sum C_i/T_i$ mit Ausführungsbedarf $C$, Periode $T$ und relativer Deadline $D$. $U \le 1$ gilt im idealisierten Einprozessor-Modell mit unabhängigen, präemptiven Aufgaben und $D = T$. Versteckte Kosten dürfen nicht fehlen. Zwei Kerne übernehmen diese Formel nicht.
-
-Leitfrage: Wie übergibt der M7 dem M4 einen Wert, den der M4 wirklich sieht? Am Ende soll die Folge 1, 3, 5 das beantworten.
-
-Warum stößt ein einzelner Kern zunächst an Grenzen?
+Das gemeinsame Datenobjekt liegt im Arbeitsspeicher. Damit sind die bisherigen Fragen nach Kapazität, Lebensdauer und Schreibrecht weiterhin relevant. Hinzu kommt, ob ein Zugriff wirklich den gemeinsamen Speicher erreicht oder nur eine lokale Cachekopie. Ein Cache ist ein schneller Zwischenspeicher eines Kerns. Wir bauen diese Begriffe Schritt für Schritt auf und verwenden ein kleines Ping-Pong als durchgängiges Beispiel. Der Cortex-M4 verwendet weiterhin FreeRTOS, ein Echtzeitbetriebssystem; der Cortex-M7 arbeitet Bare Metal, also ohne diesen Kernel. Das Beispiel liefert einen überprüfbaren Datenvertrag, aber noch keinen allgemeinen Nachweis jeder Multicore-Deadline.
 :::
 
-## Recap: Die Grenzen des Single-Core
+## Vorlesung 1–5 liefern die Voraussetzungen
 
-Didaktische Aufteilung, keine Messung:
-
-| Arbeit | ein Kern | Laboridee |
-|--------|----------|-----------|
-| Regelung | teilt sich die Zeit | eher M4 |
-| Netz, GUI | dieselbe CPU | eher M7 |
-
-Gemeinsames SRAM, die Busbrücke und DMA bleiben Störquellen.
-
-Vereinfacht, nur dynamische Schaltleistung:
-
-$$P_{\mathrm{dyn}} \approx \alpha\, C\, V^{2}\, f$$
-
-Spannung, Aktivität und Leckstrom kommen dazu. Keine gemessene Kurve.
+| Bekannt | Erweiterung heute |
+|---|---|
+| Deadline und Antwortzeit | Interferenz durch gemeinsame Hardware |
+| Ready und Blocked | zwei getrennte Ausführungskontexte |
+| Mutex und Semaphor | Geltungsbereich prüfen |
+| Queue und Pufferbesitz | Übergabe zwischen zwei Images |
 
 ::: notes
-Auf einem Kern werden gleichzeitig aktive Anforderungen zeitlich verschachtelt. Die Tabelle ist eine mögliche Aufgabenteilung, keine Leistungsmessung. CPU ist der Prozessor, GUI die grafische Bedienung, DMA der direkte Speicherzugriff durch Hardware, IRQ die Interruptanforderung, OS das Betriebssystem. Regelung und Netz teilen sich dieselbe CPU, bis ein zweiter Kern eine der Arbeiten übernimmt. Gemeinsames SRAM, die Brücke und DMA bleiben Störquellen.
+Eine Deadline ist die Abschlussfrist einer geforderten Reaktion. Die Antwortzeit reicht von der Freigabe bis zur Fertigstellung. Interferenz bedeutet zusätzliche Verzögerung durch konkurrierende Arbeit. Ready heißt ausführungsbereit, Blocked auf eine Bedingung oder Zeit wartend. Ein Mutex ist eine Ressourcensperre mit Besitzer, ein Semaphor ein begrenzter Zähler von Berechtigungen oder Arbeitshinweisen. Eine Queue ist eine begrenzte Nachrichtenwarteschlange.
 
-Die dynamische Schaltleistung ist näherungsweise $P_{\mathrm{dyn}} \approx \alpha C V^{2} f$. Hier ist $C$ eine wirksame Kapazität, nicht der Ausführungsbedarf aus dem Scheduling. $\alpha$ ist der Aktivitätsfaktor, $V$ die Spannung, $f$ die Frequenz. Leckstrom und weitere Kosten kommen dazu. Es gibt keine gemessene Kurve. $U = 1$ im Idealmodell ist keine Reserve für bisher vergessene Arbeit.
-
-Frage: Welche Kosten bleiben mit einem zweiten Kern? Interferenz auf gemeinsamen Wegen, Kopien und das Protokoll. Der zweite Kern beseitigt sie nicht.
-
-Eine höhere Frequenz hilft bei manchen Engpässen, hat aber Grenzen.
+Vorlesung 5 hat gezeigt, dass eine erfolgreiche Kopie nicht automatisch eine abgeschlossene Verarbeitung und ein gespeicherter Pointer nicht automatisch einen verfügbaren Puffer bedeutet. Heute kommt eine weitere Grenze hinzu: Die Kernelverwaltung gehört zu einer bestimmten Firmware. Image bezeichnet deren übersetztes Programm mit eigenem Speicherlayout. Ein M4-Queue-Handle wird durch Ablegen in gemeinsamem Speicher nicht zum Objekt des M7. Kenntnisse über C-Funktionen, Strukturen und die bisherige Cube-Projektbasis genügen für den Einstieg. Neue Hardwarebegriffe werden im jeweiligen Zusammenhang eingeführt; ein Betriebssystem für mehrere Kerne wird nicht als bereits bekannt vorausgesetzt.
 :::
 
-## Erhöhung der Taktfrequenz?
+## Was Sie am Ende begründen können
 
-- Höheres $f$ erhöht $P_{\mathrm{dyn}}$, nicht „exponentiell“ als einziges Modell
-- 480 MHz (M7) und 240 MHz (M4) sind spezifizierte Maxima
-- 400/200 MHz nur, wenn der Clock-Tree, VOS und die Flash-Wartezeit das hergeben
-- Mehr Takt parallelisiert keine zwei Aufgaben auf einem Kern
+1. SMP und AMP samt gemeinsamen Störquellen unterscheiden
+2. Dasselbe Datenobjekt in zwei Linkerlayouts identifizieren
+3. Das Schreibrecht eines Ping-Pong-Protokolls erklären
+4. Barriere, Cachewartung und MPU auseinanderhalten
+5. Einen kontrollierten Basisversuch konfigurieren
 
 ::: notes
-Ein Megahertz sind eine Million Taktzyklen je Sekunde. Ein Taktzyklus ist nicht schon eine fertige Operation. Im vereinfachten Modell $P_{\mathrm{dyn}} \approx \alpha C V^{2} f$ verdoppelt eine Verdopplung von $f$ bei konstantem $V$ und $\alpha$ die dynamische Leistung. Ändert sich zugleich die Spannung, wirkt ihr Quadrat zusätzlich. VOS ist die herstellerspezifische Stufe der internen Spannungsskalierung. Flash-Wartezyklen gleichen die Speicherzugriffszeit an den schnelleren Kern an. 480 MHz für den M7 und 240 MHz für den M4 sind spezifizierte Höchstwerte, keine schon geprüfte Laborwahl. Ob 400 und 200 MHz legal sind, steht im Clock-Tree des Projekts, nicht auf dieser Folie.
+SMP bedeutet Symmetric Multiprocessing, symmetrische Mehrkernverarbeitung mit einer gemeinsamen Betriebssystemverwaltung. AMP bedeutet Asymmetric Multiprocessing, asymmetrische Mehrkernverarbeitung mit getrennten Softwarekontexten. Ein Linker verbindet übersetzte Programmteile und legt ihre Speicheradressen fest. Das Linkerlayout bestimmt deshalb, ob beide Firmwareprogramme tatsächlich denselben physischen Speicher benutzen.
 
-Mehr Takt verschiebt den Engpass, er teilt die Arbeit nicht auf zwei Kerne.
-
-Parallelität verändert die Architektur, nicht nur den Takt.
+Das Schreibrecht beantworten wir über einen Protokollzustand, also eine vereinbarte Phase des Datenaustauschs. Eine Barriere ordnet Speicherzugriffe. Cachewartung behandelt lokale Zwischenspeicherkopien. Die MPU, Memory Protection Unit oder Speicherschutzeinheit, legt Rechte und Attribute für Regionen eines Kerns fest. Diese drei Mittel lösen unterschiedliche Probleme und dürfen nicht als austauschbare Befehle verstanden werden. Der Basisversuch nutzt absichtlich eine nicht cachebare gemeinsame Region und genau einen Teilnehmer pro Kern. Erst danach wird in einem gesonderten Build ein Cachefehler untersucht. Die Lernziele werden mit Papieraufgaben und nachvollziehbaren Prüfstellen überprüft, nicht allein durch die Beobachtung eines erfolgreichen Builds.
 :::
 
-## Der Ausweg: Multicore-Architekturen
+## Vier Schulstunden mit vorbereiteter Projektbasis
 
-- Zwei Kerne können rechnen, solange ihre Datenwege frei sind
-- Partitionieren heißt: getrennte Firmware und klare Zuständigkeit
-- Es heißt nicht: der andere Kern ist zeitlich unsichtbar
+| Block | Ablauf in Minuten |
+|---|---|
+| 1 · Kerne und Zuständigkeiten | 25 Erklärung + 15 Papier 1 + 5 Projektbasis |
+| 2 · Speicher und Protokoll | 30 Erklärung + 15 Papier 2 |
+| 3 · Cache und MPU | 20 Erklärung + 20 Papier 3–4 + 5 Integration |
+| 4 · Versuch und Rückblick | 25 Versuch + 15 Quiz + 5 Abschluss |
 
 ::: notes
-Zwei Kerne können unabhängige Rechenabschnitte nebeneinander ausführen und danach Daten tauschen. Der Tausch und jeder Zugriff auf dieselbe Speicherbank begrenzen den Gewinn. Partitionierung heißt: Software und Ressourcen sind fest zugeordnet. Zeitliche Isolation hieße, die gegenseitige Störung sei begrenzt. Getrennte Firmware allein liefert diesen Nachweis nicht. Ein konkreter Weg: beide Kerne lesen dieselbe SRAM-Bank, die Busmatrix serialisiert den Konflikt. Eine Speedup-Zahl wird hier nicht behauptet.
+Vier Schulstunden entsprechen hier 180 Minuten Unterricht, ohne zusätzliche Pausen. Die Tabelle umfasst 75 Minuten Erklärung, 50 Minuten Papierarbeit, 35 Minuten Projektprüfung und Versuch sowie 20 Minuten Quiz und Abschluss. Die etwa 50 Folien sind Arbeitsstationen. Eine Rechen- oder Integrationsfolie bleibt deutlich länger sichtbar als eine kurze Orientierung.
 
-AMP, die asymmetrische Aufteilung, erleichtert die Zuständigkeit. Sie ist kein Sicherheitsnachweis.
-
-Es gibt verschiedene Organisationsformen. Der nächste Vergleich führt sie ein.
+Der Programmierteil setzt zwei bereits lauffähige Images der Projektbasis voraus. Image bedeutet das übersetzte Programm für einen Kern. Die Lehrperson prüft vorab Boot, Linkerdateien, Zeitbasen und Debugstart und stellt die Anwendungsdateien bereit. Eine erstmalige Installation, die Reparatur des Dual-Core-Starts und die Suche nach einem falsch geflashten Ziel passen nicht zusätzlich in die 35 Minuten. Ohne passende Hardware können die Papieraufgaben vollständig bearbeitet und der Code gemeinsam erklärt werden. Fehlende Boardmessungen bleiben offen. Der Aufbau vermeidet außerdem Aufgaben, die noch nicht eingeführte Cache- oder MPU-Kenntnisse voraussetzen: Die entsprechenden Papierfragen liegen nach der Erklärung dieser Begriffe.
 :::
 
-## Multiprocessing-Architekturen
+## Zwei Kerne machen Überlast nicht automatisch lösbar
+
+Lehrmodell mit fester Zuordnung:
+
+$$U_{M4}=1{,}10,\qquad U_{M7}=0{,}20$$
+
+- Gesamte Pflichtlast liegt unter zwei Kernkapazitäten
+- Auf M4 fehlt trotzdem dauerhaft Prozessorzeit
+- M7 übernimmt lokale M4-Aufgaben nicht automatisch
+- Eine neue Aufteilung braucht einen neuen Daten- und Zeitvertrag
+
+::: notes
+U bezeichnet die langfristige Pflichtauslastung eines Kerns, also die Summe aus eigenem Jobbedarf geteilt durch Freigabeperiode. Die Zahlen sind Lehrannahmen, keine Messung: Auf dem Cortex-M4 werden pro Zeiteinheit 110 Prozent seiner Kapazität benötigt, auf dem Cortex-M7 zwanzig Prozent. Zusammen sind das 1,30 Kernkapazitäten und damit weniger als zwei. Trotzdem ist der M4 dauerhaft überfordert, wenn die Zuordnung fest bleibt.
+
+AMP, Asymmetric Multiprocessing oder getrennte Mehrkernsoftware, migriert eine Task nicht selbstständig zum anderen Kern. Der M7 kann den M4 erst unterstützen, wenn eine Aufgabe ausdrücklich ausgelagert und ihre Ein- und Ausgabe übertragen wird. Das kann neue Warte-, Kopier- und Buskosten erzeugen. Auch unter einem anderen Mehrkern-Scheduler wäre die Gesamtauslastung allein keine universelle Fristgarantie für jede Auswahlregel. Der bekannte Ein-Prozessor-Test aus Vorlesung 2 wird daher nicht einfach durch zwei ersetzt. Wir unterscheiden zuerst die Softwarearchitekturen, bevor wir über eine sinnvolle Aufteilung der Arbeit entscheiden.
+:::
+
+## Arbeit aufteilen heißt Verantwortlichkeiten festlegen
+
+| Cortex-M4 | Cortex-M7 |
+|---|---|
+| zeitkritische Erfassung und Regelung | aufwendige Auswertung oder Darstellung |
+| eigener FreeRTOS-Kernel | eigene Bare-Metal-Struktur |
+| veröffentlichter Messdatensatz | daraus abgeleitete Antwort |
+
+Aufteilung ist ein Entwurf, keine Garantie durch den Kernnamen.
+
+::: notes
+Die Tabelle zeigt eine mögliche Aufgabenverteilung, keine feste Eigenschaft des Chips. Erfassung bedeutet Datenaufnahme, Regelung eine zeitgebundene Reaktion auf diese Daten. Darstellung oder aufwendige Auswertung kann separat organisiert werden. FreeRTOS ist das Echtzeitbetriebssystem des M4; Bare Metal bezeichnet hier das Programm des M7 ohne diesen Kernel.
+
+Die Wahl kann Fristnachweise übersichtlicher machen, wenn jeder Kern begrenzte Aufgaben und klare Datenübergaben erhält. Der Cortex-M4 ist dadurch aber nicht automatisch störungsfrei und der Cortex-M7 nicht automatisch für weiche Fristen reserviert. Beide können gemeinsame Speicherwege und Peripherie beanspruchen. Auch ein ausgelagerter Arbeitsschritt kann die Gesamtantwort verzögern, wenn sein Ergebnis gebraucht wird. Aus Vorlesung 5 übernehmen wir deshalb die Idee eines Datensatzes mit einem Vertrag. Wer erzeugt ihn, wer konsumiert ihn und wann darf sein Speicher wieder beschrieben werden? Die folgenden Architekturformen beantworten zunächst, wer die Aufgaben auswählt und welche Softwareverwaltung gemeinsam ist.
+:::
+
+## SMP: ein gemeinsamer Scheduler, mehrere Kerne
+
+Gemeinsame Verwaltung kann Aufgaben auf geeignete Kerne zuteilen.
 
 ```{mermaid}
-%%| fig-width: 6.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TB
-  subgraph SMP["SMP: ein Scheduling-Kontext"]
-    K[ein Kernel]
-    K --> C0[Kern 0]
-    K --> C1[Kern 1]
-  end
-  subgraph AMP["AMP: zwei Kontexte"]
-    A7[M7 Bare-Metal]
-    A4[M4 FreeRTOS]
-    A7 --- CH[expliziter Kanal]
-    A4 --- CH
-  end
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  S[Gemeinsamer Scheduler] --> C0[Kern 0]
+  S --> C1[Kern 1]
+  C0 --> R[Gemeinsame Ressourcen]
+  C1 --> R
 ```
 
-- SMP: gemeinsamer OS-Kontext, nicht „Kerne müssen identisch und gleichtaktig sein“
-- Ready-Queues dürfen global oder je Kern sein, plus Affinität
-- Migration verschiebt einen gesicherten Kontext; der Zielcache ist nicht leer versprochen
-
 ::: notes
-Links plant ein Betriebssystemkontext Aufgaben für mehrere geeignete Kerne. Die Bereiten können in einer gemeinsamen oder in kernbezogenen Warteschlangen stehen. Das ist SMP, Symmetric Multiprocessing. Rechts laufen getrennte Firmwarekontexte. Das ist AMP, Asymmetric Multiprocessing. OS ist das Betriebssystem. Ready heißt ausführungsbereit. Affinität beschränkt, auf welchen Kernen eine Aufgabe laufen darf. Gleiche Taktfrequenz ist keine SMP-Bedingung. Die Hardware und der Kernel müssen die gemeinsame Planung überhaupt unterstützen.
+SMP steht für Symmetric Multiprocessing, symmetrische Mehrkernverarbeitung. Ein Scheduler wählt ausführungsbereite Aufgaben und teilt sie geeigneten Kernen zu. Die Abbildung wird von oben nach unten gelesen: Eine gemeinsame Verwaltung erreicht zwei Kerne, die anschließend gemeinsame Hardware benutzen können. Die grauen Pfeile beschreiben Zuständigkeiten und Zugriffe, keine maßstäbliche Zeitachse.
 
-Das rechte Bild ist das Labor: M7 ohne RTOS-Kernel, M4 mit FreeRTOS. Links ist die Definition von SMP, nicht der heutige H755-Zustand. Ein gemeinsamer Speicher ersetzt den Kanal nicht.
-
-Zuerst sehen wir, was ein SMP-Scheduler leisten muss.
+Migration bedeutet, dass eine Aufgabe auf einem anderen Kern weiterlaufen kann. Ob das erlaubt ist, hängt vom Scheduler und von der Affinität ab. Affinität beschränkt die zulässigen Kerne einer Aufgabe. Mehrere Kerne brauchen trotzdem nicht identische Ausführungszeiten oder einen gemeinsamen L1-Cache. L1 bezeichnet die erste Cacheebene. Die Zeichnung ist ein allgemeines Architekturmodell und keine Behauptung, dass das heutige STM32-Projekt einen solchen Kernel verwendet. Ein geeigneter SMP-Entwurf kann Echtzeitfristen erfüllen; die Analyse muss Migration, gemeinsame Ressourcen und seine konkrete Auswahlregel berücksichtigen. Für den Kursversuch wählen wir eine andere, ausdrücklich getrennte Verwaltung.
 :::
 
-## Symmetrisches Multiprocessing (SMP)
+## AMP: getrennte Firmwares, gemeinsame Hardware
 
-- Ein Scheduler sieht die Kerne
-- Eine Task kann, wenn die Politik das erlaubt, den Kern wechseln
-- Dabei werden Register gesichert, nicht der ganze Cache „genullt“
-- Harte Fristen sind unter Annahmen möglich und unter anderen Annahmen schwer
-
-::: notes
-SMP heißt: ein Scheduler sieht mehrere Kerne. Eine Task kann, wenn die Politik und die Affinität es erlauben, auf einem Kern starten, unterbrochen werden und auf einem anderen weiterlaufen. Migration überträgt den gesicherten Ausführungskontext, also Register und den Verweis auf den Taskstack. Sie setzt den Cache des Zielkerns nicht auf null. Der Cacheinhalt ist ein eigener Speicher. Die Kosten und die Zugriffszeiten können sich ändern. Feste Migrationszeiten werden hier nicht erfunden. Harte Fristen bleiben möglich, wenn die Annahmen und Schranken benannt sind. Sie werden nicht dadurch unmöglich, dass mehr als ein Kern existiert.
-
-Der Titel dieser Folie beschreibt die Möglichkeit. Die nächste Folie benennt die Analyseprobleme, nicht ein Verbot.
-
-Wie verteilen verschiedene SMP-Scheduler die bereiten Tasks?
-:::
-
-## Wie funktioniert ein SMP-Scheduler?
-
-- Globale Queue: ein Kern nimmt die höchste bereite Aufgabe
-- Oder: Warteschlange je Kern, der Scheduler schiebt nur bei Affinität oder Last
-- Beides ist SMP, solange es **ein** Betriebssystemkontext ist
-- Keine Pflicht zu genau einer Ready-Liste
-
-::: notes
-Eine globale Ready-Queue lässt einen freien Kern die höchste passende Aufgabe nehmen. Kernbezogene Queues halten Aufgaben bei einem Kern. Der Scheduler schiebt nur, wenn Affinität und Last das erlauben. Beides bleibt SMP, solange ein Betriebssystemkontext plant. Eine kernbezogene Queue macht das System nicht zu AMP. Zwei Kerne dürfen nicht dieselbe Taskinstanz gleichzeitig ausführen, nur weil sie bereit ist. „Die höchste Aufgabe“ ist ohne Politik, Affinität und gesperrte Schedulerdaten zu ungenau.
-
-FreeRTOS läuft in diesem Labor nur auf dem M4. Es gibt keine Migration seiner Tasks auf den M7.
-
-Diese gemeinsame Planung bringt besondere Echtzeitfragen mit sich.
-:::
-
-## Echtzeit-Herausforderungen bei SMP
-
-- Wer darf wohin migrieren?
-- Geteilte Caches und Busse erzeugen Interferenz
-- Sperren müssen kernübergreifend gedacht werden
-- Das ist kein Beweis, dass SMP nie hart echtzeitfähig ist
-
-::: notes
-SMP bleibt möglich. Die Analyse wird größer als auf einem Kern. WCET, Worst-Case Execution Time, ist die obere Schranke der Ausführungszeit unter benannten Annahmen. Störquellen sind gemeinsame Speicherpfade, auf manchen Architekturen geteilte Caches, Migration und kernübergreifende Sperren. Der H755 hat keinen gemeinsamen L1-Cache zwischen M7 und M4. Das allgemeine SMP-Bild darf das nicht suggerieren. Eine Auslastung unter der Kernzahl ist keine universelle Deadlinegarantie für jedes Schedulingmodell. Affinität und Partitionierung vereinfachen manche Rechnung und beseitigen die gemeinsamen Ressourcen nicht.
-
-Frage: Kann geeignete Affinität Fristen tragen? Ja, wenn Budgets und ein Interferenzmodell dazukommen. Sie ist kein Verbot von SMP.
-
-AMP macht die Zuständigkeiten expliziter.
-:::
-
-## Asymmetrisches Multiprocessing (AMP)
-
-- Zwei Firmware- und oft zwei OS-Kontexte
-- Beispiel allgemein: Cortex-A mit Linux und Cortex-M mit RTOS
-- Beispiel **dieser** Chip: M7 Bare-Metal und M4 FreeRTOS
-- Der H755-M7 ist hier kein Linux-Standard
-
-::: notes
-AMP heißt: getrennte Firmware und oft getrennte Betriebssystemkontexte. Das allgemeine Beispiel, Linux auf einem Cortex-A und ein RTOS auf einem Cortex-M, ist nicht der H755. Auf diesem Chip läuft der M7 Bare Metal und der M4 FreeRTOS. Der M7 ist hier kein Linux-Standard. RTOS ist das Echtzeitbetriebssystem, OS das Betriebssystem, Bare Metal das Programm ohne diesen Kernel. Der gemeinsame Chip hat trotzdem gemeinsame Takte, Speicher und Peripherie. Ein Kern kann dem anderen eine Anfrage stellen, ohne dessen Scheduler oder Heap zu benutzen.
-
-Die beiden Beispiele dürfen nicht in eine Zeichnung rutschen.
-
-Die Architektur braucht eine nachvollziehbare Aufteilung der Software.
-:::
-
-## Software-Aufteilung in AMP
-
-- M4: Tasks, Tick, Queues **dieses** Kernels
-- M7: Superloop oder eigene Struktur, ohne diese Queue-IDs
-- Eine lokale `osMessageQueueId_t` im Shared SRAM wird keine Inter-Core-Queue
-- Der Kanal ist ein vereinbartes Speicherlayout plus Protokoll
-
-::: notes
-Jeder Kern hat eigene Firmware, eigenen Stack, eigenen Heap und, nur der M4, eigene Kernelobjekte. Ein Handle ist ein lokaler Verweis auf eine Struktur, die dieser Kernel verwaltet. `osMessageQueueId_t` ist der Handle einer CMSIS-RTOS2-Queue. SRAM, Static Random Access Memory, ist der Arbeitsspeicher. Liegt nur die Zahl des Handles im gemeinsamen SRAM, fehlen auf dem M7 die Listen und die Wartelogik. Die vorige Vorlesung behandelte Inter-Task-Kommunikation innerhalb eines Kernels. Hier ist Inter-Prozessor-Kommunikation zwischen zwei Firmwarekontexten gemeint. Der M4 kann eine lokal empfangene Nachricht in das vereinbarte IPC-Format schreiben. IPC ist Inter-Processor Communication. Lokale Zeiger und Handles werden nicht ungeprüft übertragen.
-
-Frage: Warum darf die Queue-ID nicht der Kanal zum M7 sein? Weil Handle, Heap und Listen dem M4-Kernel gehören. Der M7 führt diesen Kernel nicht aus.
-
-Welche Kanäle sind dafür geeignet?
-:::
-
-## Wie kommunizieren AMP-Kerne?
-
-| Mittel | hier |
-|--------|------|
-| Software-Puffer | unser SRAM4-Block |
-| Hardware-Mailbox / FIFO | anderes Gerät, nicht dieser Ping-Pong |
-| HSEM | Boot-Signal, später auch Sperre |
-| lokale RTOS-Queue | nur M4-intern |
-
-::: notes
-Shared Memory ist der Speicherort, den beide erreichen. Das Protokoll bestimmt Inhalt, Zustand und wer schreiben darf. Eine Hardware-Mailbox oder FIFO, First In First Out, ist eine gerätespezifische Einrichtung. Aus einer allgemeinen Grafik folgt nicht, dass der H755 sie für diesen Ping-Pong hat. HSEM kann benachrichtigen oder später Zugriffe koordinieren. Die Sperre selbst enthält die Nutzdaten nicht. Die lokale RTOS-Queue bleibt im M4-Kernel. RTOS ist das Echtzeitbetriebssystem, IPC die Vereinbarung zwischen den Firmwares. Heute pollen beide Seiten den Zustand. Das ist eine Lehrvereinfachung, kein Leistungsoptimum.
-
-Datenpfad und Benachrichtigungspfad sind verschieden: SRAM4 trägt die Bytes, HSEM weckt im Boot.
-
-Die erste Zusammenfassung hält fest, wer plant und was trotzdem stört.
-:::
-
-## Zusammenfassung Block 1
-
-- $U \le 1$ bleibt ein Ein-Kern-Satz mit Annahmen
-- SMP teilt einen Scheduler, AMP teilt ihn nicht
-- M7-Rechnen ohne gemeinsame Zugriffe stört den M4 weniger als M7-Buslast
-- „100 % M7-Last wirkt nie auf den M4“ ist falsch
-
-::: notes
-In SMP plant ein Scheduler für mehrere Kerne. In AMP plant jeder Firmwarekontext für sich. Im Labor rechnet der M7 ohne RTOS, der M4 mit FreeRTOS. $U \le 1$ bleibt der Ein-Kern-Satz mit den Annahmen aus der Agenda. Er gilt nicht für zwei Kerne. Hundert Prozent Last sind nicht gleich: Code und Daten im lokalen TCM des M7, Tightly Coupled Memory, treffen den M4 weniger als wiederholte Zugriffe auf SRAM4. TCM ist eng an den Kern gekoppelter Speicher. Die Voraussetzung muss genannt sein, etwa keine gemeinsamen SRAM-Zugriffe und keine zusätzlichen Interrupts in diesem qualitativen Bild.
-
-Frage: Welche Ressource kann trotz getrennter Firmware beide Kerne verzögern? Eine gemeinsam benutzte Speicherbank, Brücke oder Taktkonfiguration.
-
-Der Hardwareblock zeigt diese gemeinsamen Wege.
-:::
-
-## Hardware Deep-Dive: Der STM32H755
-
-Vereinfachte Karte, Details in RM0399 der verwendeten Revision:
-
-| Domäne | in dieser Zeichnung |
-|--------|---------------------|
-| D1 | M7, TCM, AXI, Flash-Anbindung |
-| D2 | M4, viel AHB-Peripherie, Ethernet 10/100, USB |
-| D3 | SRAM4, langsame I/Os |
-
-Nicht jede schnelle Peripherie liegt in D1. Ethernet ist nicht Gigabit.
-
-::: notes
-D1, D2 und D3 sind Domänenbezeichnungen des STM32H755, keine Tasknamen. TCM ist der eng gekoppelte Speicher, AXI, Advanced eXtensible Interface, und AHB, Advanced High-performance Bus, sind Busfamilien. SRAM4 liegt in D3. Die Tabelle ist eine Auswahl aus RM0399 der verwendeten Revision, keine vollständige Peripheriekarte. „D3 gleich langsame I/Os“ ist zu grob. Für das Labor zählen SRAM4 und die Low-Power-Funktionen dieser Domäne. Ethernet 10/100 ist kein Gigabit. Nicht jede schnelle Peripherie liegt in D1.
-
-Wer ein Blockbild aus dem Handbuch übernimmt, prüft die Revision. Die Zeichnung hier bleibt bewusst grob.
-
-Die beiden Kerne haben unterschiedliche Speicher- und Ausführungseigenschaften.
-:::
-
-## Der Cortex-M7 (Das Muskelpaket)
-
-- Spec bis 480 MHz, L1-I- und D-Cache, TCM
-- TCM ist nicht der direkte Arbeitsplatz des M4
-- Cache macht wiederholte Zugriffe schnell und fremde Werte unsichtbar
-- Labor darf 400 MHz nur nach Clock-Tree-Prüfung sagen
-
-::: notes
-Der M7 hat einen L1-I-Cache für Instruktionen und einen L1-D-Cache für Daten. L1 ist die erste Cacheebene. ITCM und DTCM sind Instruction und Data Tightly Coupled Memory, also Befehls- und Datenspeicher eng am Kern. Ein Pfad läuft CPU, Cache oder TCM. Ein anderer läuft CPU, Interconnect, SRAM4. Direkte M4-CPU-Zugriffe auf das M7-TCM sind kein geeigneter gemeinsamer Variablenzugriff. AN5617 unterscheidet das von indirekten Wegen über MDMA, Master Direct Memory Access. Diesen Weg benutzt das Basislabor nicht. Schneller lokaler Zugriff und eine veraltete Datenkopie sind verschiedene Probleme. Die Spec nennt bis 480 MHz. 400 MHz darf das Labor nur sagen, wenn der Clock-Tree das zeigt.
-
-Eine Shared-Variable im TCM wäre für den direkten M4-Zugriff ungeeignet.
-
-Auch der M4 ohne diesen L1-Cache hat zeitliche Einflussfaktoren.
-:::
-
-## Der Cortex-M4 (Das Präzisionswerkzeug)
-
-- Spec bis 240 MHz
-- Kein M7-artiger L1-Daten-/Instruktionscache
-- Der ART-Beschleuniger auf dem Flash-Pfad bleibt
-- Wait-States, Bus, IRQs und die Speicherregion bleiben in der Zeit
-- „Jeder Zugriff gleich viele Takte“ und „auf die Nanosekunde“ streichen
-
-::: notes
-Der M4 in diesem Chip hat keinen L1-Instruktions- und Datencache wie der M7. ART, Adaptive Real-Time Accelerator, beschleunigt den Flash-Pfad des STM32. Die Einzelheiten stehen in der passenden ST-Dokumentation. Wait States sind zusätzliche Wartezyklen beim Speicherzugriff, kein zweiter Scheduler. IRQ, Bus und die gewählte Speicherregion ändern die Ausführungszeit. Ohne L1-Cache sind weder alle Instruktionen gleich lang noch die Zeiten auf die Nanosekunde fest. 240 MHz ist das spezifizierte Maximum, nicht die schon gewählte Laborfrequenz.
-
-Ohne L1-D-Cache ist der M4 nicht interferenzfrei. Gemeinsame Busziele treffen ihn trotzdem.
-
-Entscheidend sind auch die Wege vom Kern zum Speicher.
-:::
-
-## Die Bus-Matrix (AHB / AXI)
-
-- Parallele Wege, wenn die Pfade verschieden sind
-- Dieselbe SRAM-Bank oder dieselbe Brücke serialisiert
-- Ein Konflikt braucht nicht denselben CPU-Takt
-- „AXI-SRAM immer 1 Takt“ ist keine universelle Garantie
-
-::: notes
-AHB und AXI sind die Busfamilien auf diesem Chip. Ein Busmaster startet einen Zugriff, ein Ziel, oft Slave genannt, bedient ihn. Eine Brücke verbindet Busbereiche. Arbitration entscheidet, wer bei einem Konflikt zuerst darf. Die Matrix erlaubt gleichzeitige Zugriffe auf verschiedene freie Ziele. Dieselbe begrenzte SRAM-Bank oder dieselbe Brücke serialisiert. Ein Konflikt braucht nicht denselben CPU-Takt. „AXI-SRAM immer ein Takt“ ist keine universelle Garantie. DMA ist ein weiterer Master und kann denselben Port belegen. Die Pfeile zeigen Konkurrenz, keine gemessene Wartezeit.
-
-Die Matrix beseitigt Interferenz nicht. Sie verschiebt sie auf die gemeinsamen Ziele.
-
-Diese Wege liegen innerhalb und zwischen den drei Domänen.
-:::
-
-## Die 3 Power-Domänen (D1, D2, D3)
+Unser Labor: M7 Bare Metal, M4 FreeRTOS.
 
 ```{mermaid}
-%%| fig-width: 6.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  M7[M7 D1] --> BM[Busmatrix]
-  M4[M4 D2] --> BM
-  DMA[DMA] --> BM
-  BM --> S4[SRAM4 D3]
-  RCC[RCC gemeinsam] --- M7
-  RCC --- M4
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  F7[Firmware M7] --> C7[Cortex-M7]
+  F4[Firmware M4] --> C4[Cortex-M4]
+  C7 --> R[Shared Memory]
+  C4 --> R
+  style R fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
 
-Oben getrennte Rechenkerne, unten gemeinsame Ziele.
-
 ::: notes
-Die Zeichnung trennt die Rechenkerne von den gemeinsamen Zielen. M7 sitzt in der Darstellung bei D1, M4 bei D2, SRAM4 bei D3. Einen DMA-Block ordnen wir erst einer Domäne zu, wenn die konkrete Instanz im Handbuch geprüft ist. RCC, Reset and Clock Control, konfiguriert Takte. Es ist kein Datenpfad, der alle Nutzbytes transportiert. Power-Domäne, Taktbereich und Zugriffsweg sind drei verschiedene Schnitte. Eine M7-Schleife mit Code im ITCM und Daten im DTCM vermeidet bestimmte SRAM4-Zugriffe, solange keine Interrupts und keine weiteren Master in diesem qualitativen Bild dazukommen. Ob ein Speicher in einem Low-Power-Modus erhalten bleibt, hängt vom Modus ab.
+AMP bedeutet Asymmetric Multiprocessing, asymmetrische Mehrkernverarbeitung. Die Abbildung zeigt zwei Firmwareprogramme mit getrennten Ausführungskontexten. Firmware M7 läuft auf dem Cortex-M7, Firmware M4 auf dem Cortex-M4. Die Pfeile zum gemeinsamen Speicher stehen für Zugriffe; die rote Umrandung hebt den späteren Datenkanal hervor. Shared Memory ist Speicher, den beide erreichen können.
 
-WCET, die obere Laufzeitschranke, wird hier nicht beziffert. Sobald der M7 SRAM4, DMA oder RCC anfasst, kann der M4 warten.
-
-Der Taktbaum wird trotzdem gemeinsam konfiguriert.
+Im Labor verwendet der M4 FreeRTOS als Echtzeitkernel und der M7 ein Bare-Metal-Programm ohne diesen Kernel. Andere AMP-Systeme können andere Betriebssysteme kombinieren. Ein allgemeines Beispiel mit Linux auf einem größeren Cortex-A wird nicht auf den H755 übertragen. Getrennte Firmware bedeutet getrennte lokale Aufgabenverwaltung und keine automatische Migration zwischen diesen Kernen. Sie bedeutet aber keine vollständige Hardwareisolation. Der gemeinsame Speicher, Buswege und Taktkonfiguration bleiben mögliche Kopplungen. Der Vorteil für den Einstieg ist die klare Zuständigkeit: Der Datenvertrag kann zwischen genau zwei Beteiligten beschrieben werden. Sein Erfolg hängt anschließend von Adressen, Schreibrecht und Sichtbarkeit ab.
 :::
 
-## Taktversorgung (RCC)
+## Softwaretrennung ersetzt kein Interferenzmodell
 
-- Ein Taktbaum, keine private PLL je Kern
-- Wer `SystemClock_Config` zweimal ausführt, schreibt dieselben Register
-- Im Labor initialisiert der M7 die gemeinsamen Takte, bevor der M4 weiterläuft
-- Maxima 480/240 MHz zeichnerisch von der gewählten Laborfrequenz trennen
+- Private Rechenarbeit und gemeinsame Buslast wirken verschieden
+- Affinität begrenzt Migration, nicht alle Speicherzugriffe
+- Getrennte Kernel entfernen gemeinsame Ressourcen nicht
+- Timing braucht begründete Budgets und Störgrenzen
 
-::: notes
-RCC konfiguriert die Takte zentral. Eine PLL, Phase-Locked Loop, erzeugt aus einer Quelle höhere oder stabilere Takte. Mehrere PLLs im Chip sind nicht automatisch private PLLs je Kern. Eine gemeinsame Quelle kann über Teiler verschiedene Kerntakte ergeben. Den konkreten Baum zeichnet Cube, nicht diese Folie. Der M7 setzt die gemeinsamen Takte, während der M4 im vereinbarten Bootzustand wartet. Zwei Aufrufe von `SystemClock_Config` schreiben dieselben Register und können sich widersprechen. 480 und 240 MHz bleiben die Spec-Maxima. Die Laborfrequenz steht im erzeugten Baum.
-
-GPIO-Ports teilen Konfigurationsregister. Das Beispiel dazu gehört zur Pin-Folie. Hier bleibt die Zuständigkeit für den Takt.
-
-Diese Zuständigkeit erklärt den Boot-Handshake.
-:::
-
-## Der Boot-Prozess: Wer weckt wen?
-
-Übliches CubeMX-Muster, nicht „M4 bleibt in Reset“:
-
-1. Option Bytes legen fest, wer überhaupt startet; Standard oft: beide Bootcodes
-2. M4 richtet eine HSEM-Benachrichtigung ein und geht in **Stop**
-3. M7 wartet auf diesen Zustand, setzt Takt und Shared-Block
-4. M7 gibt das HSEM frei, M4 läuft weiter ins RTOS
-
-Stop, Reset und abgetakteter Kern sind drei Zustände.
-
-Die konkrete HSEM-ID und die Funktionsnamen stehen in der generierten `main`. `HAL_PWREx_ReleaseCore` nicht aus dem Gedächtnis ergänzen.
+„M7 ist ausgelastet“ beschreibt die Art der Last noch nicht.
 
 ::: notes
-Option Bytes sind die nichtflüchtige Startkonfiguration und gehören zu den zwei Images. Im üblichen CubeMX-Muster führt der M4 zuerst Bootcode aus, richtet die HSEM-Benachrichtigung ein und geht in Stop. Er bleibt nicht einfach in Reset. Der M7 wartet auf diesen Stopzustand, setzt gemeinsame Takte und den Shared-Block und gibt das HSEM frei. Danach setzt der M4 seine Initialisierung und den RTOS-Start fort. HAL, Hardware Abstraction Layer, liefert die Funktionen des Templates. `HAL_PWREx_ReleaseCore` wird nicht aus dem Gedächtnis ergänzt. Reset heißt noch kein Anwendungscode nach dem Rücksetzen. Stop heißt: Bootcode lief, der Kern wartet auf das Ereignis. Ein abgetakteter Kern ist ein dritter Zustand.
+Interferenz bedeutet hier Verzögerung durch konkurrierende Hardwarezugriffe oder andere relevante Arbeit. Affinität ist die Einschränkung einer Aufgabe auf bestimmte Kerne. Migration ist deren Wechsel zu einem anderen Kern. Beide Begriffe stammen aus der Mehrkern-Aufgabenverwaltung. Ein privater Rechenpfad kann weniger gemeinsame Ressourcen benutzen als eine Schleife, die ständig auf denselben Speicher wie die Gegenstelle zugreift.
 
-Die Wartezeit des M7 ist begrenzt. Sonst eine Diagnose, keine stumme Endlosschleife. Dieser HSEM-Schritt ist der Boot, nicht die Sperre für jedes Payload-Byte.
-
-Das folgende Bild verbindet die Schritte mit den Prüfstellen.
+TCM bedeutet Tightly Coupled Memory, eng an einen Kern gekoppelter Speicher. Wenn der M7 Code und Daten in geeigneten lokalen Bereichen benutzt und keine weiteren gemeinsamen Zugriffe erzeugt, entsteht eine andere Störlast als bei vielen SRAM4-Zugriffen. SRAM ist Static Random Access Memory, statischer Arbeitsspeicher. Das ist eine qualitative Entwurfsbeobachtung, kein gemessener Zahlenfaktor. Interrupts und zusätzliche Hardwaremaster können die Voraussetzung verändern. Eine WCET, Worst-Case Execution Time oder obere Schranke der eigenen Ausführungszeit, muss die relevanten Störungen passend einschließen. Der Prozessorname und seine Auslastungsanzeige liefern diese Schranke nicht allein.
 :::
 
-## Hardware-Register: Den M4 wecken
+## Ein lokales Kernelobjekt bleibt lokal
+
+| Bekanntes Mittel | Geltungsbereich im Labor |
+|---|---|
+| M4-Queue-Handle | Verwaltung im M4-Kernel |
+| M4-Mutex | kooperierende Teilnehmer dieses Kernels |
+| lokale IRQ-Maskierung | Interrupts des aufrufenden Kerns |
+| Shared-Block mit Protokoll | ausdrücklich vereinbarte Gegenstelle |
+
+Ein Handle im SRAM wird dadurch kein gemeinsamer Scheduler.
+
+::: notes
+Ein Handle ist ein Bezeichner eines von einer Softwareverwaltung angelegten Objekts. Die Queue, begrenzte Nachrichtenwarteschlange, und der Mutex, Ressourcensperre mit Besitzer, gehören hier zum FreeRTOS-Kernel des Cortex-M4. Sein M7-Gegenüber führt diesen Kernel nicht aus und nimmt deshalb nicht automatisch an dessen Wartelisten, Speicherverwaltung oder Sperrregel teil.
+
+IRQ bedeutet Interrupt Request, Interruptanforderung. Eine lokale Interruptmaskierung verhindert bestimmte Behandler auf dem Kern, der sie ausführt. Sie hält den anderen Kern und DMA, Direct Memory Access oder direkten Hardware-Speicherzugriff, nicht automatisch an. Ein M4-Queue-Handle im gemeinsamen SRAM, Static Random Access Memory oder Arbeitsspeicher, ersetzt folglich keinen kernübergreifenden Kanal. Der Kanal benötigt ein gemeinsames Datenlayout und ein Protokoll. Dieses unterscheidet die vorhandenen Bytes von der Verwaltungssoftware, die auf sie zugreift. Die Tabelle knüpft direkt an Vorlesung 4 und 5 an: Ein Schutzmittel wirkt nur für die Beteiligten und Zugriffe, die seinen Vertrag tatsächlich einhalten.
+:::
+
+## Zwei verschiedene Kerne auf dem STM32H755
+
+| Eigenschaft | Cortex-M7 | Cortex-M4 |
+|---|---|---|
+| spezifiziertes Maximum | bis 480 MHz | bis 240 MHz |
+| L1-Daten-/Instruktionscache | vorhanden | kein M7-artiger L1-Cache |
+| eng gekoppelter Speicher | ITCM/DTCM | kein direkter gemeinsamer TCM-Kanal |
+| Laborsoftware | Bare Metal | FreeRTOS |
+
+Tatsächliche Takte und Bedingungen im Projekt prüfen.
+
+::: notes
+MHz bedeutet Megahertz, Millionen Takte je Sekunde. Die angegebenen Werte sind spezifizierte Maxima unter passenden Betriebsbedingungen, nicht die im Kurs bereits eingestellten Takte. L1 ist die erste Cacheebene. ITCM und DTCM bedeuten Instruction und Data Tightly Coupled Memory, eng gekoppelten Befehls- und Datenspeicher des M7. Sie sind kein geeigneter direkter gemeinsamer Arbeitsplatz für M4-Zugriffe.
+
+Der M4 hat auf diesem Chip keinen M7-artigen L1-Daten- und Instruktionscache. Sein Flashpfad kann dennoch Beschleunigung und Wartezyklen enthalten. ART steht für Adaptive Real-Time Accelerator, einen ST-Flashbeschleuniger. Auch ohne diesen L1-Cache bleiben Buskonflikte, Speicherwartezeiten und Interrupts relevant. Bare Metal bedeutet hier M7-Code ohne Echtzeitkernel; FreeRTOS ist der Kernel auf dem M4. Das passt zur Softwarearchitektur AMP, Asymmetric Multiprocessing. Für Timing und Speicherwahl zählen die konkrete Taktkonfiguration, die erreichbare Region und deren Attribute. Eine pauschale Zusage gleicher Zugriffszeit oder nanosekundengenauer Ausführung lässt sich aus der Tabelle nicht ableiten.
+:::
+
+## Domänen und gemeinsame Zugriffswege
+
+Vereinfachte Auswahl: D1 mit M7, D2 mit M4, SRAM4 in D3.
 
 ```{mermaid}
-%%| fig-width: 6.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  M7[M7 in D1] --> B[Buswege und Brücken]
+  M4[M4 in D2] --> B
+  D[Weitere Master] --> B
+  B --> S[SRAM4 in D3]
+  style S fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
+
+::: notes
+D1, D2 und D3 sind Domänenbezeichnungen des STM32H755, keine Threadzustände. Die Abbildung zeigt eine vereinfachte Auswahl der Zugriffswege und wird von oben nach unten gelesen. Der M7 ist D1, der M4 D2 zugeordnet; SRAM4 liegt in D3. SRAM bedeutet Static Random Access Memory, Arbeitsspeicher. Eine Brücke verbindet Busbereiche, ein Master initiiert einen Zugriff. Die rote Umrandung markiert unser gemeinsames Speicherziel.
+
+AHB bedeutet Advanced High-performance Bus und AXI Advanced eXtensible Interface; beides sind Busfamilien. Weitere Master können beispielsweise DMA-Einheiten sein, Direct Memory Access oder direkter Hardware-Speicherzugriff. Die konkrete Instanz und deren erreichbare Ziele werden im Referenzhandbuch geprüft. Die Zeichnung ist weder eine vollständige Peripheriekarte noch eine Messung. Sie trennt Domänenzuordnung, Zugriffsweg und Speicherziel. Ein Low-Power-Modus kann die Erreichbarkeit oder den Erhalt einer Region verändern. Im Basisversuch bleiben die benötigten Domänen aktiv. Zwei verschiedene Kerne können trotzdem an derselben endlichen Zielressource konkurrieren.
+:::
+
+## Getrennte Rechenkerne, trotzdem ein gemeinsames Budget
+
+Lehrannahme: nicht überlappende Antwortanteile.
+
+$$R=C_{M4}+W_{IPC}+I_{Bus}$$
+
+$$R=4+3+2=9\,\mathrm{ms}>D=8\,\mathrm{ms}$$
+
+- eigene M4-Arbeit: 4 ms
+- Warten auf das benötigte Ergebnis: 3 ms
+- zusätzliche Businterferenz: 2 ms
+
+::: notes
+R ist die Antwortzeit bis zum geforderten Abschluss, D die relative Deadline ab Freigabe. C M4 bezeichnet vier Millisekunden eigener Arbeit auf dem Cortex-M4. W IPC bezeichnet drei Millisekunden Warten auf ein benötigtes Ergebnis der Inter-Processor Communication, Kommunikation zwischen Prozessorkernen. I Bus ist eine zusätzlich angesetzte Verzögerung von zwei Millisekunden durch Buskonkurrenz. ms sind Millisekunden.
+
+Die Formel ist ein vereinfachtes Lehrbudget, keine allgemeine Multicore-Analysemethode. Die drei Anteile sind hier ausdrücklich getrennt und nicht überlappend. Ihre Summe beträgt neun Millisekunden und überschreitet die Frist acht um eine Millisekunde. Wenn eine gemessene Wartezeit bereits die Buskonkurrenz enthält, darf diese nicht nochmals addiert werden. Ebenso kann ein anderes Protokoll Teile parallel ausführen. Das Beispiel zeigt die praktische Bedeutung der Störgrenze: Ein eigener M4-Bedarf von vier Millisekunden reicht als Nachweis nicht, wenn die Reaktion noch ein fremdes Ergebnis braucht. Papieraufgabe 1 prüft diese Unterscheidung gemeinsam mit den Architekturformen.
+:::
+
+## Takte und Peripherie brauchen feste Zuständigkeiten
+
+- M7 initialisiert die gemeinsamen Takte im gewählten Bootmuster
+- Pin Context bestimmt die Codegenerierung
+- Zwei Pins eines Ports können dasselbe Konfigurationsregister teilen
+- Eine lokale MPU ist kein Schloss für den gesamten Chip
+
+Zuständigkeit folgt dem Register oder Gerät, nicht nur dem Pinnamen.
+
+::: notes
+RCC steht für Reset and Clock Control, die Takt- und Rücksetzungssteuerung des Chips. Im gewählten Startmuster konfiguriert der M7 die gemeinsamen Takte, bevor der M4 seinen normalen Anwendungsstart fortsetzt. Zwei unkoordinierte SystemClock_Config-Aufrufe können dieselben Register widersprüchlich ändern.
+
+Pin Context ist die CubeMX-Zuordnung für die Codegenerierung. Sie ist keine Hardware-Zugriffssperre. GPIO bedeutet General Purpose Input/Output, allgemeiner Ein- und Ausgang. Verschiedene Pins eines GPIO-Ports können Felder desselben Konfigurationsregisters belegen. Lesen beide Kerne dessen alten Stand, ändern verschiedene Felder und schreiben zurück, kann ein Lost Update entstehen: Eine Änderung geht verloren. Ein atomarer Set-/Reset-Ausgangspfad ist ein anderer Vorgang und löst nicht automatisch die Konfigurationsfrage. MPU bedeutet Memory Protection Unit, Speicherschutzeinheit eines Kerns. Sie koordiniert nicht beide Programme oder jeden Hardwaremaster. Ein klarer Besitzer für gemeinsam zu konfigurierende Geräte und Register ist deshalb bereits vor dem ersten Datenaustausch erforderlich.
+:::
+
+## Boot: Stop, Reset und laufendes Programm unterscheiden
+
+Typisches Cube-Muster, am eigenen Projekt bestätigen:
+
+1. M4 richtet HSEM-Benachrichtigung ein und geht in Stop.
+2. M7 wartet darauf und initialisiert gemeinsame Takte.
+3. M7 richtet den Shared-Block ein.
+4. HSEM-Freigabe lässt M4 weiterlaufen und den Kernel starten.
+
+Option Bytes können die Startvoraussetzungen verändern.
+
+::: notes
+Boot bezeichnet den Startablauf nach dem Rücksetzen. HSEM bedeutet Hardware Semaphore, Hardwaresemaphor. Er kann eine Freigabe beziehungsweise Benachrichtigung zwischen den Kernen unterstützen. Im typischen Cube-Muster läuft auf dem M4 bereits Startcode, bevor er in Stop geht. Stop ist ein Energiespar-Wartezustand und nicht gleichbedeutend mit gehaltenem Reset. Nach der vereinbarten Benachrichtigung setzt der M4 seinen Start fort.
+
+Option Bytes sind nichtflüchtige Konfigurationswerte, die unter anderem die Startvoraussetzungen beeinflussen. Sie werden am konkreten Projekt und Gerät geprüft. Der M7 wartet mit dem Muster des erzeugten Codes auf den M4-Zustand, richtet Takte und unseren Block ein und gibt erst danach frei. Seine frühe Schleifengrenze ist nicht automatisch eine gemessene Millisekundenfrist. HSEM-Identität, Taktfreigabe und Benachrichtigung müssen auf beiden Seiten zusammenpassen. Wir behalten den funktionierenden erzeugten Handshake, also den abgestimmten Startvertrag. Eine aus Erinnerung ergänzte, im installierten Header nicht vorhandene Wake-Funktion wäre kein verlässlicher Ersatz.
+:::
+
+## Vor der Freigabe muss der Block gültig sein
+
+Logische Reihenfolge, keine Zeitmessung.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
 sequenceDiagram
   participant M4 as CM4
-  participant H as HSEM
   participant M7 as CM7
-  M4->>H: Notify, dann Stop
-  M7->>M7: Takt, dann Shared-Init
-  M7->>H: Release
-  H-->>M4: weiter, RTOS
+  participant H as Boot-HSEM
+  M4->>M4: Benachrichtigung, dann Stop
+  M7->>M7: Stop prüfen, Takt und Shared-Init
+  M7->>H: Take und Release im Bootpfad
+  H-->>M4: Start fortsetzen
 ```
 
-Warten ohne Fortschritt: Diagnosekasten, nicht stiller Reset.
-
 ::: notes
-Das Ablaufbild ist eine Reihenfolge, keine Zeitmessung. Der M4 meldet sich und geht in Stop. Der M7 wartet auf diesen Zustand, initialisiert den Block und gibt das HSEM frei. HSEM-Takt, Benachrichtigung und Freigabe der benutzten Semaphore sind getrennte Schritte. Die ID muss auf beiden Seiten zum generierten Template passen. Register- oder HAL-Namen erklären wir an ihrer Funktion im Template, nicht als erfundenen Vollcode. Der M7-Wartepfad hat ein Pollbudget oder eine lokale Zeitbasis. Ein Timeout ist Diagnose. Er erlaubt nicht, den Block neu zu beschreiben, während die Gegenstelle noch in derselben Phase schreibt. AN5361 und das eigene Template gewinnen, wenn die Option Bytes anders stehen.
+CM4 und CM7 bezeichnen die Cortex-M4- und Cortex-M7-Projektteile. HSEM ist der Hardware Semaphore, hier ausschließlich der Boot-Hinweis. Die Pfeile des Sequenzbilds zeigen Funktions- und Zuständigkeitsreihenfolge von oben nach unten; es gibt keine skalierte Zeitachse. Der M4 bereitet die Benachrichtigung vor und geht in Stop. Der M7 bestätigt diese Phase, richtet gemeinsame Takte und den Datenblock ein und führt den vorhandenen Take-/Release-Pfad zur Freigabe aus.
 
-Vorlage und Projekt dürfen auseinanderlaufen. Dann gilt das Projekt, und die Folie bleibt das Lehrbild des üblichen Musters.
-
-Nach dem Start brauchen auch die Peripherieblöcke feste Besitzer.
+Take ist der Erwerb des Hardwareobjekts, Release dessen Freigabe. Die im Template verwendete Identität wird nicht aus einer allgemeinen Folie geraten. Nach der Benachrichtigung muss der M4 noch seinen lokalen Start und den FreeRTOS-Kernelstart durchlaufen. Deshalb ist eine erste Anwendungsantwort nicht identisch mit der Bootfreigabe. Das öffentlich eingesehene ST-Beispiel zeigt das grundsätzliche Muster; das H755-Projekt ist weiterhin die verbindliche Integrationsbasis. Init nach der Freigabe wäre zu spät: Die M4-Anwendung könnte bereits lesen. Auch ein späteres erneutes Löschen durch den M4 würde den gemeinsamen Vertrag verletzen.
 :::
 
-## Pin-Zuweisung im Dual-Core
+## Zwei Images haben zwei Speicherlayouts
 
-- Pin Context steuert, **welcher Generator** den Init-Code schreibt
-- Das ist keine Hardware-Sperre für den anderen Kern
-- RCC und jeder Peripherieblock brauchen eine Zuständigkeit
-- Gleicher GPIO-Port, verschiedener Pin: immer noch ein Register
-
-::: notes
-GPIO, General-Purpose Input/Output, konfiguriert Pins über gemeinsame Register. Zwei Pins desselben Ports teilen zum Beispiel MODER. Pin Context in CubeMX steuert nur, welcher Kern den Code erzeugt. Es sperrt den anderen Kern nicht in Hardware. Lesen beide denselben alten Wert, ändern verschiedene Felder und schreiben zurück, kann der zweite Schreibzugriff die erste Änderung löschen. Das ist Read-Modify-Write auf dem Konfigurationsregister. Atomare Set- und Reset-Register für Ausgangsdaten sind ein anderer Fall und heben dieses Beispiel nicht auf. Ein Besitzer je gemeinsam zu konfigurierendem Peripherieblock nimmt die Änderung entgegen. „Ein Pin je Kern“ genügt nicht, wenn das Register mehrere Pins enthält.
-
-Beide Kerne dürfen `GPIOE->MODER` nicht gleichzeitig lesen, ändern und zurückschreiben.
-
-Die Zuständigkeit muss in den zwei Firmwareprojekten sichtbar sein.
-:::
-
-## Toolchain und Projektstruktur
-
-- Zwei ELF-Dateien, zwei Vektortabellen, zwei Linkerlayouts
-- CM7 in Bank 1 und CM4 in Bank 2 ist eine mögliche Konvention
-- Startadresse und Option Bytes müssen dazu passen
-- Ab CubeIDE 2.0 oft: CubeMX separat, dann Import
-- Eine Launch-Gruppe ist nicht automatisch da
+- CubeMX erzeugt beziehungsweise beschreibt zwei Kernziele
+- VS Code mit STM32 VS Code Extension baut die CMake-Ziele
+- Je Image: Startup, Vektortabelle, Linkerdatei und Map
+- Gemeinsamer Header definiert den Datenvertrag
+- Startadressen und Flashbelegung am Projekt prüfen
 
 ::: notes
-ELF, Executable and Linkable Format, ist das ladbare Image. IDE, Integrated Development Environment, ist hier STM32CubeIDE. GCC, GNU Compiler Collection, übersetzt. Zwei Teilprojekte haben zwei Startup-Dateien, zwei Vektortabellen, zwei Linker-Skripte und einen gemeinsamen Header. Die Vektortabelle enthält lokale Exception- und Interrupt-Einstiege, nicht die IPC-Nachrichten. CM7 in Flashbank 1 und CM4 in Bank 2 ist ein mögliches Layout. Startadressen und Option Bytes müssen dazu passen. AN5361 Rev. 5 beschreibt ab CubeIDE 2.0 den Weg über das eigenständige CubeMX und den anschließenden Import. Ein leeres IDE-Projekt ist ein anderer Weg. Menüscreenshots werden nicht erfunden. Die installierte Version steht am Laborrechner.
+Image bezeichnet das übersetzte Programm eines Kerns. ELF bedeutet Executable and Linkable Format, das Programmformat mit Code, Daten und Adressinformationen. Startup ist der frühe Startcode. Die Vektortabelle enthält die Behandlereinstiege dieses Kerns. Die Linkerdatei legt die Speicherplatzierung fest; die Map protokolliert sie.
 
-Zwei Images brauchen einen abgestimmten Debugstart.
+STM32CubeMX konfiguriert und generiert die Projektbasis. Visual Studio Code, VS Code, mit der STM32 VS Code Extension arbeitet mit den dazugehörigen CMake-Zielen. CMake beschreibt Übersetzung und Verknüpfung. Es gibt zwei Images, nicht einen automatisch gemeinsamen C-Linkvorgang über beide Kerne. Ein Header ist eine gemeinsam benutzte Deklarationsdatei und kann beide Programme auf gleiche Typen und Konstanten festlegen. Gleiche Namen allein erzeugen trotzdem keine gleiche Adresse. Flashstart, Bootoptionen und geladenes Debugimage müssen zum gewählten Projekt passen. Wir nennen keine universellen Serverports oder Importmenüs, sondern prüfen die tatsächlich installierte Werkzeugversion und die beiden ausgewählten Ziele.
 :::
 
-## Debugging im AMP-System
+## SRAM4 ist die bewusste Laborentscheidung
 
-- Eine ST-LINK- oder OpenOCD-Sitzung, nicht beides gemischt beschreiben
-- Zwei Images laden, Reset-Reihenfolge zum Boot-Handshake passen
-- „Halt all cores“ und Cross-Trigger können den Stop-Weckruf verfälschen
-- Nach dem Halt die HSEM- und Stop-Zustände prüfen, nicht nur den PC
+| Speicher | Bedeutung für den Kanal |
+|---|---|
+| M7-ITCM/DTCM | kein direkter gemeinsamer M4-Arbeitsplatz |
+| andere erreichbare SRAM-Bänke | prinzipiell nach Zugriffsprüfung möglich |
+| SRAM4 in D3 | gewählter Bereich, 64 KiB |
+
+Adresse: `0x38000000` bis einschließlich `0x3800FFFF`.
 
 ::: notes
-AMP bleibt die getrennte Firmware. GDB, GNU Debugger, spricht über einen Server mit dem Chip. Im Kurs ist das typischerweise der ST-LINK GDB Server. OpenOCD ist ein anderer Server und wird nicht in denselben Ablauf gemischt, solange er nicht der verwendete ist. Laden beider Images, Reset, Verbindung zum laufenden M4 und das Halten der Kerne sind verschiedene Schritte. AN5361 nennt dafür Einstellungen. Portnummern und Access-Port-Werte sind keine universellen Kurszahlen. „Halt all cores“ kann den M4 hindern, den Stopzustand zu erreichen, auf den der M7 wartet. Cross-Trigger hält weitere Kerne an. Verstrichene Zeit im Halt ist kein Normalbetrieb.
+SRAM bedeutet Static Random Access Memory, statischer Arbeitsspeicher. SRAM4 liegt beim betrachteten STM32H755 im Bereich von 0x38000000 bis einschließlich 0x3800FFFF. Die Länge beträgt 65536 Byte oder 64 KiB; KiB steht für Kibibyte mit 1024 Byte. D3 ist die zugehörige Domänenbezeichnung.
 
-Der Klickpfad hängt von der IDE-Version ab und bleibt offen, solange kein Projekt im Repository liegt.
-
-Die Hardwarezusammenfassung führt zum gemeinsamen Speicherlayout.
+ITCM und DTCM bedeuten Instruction und Data Tightly Coupled Memory, eng gekoppelten Befehls- und Datenspeicher des M7. Sie sind kein geeigneter direkter gemeinsamer M4-Arbeitsplatz. Andere Speicherbänke können je nach Zugriffsweg ebenfalls für Kommunikation geeignet sein. Dafür müssen Kern- und Hardwaremaster-Erreichbarkeit, Takt- und Energiestatus sowie die Speicherattribute geprüft werden. SRAM4 ist deshalb eine Laborentscheidung und keine Vorschrift für jede Anwendung. Im Einstieg reservieren beide Images diese Bank ausdrücklich für den Kanal. Private Stacks, dynamischer Speicher und zusätzliche unkoordinierte Puffer bleiben außerhalb. Die physische Erreichbarkeit beantwortet nur, ob die Kerne die Region adressieren können; sie beantwortet noch nicht deren genaue Platzierung oder Cache-Sicht.
 :::
 
-## Zusammenfassung Block 2
+## Derselbe Name ist noch nicht dieselbe Adresse
 
-- D1/D2/D3 grob, Ethernet in D2, 10/100
-- Bus parallel nur auf freien Wegen
-- Boot: Stop und HSEM, nicht Reset-Leitung
-- Zwei Images, eine Shared-Adresse
+| Prüfung | CM7-Map | CM4-Map |
+|---|---|---|
+| Symbol `ipc` | `0x38000000` | `0x38000000` |
+| Typgröße | 12 Byte | 12 Byte |
+| reservierte Sektion | 32 Byte | 32 Byte |
+
+Lehrsoll, keine bereits gemessene oder gelinkte Board-Map.
 
 ::: notes
-Domänen, Buskonflikt, gemeinsamer Takt und der Boot hängen zusammen. D1, D2 und D3 trennen Rechenorte und Ziele. HSEM gibt im Boot dem M4 das Signal weiterzulaufen. ELF ist je Kern ein eigenes Image. Der M7 wartet auf den Stopzustand. Ein Debughalt aller Kerne kann verhindern, dass der M4 diesen Zustand erreicht. Das ist eine Diagnose, kein Cachefehler. Boot und spätere Nutzdaten sind verschiedene Protokollphasen. Nach erfolgreichem Boot haben zwei gleichnamige C-Variablen noch nicht automatisch dieselbe Adresse.
+Eine Map ist das Platzierungsprotokoll des Linkers. CM7 und CM4 sind die getrennten Kernziele. ipc ist der vereinbarte Name unseres gemeinsamen Datenobjekts. Die Tabelle zeigt das verlangte Ergebnis, nicht eine im Repository vorliegende Firmware-Map. Der Linker kann gleichnamige Variablen zweier unabhängiger Programme an verschiedene Adressen legen. In diesem Fall würden beide korrekt auf ihre eigene Stelle zugreifen und trotzdem nicht kommunizieren.
 
-Als Nächstes stellt der Linker genau diese Übereinstimmung her.
+Beide Maps müssen ipc bei 0x38000000 zeigen. Der Typ hat zwölf Byte, die gepolsterte Sektion reserviert eine 32-Byte-Zeile. Diese Größen sind nicht gleichbedeutend. Die gleichzeitige Reservierung in zwei Images erzeugt keine zwei physischen SRAM-Blöcke: Beide Adressen bezeichnen hier dieselben Bytes. Umgekehrt reicht derselbe Symbolname in zwei Debugfenstern nicht als Beweis. Zusätzlich werden andere Sektionen, Heap und Stack auf Überlappung geprüft. Heap ist der dynamisch verwaltete Speicher. Erst der konkrete Linker- und Startup-Vertrag verhindert, dass ein vermeintlich privater Bereich die gemeinsamen Bytes überschreibt.
 :::
 
-## Die Speicherarchitektur (RAM)
+## Der Linker reserviert den vereinbarten Anfang
 
-Übliche H755-Anker, im Datenblatt der Revision prüfen:
-
-| Region | Adresse | Rolle im Labor |
-|--------|---------|----------------|
-| DTCM/ITCM | M7-lokal | nicht der Shared-Puffer |
-| SRAM1–3 | D2 | M4-Heap/Stack, nicht automatisch shared |
-| SRAM4 | `0x38000000`–`0x3800FFFF` | 64 KiB, gewählter Kanal |
-| Backup-SRAM | andere Adresse | nicht SRAM4, nicht immer im Standby erhalten |
-
-SRAM4 ist die **Laborentscheidung**, keine Vorschrift für jede Anwendung.
-
-::: notes
-RAM ist Arbeitsspeicher, SRAM die statische Ausführung auf diesem Chip. ITCM und DTCM gehören zum M7 und sind kein allgemeiner Briefkasten. DMA kann je nach Instanz andere Bänke erreichen. Für den betrachteten Baustein liegt SRAM4 bei `0x38000000` bis einschließlich `0x3800FFFF`, also 64 KiB. Ein KiB sind 1024 Byte. Adresse, Größe, Erreichbarkeit, Cacheattribut und die Linker-Zuordnung sind verschiedene Eigenschaften. SRAM1 bis SRAM3 sind nicht von der Hardware ausschließlich M4-Heap. Das wäre eine Projektentscheidung. Backup-SRAM ist ein anderer Bereich. Ob er in einem Low-Power-Modus erhalten bleibt, hängt vom Modus ab. Bandbreite und DMA können eine andere Bank nahelegen. Das Basislabor bleibt bei SRAM4.
-
-Beide Projekte reservieren diesen Bereich ausdrücklich für den Lehrkanal.
-:::
-
-## Wo legen wir den Shared Memory an?
-
-- Beide Linker reservieren **dieselbe** Spanne und legen sonst nichts hinein
-- Heap und Stack bleiben außerhalb
-- `NOLOAD` heißt: der Loader schreibt die Sektion nicht
-- Es heißt nicht: jedes Startup lässt die Bytes in Ruhe
-- `.bss`-Zero und `.data`-Copy beider Images prüfen
-
-::: notes
-Jeder Linker platzt ein C-Objekt für sich. Derselbe Name garantiert keine physische Adresse. ELF ist das Image, ABI, Application Binary Interface, die Darstellung der Felder. Der gemeinsame Bereich wird in beiden Images für denselben Zweck reserviert. Dort liegen kein privater Heap, kein Stack und kein weiterer Puffer. NOLOAD kennzeichnet den Abschnitt ohne normale Initialisierungsdaten im Image. Es verhindert nicht jede Zero-Schleife im Startup, nicht jeden Debug-Loader und nicht eine spätere erneute Initialisierung. `.data` wird kopiert, `.bss` genullt, jeweils in der eigenen Firmware. Nach Reset ist der Inhalt kein gültiger Protokollzustand, bis der M7 schreibt. Ein zufälliger Nichtnullwert ist kein Startwert 0 und kein Magic.
-
-Der Linker-Vertrag steht im Skript.
-:::
-
-## Das Linker-Script (`.ld`)
-
-Schema, keine abgelesene Map:
-
-- Region SRAM4 einmal, nicht ein zweites `RAM_D3` daneben
-- Sektion `.shared` mit `NOLOAD`, `KEEP`, Alignment 32
-- `ASSERT` auf Größe und Adresse
-- Symbol `sd` in **beiden** Maps gleich, sonst ist es nicht derselbe Block
-
-::: notes
-MEMORY nennt Ursprung und Länge einer Region. SECTIONS legt fest, welche Ausgabesektion dort liegt. `.ld` ist die Dateiendung des Linker-Skripts. ELF ist das Ergebnis. Die SRAM4-Region heißt im echten Skript so, wie Cube sie erzeugt hat. RAM_D3 und SRAM4 dürfen nicht zweimal dieselbe Spanne belegen. Das Lehrschema sammelt `.shared` mit KEEP und NOLOAD und prüft die Adresse von `ipc` mit ASSERT. KEEP hält die Eingabesektion, wenn der Linker sonst unreferenzierte Objekte verwirft. Zwei Maps müssen dieselbe `ipc`-Adresse zeigen. Eine Beispieladresse in der Folie ist synthetisch, solange keine Map im Repository liegt. Cube erzeugt die `.ld`. Wir fügen die Sektion ein und duplizieren die Speicherliste nicht.
-
-Die nächste Folie zeigt, welche Eingabesektionen gesammelt werden.
-:::
-
-## Eine eigene Sektion anlegen
+Integrationsausschnitt für beide tatsächlichen Linkerdateien:
 
 ```ld
-.shared (NOLOAD) :
+.shared ORIGIN(RAM_SHARED) (NOLOAD) :
 {
   . = ALIGN(32);
-  KEEP(*(.shared))
+  KEEP(*(.shared .shared.*))
   . = ALIGN(32);
-} >RAM_D3
+} > RAM_SHARED
 ```
 
-Nur wenn `RAM_D3` schon die SRAM4-Region ist. Sonst den vorhandenen Namen nehmen.
+`RAM_SHARED`: SRAM4 einmal reservieren, private Bereiche außerhalb.
 
 ::: notes
-NOLOAD beschreibt die Ausgabesektion ohne Initialisierungsabbild. ALIGN verschiebt die Platzierung. KEEP schützt die Eingabesektion vor Garbage Collection. `>RAM_D3` wählt die vorhandene Region. `.shared.*` nur, wenn die Objekte wirklich so heißen. `ipc` muss am vereinbarten Anfang liegen. Ein anderes Objekt davor bricht den Vertrag. 32-Byte-Ausrichtung und ein auf 32 Byte gerundeter Abschnitt machen den 12-Byte-Typ nicht 32 Byte groß. Typgröße, Abschnittsreserve und das 64-KiB-MPU-Fenster sind drei Ebenen. Adresse und Größe prüft der Linker-ASSERT. Die 32-Byte-Ausrichtung bleibt sinnvoll, auch wenn die Basisregion nicht cachebar ist, weil eine spätere Wartungsvariante Zeilengrenzen braucht.
+Der gezeigte Text ist ein Linker-Integrationsausschnitt, keine vollständige Firmware-Linkerdatei. RAM_SHARED ist unser gewählter Regionsname für SRAM4. In MEMORY, dem Speicherverzeichnis des Linkers, wird die vorhandene SRAM4-Zuordnung einmal passend reserviert. Ein zweiter überlappender Alias darf nicht zusätzliche private Belegung erlauben.
 
-Der Compiler muss das konkrete Objekt in diese Eingabesektion legen.
+Die Ausgabesektion .shared beginnt am Ursprung dieser Region. NOLOAD legt sie ohne normale Initialisierungsdaten im Image an. ALIGN richtet den Positionszeiger auf 32 Byte aus, KEEP bewahrt die erfassten Eingabesektionen bei der Entfernung unbenutzter Bereiche. Das letzte ALIGN polstert die zwölf Typbytes auf 32 reservierte Byte. Die vollständigen Assertions, also Linkerprüfungen für Adresse, zwölf Byte Objektinhalt und 32 Byte Reserve, stehen im bereitgestellten Fragment shared-section.ld. Damit werden auch zusätzliche Objekte innerhalb der Reserve zurückgewiesen. Das Fragment wird in die tatsächlich vom CMake-Ziel ausgewählte Linkerdatei integriert. CMake beschreibt den Build. Nur eine beliebige ähnlich benannte Datei im Projekt zu ändern, liefert keinen Nachweis. Die resultierenden Maps und die Startup-Tabellen werden zusätzlich gelesen.
 :::
 
-## Zuweisung im C-Code (GCC-Attribute)
-
-```c
-/* shared_data.h: nur Typ und extern */
-extern volatile ipc_block_t ipc
-    __attribute__((section(".shared")));
-
-/* genau eine .c je ELF */
-volatile ipc_block_t ipc
-    __attribute__((section(".shared")));
-```
-
-Das Attribut allein setzt nicht die Adresse. Linker, Alignment und weitere Objekte entscheiden.
-
-::: notes
-GCC übersetzt, ELF ist das Image, ABI die Feldabbildung. Der gemeinsame Header enthält Typ, Konstanten und `extern volatile ipc_block_t ipc`. Genau eine `.c` je Image definiert das Objekt. Ein gemeinsames Quellmodul darf für beide Images gebaut werden, aber je Image nur einmal. Das ist keine doppelte Definition innerhalb eines Images. `section(".shared")` wählt die Eingabesektion, `aligned(32)` richtet das Objekt aus und ändert nicht das natürliche Alignment des Typnamens, `used` hält die Referenz. KEEP im Linker fängt den Fall ab, dass der Linker das Objekt sonst verwirft. Der Header legt keinen Speicher an und setzt keine Adresse. Die Definition nicht zusätzlich im Header ablegen.
-
-Die Zugriffe brauchen weitere Eigenschaften als nur die Sektion.
-:::
-
-## Das Schlüsselwort volatile
-
-- `volatile` zwingt den Compiler zu den Zugriffen, die **dieser** Compiler dafür definiert
-- Es umgeht nicht den D-Cache
-- Es ist kein Mutex und kein atomares Read-Modify-Write
-- Es veröffentlicht nicht „den ganzen Struct auf einmal“
-
-::: notes
-`volatile` sagt dem Compiler, dass sich der Wert außerhalb des sichtbaren Ablaufs ändern kann. Eine Pollschleife auf `ipc.state` darf den Vergleich nicht aus dem Register wiederholen, ohne neu zu laden. GCC beschreibt das in der Volatile-Dokumentation. Es verspricht nicht, dass jeder Ausdruck genau einen Buszugriff erzeugt. Der Zugriff kann aus dem D-Cache kommen. `volatile` ist kein Mutex. `ipc.payload += 1` ist keine allgemeine atomare Mehrkernoperation und veröffentlicht nicht alle Felder zugleich. Im Lehrprotokoll ist die Statusvariable ein ausgerichtetes `uint32_t` unter den Annahmen von Armv7-M, Speicherattribut und Toolchain. Das ist keine portable C-Thread-Garantie.
-
-Für die Reihenfolge kommt eine Barriere dazu, für den Cache die MPU oder eine geprüfte Wartung.
-
-Die vier Probleme brauchen verschiedene Mittel.
-:::
-
-## Reicht volatile für Multicore?
-
-Vier verschiedene Probleme:
-
-| Problem | Mittel | löst allein nicht |
-|---------|--------|-------------------|
-| Compiler hält einen Wert | `volatile` | Cache, Reihenfolge, Konflikt |
-| veraltete Cachezeile | MPU oder Clean/Invalidate | wer schreiben darf |
-| Reihenfolge der Zugriffe | `DMB` / `DSB` | Cache-Inhalt |
-| beide schreiben | Ownership oder HSEM | Sichtbarkeit |
-
-`DMB` ordnet. `DSB` wartet auf den Abschluss. Keines reinigt den D-Cache.
-
-Keine Armv8-M-Acquire-Intrinsics ungeprüft auf M4/M7.
-
-::: notes
-Vier Fehler, vier Mittel. Der Compiler hält einen Wert: `volatile` zwingt zum erneuten Zugriff und löst Cache, Reihenfolge und Konflikt nicht. Eine veraltete Cachezeile braucht nicht cachebare Attribute oder Clean und Invalidate und sagt nicht, wer schreiben darf. DMB, Data Memory Barrier, ordnet Speicherzugriffe. DSB, Data Synchronization Barrier, wartet auf den Abschluss relevanter früherer Operationen. Keines schreibt alle Dirty-Zeilen zurück. Ownership legt fest, wer das Datum in dieser Phase schreiben darf. Eine Sperre koordiniert und ersetzt die übrigen Punkte nicht. `__ISB`, Instruction Synchronization Barrier, gehört zur MPU-Aktivierung, nicht zum Payload. Acquire-Intrinsics von Armv8-M setzen wir auf M4 und M7 nicht ungeprüft ein.
-
-Frage: Warum reicht nicht cachebar nicht? Weil die Reihenfolge „Payload, dann Zustand“ und das Schreibrecht bleiben. DMB bleibt nötig.
-
-Das Protokoll beginnt mit einem eindeutigen Layout.
-:::
-
-## Struktur der Ping-Pong Daten
-
-Altes Bild mit zwei `uint8_t` und einem `uint32_t`: natürliche Ausrichtung **8 Byte**, Offsets 0, 1 und 4, nicht 12.
-
-Gewählter Block:
+## Drei Wörter und ein gemeinsamer Header
 
 ```c
 typedef struct {
-    uint32_t magic;
-    uint32_t state;   /* TURN_M7, REQUEST_M4, RESPONSE_M7 */
-    uint32_t payload;
+  uint32_t magic;
+  uint32_t state;
+  uint32_t payload;
 } ipc_block_t;
+extern volatile ipc_block_t ipc;
 ```
 
-`_Static_assert` auf Größe und Alignment im Zielbuild. Kein `packed` als Multicore-Trick.
+Offsets: 0, 4, 8 · Typ: 12 Byte · Objekt: auf 32 Byte ausgerichtet.
 
-Nur der Berechtigte schreibt `payload`. Der Zustand wechselt danach.
-
-::: notes
-`uint32_t` ist eine vorzeichenlose 32-Bit-Zahl. ABI ist die Abbildung im Zielcompiler. Im gewählten Layout liegen magic bei Offset 0, state bei 4 und payload bei 8. `sizeof` ist 12, `offsetof` prüft die Offsets, `_Alignof` mindestens 4. Eine ältere Variante mit zwei `uint8_t` und einem `uint32_t` braucht im üblichen Ziel-ABI oft 8 Byte mit Padding, nicht automatisch 12. Das ist kein Satz für jede ABI. `packed` ist kein Synchronisationsmittel. `TURN_M7` ist der Initialisierungszustand, bevor der M4 kommuniziert. Danach wechseln `REQUEST_M4` und `RESPONSE_M7`. Nur der Berechtigte der Phase schreibt die Payload. Der Zustand wechselt danach, von beiden Kernen abwechselnd.
-
-Der M7 schreibt Magic, Zustand und Payload, solange der M4 noch nicht kommuniziert. NOLOAD-Inhalt ist kein Startwert 0.
-
-Erst Layout plus Initialisierung machen den Block benutzbar.
-:::
-
-## Zusammenfassung: Shared Memory
-
-- Eine Adresse, zwei ELF, eine Definition je Image
-- M7 initialisiert, M4 löscht den Block beim Start nicht
-- Ein Core-Reset mitten im Ping-Pong ist nicht das Basislabor
-- Ein gemeinsamer Reset muss den Handshake neu durchlaufen
+Genau eine Definition je Image, keine Definition im Header.
 
 ::: notes
-Der Vertrag ist: dieselbe physische Adresse, derselbe Typ und Konstantensatz, eine Definition je Image, keine fremde Belegung der Spanne, explizite Initialisierung durch den M7. ELF ist je Kern ein Image, IPC der Kanal. Beide Programme haben getrennte Startup-Pfade und sprechen dieselben Bytes an. Der M4 darf die Region später nicht wieder nullen. Ein unabhängiger Reset eines Kerns mitten im Dialog braucht ein Wiederanlaufprotokoll und ist aus dem Basislabor ausgeschlossen. Ein gemeinsamer Reset durchläuft die Initialisierung erneut.
+Der C-Code ist der Typ- und Deklarationsausschnitt des vollständigen Moduls. uint32_t ist ein vorzeichenloser 32-Bit-Typ, hier vier Byte. magic enthält die vereinbarte Protokollkennung, state die Phase und payload den Nutzwert. ipc_block_t ist der Typname, ipc das konkrete Objekt. extern deklariert das Objekt, reserviert es aber nicht erneut in jeder einbindenden Datei. volatile fordert die vom Compiler definierten sichtbaren Zugriffe; es ist noch kein Cachevertrag.
 
-Frage: Was steht nach dem Reset vor der Init? Undefiniert, bis der M7 schreibt. Ein passender Magic-Wert danach ist die Plausibilität des koordinierten Boots, keine Heilung eines einseitigen Resets.
-
-Ein korrektes Layout garantiert noch nicht, dass beide dieselben aktuellen Werte lesen.
+Die vollständige Referenz prüft Größe und Feldoffsets mit statischen C-Assertions. Die Definition in lab06_shared.c wird genau einmal pro Image übersetzt. Ein GCC-Attribut legt das Objekt in .shared und richtet es auf 32 Byte aus. GCC bedeutet GNU Compiler Collection, die Compilerfamilie. Die natürliche Typgröße bleibt zwölf Byte. Ausrichtung des Objekts, gepolsterte Sektionsgröße und Größe der MPU-Region sind drei Ebenen. MPU steht für Memory Protection Unit, Speicherschutzeinheit. Der gemeinsame Header enthält außerdem Konstanten und Funktionsdeklarationen, damit beide Firmwareprogramme denselben Datenvertrag verwenden.
 :::
 
-## Was ist ein CPU-Cache?
+## NOLOAD schützt nicht vor jedem Startup-Schreibzugriff
 
-- Zeile typisch 32 Byte auf diesem M7
-- Ein Lese-Treffer kann einen alten Wert liefern
-- Ein Schreib-Treffer kann nur die Zeile ändern
-- Der M4 sieht SRAM, nicht die Dirty-Line des M7
+- `.data`: üblicherweise Kopie initialer Werte
+- `.bss`: üblicherweise Nullinitialisierung
+- `.shared`: keine automatische zweite Initialisierung
+- M7 initialisiert einmal, bevor M4 freigegeben wird
+- Gemeinsamer Neustart gehört zum Basisvertrag
+
+Ein gültiges Magic ist noch kein Nachweis einer neuen Sitzung.
 
 ::: notes
-CPU ist der Kern, SRAM der Speicher, den der M4 direkt sieht. Eine Cachezeile des M7 ist hier typisch 32 Byte und kann mehrere Variablen enthalten. Ein Hit liefert Daten aus der Kopie und kann schneller und trotzdem veraltet sein. Ein Miss holt aus dem Speicher. Valid heißt, die Kopie darf benutzt werden. Dirty heißt, sie enthält Schreibdaten, die der SRAM noch nicht hat. Write-Back ändert zuerst die Zeile. Der M4 liest den SRAM, nicht diese Dirty-Line. Der 12-Byte-Block liegt in einer 32-Byte-Zeile. Nachbarbytes werden mitgezogen.
+Startup ist der frühe Startcode eines Images. .data enthält gewöhnlich globale Daten mit Initialwerten, die in den Laufzeitspeicher kopiert werden. .bss bezeichnet typischerweise globale Nullinitialisierung. .shared ist unsere gemeinsame Sektion. NOLOAD ist eine Linkerkennzeichnung ohne normale Initialisierungsdaten, keine allgemeine Anweisung an jede beliebige Startschleife oder jeden Debugloader.
 
-Auch Lesen ist ein Kohärenzproblem. Eine alte gültige Kopie verdeckt neuere SRAM-Daten.
-
-Die Schreibpolitik bestimmt, wann geänderte Kopien zurückgehen.
+Beide Startup-Tabellen müssen deshalb die gemeinsamen Bytes aus ihrer privaten Kopier- und Nullbehandlung ausschließen. Nach Reset ist der Inhalt noch kein gültiger Protokollzustand. Der Cortex-M7 setzt ihn einmal vor der vereinbarten M4-Freigabe; der Cortex-M4 löscht ihn nach dem Aufwachen nicht. Magic ist eine vereinbarte Kennung. Ein alter gültiger Wert beweist keine neue Sitzung nach einseitigem Core-Reset. Der Basisversuch benutzt einen gemeinsamen Neustart und unterstützt keine automatische Wiederaufnahme mitten in einer Runde. Diese Grenze verhindert die gefährliche Schlussfolgerung, bei Timeout einfach denselben Block zu nullen, während die Gegenstelle noch schreiben könnte.
 :::
 
-## Write-Through vs. Write-Back
+## Drei getrennte Fragen an jede Übergabe
 
-- Write-Through: Schreiben geht Richtung Speicher, hilft nicht für die Richtung M4 → M7
-- Write-Back: Rückschreiben bei Verdrängung oder Clean, nicht nur „wenn der Cache voll ist“
-- Clean schreibt Dirty-Daten
-- Invalidate verwirft die **Kopie**, nicht benachbarte SRAM-Bytes
-- Verloren gehen Dirty-Daten, die noch nicht zurückgeschrieben waren
+| Frage | Mittel im Basisversuch |
+|---|---|
+| Wer darf schreiben? | Phasenbesitz des Protokolls |
+| Was kommt zuerst? | Datenzugriffe und Barriere |
+| Welche Bytes sieht der andere? | gleiche Adresse, nicht cachebare Region |
+
+Keines dieser Mittel ersetzt die beiden anderen.
 
 ::: notes
-Write-Through schickt Schreibdaten in Richtung Speicher. Das macht eine neue M7-Schreibung eher im SRAM sichtbar, aktualisiert aber keine alte M7-Lesekopie, nachdem der M4 geschrieben hat. Write-Back schreibt Dirty-Daten bei Verdrängung oder bei einem expliziten Clean zurück, nicht nur „wenn der Cache voll ist“. Clean behält eine gültige Kopie und schreibt Änderungen. Invalidate verwirft die Kopie. Schon im SRAM stehende Nachbarbytes werden dadurch nicht gelöscht. Dirty-Bytes, die noch nicht zurück sind, können verloren gehen. Eine alte Dirty-Zeile über neuere M4-Daten zu cleanen überschreibt die Antwort. Deshalb kein pauschales Clean und Invalidate des gemischten 12-Byte-Blocks.
+Phasenbesitz bedeutet, dass genau ein Teilnehmer in einer bestimmten Kommunikationsphase den Nutzwert verändern darf. Das ist dieselbe Grundidee wie der Pufferbesitz aus Vorlesung 5, hier zwischen zwei Firmwares. Eine Barriere ist ein Prozessorbefehl, der die Reihenfolge relevanter Speicherzugriffe absichert. Eine nicht cachebare Region verhindert für diesen Kern die Verwendung einer entsprechenden privaten Datenkopie.
 
-Aus diesen Eigenschaften entstehen zwei getrennte Kohärenzfehler.
+Eine korrekte Adresse verhindert noch keinen gleichzeitigen Schreibkonflikt. Eine Besitzregel verhindert noch keine veraltete Cachekopie. Ein einzelner Barrierebefehl schreibt eine schmutzige Cachezeile nicht automatisch in den gemeinsamen Speicher zurück. Auch ein perfekter Cachevertrag ersetzt die Phasenfolge nicht. Diese Trennung ist der rote Faden der zweiten Hälfte. Wir führen zunächst das einfache Besitzprotokoll ein. Danach ordnen wir die Zugriffe und erklären zuletzt, warum dieselben korrekt ausgeführten Loads und Stores trotzdem verschiedene Werte liefern können. Die Tabelle ist ein Entwurfsraster für den Basisversuch und keine universelle Synchronisationsbibliothek für beliebige Prozessorarchitekturen.
 :::
 
-## Das Drama der Cache-Kohärenz
-
-Zwei Zustände, dieselbe Zeile:
-
-1. M7 hat den neuen Request nur dirty. M4 liest den alten SRAM-Wert.
-2. M4 hat die Antwort ins SRAM geschrieben. M7 liest noch seine alte Kopie.
-
-::: notes
-Fall A: der M7 schreibt eine neue Anfrage in eine Write-Back-Zeile. Der SRAM bleibt zunächst alt. Der M4 kann die neue Anfrage nicht zuverlässig sehen. Fall B: der M4 hat die Antwort in den SRAM geschrieben. Der M7 hat noch eine gültige alte Kopie und liest daraus. Beide Fälle betreffen Payload und Zustand, wenn beide cachebar liegen. Protokollzustände wie REQUEST_M4 und Cachezustände wie dirty sind verschiedene Dinge. Die Beispielwerte sind synthetisch und nicht die Laborfolge 1, 3, 5. Es gibt hier keine maßstabsgetreue Zeitachse, weil keine Latenz gemessen wird. Die logische Reihenfolge der zwei Fehler bleibt gültig.
-
-Die nächste Folie stellt die widersprüchlichen Werte direkt nebeneinander.
-:::
-
-## Visualisierung: Cache Coherency Failure
-
-Zwei Richtungen, synthetische Werte, keine Laborsequenz. Kein Clean ist eingezeichnet.
-
-| Ort | Fall A: M7 schreibt neu | Fall B: M4 schreibt Antwort |
-|-----|-------------------------|-----------------------------|
-| M7-D-Cache | payload = 1, dirty | payload = 0, valid |
-| Shared-SRAM | payload = 0 | payload = 1 |
-| wer liest | M4 liest 0 aus SRAM | M7 liest 0 aus seiner Kopie |
-
-Fall A: die neue 1 liegt nur in der Dirty-Zeile, der SRAM bleibt 0. Fall B: der SRAM hat schon 1, die alte gültige M7-Zeile bleibt 0. Die gestrichelte Kante bedeutet: diese Übertragung findet nicht statt.
-
-::: notes
-Die Tabelle hat zwei Spalten und vier Orte: M7-CPU über den D-Cache, den Shared-SRAM und den M4. Fall A: Cache-Payload 1 und dirty, SRAM-Payload 0, der M4 liest 0. Die neue 1 wurde nicht zurückgeschrieben. Fall B: der M4 hat SRAM-Payload 1 geschrieben, die M7-Zeile bleibt 0 und valid, der M7 liest 0. Die gestrichelte Bedeutung ist: diese Übertragung findet nicht statt. Es ist kein Clean eingezeichnet. Die Zahlen illustrieren den Mechanismus und sind nicht die Ping-Pong-Folge. Ein Cache-Hit kann deshalb der falsche Wert sein.
-
-Manche größeren Systeme haben dafür zusätzliche Kohärenzhardware.
-:::
-
-## HW-Lösung in PCs: Cache-Snooping
-
-- Kohärenz kann Cache-zu-Cache liefern, nicht nur über RAM
-- MESI ist ein Lehrbild, nicht das vollständige Modell jedes PCs
-- Daraus folgt nicht, dass PC-Kerne nie hart echtzeitfähig sind
-- Der H755 hat diese Kohärenz zwischen M7-L1 und M4 nicht
-
-::: notes
-HW heißt Hardware, PC Personal Computer. MESI steht für Modified, Exclusive, Shared und Invalid und ist ein vereinfachtes Zustandsmodell kohärenter Caches. Kohärenz kann aktuelle Daten von einer anderen Cacheinstanz liefern. Das RAM muss nicht nach jedem Schreiben sofort aktuell sein. Das Bild ist kein vollständiges Modell aller PCs und kein Echtzeitnachweis. Der STM32H755 hat keine solche Kohärenz zwischen dem M7-L1 und den M4-Zugriffen. Aus MESI folgen keine M7-Registereinstellungen.
-
-Ohne diese Hardware müssen Software oder Speicherattribute die Kopien behandeln.
-:::
-
-## Software-Lösung 1: Manuelles Management
-
-Option, nicht die Basis:
-
-- Getrennte 32-Byte-Blöcke, ein Schreiber
-- Clean nur der eigenen neuen Daten, bevor der andere lesen muss
-- Invalidate nur, bevor man fremde neue Daten lesen will, und ohne dirty Nachbarschaft zu opfern
-
-Eine Line mit Payload, Flag und fremder Dirty-Variable ist der Fehlerfall.
-
-::: notes
-Die Cachewartung ist eine Vertiefung, nicht die Basisimplementierung. CMSIS liefert die D-Cache-Funktionen des M7. SRAM ist der Zielspeicher. Getrennte 32-Byte-Bereiche brauchen je einen Schreiber. Clean betrifft eigene neue Daten vor der Übergabe. Invalidate betrifft eine alte lokale Kopie vor dem Lesen fremder Daten. Kontrollinformationen brauchen dasselbe Modell. Getrennte Payloadzeilen lösen ein cachebares Statusflag nicht. Start, Ende und Nachbarobjekte müssen in den Zeilen liegen, die man wartet. Alignment der Startadresse genügt nicht. Ein pauschales Clean und Invalidate des gemischten 12-Byte-Blocks ist keine korrekte Lösung. Die Signaturen stehen in den eingebundenen Headern, nicht nur in der neuesten Onlinedoku.
-
-Warum diese Option im Einsteigerlabor fehleranfällig ist, zeigt die nächste Folie.
-:::
-
-## Nachteile der Software-Lösung
-
-- Leicht die Richtung zu verwechseln
-- Clean der veralteten Line kann M4-Daten überschreiben
-- Invalidate kann eigene Dirty-Bytes verwerfen
-- Nur aufnehmen, wenn der Code wirklich geprüft ist
-- Das Basislabor macht die Region non-cacheable
-
-::: notes
-Zwei Schäden: Eine Zeile, die noch Dirty-Bytes enthält, wird invalidiert, und eigene Änderungen gehen verloren. Eine alte Dirty-Zeile des M7 wird nach einer M4-Antwort gereinigt und überschreibt neuere SRAM-Daten. Dafür muss die Zeile dirty gewesen sein. Clean einer unveränderten sauberen Kopie ist nicht dasselbe Rückschreiben. Cachewartung ist brauchbar, wenn Besitz und die vollständige Sequenz stimmen. Attribute während laufender Kommunikation umzuschalten ist kein Laborumschalter. Zwischen Basis und Fehlervariante gibt es einen gemeinsamen Neustart.
-
-Die Basisvariante vermeidet Cachekopien für den kleinen Block.
-:::
-
-## Hardware-Lösung 2 (Best Practice): Die MPU
-
-Für SRAM4 im Basislabor, Attribute aus AN4838, Konstanten im HAL-Header prüfen:
-
-| Feld | Basisregion | Fehlerexperiment, eigener Build |
-|------|-------------|--------------------------------|
-| Basis / Größe | `0x38000000`, 64 KiB, SIZE-Code 15 | dieselbe Spanne, nur zum Vergleich |
-| Typ | Normal, TEX = 001, C = 0, B = 0, S = 1 | TEX = 001, C = 1, B = 1, S = 0 |
-| Rechte | Lesen/Schreiben, Execute Never | gleich, aber cachebares Write-Back |
-
-S = 1 erzeugt kein Snooping. Ein nur geändertes C bei bleibendem S = 1 ist auf dem M7 kein sicherer Nachweis der Cachewirkung. Die Fehlervariante setzt S = 0 und startet gemeinsam neu.
-
-Reihenfolge: MPU, dann D-Cache an, dann Shared-Zugriff.
-
-Der Pfeil umgeht den D-Cache. Ownership und `DMB` bleiben.
-
-::: notes
-Der Titel meint das Basislabor, nicht jede Bandbreitenanforderung. MPU ist die Speicherschutzeinheit des M7. TEX, Type Extension, ist das Attributfeld, kein Datenpuffer. XN, Execute Never, verbietet das Ausführen von Code aus der Region. AP, Access Permission, sind die Rechte. C, B und S stehen für cacheable, bufferable und shareable. Die Basisregion ist `0x38000000`, 64 KiB, Normal, TEX 001, C 0, B 0, S 1, Lesen und Schreiben, XN. S gleich 1 erzeugt kein Snooping zwischen M7 und M4. Die MPU ist kernlokal und schützt den M4 und DMA nicht automatisch. Bei Überlappung gewinnt auf Armv7-M die passende Region mit der höheren Nummer. Eine cachebare Region darüber würde die Absicht aufheben. Die Bits stehen im HAL-Header und werden im MPU-Register geprüft.
-
-Welche Probleme diese Region löst und welche bleiben, zeigt die nächste Folie.
-:::
-
-## Was bewirkt die MPU?
-
-- Diese Region wird für den M7 nicht als cachebarer Normal-Speicher behandelt
-- Sie macht die Bytes nicht „100 % sicher“
-- Zwei Kerne ohne Cache brauchen das Protokoll trotzdem
-- Weglassen der MPU erzeugt nur dann den Cachefehler, wenn der D-Cache an ist und der Weg cachebar bleibt
-
-::: notes
-Für die Shared-Region benutzt der M7 keine entsprechende D-Cachekopie. Andere Regionen dürfen weiter vom Cache profitieren. CCR, Configuration and Control Register, zeigt, ob der D-Cache an ist. DMB bleibt für die Reihenfolge. Ownership bleibt für das Schreibrecht. „MPU aus“ zeigt den Cachefehler nur, wenn der D-Cache an ist und die effektiven Attribute der benutzten Adresse cachebar sind. Ein einmal erfolgreicher Lauf ohne MPU beweist die Korrektheit nicht. Verdrängung und der Debugger können den Fehler verdecken. Die Write-Back-Variante ist ein eigener Build mit Neustart, nicht ein Umschalten im Dialog.
-
-Mit dieser Sichtbarkeit lässt sich das Protokoll vollständig erklären.
-:::
-
-## Laborvorbereitung: Der Ping-Pong Datenaustausch
-
-Zustand: `TURN_M7`, `REQUEST_M4`, `RESPONSE_M7`.
-
-M7 setzt vor der Freigabe Payload 0 und den ersten Request.
-
-M4 macht daraus 1. M7 druckt 1, legt 2 hin, requested wieder.
-
-M4 antwortet 3. Sichtbar: **1, 3, 5, …** nicht zuerst 0.
-
-Nach der Übergabe schreibt niemand weiter am Payload.
-
-| Phase | Payload danach | Zustand danach | M7 zeigt |
-|-------|----------------:|----------------|----------|
-| M7 init | 0 | REQUEST_M4 | noch nichts |
-| M4 auf 0 | 1 | RESPONSE_M7 | noch nichts |
-| M7 liest 1, legt 2 | 2 | REQUEST_M4 | 1 |
-| M4 auf 2 | 3 | RESPONSE_M7 | noch nichts |
-| M7 liest 3, legt 4 | 4 | REQUEST_M4 | 3 |
-| M4 auf 4 | 5 | RESPONSE_M7 | noch nichts |
-| M7 liest 5, legt 6 | 6 | REQUEST_M4 | 5 |
-
-Logische Reihenfolge, keine Zeitachse. Vor jedem Zustandswechsel steht ein DMB nach dem Payload-Schreiben. Nach dem beobachteten Zustand steht ein DMB vor dem Payload-Lesen.
-
-::: notes
-`TURN_M7` ist der Initialisierungszustand, bevor der M4 kommuniziert. Danach wechseln `REQUEST_M4` und `RESPONSE_M7`. Der M7 schreibt vor dem Wecken Payload 0 und veröffentlicht den Request. Der M4 liest 0, schreibt 1 und veröffentlicht die Antwort. Der M7 liest 1 in eine private Variable, gibt 1 aus, schreibt 2 und veröffentlicht den nächsten Request. Danach entstehen 3 und 5. Die Tabelle ist die logische Reihenfolge, keine Uhr. IPC ist der Kanal, UART die Ausgabe des M7. Daten werden vor dem Zustandswechsel geschrieben. Nach der Übergabe schreibt dieser Kern die Payload nicht weiter.
-
-Die 500-ms-Pause und die UART-Zeit sind die sichtbare Rate, nicht die IPC-Latenz. `osDelay(1)` ist ein Kernel-Tick, nicht automatisch 1 ms.
-
-Zuerst werden beide Firmwarekontexte passend erzeugt.
-:::
-
-## Schritt 1: CubeMX Dual-Core Setup
-
-- Board nur übernehmen, wenn es NUCLEO-H755ZI-Q ist
-- Beide Kerne, FreeRTOS nur auf dem M4, CMSIS_V2
-- UART-Retargeting einem Kern zuordnen
-- Takt aus dem Cube-Tree abschreiben, nicht aus dieser Folie
-
-::: notes
-RTOS und CMSIS-RTOS2 liegen nur auf dem M4. UART, die serielle Schnittstelle, hat einen Besitzer, der `printf` wirklich bedient. VOS, die Spannungsskalierung, und der Clock-Tree entscheiden, welche Kerntakte legal sind. Das steht im erzeugten Projekt, nicht als Behauptung 400 oder 480 MHz auf dieser Folie. CMSIS_V2 ist die Generatorbezeichnung für die RTOS2-Schnittstelle. NUCLEO-H755ZI-Q nur, wenn Cube dieses Board erzeugt hat. Die Übersicht ersetzt keine Screenshots.
-
-Stromversorgung und VOS bleiben offen ohne Projekt.
-
-Die erzeugte Bootsequenz wird bewahrt und um die geordnete Shared-Initialisierung ergänzt.
-:::
-
-## Schritt 2: Den Cortex-M4 wecken
-
-Den generierten HSEM/Stop-Code behalten und prüfen:
-
-- HSEM-Takt an
-- ID notieren
-- M4: Notify, Stop, begrenztes Warten auf M7-Seite
-- M7: Shared-Init **danach** erst Release
-- Fehler: Status ausgeben, nicht den Block löschen, während der andere läuft
-
-::: notes
-Der generierte HSEM- und Stop-Code bleibt. HSEM ist die Hardwaresemaphore, HAL die Abstraktionsschicht, IPC der Datenblock. Der HSEM-Takt ist an, die ID wird notiert und muss auf beiden Seiten gleich sein. Der M4 benachrichtigt und geht in Stop. Der M7 wartet begrenzt, initialisiert den Shared-Block und gibt erst dann frei. Die MPU muss vor dem ersten Shared-Zugriff und in der gewählten Folge vor dem D-Cache wirksam sein, auch wenn die MPU-Folie später kommt. Späterer M4-Startup darf die Region nicht löschen. Eine zweite Wake-Funktion neben dem Template wird nicht erfunden. Ein Timeout meldet den Status und beschreibt den Block nicht neu, während die Gegenstelle läuft.
-
-Dafür brauchen beide Images denselben Datenvertrag.
-:::
-
-## Schritt 3: Shared Memory Struct anlegen
-
-Header gemeinsam, Definition je eine `.c` pro Image.
-
-`_Static_assert` im Zielbuild: `sizeof(ipc_block_t) == 12`, Offsets 0, 4 und 8. `sizeof % 4 == 0` beweist das Layout nicht.
-
-`IPC_MAGIC` ist die Konstante `0x49504336`. Der M4 vergleicht `ipc.magic` mit genau diesem Wert. „Ungleich 0“ erkennt keinen alten oder zufälligen Speicher. Ein passender Magic-Wert kann nach einem unabhängigen Core-Reset veraltet sein. Das Basislabor schließt diesen Reset aus und verlässt sich auf den koordinierten Boot.
-
-::: notes
-Der Header ist die einzige Quelle für Typ, `IPC_MAGIC` gleich `0x49504336` und die Zustände. ABI und ELF bestimmen, ob die Asserts im Zielbuild gelten: Größe 12, Offsets 0, 4 und 8. `sizeof % 4` beweist das nicht. Der M4 vergleicht Magic mit der Konstanten. Ungleich null genügt nicht, weil alter Speicher beliebige Werte haben kann. Ein passender Magic-Wert kann nach einem unabhängigen Core-Reset veraltet sein. Das Basislabor schließt diesen Reset aus. Der koordinierte Boot ist die Frischeannahme. Der M4 führt kein `memset` auf den Block aus. Die Prüfung sagt etwas über den Wert, nicht über die Aktualität nach einem einseitigen Neustart.
-
-Der Linker muss den Vertrag an derselben Adresse erfüllen.
-:::
-
-## Schritt 4: Das Linker-Script anpassen
-
-Beide Skripte: dieselbe Sektion, kein doppeltes RAM.
-
-Map: Symbol `ipc` auf beiden Seiten dieselbe Adresse. Nicht `sd`.
-
-Startup: der Bereich darf nicht in der Zero-Tabelle liegen, sonst löscht ein Kern den laufenden Dialog.
-
-::: notes
-ELF ist je Image das Ergebnis. Beide Skripte reservieren dieselbe SRAM4-Spanne und legen `ipc` an dieselbe Adresse. Ein Map-Auszug in der Folie ist synthetisch, solange keine echten Maps vorliegen. Größe, Alignment und Abschnittsgrenzen prüft ASSERT. Im Basislabor bleibt die 64-KiB-Region exklusiv für Shared-Nutzung, weil die MPU sie ganz erfasst. `.bss`-Zero und `.data`-Copy beider Startups dürfen die Sektion nicht enthalten. NOLOAD beschreibt das Ladebild und ist kein Beweis gegen Debugger oder Startup. Die erzeugten ELF-Dateien und der Loader werden geprüft, sobald das Projekt existiert.
-
-Nach Adress- und Initialisierungsprüfung verarbeitet der M4 gültige Requests.
-:::
-
-## Schritt 5: Die Ping-Pong Logik (Cortex-M4)
-
-```c
-#define IPC_MAGIC     UINT32_C(0x49504336)
-#define IPC_WAIT_TICKS 2000u /* Lehrbudget, Tickfrequenz prüfen */
-
-void IpcTask(void *argument) {
-    uint32_t t0 = osKernelGetTickCount();
-    (void)argument;
-    for (;;) {
-        uint32_t waited = osKernelGetTickCount() - t0;
-        if (ipc.magic != IPC_MAGIC || ipc.state != REQUEST_M4) {
-            if (waited > IPC_WAIT_TICKS) { ipc_error("m4-wait"); return; }
-            osDelay(1); /* ein Kernel-Tick, nicht zwingend 1 ms */
-            continue;
-        }
-        t0 = osKernelGetTickCount();
-        __DMB();
-        uint32_t v = ipc.payload;
-        ipc.payload = v + 1u;
-        __DMB();
-        ipc.state = RESPONSE_M7;
-        /* bis zum nächsten REQUEST_M4 die Payload nicht anfassen */
-    }
-}
+## Ping-Pong: der Zustand übergibt das Schreibrecht
+
+Genau ein Teilnehmer je Kern; drei Antworten, dann Abschluss.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+stateDiagram-v2
+  direction LR
+  TURN_M7 --> REQUEST_M4: M7 veröffentlicht
+  REQUEST_M4 --> RESPONSE_M7: M4 antwortet
+  RESPONSE_M7 --> REQUEST_M4: M7 nächste Runde
+  RESPONSE_M7 --> TURN_M7: M7 beendet
 ```
 
-`ipc_error` ist Lehrdiagnose: Zustand merken, Kanal beenden, Shared-Felder nicht neu beschreiben. `IPC_WAIT_TICKS` ist ein Lehrbudget, keine gemessene Deadline. Die 500-ms-Anzeige des M7 muss in dieses Budget passen.
-
 ::: notes
-Die Task wartet auf `IPC_MAGIC` und auf `REQUEST_M4`. IPC ist der Block, RTOS die Zeitbasis, DMB die Ordnungsbarriere. `osKernelGetTickCount` liefert Kernel-Ticks, wenn der Kernel läuft. Die Differenz ist unsigned und übersteht einen Zählerumlauf, solange das Budget kleiner als die halbe Zählerweite bleibt und regelmäßig geprüft wird. `IPC_WAIT_TICKS` ist ein Lehrbudget, keine gemessene Deadline. Es muss die bewusste Anzeigepause des M7 enthalten. `osDelay(1)` blockiert diese Task um einen Tick. Andere bereite Tasks und Interrupts laufen. Der M4 steht nicht. Ein Zähler fertiger Runden erkennt eine ausbleibende Antwort nicht, weil dann keine Runde mehr abgeschlossen wird. Nach dem DMB liest die Task die Payload einmal, schreibt den Nachfolger und veröffentlicht `RESPONSE_M7`. Danach fasst sie die Payload nicht an, bis der nächste Request kommt. `ipc_error` beendet den Kanal und beschreibt die Shared-Felder nicht neu.
+Die Abbildung zeigt einen Kommunikationszustandsautomaten, keine Threadzustände oder Präemptionszeitachse. TURN_M7 bedeutet, dass der M7 die Initialisierung beziehungsweise den abschließenden Zustand besitzt. REQUEST_M4 ist eine veröffentlichte Anfrage an den M4. RESPONSE_M7 ist dessen veröffentlichte Antwort an den M7. Die Pfeile stehen für erlaubte Protokollübergänge. M7 und M4 bezeichnen Cortex-M7 und Cortex-M4.
 
-Die Gegenstelle wartet ebenso strikt auf ihre Schreibberechtigung.
+Vor der ersten Freigabe legt der M7 die Anfrage an. Bei REQUEST_M4 darf der M4 den Nutzwert lesen und ändern. Bei RESPONSE_M7 darf der M7 die Antwort lesen und gegebenenfalls die nächste Anfrage schreiben. Der vorige Besitzer verändert den Nutzwert nach seiner Übergabe nicht weiter. Im vollständigen Basiscode werden drei Antworten bearbeitet. Danach veröffentlicht der M7 TURN_M7, ohne einen vierten Request zu erzeugen; der M4-Worker beendet sich nach seiner dritten Antwort. Das endliche Ende ist eine Laborentscheidung. Ein späterer dauerhafter Kanal bräuchte einen erweiterten Betriebs- und Fehlervertrag. Der Zustand allein funktioniert nur zusammen mit der folgenden Zugriffsreihenfolge und Sichtbarkeit.
 :::
 
-## Schritt 6: Die Ping-Pong Logik (Cortex-M7)
+## Aus null werden die Antworten eins, drei und fünf
 
-Einmalig im Boot, bevor der M4 kommuniziert: Payload 0, Magic, DMB, `REQUEST_M4`, dann HSEM-Freigabe. Die Laufschleife wartet wirklich auf die Antwort:
+| Aktion | Payload | Zustand danach |
+|---|---:|---|
+| M7 initialisiert | 0 | REQUEST_M4 |
+| M4 antwortet | 1 | RESPONSE_M7 |
+| M7 nächste Anfrage | 2 | REQUEST_M4 |
+| M4 antwortet | 3 | RESPONSE_M7 |
+| M7 nächste Anfrage | 4 | REQUEST_M4 |
+| M4 antwortet | 5 | RESPONSE_M7 |
+| M7 beendet | 5 | TURN_M7 |
+
+::: notes
+Payload ist der eigentliche Nutzwert. REQUEST_M4 und RESPONSE_M7 sind die vereinbarten Anfrage- und Antwortphasen; TURN_M7 ist der M7-eigene Abschlusszustand. Die Tabelle ist eine logische Schrittfolge, keine Messung oder Zeitachse. M7 und M4 stehen für die beiden Cortex-Kerne.
+
+Der M7 legt anfangs null ab. Der M4 erhöht diesen Wert auf eins und veröffentlicht die Antwort. Der M7 kopiert eins in seine private Diagnose, erhöht den gemeinsamen Wert auf zwei und veröffentlicht die nächste Anfrage. Daraus werden drei, dann vier und schließlich fünf. Die privaten M7-Antwortwerte sind somit eins, drei und fünf. Null ist der Startwert und keine erste Antwort. Nach der dritten Antwort wird kein vierter Request mehr erzeugt. Die gemeinsamen Bytes behalten den Nutzwert fünf. Ein Read-Modify-Write, Lesen, Ändern und Zurückschreiben, findet hier nur durch den jeweiligen Phasenbesitzer statt. Der Vorgang ist keine allgemein atomare Mehrkern-Inkrementfunktion. Papieraufgabe 2 fordert deshalb ausdrücklich Zustand und Besitzer zusätzlich zu den Zahlen.
+:::
+
+## Veröffentlichen: erst Nutzdaten, dann Zustand
+
+Protokollausschnitt im berechtigten M7:
 
 ```c
-static int wait_response(uint32_t *v) {
-    uint32_t t0 = HAL_GetTick(); /* lokale M7-Zeit, Tick muss laufen */
-    for (;;) {
-        if (ipc.magic != IPC_MAGIC) return -1;
-        if (ipc.state == RESPONSE_M7) {
-            __DMB();
-            *v = ipc.payload; /* genau einmal, private Kopie */
-            return 0;
-        }
-        if ((HAL_GetTick() - t0) > 2000u) return -1; /* Lehr-ms, nicht Latenz */
-    }
-}
-
-uint32_t v;
-if (wait_response(&v) != 0) { ipc_error("m7-wait"); return; }
-log_u32(v);          /* erste Ausgabe 1, dann 3, dann 5 */
-ipc.payload = v + 1u;
+ipc.payload = next_value;
 __DMB();
 ipc.state = REQUEST_M4;
 ```
 
-Vor `RESPONSE_M7` liest und überschreibt diese Schleife die Payload nicht. `log_u32` und `ipc_error` sind Lehrfunktionen des M7, keine ST-API. `HAL_Delay(500)` darf danach als sichtbare Pause stehen, solange der M4 genug Wartebudget hat. Die Pause ist keine IPC-Latenz.
+Die Gegenstelle darf das veröffentlichte Signal erst für die fertigen Daten sehen.
+
+Voraussetzungen: passender Besitz und vereinbarte Speicherattribute.
 
 ::: notes
-Die Boot-Initialisierung setzt Payload 0 und den ersten Request genau einmal. Die Laufschleife wartet in `wait_response` auf `RESPONSE_M7`. IPC ist der Block, DMB die Barriere, HAL die lokale Tickquelle, UART die Ausgabe. `HAL_GetTick` ist nur eine Zeit, wenn der HAL-Tick in der Warteschleife fortschreitet. 2000 ist eine Lehrgrenze in diesen Ticks, keine Latenzmessung. Vor der Antwort liest und überschreibt die Schleife die Payload nicht. Nach dem Zustand kommt der DMB, dann genau eine private Kopie. `log_u32` gibt sie aus. Die erste Ausgabe ist 1. Danach schreibt der M7 den Nachfolger und veröffentlicht `REQUEST_M4`. `HAL_Delay(500)` darf als sichtbare Pause folgen und ist Busy-Wait auf dem M7, sofern die Implementierung nicht ersetzt wurde. Der M4 kann im RTOS weiterlaufen. `ipc_error` meldet und beendet die Kanalbearbeitung, ohne den fremden Besitz zu überschreiben.
+Der C-Ausschnitt zeigt die Veröffentlichung, nicht die vollständige Initialisierung oder Fehlerbehandlung. ipc ist das gemeinsame volatile-Objekt, payload dessen Nutzwert und next_value die bereits bereitgestellte nächste Anfrage. REQUEST_M4 ist der vereinbarte Zustand für den Cortex-M4. Die vollständige Modulreferenz kennt next_value hier als den um eins erhöhten Antwortwert.
 
-Diese Logik setzt die M7-Speicherattribute der nächsten Folie voraus.
+DMB bedeutet Data Memory Barrier, Datenspeicherbarriere. __DMB ist die Cortex-M-Schnittstelle zum entsprechenden Befehl. Sie ordnet die relevanten Datenzugriffe vor der nachfolgenden Zustandsveröffentlichung. Der M4 soll nicht bereits die neue Phase verarbeiten, während die dazugehörigen Nutzdaten noch nicht in der richtigen Reihenfolge veröffentlicht sind. Das setzt den bekannten Phasenbesitz und passende Speicherattribute voraus. Es ist kein atomarer Store der gesamten Struktur und keine automatische Rückschreibung eines Write-Back-Caches. Write Back bedeutet Rückschreiben geänderter Cachekopien zu einem späteren Zeitpunkt. Im nicht cachebaren Basisversuch reicht die Protokollfolge ohne manuelle Cachewartung; der Leser braucht trotzdem den passenden Gegenpart.
 :::
 
-## Schritt 7: MPU im M7 konfigurieren
+## Konsumieren: Zustand prüfen, dann Daten lesen
 
-Vor `SCB_EnableDCache()` und vor dem ersten Shared-Zugriff.
+Protokollausschnitt im M7 nach gültiger Kennung:
 
-Lehrregion: Basis `0x38000000`, 64 KiB, ausgerichtet, Normal, TEX 001, C 0, B 0, Execute Never, Schreiben erlaubt, Shareability passend zu AN4838. Höhere Regionsnummer gewinnt bei Überlappung. Konstantennamen im HAL-Header können abweichen; die Bitwerte sind die Lehrkonfiguration.
+```c
+if (ipc.state == RESPONSE_M7) {
+  __DMB();
+  uint32_t reply = ipc.payload;
+  /* reply gehört zu dieser Antwortphase. */
+}
+```
 
-Versuch 2, eigener Build, Neustart: Region cachebar, Write-Back, keine Wartung. Fehler diagnostizieren, nicht als garantierten Freeze verkaufen.
+Bei falschem Zustand wird die Payload nicht als neue Antwort verarbeitet.
 
 ::: notes
-Die MPU steht vor `SCB_EnableDCache` und vor dem ersten Shared-Zugriff. Die Foliennummer ist nicht die Ausführungsreihenfolge. DSB und ISB gehören zur Aktivierung, wie HAL oder CMSIS sie ausführen. Die Basis ist auf 64 KiB ausgerichtet. Die Größenkodierung von Armv7-M ist $2^{\mathrm{SIZE}+1}$ Byte, also SIZE 15 für 64 KiB. Die HAL-Konstante trägt diese Kodierung, nicht die Bytezahl 65536 als Registerfeld. Regionsnummer und Überlappung werden am vorhandenen Setup geprüft. Eine freie Nummer wird nicht erfunden. Das Hintergrundrecht, etwa privilegierte Default-Zugriffe, muss zum übrigen Programm passen. Die Fehlervariante ist ein eigener Build mit aktivem D-Cache und TEX 001, C 1, B 1, S 0. Ohne aktiven D-Cache zeigt sie nichts. CCR lesen.
+Der C-Ausschnitt zeigt das Lesen einer Antwort. ipc ist das gemeinsame Objekt, RESPONSE_M7 der erwartete Antwortzustand, payload der Nutzwert und reply eine private Kopie im Cortex-M7. uint32_t ist ein vorzeichenloser 32-Bit-Typ. Der vollständige Code hat zuvor die Kennung magic geprüft und behandelt falsche Zustände oder Zeitablauf gesondert.
 
-Danach können beide Images gemeinsam gestartet und geprüft werden.
+DMB, Data Memory Barrier oder Datenspeicherbarriere, steht nach dem beobachteten Zustand und vor dem zugehörigen Nutzdatenlesen. Die Gegenrichtung auf dem Cortex-M4 folgt derselben Idee: REQUEST_M4 prüfen, Barriere, Anfrage lesen. Nur der bestätigte Phasenwechsel erlaubt die Interpretation als neue Nachricht. Ein früher gelesener payload-Wert ist keine alternative Erfolgsprüfung. Die private Kopie entkoppelt nach dem Lesen die Diagnose von späterer Wiederverwendung des gemeinsamen Nutzwerts. Dieser Lesepfad braucht trotzdem eine gültige Speicheransicht. Wenn der M7 den Zustand aus einer alten Cachekopie liest, erzwingt DMB nicht dessen Aktualisierung. Reihenfolge und Cache-Sicht sind daher weiterhin getrennte Fragen.
 :::
 
-## Flashen & Debuggen im Labor
+## volatile beeinflusst den Compiler, nicht den Cache
 
-- Beide ELF laden, Reset so, dass der HSEM-Handshake durchläuft
-- Erste drei Runden: M4 schreibt 1, 3, 5; M7 druckt sie
-- UART-Kern ist der, der `printf` wirklich bedient
-- Breakpoints auf beiden Kernen verschieben Timeouts
+- Eine Pollschleife muss den vorgesehenen Zugriff erneut ausführen
+- Der Load kann trotzdem aus dem D-Cache kommen
+- `payload++` bleibt Lesen, Ändern und Schreiben
+- Der ganze Struct wird nicht auf einmal veröffentlicht
+
+Das Basisprotokoll ist eine konkrete Armv7-M-/Toolchain-Vereinbarung.
 
 ::: notes
-ELF sind die zwei Images, UART die Ausgabe, GDB der Debugger über den ST-LINK-Server der Kursversion. OpenOCD bleibt draußen, solange er nicht der Server ist. Der Ablauf ist: beide Images bauen oder als ungebaut kennzeichnen, Startadressen prüfen, beide laden, gemeinsam zurücksetzen, den Handshake durchlaufen lassen und die ersten drei Ausgaben erwarten. 1, 3 und 5 sind die Protokollvorhersage, kein vorhandenes Messergebnis. Der UART-Besitzer ist der Kern, dessen Retargeting wirklich schreibt. Breakpoints verändern Timeouts. Ein Speicherfenster des Debuggers ist nicht automatisch die Sicht des M7-Caches. Ohne Projekt bleibt der Lauf offen.
+volatile ist ein C-Typqualifikator für Zugriffe, deren Wirkung nicht wie eine gewöhnliche private Variable wegoptimiert werden darf. Ein Load ist das Laden eines Werts. D-Cache bezeichnet den Datenzwischenspeicher des Kerns. Ein wieder ausgeführter Load kann von diesem Cache beantwortet werden, statt die aktuellen gemeinsamen SRAM-Bytes zu lesen. SRAM bedeutet Static Random Access Memory, Arbeitsspeicher.
 
-Ein kontrolliertes Fehlerexperiment dient danach der Ursachenanalyse.
+payload++ ist ein Read-Modify-Write, Lesen, Ändern und Schreiben. volatile macht daraus weder eine allgemeine atomare Mehrkernoperation noch die Veröffentlichung aller Strukturfelder in einem Schritt. Der Basisvertrag verwendet ausgerichtete uint32_t-Wörter, vorzeichenlose 32-Bit-Werte, passende Normal-Speicherattribute und die Armv7-M-Barrieren der eingebundenen Compiler-/Prozessorunterstützung. Armv7-M ist die Architektur der betrachteten Cortex-M4/M7-Kerne. Diese explizite Plattformvereinbarung ist keine portable ISO-C-Thread-Synchronisationsgarantie. ISO C bezeichnet die standardisierte C-Sprache. Es bleiben drei getrennte Nachweise: Was der Compiler ausführt, was die Hardware ordnet und ob die Gegenstelle aktuelle Daten sieht.
 :::
 
-## Kontrolliertes Cachefehler-Experiment und Diagnose
+## DMB und DSB reinigen keine Cachezeile
 
-| Symptom | Prüfung | typische Ursache |
-|---------|---------|------------------|
-| M4 startet nicht | Stop, HSEM-ID | Boot, nicht Cache |
-| falsche Adresse | beide Maps | Linker |
-| Magic falsch | Speicherfenster | Init fehlt oder Zero läuft |
-| M7 sieht alten Wert | CCR, MPU-Region | Cachezeile |
-| Timeout | Zustand eingefroren | Ownership oder Barriere |
-| falsches Image | ELF-Namen | Bank/Startadresse |
+| Mittel | Aufgabe | keine automatische Wirkung |
+|---|---|---|
+| DMB | relevante Datenzugriffe ordnen | Dirty-Cache zurückschreiben |
+| DSB | Abschluss relevanter früherer Operationen abwarten | alle Cachekopien erneuern |
+| ISB | Instruktionsausführung synchronisieren | fremden Kern sperren |
 
-GPIO oder UART-Status je Symptom, keine erfundene Messung.
+Die MPU-Konfiguration nutzt andere Barrieren als die reine Nachricht.
 
 ::: notes
-Die Tabelle trennt Hypothesen. Startet der M4 nicht, zuerst Stop und HSEM-ID, nicht den Cache. Falsche Adresse: beide Maps. Falsches Magic: Init oder Zero. Alter Wert beim M7: CCR und die MPU-Region. Ein Timeout beweist keine einzelne Ursache. HSEM ist hier das Bootsignal, ELF das geladene Image. Ein M4-Task in `osDelay` lässt andere Tasks laufen und beweist keinen eingefrorenen Kern. Die Fehlervariante ist ein separater Build mit nachgewiesenem D-Cache und Write-Back, S gleich 0, ohne Wartung. Ein kurzer Erfolg widerlegt das Risiko nicht. Zwischen den Varianten gibt es einen gemeinsamen Neustart.
+DMB steht für Data Memory Barrier, Datenspeicherbarriere. DSB steht für Data Synchronization Barrier, Datensynchronisationsbarriere. ISB steht für Instruction Synchronization Barrier, Instruktionssynchronisationsbarriere. Eine Dirty-Cachezeile ist eine lokal geänderte Kopie, deren Änderung noch nicht zurückgeschrieben sein muss. Die Tabelle trennt die Hauptrollen; deren genauer Geltungsbereich folgt Architektur und Speicherattributen.
 
-Laufzeitsperren mit HSEM kommen später dazu.
+DMB ordnet relevante Zugriffe. DSB wartet auf den Abschluss relevanter früherer Operationen. Daraus folgt nicht, dass jede schmutzige Datenkopie nun im gemeinsamen Speicher steht: Die Cachewartungsoperation selbst muss vorgesehen sein. ISB synchronisiert die nachfolgende Instruktionsausführung, etwa im Zusammenhang mit geänderten MPU-Einstellungen. MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Keine dieser Barrieren sperrt automatisch den anderen Kern. Für unser nicht cachebares Ping-Pong stehen DMB an Veröffentlichung und Konsum. Der MPU-Helfer enthält die für seine Konfigurationsfolge nötigen Abschluss- und Instruktionsbarrieren. Beliebige zusätzliche Barrieren sind kein Ersatz für die fehlende Cache- oder Besitzregel.
 :::
 
-## Ausblick: Tracing in Termin 7, HSEM in Termin 8
+## Boot-HSEM, Semaphor und Nutzdaten trennen
 
-- Boot-HSEM ist heute erledigt
-- Eine HSEM-Sperre für jeden Zugriff ist Termin 8
-- HSEM ersetzt weder MPU noch DMB
-- Ein lokaler FreeRTOS-Mutex sieht den M7 nicht
+| Element | Rolle heute |
+|---|---|
+| Boot-HSEM | erzeugten Startvertrag fortsetzen |
+| RTOS-Semaphor | lokales Kernelobjekt aus Vorlesung 4 |
+| SRAM4-Block | Kennung, Phase und Nutzwert |
+| Phasenprotokoll | Schreibrecht während der Runden |
+
+Kernübergreifende Laufzeitsperren werden in Vorlesung 8 vertieft.
 
 ::: notes
-Der Kursplan nennt Tracing für Termin 7 und HSEM als Laufzeitsperre samt Safety für Termin 8. „Nächste Woche HSEM“ wäre der falsche Verweis. HSEM ist heute das Bootsignal. Später kann sie Berechtigung oder Benachrichtigung koordinieren. Sie ersetzt weder die MPU-Attribute noch DMB. Ein FreeRTOS-Mutex gilt nur im M4-Kernel und sieht den M7 nicht. MPU bleibt die Speicherschutzeinheit des M7. Safety heißt hier die spätere Betrachtung sicherheitsbezogener Anforderungen, kein schon erbrachter Nachweis. RTOS und DMB bleiben die heutigen Werkzeuge des M4 und der Reihenfolge.
+HSEM bedeutet Hardware Semaphore, Hardwaresemaphor. Im Basisprojekt verwendet ihn der erzeugte Bootpfad, um den Cortex-M4 seine Initialisierung fortsetzen zu lassen. RTOS bedeutet Real-Time Operating System, Echtzeitbetriebssystem. Sein lokaler Semaphor verwaltet Token, also Arbeitshinweise oder Berechtigungen, innerhalb dieses Kernels. Beide Begriffe enthalten Semaphore, bezeichnen aber unterschiedliche Verwaltungen und Anwendungsrollen.
 
-Zum Abschluss werden die Bausteine des Protokolls geordnet wiederholt.
+SRAM4 ist die ausgewählte gemeinsame Arbeitsspeicherbank und trägt die tatsächlichen Bytes. Der HSEM enthält weder unseren payload-Wert noch automatisch eine Nachrichtenwarteschlange. Im Laufzeit-Ping-Pong entscheidet die vereinbarte Phase über das Schreibrecht, nicht ein neues HSEM-Take vor jedem Wort. Ein M4-Mutex, Besitzsperre des lokalen Kernels, schützt den M7 nicht ohne dessen Teilnahme. Wenn später beliebige gleichzeitige Schreiber koordiniert werden müssen, kommt eine ausdrückliche kernübergreifende Sperrregel hinzu. Sie ersetzt weiterhin keine Barriere und keinen Cachevertrag. Heute bleiben genau ein Anwendungsteilnehmer pro Kern und ein klarer Besitzer pro Phase die bewusst überschaubare Voraussetzung.
 :::
 
-## Zusammenfassung des Tages
+## Ein Cache hält lokale Kopien von Speicherzeilen
 
-- AMP partitioniert Firmware, nicht automatisch die Zeit
-- Boot: M4 Stop, M7 init, HSEM Release
-- Shared: eine Adresse, M7 initialisiert. Reihenfolge: Payload schreiben, DMB, Zustand veröffentlichen; Zustand beobachten, DMB, Payload lesen
-- Cache: beide Richtungen; MPU non-cacheable plus DMB plus ein berechtigter Payload-Schreiber je Phase
-- Ausgabe 1, 3, 5 ist das Protokoll, nicht eine Messung
+Der M4 kann den privaten M7-D-Cache nicht direkt auslesen.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+flowchart TD
+  M7[Cortex-M7] --> C[D-Cache M7]
+  C --> R[Shared SRAM]
+  M4[Cortex-M4] --> R
+  style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+```
 
 ::: notes
-AMP trennt die Firmware und isoliert die Zeit nicht automatisch. Der Boot ist M4 in Stop, M7 initialisiert, HSEM gibt frei. HSEM ist die Hardwaresemaphore, ELF je ein Image, MPU die nicht cachebare Region, IPC der Block, DMB die Barriere. Die Reihenfolge lautet: Payload schreiben, DMB, Zustand veröffentlichen. Die Gegenstelle beobachtet den Zustand, führt DMB aus und liest danach die Payload. „Ein Schreiber“ meint einen berechtigten Payload-Schreiber je Phase. Den Zustand beschreiben beide Kerne abwechselnd. Die erste Ausgabe ist 1, weil der M4 aus der initialen 0 eine 1 macht. 1, 3 und 5 messen keine Latenz.
+Ein Cache ist ein schneller lokaler Zwischenspeicher. D-Cache bedeutet Daten-Cache. Eine Cachezeile ist die Einheit, in der ein Bereich kopiert und verwaltet wird; beim betrachteten Cortex-M7 sind das 32 Byte. Die Abbildung zeigt die Zugriffspfade von oben nach unten. Die rote Umrandung hebt die private M7-Kopie hervor. Die Pfeile stehen für Speicherzugriffe und nicht für zeitgleiche Verarbeitung oder eine Bandbreitenmessung.
 
-Frage: Warum ersetzt HSEM nicht MPU und DMB? Eine Benachrichtigung koordiniert den Boot. Sie schreibt keine Cachezeile zurück und ordnet Payload und Zustand nicht.
+Shared SRAM ist gemeinsam erreichbarer Static Random Access Memory, Arbeitsspeicher. Der M4 greift nicht über die private M7-D-Cachekopie auf diesen Bereich zu. Deshalb können beide Kerne dieselbe Adresse verwenden und trotzdem verschiedene Werte beobachten. Cachekohärenz bedeutet, dass diese Kopien mit dem gültigen gemeinsamen Datenstand zusammenpassen. Das H755-System stellt zwischen M7 und M4 keinen solchen automatischen L1-Datenabgleich bereit. Die Abbildung behauptet keinen gemeinsamen Cache beider Kerne. Nun unterscheiden wir eine verzögerte Veröffentlichung von einer veralteten Lesekopie; beide können eine korrekte Phasenfolge unsichtbar machen.
+:::
 
-Quellen bleiben DS12919, RM0399 der Projektrevision, AN5361, AN5617, AN4838 und AN4839, CMSIS-Cache und Intrinsics, GCC volatile und GNU ld zu NOLOAD. Offen ohne Projekt: Cube-Version, Map, UART-Pin, VOS und Tickfrequenz.
+## Write Back: neu im Cache, alt im SRAM
 
-Der nächste Termin betrachtet, wie man solche Zeiten überhaupt sichtbar macht.
+Synthetisches Beispiel, keine gemessene Laborantwort:
+
+| Ort | Wert nach M7-Store, ohne Clean |
+|---|---:|
+| M7-Cachekopie | 1, dirty |
+| gemeinsamer SRAM | 0 |
+| M4 liest dort | 0 |
+
+Ein DMB macht aus dieser Dirty-Zeile keinen SRAM-Store.
+
+::: notes
+Write Back bedeutet, dass eine geänderte Cachezeile nicht bei jedem Store sofort vollständig in den Hintergrundspeicher zurückgeschrieben werden muss. Ein Store ist das Speichern eines Werts. Dirty bedeutet schmutzig beziehungsweise lokal verändert. SRAM ist Static Random Access Memory, Arbeitsspeicher. Die Zahlen null und eins sind ein synthetisches Sichtbarkeitsbeispiel und nicht die gesamte Ping-Pong-Folge.
+
+Der M7 schreibt eins in seine Cachekopie. Solange diese Änderung nicht zurückgeschrieben wurde, kann der gemeinsam erreichbare SRAM null enthalten. Der M4 sieht dann weiterhin null. Clean ist eine Cachewartungsoperation, die geänderte Daten zurückschreibt; sie ist hier ausdrücklich nicht ausgeführt. DMB bedeutet Data Memory Barrier, Datenspeicherbarriere, und ordnet relevante Zugriffe. Sie führt dieses Clean nicht automatisch aus. Ein Cache kann Zeilen auch später verdrängen und damit den Fehler zeitweise verdecken. Ein einzelner erfolgreicher Lauf ohne passenden Cachevertrag beweist deshalb keine allgemeine Korrektheit. Im nächsten Fall hat die Gegenstelle bereits neue SRAM-Daten erzeugt, aber die M7-Lesekopie bleibt alt.
+:::
+
+## Fremder Store: neu im SRAM, alt im M7-Cache
+
+Synthetisches Beispiel, diesmal mit alter sauberer M7-Kopie:
+
+| Ort | Wert nach M4-Store |
+|---|---:|
+| gemeinsamer SRAM | 1 |
+| gültige M7-Cachekopie | 0 |
+| M7 liest aus seiner Kopie | 0 |
+
+Invalidate verwirft die lokale Kopie; Dirty-Daten brauchen einen anderen Vertrag.
+
+::: notes
+Der Cortex-M4 schreibt in diesem Beispiel eins in den gemeinsamen SRAM, Static Random Access Memory oder Arbeitsspeicher. Der Cortex-M7 hat jedoch eine gültige alte Daten-Cachekopie mit null. Sein erneuter Load, das Laden des Werts, kann daraus weiterhin null erhalten. Die Kopie ist hier ausdrücklich sauber, also nicht mit eigenen unveröffentlichten Änderungen versehen.
+
+Invalidate ist eine Cachewartungsoperation, die eine lokale Kopie verwirft. Bei passender Reihenfolge kann ein späterer Load wieder den aktuellen Hintergrundspeicher heranziehen. Das ist ein anderer Vorgang als Clean, das geänderte Daten zurückschreibt. Eine schmutzige beziehungsweise Dirty-Kopie einfach zu invalidieren kann eigene Daten verlieren. DMB, Data Memory Barrier oder Datenspeicherbarriere, erneuert die Kopie ebenfalls nicht. Die Gegenrichtung aus der vorigen Folie und dieser Lesefehler sind unabhängig zu prüfen. Für die Einsteigerbasis vermeiden wir beide durch nicht cachebare Attribute des kleinen gemeinsamen Kanals. Warum manuelles Wartungsverhalten zusätzlich Besitz ganzer Zeilen braucht, zeigt der folgende Gegenfall.
+:::
+
+## Clean kann neuere fremde Nachbarbytes überschreiben
+
+Eine 32-Byte-Zeile enthält zwei verschiedene Wörter A und B.
+
+| Schritt | M7-Kopie: A/B | SRAM: A/B |
+|---|---|---|
+| beide zunächst null | 0 / 0 | 0 / 0 |
+| M7 schreibt A | 1 / 0, dirty | 0 / 0 |
+| M4 schreibt B | 1 / 0, dirty | 0 / 9 |
+| M7 cleant die alte Zeile | 1 / 0 | 1 / 0 |
+
+Getrennte Felder sind noch keine getrennten Cachezeilen.
+
+::: notes
+A und B sind zwei verschiedene Wörter innerhalb derselben 32-Byte-Daten-Cachezeile. SRAM ist der gemeinsame Static Random Access Memory, Arbeitsspeicher. Dirty bedeutet lokal verändert. Clean schreibt eine geänderte Zeile zurück. Die Tabelle ist ein absichtlich fehlerhafter Wartungsfall ohne passenden Zeilenbesitz, nicht das Verhalten der nicht cachebaren Basis.
+
+Anfangs enthalten beide Wörter null. Der M7 ändert nur A auf eins in seiner Kopie; damit ist die Zeile schmutzig. Der M4 schreibt unabhängig neun in B des SRAM. Die alte M7-Kopie enthält für B weiterhin null. Wenn der M7 nun seine ganze alte Dirty-Zeile zurückschreibt, kann er den neueren M4-Wert neun mit null überschreiben. Jeder Kern hat zwar ein anderes logisches Wort verändert, aber die Wartung wirkt auf eine größere Einheit. Auch ein gemischter Kontroll-/Payloadblock kann solche Schäden tragen. Eine brauchbare Wartungsvariante benötigt daher exklusive Zuständigkeit für die betroffenen vollständigen Zeilen und eine geprüfte Übergabefolge. Feld-Ownership und Cachezeilen-Ownership sind verschiedene Granularitäten.
+:::
+
+## Zeilengrenzen nachrechnen statt nur den Pointer ausrichten
+
+Lehradresse `0x38000014`, Länge 16 Byte, Zeile 32 Byte.
+
+$$a_0=\left\lfloor\frac{a}{32}\right\rfloor\cdot32,\quad
+ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32$$
+
+- Beginn: `0x38000000`
+- exklusives Ende: `0x38000040`
+- Wartungsspanne: 64 Byte, zwei Zeilen
+- Nachbarobjekte in dieser Spanne brauchen denselben Besitzvertrag
+
+::: notes
+a ist die Startadresse als Zahl, L die Nutzlänge in Byte, a null der abgerundete Zeilenbeginn und e das aufgerundete exklusive Ende. Die Klammern floor und ceil bedeuten Abrunden und Aufrunden. Die Zeilengröße beträgt beim betrachteten Cortex-M7 32 Byte. Das Beispiel verwendet eine didaktisch vorgegebene Adresse und ist kein tatsächliches Labormessobjekt.
+
+0x14 ist der hexadezimale Offset zwanzig innerhalb einer Zeile. Sechzehn weitere Byte reichen bis zum exklusiven Offset 0x24, also sechsunddreißig. Damit werden die erste Zeile null bis einunddreißig und die zweite zweiunddreißig bis dreiundsechzig berührt. Der Beginn der Wartung ist 0x38000000, das exklusive Ende 0x38000040. Die Differenz beträgt 64 Byte. Eine allein auf 32 Byte ausgerichtete Startadresse würde außerdem keine beliebige Länge passend machen. Cachewartung darf keine fremden Dirty-Daten in diesen Zeilen unabsichtlich überschreiben oder verwerfen. Auch die Zugriffsgrenzen und der Vertrag der eingebundenen Wartungsfunktion werden geprüft, bevor ein solcher Bereichscode verwendet wird.
+:::
+
+## Cachewartung ist ein vollständiges Übergabeprotokoll
+
+- Schreiber: Daten fertigstellen, passende Zeilen cleanen, dann veröffentlichen
+- Leser: eigene zulässige Kopien invalidieren, dann konsumieren
+- Kontrollinformationen brauchen ebenfalls eine sichere Sicht
+- Ganze Zeilen müssen gültige Zuständigkeit haben
+
+CMSIS-M7-Funktionen: `SCB_CleanDCache_by_Addr`, `SCB_InvalidateDCache_by_Addr`.
+
+::: notes
+CMSIS bedeutet Common Microcontroller Software Interface Standard, die standardisierte Cortex-M-Unterstützung. SCB bezeichnet den System Control Block, den Systemsteuerblock. Die genannten C-Funktionen sind adressbezogene Daten-Cachewartung des M7. Clean schreibt Änderungen zurück; Invalidate verwirft Kopien. Ihre konkreten Signaturen, Grenzforderungen und enthaltenen Barrieren stehen im eingebundenen Header, nicht in einer beliebig neueren Onlineversion.
+
+Die Stichpunkte benennen das Entwurfsmuster, keinen vollständigen Wartungsalgorithmus für unseren gemischten Block. Ein Schreiber muss die Daten fertigstellen und ihre passenden Zeilen vor der Veröffentlichung sichtbar machen. Ein Leser darf nur Kopien verwerfen, deren Verlust keine eigenen unveröffentlichten Daten zerstört. Auch das Kontrollsignal darf nicht in einer unbemerkt alten Cachekopie verbleiben. Getrennte Payloadzeilen allein lösen das Problem eines cachebaren Zustandsworts nicht. Die Start- und Endrundung aus der vorigen Folie sowie exklusiver Zeilenbesitz gehören dazu. Die Pflichtübung implementiert diese komplexere Variante deshalb nicht zusätzlich, sondern verwendet die klar abgegrenzte nicht cachebare Basis und einen kontrollierten Fehlerbuild.
+:::
+
+## MPU: nicht cachebare Attribute für den Lehrkanal
+
+M7-Basisregion: `0x38000000`, 64 KiB.
+
+| Attribut | Basis |
+|---|---|
+| Typ | Normal, TEX = 1 |
+| C / B / S | 0 / 0 / 1 |
+| Rechte | Lesen/Schreiben, Execute Never |
+| Konfiguration | vor D-Cache und gemeinsamer Nutzung |
+
+Andere M7-Regionen können weiter den Cache nutzen.
+
+::: notes
+MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Sie beschreibt Regionen des M7 mit Zugriffsrechten und Speicherattributen. KiB bedeutet Kibibyte mit 1024 Byte. Die Basisregion umfasst SRAM4 ab 0x38000000 mit 64 KiB. Normal ist der dafür gewählte Speichertyp. TEX bedeutet Type Extension, Attributerweiterung; C steht für cacheable, B für bufferable und S für shareable. Die Basis setzt TEX eins, C null, B null und S eins.
+
+Execute Never verbietet das Ausführen von Instruktionen aus dieser Datenregion. Lesen und Schreiben bleiben für die vorgesehenen Zugriffe erlaubt. Shareable erzeugt hier keinen automatischen M7/M4-Cacheabgleich. Der nicht cachebare Typ vermeidet die private D-Cachekopie des M7 für unseren Kanal. Andere Regionen können weiter vom Cache profitieren. Konfiguration erfolgt am gemeinsamen Neustart vor D-Cache-Aktivierung und Kommunikation, nicht während beide schreiben. Der bereitgestellte Helfer benutzt die tatsächlichen HAL-Konstanten; HAL ist die Hardware Abstraction Layer, Hardwareabstraktion. Seine Rechtepolitik muss zur vorhandenen Projekt-MPU passen und ihre effektive Region wird geprüft.
+:::
+
+## Bei Überlappung entscheidet die höher nummerierte Region
+
+Lehrbeispiel für dieselbe Adresse:
+
+| Region | Bereich | Attribut |
+|---|---|---|
+| 4 | erste 64 KiB SRAM4 | nicht cachebar |
+| 6 | erste 32 KiB SRAM4 | cachebar, S = 0 |
+
+Für `ipc` am Anfang gewinnt Region 6.
+
+Region aktiviert, Subregionen und effektive Registerwerte prüfen.
+
+::: notes
+Das Beispiel verwendet die Cortex-M-MPU, Memory Protection Unit oder Speicherschutzeinheit, des betrachteten Armv7-M-Systems. SRAM4 ist die gemeinsame Arbeitsspeicherbank. KiB bedeutet Kibibyte. Die gezeigten Regionen sind aktiviert und ihre betreffenden Subregionen, Unterbereiche, nicht deaktiviert. Für eine Adresse, die beide Regionen trifft, gewinnt die passende Region mit der höheren Nummer.
+
+ipc liegt am Beginn 0x38000000 und damit in beiden Bereichen. Region sechs macht diesen Zugriff im Beispiel cachebar, obwohl Region vier ihn nicht cachebar beschreiben würde. S bezeichnet das Shareable-Attribut; das Beispiel der cachebaren Region verwendet S null. Ein korrekt aussehender Aufruf für die Basisregion reicht deshalb nicht, wenn eine spätere oder höher priorisierte Region ihre Absicht aufhebt. Der Regionplatz wird im Projekt bewusst reserviert. Der M7-Helfer prüft dessen numerische Gültigkeit und die ausgeschaltete Daten-Cache-Voraussetzung, erkennt aber nicht jede Überlappung. Das Registerlesen und die vollständige regionale Projektprüfung bleiben notwendige Integrationsschritte. Papieraufgabe 4 verwendet genau dieses Gegenbeispiel.
+:::
+
+## MPU-Grenzen sind kernlokale Grenzen
+
+- M7-MPU beschreibt und begrenzt M7-Zugriffe
+- Sie schützt nicht automatisch M4 oder DMA
+- Nicht cachebar bedeutet nicht konfliktfrei
+- Magic ersetzt kein Reset- oder Fehlerprotokoll
+- Schreibrechte benötigen weiterhin die Phasenregel
+
+::: notes
+MPU steht für Memory Protection Unit, Speicherschutzeinheit. DMA bedeutet Direct Memory Access, direkter Hardware-Speicherzugriff. Die MPU des Cortex-M7 ist nicht eine zentrale Schutzverwaltung sämtlicher Zugriffe des Chips. Ihre Einstellungen kontrollieren die entsprechenden M7-Zugriffe und deren Attribute. Der Cortex-M4 und weitere Hardwaremaster haben dadurch nicht automatisch denselben Schutzvertrag.
+
+Nicht cachebar verhindert in der Basis eine bestimmte veraltete Datenkopie. Beide Kerne könnten dennoch dieselben Bytes gleichzeitig falsch verändern. Das bekannte Read-Modify-Write, Lesen, Ändern und Zurückschreiben, braucht weiterhin einen Besitzer oder eine passende Sperre. Magic ist unsere Kennung im Datenblock und keine automatische Sitzungsnummer, die jeden einseitigen Neustart erkennt. Es ist deshalb kein allgemeiner Recovery-Nachweis; Recovery bedeutet Wiederaufnahme nach einem Fehler. Die Basis stoppt bei einem ungültigen Zustand oder Zeitablauf und setzt den Block nicht während fremder Nutzung zurück. Diese Grenzen sind ein bewusster einfacher Vertrag. Weitergehende Schutz- und Wiederanlaufmechanismen folgen später im Kurs.
+:::
+
+## Die cachebare Fehlervariante ist ein eigener Neustart
+
+| M7-Attribut | Basis | Fehlerbuild |
+|---|---|---|
+| TEX / C / B / S | 1 / 0 / 0 / 1 | 1 / 1 / 1 / 0 |
+| Region | SRAM4, 64 KiB | gleiche Region |
+| D-Cache | darf an sein | muss tatsächlich an sein |
+| Wartung | für diesen Kanal nicht nötig | bewusst nicht eingebaut |
+
+Mögliche Folge: alter Wert oder Timeout; kein garantierter Stillstand.
+
+::: notes
+TEX ist Type Extension, C cacheable, B bufferable und S shareable; diese Felder bestimmen den effektiven M7-Speichertyp. SRAM4 ist der gemeinsame Arbeitsspeicher, KiB ein Kibibyte. D-Cache ist der Daten-Cache. Der Fehlerbuild wählt einen cachebaren Normal-Write-Back-Typ mit S null und aktiviert den Daten-Cache. Write Back bedeutet spätere Rückschreibung geänderter Kopien. S eins würde auf dem M7 nicht einfach einen Snooping-Nachweis herstellen und ist keine sichere isolierte Variation nur eines C-Bits.
+
+Die Initialdaten werden in unserem Ablauf bei noch ausgeschaltetem D-Cache in SRAM geschrieben. Anschließend können eine alte M7-Lesekopie oder eine neue nur lokale Anfrage die Laufzeitsicht zerstören. Cacheverdrängung, Debugbeobachtung und konkreter Ablauf können den Fehler verändern oder verdecken. Erwartet wird darum kein erfundener immer gleicher Timeout. Attribute werden ausschließlich beim gemeinsamen Neustart geändert. Der Basisbuild bleibt der gültige Kanal, die Fehlervariante eine absichtliche Diagnoseübung. Aus ihrem Verlauf entsteht kein behaupteter erfolgreich gepflegter Write-Back-Kommunikationskanal.
+:::
+
+## Timeout bedeutet Diagnose, nicht Besitzübernahme
+
+Im Modul getrennte private Fehlercodes:
+
+- Setup oder frühe Cacheaktivierung
+- ungültige Kennung oder Protokollphase
+- unerwarteter Payload-Wert
+- Ablauf des lokalen Wartebudgets
+
+Kein `memset` des Shared-Blocks als spontane Reparatur.
+
+::: notes
+Timeout ist der Ablauf eines Wartebudgets. Payload ist der Nutzwert. memset ist die C-Funktion zum Füllen eines Speicherbereichs. Ein solcher Reset des gemeinsamen Blocks könnte eine noch aktive Gegenstelle überschreiben und ist daher kein zulässiger automatischer Fehlerpfad.
+
+Die vollständige Anwendung führt lokale Diagnosevariablen außerhalb der gemeinsamen Sektion. Ein Fehler stoppt diesen Anwendungspfad. Der M7 nutzt eine laufende HAL-Millisekundenbasis, Hardware Abstraction Layer oder Hardwareabstraktion, und ein Budget von 2000 Millisekunden. Der M4 nutzt 2000 Kernel-Ticks, bei bestätigter 1000-Hertz-Basis nominell etwa zwei Sekunden. Hertz zählt Ereignisse pro Sekunde. Prüfung erfolgt erst, wenn der jeweilige Code wieder ausgeführt wird. Eine angehaltene Zeitbasis oder ein dauerhaft nicht zugeteilter Worker wird damit nicht unabhängig überwacht. Der Timeout ist also kein Watchdog und keine bewiesene IPC-Deadline. IPC ist Inter-Processor Communication, Kommunikation zwischen Kernen. Nach einem Fehler werden Start, Adressen, Attribute und Protokoll geprüft und beide Kerne für einen neuen Basislauf gemeinsam gestartet.
+:::
+
+## Antwortwerte und Latenzen sind verschiedene Nachweise
+
+- Private Antworten 1, 3, 5 belegen den beobachteten Datenlauf
+- `osDelay(1)` wartet einen Kernel-Tick
+- `HAL_Delay(1)` ist eine lokale HAL-Wartefunktion
+- Debughalt und UART-Ausgabe verändern den Ablauf
+- Zwei lokale Zykluszähler brauchen erst einen gemeinsamen Zeitbezug
+
+$$R=f-r\quad\text{mit ausdrücklich definiertem Ereignis und Abschluss}$$
+
+::: notes
+R ist die Antwortzeit, r die definierte Freigabe oder das Ausgangsereignis und f der geforderte Abschluss. Die Gleichung ist die bekannte Zeitdefinition, keine Messung. Die Werte eins, drei und fünf sind Nutzdaten, nicht Millisekunden oder Latenzen. osDelay ist der CMSIS-RTOS2-Warteaufruf; CMSIS bedeutet Common Microcontroller Software Interface Standard. Eine Wartezahl eins zählt einen Kernel-Tick. HAL bedeutet Hardware Abstraction Layer, Hardwareabstraktion. HAL_Delay ist im M7-Bare-Metal-Programm eine lokale aktive Wartefunktion und keine RTOS-Blockierung.
+
+UART ist Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle. Eine Ausgabe kann Formatierungs-, Geräte- und Wartekosten hinzufügen. Ein Debughalt verändert außerdem die relative Ausführung beider Kerne. Zykluszähler zählen lokale Prozessortakte und sind ohne bestätigte Skalierung und Synchronisation keine gemeinsame Uhr. Für eine echte IPC-Latenz, Inter-Processor Communication oder Kommunikation zwischen Kernen, müssen Anfang, Ende und Zeitbasis definiert sein. Eine erste Antwort kann den Boot- und Kernelstart einschließen. Im Basisversuch wird deshalb eine Datenfolge geprüft; optionales Timing erhält einen eigenen Messvertrag.
+:::
+
+## Laborbasis: zwei Ziele, ein gemeinsamer Header
+
+Anwendungsdateien unter `code/lab06/`:
+
+- `lab06_ipc.h` und `lab06_shared.c` in beiden Images
+- `lab06_cm7.c` nur auf CM7
+- `lab06_cm4.c` nur auf CM4
+- `shared-section.ld` als Linker-Integrationsfragment
+
+CubeMX und VS Code mit STM32 VS Code Extension.
+
+::: notes
+CM7 und CM4 sind die beiden Kernziele für Cortex-M7 und Cortex-M4. Ein Image ist das übersetzte Programm eines Kerns. STM32CubeMX erzeugt die Projektbasis, Visual Studio Code mit STM32 VS Code Extension baut und untersucht die CMake-Ziele. CMake beschreibt den Build. Die genannten Dateien existieren als vollständige Anwendungsreferenz im Kursrepository; sie sind kein fertig generiertes Firmwareprojekt.
+
+lab06_ipc.h enthält Layout, Konstanten und Deklarationen. lab06_shared.c definiert das gemeinsame Objekt und wird genau einmal in jedes Ziel aufgenommen. Die beiden Kernmodule gehören jeweils nur in ihr Ziel. Die vorhandenen Buildkennungen CORE_CM7 beziehungsweise CORE_CM4 müssen stimmen. shared-section.ld ist bewusst nur ein Integrationsfragment: Es ersetzt nicht blind die vollständige erzeugte Linkerdatei. Private globale Diagnosevariablen bleiben in den privaten Sektionen der Images. Das vorbereitet laufende Projekt aus Vorlesung 3 bis 5 liefert den Dual-Core-Boot und den M4-Kernel. Seine bisherigen Anwendungslasten und Callbackexperimente werden für diesen isolierten Versuch deaktiviert.
+:::
+
+## Cacheaktivierung nicht vor die Shared-Initialisierung legen
+
+M7-Reihenfolge im vorbereiteten Projekt:
+
+1. Projekt-MPU und freie Shared-Region konfigurieren
+2. M4-Stop sowie HAL- und Taktstart wie vereinbart
+3. `Lab06_CM7_InitShared()` bei D-Cache aus
+4. D-Cache einschalten, Boot-HSEM freigeben
+5. `Lab06_CM7_Run()` einmal ausführen
+
+Frühe Cachehelper und spätere MPUhelper auf Doppelkonfiguration prüfen.
+
+::: notes
+MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. HAL ist Hardware Abstraction Layer, Hardwareabstraktion. HSEM ist der Hardware Semaphore, hier das Bootsignal. D-Cache bezeichnet den Daten-Cache. Viele Vorlagen aktivieren in einem frühen CPU_CACHE_Enable-Helfer sowohl Instruktions- als auch Daten-Cache. Für unser kontrolliertes Labor wird die D-Cache-Aktivierung einmal nach die Shared-Initialisierung gelegt. Die Instruktions-Cache-Entscheidung kann getrennt bleiben.
+
+Die Referenzfunktion Lab06_CM7_InitShared verlangt den ausgeschalteten Daten-Cache und die bereits konfigurierte Region. Sie wird vor dem vorhandenen HSEM-Release eingefügt, nachdem die benötigten Takte bereitstehen. Wird der Cache unbemerkt vorher aktiviert oder die Region nachträglich überschrieben, stoppt der Helfer beziehungsweise die effektive Attributprüfung deckt den Integrationsfehler auf. Das erzeugte Boot-Warten bleibt erhalten. Der M4 initialisiert den Shared-Block nach der Freigabe nicht erneut. Die konkrete Stelle ist am lokalen Code zu prüfen, weil ein allgemeiner USER-CODE-Block nach allen Peripherieinitialisierungen bereits zu spät sein kann. Die Reihenfolge verbindet Bootvertrag und Cacheexperiment ohne laufende Attributumschaltung.
+:::
+
+## Ein M4-Worker übernimmt drei Antworten
+
+- CMSIS_V2 / FreeRTOS auf CM4
+- Ein Worker mit zunächst 1024 Byte Stack
+- Aufruf: `Lab06_CM4_Run(argument)`
+- Nur erwartete Phase erlaubt das Lesen und Ändern
+- Nach drei Antworten beendet sich der Thread
+
+Vorhandenen Kernelstart und Bootpfad einmal behalten.
+
+::: notes
+CMSIS_V2 ist die Cube-Auswahl der zweiten Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. FreeRTOS ist der M4-Kernel. Ein Worker ist ein verarbeitender Thread. Der vorgeschlagene Stack mit 1024 Byte ist ein zu prüfender Startwert, keine nachgewiesene größte Speicherbelegung.
+
+Die erzeugte Worker-Einstiegsfunktion ruft Lab06_CM4_Run mit ihrem vorhandenen Argument auf. Es wird keine zweite gleichnamige Eintrittsfunktion angelegt. Kernelinitialisierung, Threadanlage und Kernelstart existieren bereits in der Basis. Das gültige Threadhandle wird geprüft. Während RESPONSE_M7 wartet der Worker bei Bedarf mit osDelay einen Tick. Bei REQUEST_M4 prüft er nach der Barriere die erwartete Anfragezahl, erhöht sie und veröffentlicht die Antwort. Nach der dritten Antwort markiert er seine private Diagnose und beendet sich über osThreadExit, den CMSIS-Threadbeendigungsaufruf. Eine später automatisch wiederholte Aktivierung gehört nicht zum endlichen Versuch. Frühaufruf, falsche Kennung, unzulässige Phase und technische Wartefehler sind eigene Fehlerpfade und keine gewöhnlichen Antworten.
+:::
+
+## Was der erfolgreiche Basislauf tatsächlich zeigen muss
+
+| Prüfstelle | Erwartetes Ergebnis |
+|---|---|
+| zwei Maps | `ipc` an derselben festen Adresse |
+| effektive M7-MPU | Shared-Region nicht cachebar |
+| CM7-Diagnose | Antworten 1, 3, 5; Done = 1 |
+| CM4-Diagnose | drei Antworten; Done = 1 |
+| Shared-Ende | Payload 5, Zustand TURN_M7 |
+
+Alle Kernzustände gemeinsam anhalten; Hardwarezeiten getrennt protokollieren.
+
+::: notes
+Eine Map ist das Platzierungsprotokoll des Linkers. MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Die Tabelle beschreibt die Kontrollgrößen des Basislaufs und ist kein erfundenes Ergebnis auf einem bereits getesteten Board. ipc ist das gemeinsame Objekt. Done ist ein privates Fertigkennzeichen, das jeweilige Kernmodul schreibt es nach seinem vorgesehenen Ablauf.
+
+Der M7 muss drei Antworten mit eins, drei und fünf protokolliert haben. Der M4 hat drei Antworten erzeugt und beendet seinen Worker. Der gemeinsame Nutzwert bleibt fünf, der Zustand TURN_M7. Diese Endwerte unterscheiden den endlichen Versuch von einem Kanal, der fortlaufend neue Requests sendet. Erst wenn beide Kerne zur passenden Zeit angehalten sind, können ihre Diagnosefelder und der Shared-Block als zusammengehöriger Snapshot, also Momentaufnahme, gelesen werden. Ein Debugfenster kann eine andere Speicheransicht zeigen als ein laufender M7-Load; es ist kein automatischer Cachebeweis. Ein gelinktes Objekt und ein erfolgreicher Datenlauf sind wiederum andere Nachweise als eine gehaltene Mikrosekundenfrist.
+:::
+
+## Fehlerbuild: gezielt beobachten und anschließend Basis herstellen
+
+Nur den M7-Modus auf `LAB06_CACHED_FAULT` ändern.
+
+- gleicher Block, gleiche Phasenfolge, gemeinsamer Reset
+- D-Cache und effektive WB-Attribute kontrollieren
+- Datenfolge oder Timeout tatsächlich notieren
+- keine spontane Cachewartung am gemischten Block
+- anschließend `LAB06_NONCACHED` wiederherstellen
+
+::: notes
+LAB06_CACHED_FAULT ist der absichtliche Fehler-Modus der Referenz, LAB06_NONCACHED die gültige nicht cachebare Basis. WB bedeutet Write Back, verzögerte Rückschreibung geänderter Cachekopien. D-Cache ist der Daten-Cache. Der M7-Modus wird beim gemeinsamen Neustart geändert, nicht in einem laufenden Debugdialog.
+
+Unverändert bleiben Layout, Phasenfolge und M4-Code. So kann ein beobachteter Unterschied sinnvoll mit der veränderten M7-Sicht in Beziehung gesetzt werden. Zunächst werden tatsächliche Cacheaktivierung, MPU-Attribute und Überlappung geprüft; MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Ein Timeout oder ein alter Wert kann auftreten. Ein erfolgreicher Lauf durch Verdrängung oder spezielle Startreihenfolge beweist dagegen keinen sicheren Write-Back-Kanal. Die Reaktion auf den Fehler ist Diagnose und Rückkehr zur geprüften Basis. Ein pauschales Clean oder Invalidate des gemeinsam von beiden beschriebenen Blocks wäre gerade der ungeprüfte Reparaturversuch, vor dem das Zeilenbeispiel warnt. Die praktische Beobachtung wird dokumentiert und nicht durch erwartete Zahlen ersetzt.
+:::
+
+## Papierprüfung: passende Mittel mit ihren Grenzen
+
+1. Queue-Handle im Shared SRAM: gemeinsamer Kanal?
+2. Payload vor Zustand: fehlt noch ein Cachevertrag?
+3. Zwölf Typbytes: wie viel Zeilenreserve?
+4. Höher nummerierte MPU-Überlappung: welches Attribut gilt?
+
+Begründen Sie jede Antwort, bevor Sie den Versuch bewerten.
+
+::: notes
+Eine Queue ist eine begrenzte Nachrichtenwarteschlange; ihr Handle ist hier ein lokaler Kernelbezeichner. Shared SRAM bedeutet gemeinsam erreichbaren Static Random Access Memory, Arbeitsspeicher. Den Handle dort zu speichern macht die M7-Firmware nicht zum Teilnehmer der M4-Verwaltung. Der erste Fall braucht einen eigenen Kanalvertrag.
+
+Payload ist der Nutzwert. Eine korrekte Veröffentlichung vor dem Zustandswechsel ordnet die Nachricht, ersetzt aber keine Sichtbarkeitsregel für Cachekopien. Zwölf Typbytes passen im Referenzobjekt in eine auf 32 Byte ausgerichtete und reservierte Zeile. Der größere MPU-Bereich mit 64 KiB, also 65536 Byte, ist nochmals eine andere Größe. MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Bei einer passenden Überlappung gewinnt die höher nummerierte aktivierte Region unter den genannten Armv7-M-Annahmen. Diese vier Antworten verbinden die Klausurfragen mit der Integrationsprüfung. Wer nur einen erfolgreichen Zahlenlauf betrachtet, kann die fehlenden Voraussetzungen leicht übersehen. Der nächste Rückblick ordnet die Begriffe nochmals nach ihrem jeweiligen Problem.
+:::
+
+## Quiz und Anschluss an die nächsten Termine
+
+- AMP trennt Softwareverwaltung, nicht alle Störquellen
+- Gleiche Adresse ist nötig, Besitz und Sichtbarkeit ebenso
+- Barrieren und Cachewartung lösen verschiedene Probleme
+- MPU-Attribute wirken lokal und nach Regionspriorität
+- Zehn Anwendungsfragen statt reiner Begriffsabfrage
+
+Vorlesung 7: beobachten · Vorlesung 8: kernübergreifend synchronisieren.
+
+::: notes
+AMP ist Asymmetric Multiprocessing, getrennte Mehrkernsoftware. Die Architektur erleichtert Zuständigkeiten, erzeugt aber keine vollständige Hardwareisolation. Die gleiche Datenadresse ist eine notwendige Kanalvoraussetzung. Besitz sagt, wer schreiben darf; Sichtbarkeit sagt, welche Bytes ein Zugriff tatsächlich liefert. Eine Barriere ordnet relevante Zugriffe, Cachewartung behandelt lokale Kopien. MPU ist die Memory Protection Unit, Speicherschutzeinheit, deren effektive Region und lokale Reichweite geprüft werden.
+
+Das Quiz mit zehn Fragen prüft diese Unterscheidungen an Fällen aus der Vorlesung. Begründen Sie beispielsweise, warum ein M4-Mutex den M7 nicht automatisch schützt oder warum zwölf Bytes typisierte Nutzstruktur und 32 reservierte Bytes kein Widerspruch sind. Die nächste Vorlesung betrachtet die Beobachtung selbst: Ein protokollierter Kernzugriff ist nicht automatisch der aktuelle SRAM-Wert einer Gegenstelle. Im anschließenden Synchronisationstermin wird das heutige Besitzprotokoll um weitere gleichzeitige Teilnehmer und Hardwaresemaphore erweitert. Der nicht cachebare Block und die Barrieren bleiben dafür die gemeinsame Grundlage.
+:::
+
+## Quellen und Nachweise auseinanderhalten
+
+- Buttazzo: *Hard Real-Time Computing Systems*, 3. Auflage
+- ST: RM0399, UM2408, AN5617, AN4838 und AN5361
+- [ST-Dual-Core-Boottemplate](https://github.com/STMicroelectronics/STM32CubeH7/blob/master/Projects/NUCLEO-H745ZI-Q/Templates/BootCM4_CM7/CM7/Src/main.c)
+- [STM32H7-HAL: MPU](https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Inc/stm32h7xx_hal_cortex.h)
+- [CMSIS-M7: Cachewartung](https://github.com/ARM-software/CMSIS_5/blob/develop/CMSIS/Core/Include/cachel1_armv7.h)
+
+::: notes
+Giorgio C. Buttazzos Hard Real-Time Computing Systems ist die zentrale Literatur für Zeitmodelle und Ressourcenabhängigkeiten. STs RM0399 ist das Referenzhandbuch der betreffenden Mikrocontrollerfamilie, UM2408 das Benutzerhandbuch der Boardfamilie. AN5617 behandelt Mehrkernkommunikation, AN4838 MPU-Attribute und AN5361 den Dual-Core-Entwicklungsablauf. MPU bedeutet Memory Protection Unit, Speicherschutzeinheit.
+
+Das eingesehene Boottemplate gehört zum H745-Beispiel und belegt das grundsätzliche Stop-/HSEM-Muster; es ersetzt nicht die konkrete H755-Projektprüfung. HSEM ist Hardware Semaphore. HAL bedeutet Hardware Abstraction Layer, Hardwareabstraktion. Der tatsächlich eingesehene HAL-Header enthält die verwendeten Regionsattribute, der CMSIS-Header die Cachewartung. CMSIS steht für Common Microcontroller Software Interface Standard. Öffentliche Entwicklungszweige sind veränderlich; die eingebundenen Projektversionen werden protokolliert. Eigene Zahlen sind als Modellwerte gekennzeichnet. Syntaxprüfung, simuliertes Protokoll, Linkerprüfung, Renderprüfung, tatsächlicher STM32-Build und Boardmessung sind unterschiedliche Evidenz. Ohne vorhandenes Zielprojekt und Gerät wird kein Hardwareerfolg behauptet.
 :::
