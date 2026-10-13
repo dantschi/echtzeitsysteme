@@ -1,7 +1,7 @@
 ---
-title: "Übungsblatt 9: Capstone-Projekt und Timing-Verifikation"
+title: "Übungsblatt 9: Capstone und begründete Timing-Verifikation"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Studierende:  quarto render lab_09_capstone-timing-verifikation.qmd --to pdf
+# Studierende: quarto render lab_09_capstone-timing-verifikation.qmd --to pdf
 # Musterlösung: quarto render lab_09_capstone-timing-verifikation.qmd --to pdf --profile solution
 ---
 
@@ -9,125 +9,142 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 > **Musterlösung**
 :::
 
-## Zielsetzung
+## Ziele und Zeitplan
 
-Sie bauen einen Lehrdemonstrator auf dem STM32H755: M4 mit FreeRTOS erfasst Events, M7 Bare-Metal filtert und gibt über UART aus. Das ist keine Serienarchitektur. Fristen unten sind Lehrfestlegungen. Messzellen bleiben leer, bis ein Lauf mit gemeinsamer Zeitbasis existiert. BlueBox-Tests sind offen, wenn das Gerät fehlt. Shared Memory, MPU und Boot wie in Vorlesung 6. HSEM-Warten wie in Vorlesung 8. Watchdog-Rechnung wie dort, mit Ihrem PCLK.
+Sie entwerfen eine kleine Ereigniskette, unterscheiden ihre Verlustarten und beurteilen Daten- und Zeitverträge. Vier Papieraufgaben ergeben **32 Punkte in 50 Minuten**, gefolgt von **25 Minuten** am vorbereiteten STM32-Demonstrator und **15 Minuten** Quiz. Modellzahlen sind ausdrücklich keine Messwerte. Alle Papieraufgaben sind ohne Hardware lösbar.
 
----
+Begriffe: AMP bedeutet Asymmetric Multiprocessing, HSEM Hardware Semaphore, MPU Memory Protection Unit, UART Universal Asynchronous Receiver/Transmitter und WWDG Window Watchdog. Die Plattform ist **NUCLEO-H755ZI-Q**, M7 ohne Kernel und M4 mit FreeRTOS über CMSIS-RTOS2, die Echtzeitkernel-Schnittstelle.
 
-## Aufgabe 1: Zwei Abnahmen
+## Aufgabe 1 · Architektur und Schnittstellen · 8 Punkte · 10 Minuten
 
-Pflicht A, nur M4: Timer-Events, Queue, Drop-Zähler, WWDG-Fenster aus dem PCLK gerechnet.
+Ein lokaler Sensor-Regler-Aktor-Kreis überträgt zusätzlich Beobachtungen über ein zeitlich schwankendes Netz. Das Netz kann ausfallen.
 
-Pflicht B: beide Kerne, Latest-Value, Sequenz, HSEM nicht die Boot-ID, Filter und UART außerhalb des Schlosses.
-
-Pflicht C: die Tabelle mit echten Differenzen. Ohne Aufnahme Status „offen“, nicht „bestanden“.
-
-PC13 nur für die Funktion, mit Entprellung in der Task. Rate und Burst vom Timer: Nennwert 100 Hz, höchstens 10 Events in 10 ms. Das ist eine Kursgrenze, kein Kundenwert.
+1. Erklären Sie den Unterschied von Edge und AMP. Begründen Sie, welcher Pfad seine eigene lokale Frist behalten muss und warum die zwei H755-Kerne nicht automatisch zeitlich isoliert sind. **(2 P)**
+2. Nehmen Sie 40 000 Proben/s, 1 000 Sensoren und 2 Byte/Probe an. Berechnen Sie die reine Nutzdatenrate in dezimalen MB/s und Mbit/s. Nennen Sie einen noch nicht enthaltenen Anteil. **(2 P)**
+3. Zwei Vergleichskanäle liefern 10 und 40. Was ist damit bekannt? Bei drei Werten 10,0, 10,1 und 40,0: Gibt es eine exakte Zweiermehrheit? Welche Ausgabe liefert ein vereinbarter Median, und was beweist sie nicht? **(2 P)**
+4. Ordnen Sie MCAL und Complex Driver im AUTOSAR-Classic-Bild ein. Eine SWC enthält drei Runnables: Warum sind das nicht automatisch drei Tasks? **(2 P)**
 
 ### Ihre Lösung {.unnumbered}
 
-*(Notieren Sie Ihre Lösung hier.)*
+*(Notieren Sie Begründungen, Einheiten und Zuordnungen hier.)*
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 1**
 
-Queue-Tiefe 8. ISR: `osMessageQueuePut` mit Timeout 0. Bei Fehler Drop-Zähler, nicht blockieren. NVIC-Priorität so, dass die API erlaubt ist. EXTI für den Taster und Timer-IRQ nicht verwechseln.
+1. Edge beschreibt Verarbeitung nahe an der Quelle, AMP unterschiedliche Kernrollen. Der lokale Wirkungspfad muss seine Frist unabhängig von der Telemetrie einhalten. H755 teilt unter anderem Bus, Taktverwaltung und Reset; eine Rollengrenze ist keine zeitliche Isolation. Je ein Punkt für Begriffe und Zeit-/Ressourcenbegründung.
+2. $40000\cdot1000\cdot2=80\,000\,000\,\mathrm{Byte/s}=80\,\mathrm{MB/s}$. Mit acht Bit je Byte sind es $640\,\mathrm{Mbit/s}$. Rahmen, Adressen, Prüfinformation oder Pausen fehlen. Je ein Punkt für Rate und Interpretation.
+3. Die zwei Werte zeigen eine Abweichung, aber ohne weitere Diagnose nicht den richtigen Wert. Die drei Werte haben keine exakte Gleichheitsmehrheit. Ihr Median ist 10,1; eine gemeinsame falsche Grundlage kann trotzdem mehrere Kanäle treffen. Je ein Punkt für Zweikanal- und Dreikanaldeutung.
+4. MCAL und Complex Driver sind Teile der BSW unter der RTE. SWC ist die logische Softwarekomponente, Runnable ihre ausführbare Einheit; die Konfiguration ordnet Runnables den Betriebssystemtasks zu. Je ein Punkt.
 :::
 
----
+## Aufgabe 2 · Queue und doppelte Bilanz · 8 Punkte · 15 Minuten
 
-## Aufgabe 2: Latest-Value, nicht „kein Verlust“
+Alle Bilanzwerte stammen von einem konsistenten Prüfpunkt. $I$ sind Eingaben, $A$ Annahmen, $D_q$ volle-Queue-Drops, $E_{\mathrm{put}}$ andere Putfehler. $Q$ liegt noch in der Queue, $F$ in Bearbeitung, $P$ wurde publiziert und $D_{\mathrm{task}}$ nach Entnahme verworfen. $S$ sind verschieden kopierte Stände, $O$ Ersetzungen vor erster Kopie und $U$ der noch ungelesene aktuelle Stand.
 
-Der M7 braucht den neuesten Stand, nicht jede Zwischenflanke. Die Sequenz macht ausgelassene Werte sichtbar. „Kein Datenverlust“ gilt nur für die Queue bis zum Drop-Zähler, nicht für die Mailbox.
-
-Struktur, ein Initialisierer beim Start, M4 löscht sie nicht erneut:
-
-```c
-typedef struct {
-    uint32_t magic;
-    uint32_t seq;
-    uint32_t tick;
-    uint32_t sample;
-} capstone_ipc_t;
-```
-
-M4, nach erfolgreichem Take und `__DMB()`: Felder schreiben, `__DMB()`, Release. M7 kopiert in einen lokalen Snapshot und released, bevor gefiltert oder gedruckt wird. Timeout auf den Take, danach erneut versuchen. Eine Notification ist kein Besitz.
-
-Boot-HSEM, oft 0, nicht verwenden. Nutz-ID prüfen, Vorschlag 1.
-
-Non-cacheable wie VL6. Das ist keine Zugriffssperre für den Nachbarn.
+1. Eine leere Queue mit Tiefe acht erhält zehn korrekte Puts ohne Get. Wie viele Annahmen und Drops entstehen? Ist das auch für zehn Ereignisse bei 0, 1, …, 9 ms garantiert? **(2 P)**
+2. Gegeben: $I=12$, $A=10$, $D_q=2$, $E_{\mathrm{put}}=0$, $Q=1$, $F=1$, $D_{\mathrm{task}}=1$, $S=4$, $U=1$. Berechnen Sie $P$ und $O$ und schreiben Sie die drei Bilanzgleichungen aus. **(3 P)**
+3. Die Mailbox startet leer. M4 publiziert 1 und 2, M7 kopiert und bestätigt 2, liest 2 nochmals, dann publiziert M4 3. Bestimmen Sie $P,S,O,U$. Was ändert sich bei einer ersten Kopie von 3? **(2 P)**
+4. Warum kann eine Lücke von `event_seq` allein nicht zwischen Queueabweisung und Mailboxersetzung unterscheiden? Welche zusätzliche Nummer hilft? **(1 P)**
 
 ### Ihre Lösung {.unnumbered}
 
-*(Notieren Sie Ihre Lösung hier.)*
+*(Verfolgen Sie Zustände und Summen hier.)*
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 2**
 
-Unter dem Schloss keine Queue-Warte, kein `osDelay`, kein `printf`. M7 ohne RTOS ruft kein `osDelay`. Sensorstille lässt die Supervisor-Periode weiterlaufen. Ein Burst füttert den WWDG nicht bei jedem Event: kurze Abstände wären ein früher Refresh. Der Supervisor füttert nur, wenn die Sensor-Epoche und, sobald Pflicht B gilt, die M7-Epoche frisch sind. Eine lebendige Supervisor-Task allein sieht eine hängende Sensor-Task nicht.
+1. Acht Annahmen, zwei volle-Queue-Drops. Beim zeitlich verteilten Burst kann der Worker dazwischen Get aufrufen, daher sind zwei Drops nicht garantiert. Je ein Punkt.
+2. Eingang: $12=10+2+0$. Worker: $10=1+1+P+1$, also $P=7$. Mailbox: $7=4+O+1$, also $O=2$. Je ein Punkt für die drei nachvollziehbaren Bilanzen.
+3. $P=3$, $S=1$, $O=1$, $U=1$. Publikation 1 wurde ungelesen ersetzt; das zweite Lesen von 2 ist kein neuer Snapshot. Nach der ersten Kopie von 3: $S=2$, $U=0$, $P$ und $O$ unverändert. Je ein Punkt.
+4. `event_seq` entsteht vor Put und kann an mehreren späteren Stellen Lücken erhalten. `pub_seq` steigt nur bei Publikation; Bestätigung und Ersetzungszähler ermöglichen die getrennte Mailboxbilanz. Ein Punkt.
 :::
 
----
+## Aufgabe 3 · Zeitvertrag und Abdeckung · 8 Punkte · 15 Minuten
 
-## Aufgabe 3: Watchdog
+Alle hier gegebenen Zeitwerte stammen aus einer gemeinsamen **Modelluhr** und sind eindeutig korreliert. $t_1$ ist der dokumentierte Beginn der M4-Ereignisroutine, $t_4$ die Veröffentlichung und $t_5$ das Ende einer neuen M7-Kopie.
 
-Instanz des M4, APB-Takt, Prescaler, Reload, Fenster. Tick $4096 \times \mathrm{Prescaler} / f_{\mathrm{PCLK}}$. EWI bei `0x40`, Reset beim Übergang nach `0x3F`. Gleichheit am Fenster im RM0399 nachlesen und nicht als einzigen Testpunkt nehmen.
-
-Erlaubte Refresh-Spanne in ms ausrechnen, plus einen RTOS-Tick und Jitter. Drei Achsen prüfen: keine Events, Normalstrom, Burst. In allen dreien liegt der Feed im Fenster, weil er an der Supervisor-Periode hängt, nicht am Taster.
-
-EWI: ein GPIO-Puls. PB14 nur, wenn LD3 dort bestückt ist. Kein `printf`. Debug-Freeze aus, wenn Sie den Reset sehen wollen. Reset-Flags vorher sichern. Reset-Scope und Neustart beider Kerne notieren.
+1. Drei Ereignisse haben $(t_1,t_4)=(100,600)$, $(10000,10750)$, $(20000,20900)$ in µs. Berechnen Sie die drei Publikationsantworten, Maximum und Spanne. Ist ein Ziel von 1 ms in dieser Stichprobe erfüllt? Was ist damit nicht bewiesen? **(3 P)**
+2. Eine Schlossbitte liegt bei 100 µs, Erwerb bei 140 µs, Freigabe bei 165 µs. Berechnen Sie Warten und Halten. Erfüllt die Haltezeit das Lehrziel 50 µs? Was würde ein Marker vom ersten bis zum letzten Zeitpunkt umfassen? **(2 P)**
+3. Publikation A bei $t_1=0$ wird vor Kopie ersetzt. B hat $t_1=10$ ms und $t_5=45$ ms, C $t_1=20$ ms und $t_5=80$ ms. Bewerten Sie das Ziel von 50 ms und das fehlende Alterspaar für A. **(2 P)**
+4. Warum liefert ein M4-HAL-Tick im Datensatz minus ein lokaler M7-DWT-Wert keine gültige Inter-Core-Differenz? **(1 P)**
 
 ### Ihre Lösung {.unnumbered}
 
-*(Notieren Sie Ihre Lösung hier.)*
+*(Geben Sie Definitionen, Einheiten und Prüfstatus an.)*
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 3**
 
-Zu früher Feed kann ohne EWI resetten. Zu später Feed kann EWI sehen, wenn die IRQ laufen darf. Das Budget ist der Rest eines WWDG-Ticks, nicht „ein paar Mikrosekunden“ pauschal.
+1. $600-100=500$, $10750-10000=750$, $20900-20000=900\,\text{µs}$. Maximum 900 µs, Spanne $900-500=400\,\text{µs}$. Alle drei erfüllen 1000 µs; eine allgemeine Worst-Case-Grenze ist nicht bewiesen. Je ein Punkt für Differenzen, Auswertung und Begrenzung.
+2. Warten 40 µs, Halten 25 µs. Das Halteziel ist erfüllt. Das gesamte Markerintervall wäre 65 µs und enthält beide Teile. Je ein Punkt.
+3. A hat kein Alterspaar, wird als Ersetzung gezählt und erhält keine Latenz null. B: 35 ms, erfüllt. C: 60 ms, verletzt. Je ein Punkt für tatsächliche Paare und fehlende Beobachtung.
+4. Verschiedene lokale Quellen und Einheiten sind nicht automatisch korreliert. Notwendig ist ein geeigneter gemeinsamer Zeitbezug und eine korrekte Skalierung. Ein Punkt.
 :::
 
----
+## Aufgabe 4 · Filter, Ausgabe und Fortschritt · 8 Punkte · 10 Minuten
 
-## Aufgabe 4: Dieselbe Sequenznummer
-
-| Marke | Bedeutung |
-|-------|-----------|
-| t0 | physische Flanke, nur mit Capture oder externem Gerät |
-| t1 | ISR-Eintritt |
-| t2 | Put |
-| t3 | Taskstart |
-| t4 | HSEM-Release |
-| t5 | M7-Snapshot |
-| t6 | Filter fertig |
-| t7 | UART fertig |
-
-C3 ist t4 − t1 ≤ 1 ms, Lehrgrenze. C4 ist t5 − t1 ≤ 50 ms. t7 ist eine andere, weiche Größe. Zwei Kern-Zähler nicht subtrahieren.
-
-Jitter hier: Spanne der Publikationszeiten t4 − t1 über die gültigen Events. Nicht mit der Periodenabweichung des Timers mischen.
-
-| Test | Erwartung | Beobachtung |
-|------|-----------|-------------|
-| Ruhe, kein Taster | Supervisor füttert, seq steht | offen |
-| ein Timer-Event | eine Sequenz, C3 | offen |
-| Burst 10/10 ms | Drops oder Lücken sichtbar | offen |
-| Queue voll | Zähler steigt, ISR blockiert nicht | offen |
-| M7-Last | C4 oder belegte Verletzung | offen |
-| UART im Snapshot | verboten, Review | offen |
-| HSEM kollidiert kurz | Retry, kein Hang | offen |
-| M7 hängt | Feed bleibt aus, wenn Epoche fehlt | offen |
-| M4 hängt | WWDG, wenn Supervisor das sieht | offen |
-| Feed früh / spät | Reset wie gerechnet | offen |
-
-M7-Last darf die M4-Zeit über den Bus verschlechtern. Das ist ein Messbefund.
+1. Kopierte Codes sind 10, 14, 18, 22, 26. Berechnen Sie den gleitenden Mittelwert über höchstens vier vorhandene Kopien, ohne Nullauffüllung und mit Abrundung. Was passiert, wenn eine Publikation vor Kopie ersetzt wird? **(2 P)**
+2. Ein Lehrpaket `P=0001\r\n` hat acht ASCII-Zeichen. Berechnen Sie unter 8N1 und 115200 Bit/s seine reine Leitungszeit. Ist das eigene CPU-Zeit? Wo liegt die Ausgabe relativ zum Schloss? **(2 P)**
+3. WWDG2: PCLK 100 MHz, Teiler 8, Reload 127, Fenster 80. Berechnen Sie mit $\Delta t=4096P/f$ den Tick und die idealen Zeitpunkte bei $T=80$ und beim Resetübergang nach $T=63$. Ist $T=80$ erlaubt? **(2 P)**
+4. Warum darf der Supervisor weder bei jeder Eingabe füttern noch legitime Sensorstille mit einem Worker-Hänger gleichsetzen? Welche Gesundheitsbedingung braucht der andere Kern? **(2 P)**
 
 ### Ihre Lösung {.unnumbered}
 
-*(Notieren Sie Ihre Lösung hier.)*
+*(Zeigen Sie Rechnung und Vertragsgrenzen hier.)*
 
 ::: {.content-visible when-profile="solution"}
 **Musterlösung Aufgabe 4**
 
-Pflicht A ist bestanden, wenn C1, C2 und die PCLK-Rechnung dokumentiert sind, auch ohne M7. Pflicht B braucht C5, C6 und C8 im Review und einen Lauf, der Sequenzen zeigt. Pflicht C bleibt offen ohne Aufnahme. Ein fehlendes Trace-Paket ist keine Latenz. Das beobachtete Maximum ist kein WCET. Der Folienexport dieses Kurses ist kein Test auf dem Board.
+1. 10, 12, 14, 16, 20. Beim fünften Wert bleibt das Fenster 14, 18, 22, 26 mit Summe 80. Ungelesen ersetzte Publikationen erscheinen nicht als erfundene Filtereingaben. Je ein Punkt.
+2. Acht Zeichen mit je zehn Bit sind 80 Bit. $80/115200=0{,}000694444\,\mathrm{s}=0{,}69444\,\mathrm{ms}$. Dies ist Leitungszeit, keine reine eigene Prozessorarbeit. Ausgabe nach HSEM-Freigabe; blockierendes Senden kann trotzdem die verstrichene Ausgabedauer erhöhen. Je ein Punkt.
+3. $32768/10^8=0{,}32768\,\mathrm{ms}$. Nach 47 Schritten ist $T=80$ bei 15,40096 ms, nach 64 Schritten $T=63$ bei 20,97152 ms. Gleichheit mit 80 ist hardwareseitig erlaubt, benötigt im Betrieb aber Reserve. Die Idealphase und Softwareverzögerung sind keine Boardmessung. Je ein Punkt.
+4. Ein Burst kann zu früh refreshen; Stille kann ohne Hänger legitim sein. Der Supervisor prüft frische vollständige Kontrollrunden mit passenden eigenen Fristen und bei erforderlichem M7 auch dessen Nachweis. Ein lebendiger fütternder M4 allein reicht nicht. Je ein Punkt.
 :::
+
+## Labor · Zwei endliche Läufe · 25 Minuten
+
+Verwenden Sie **STM32CubeMX und VS Code mit STM32 VS Code Extension für das NUCLEO-H755ZI-Q**. Grundlage ist ein vorbereitetes gemeinsam startendes Dual-Core-CMake-Projekt. Die vollständigen Anwendungsdateien und die Integration stehen in [code/lab09/README.md](../code/lab09/README.md). Der Datenkern startet **keinen Watchdog**; C7 bleibt hier Entwurfs-/Rechenprüfung. Eine WWDG-Station aus Vorlesung 8 ist ein separater Versuch.
+
+1. Beide Ziele: `lab09_capstone.h`, `lab09_shared.c`; M7 zusätzlich `lab09_cm7.c` und `lab09_output.c`; M4 zusätzlich `lab09_cm4.c` und `lab09_timer.h/.c`. Pro Ziel genau `CORE_CM7` oder `CORE_CM4`. Entfernen Sie vorherige Laborobjekte, die denselben Shared-Bereich nutzen.
+2. Der neue Block hat 44 Byte Nutzstruktur und 64 Byte Section bei 32-Byte-Ausrichtung. In beiden echten Linkerskripten SRAM4 ab `0x38000000`, 64 KiB, exklusiv reservieren und `shared-section.ld` integrieren. Private Daten und Stacks bleiben außerhalb. Prüfen Sie beide ELF-/Map-Dateien und Starttabellen.
+3. M7: bei ausgeschaltetem Datencache eine tatsächlich freie MPU-Region mit passenden nicht cachebaren Attributen konfigurieren, `Lab09_CM7_InitShared(LAB09_NORMAL)` ausführen, während M4 noch im vorhandenen Boot-Stop wartet. Danach Cache an, bestehende Bootfreigabe, einmal `Lab09_CM7_Run(1u)`. Kein Live-Initialisieren bei laufendem Partner.
+4. M4: TIM2 und `htim2` vor dem Worker für **100 Hz** initialisieren, noch nicht starten. Verifizieren Sie den wirksamen Timertakt, Vorteiler und Periodenregister sowie die erlaubte NVIC-Priorität. Ergänzen Sie einmal `Lab09_CM4_TimerCallback(htim)` im vorhandenen HAL-Timercallback und erhalten Sie die Behandlung der HAL-Zeitbasis anderer Timer. Der einzige 1-kHz-CMSIS-RTOS2-Worker ruft `Lab09_CM4_Run(argument)` auf. Er erzeugt die Queue vor der Quellenfreigabe und beendet nach 20 Softwareeingaben die Quelle und Verarbeitung.
+5. Beide Images bauen und programmieren, gemeinsam neu starten. Erst nach **beiden** `lab09_complete=1` und Fehlercodes null halten Sie beide Kerne an. Lesen Sie M4-Statistik, gemeinsame Mailbox und M7-Filterergebnisse. Berücksichtigen Sie die Debug-/Cachesicht privater M7-Daten gemäß Integrationsanleitung. Ein Timeout ist keine erfolgreiche Abnahme.
+6. Sättigung: M7-Initialisierung auf `LAB09_SATURATION` ändern, beide Images neu bauen/programmieren und gemeinsam starten. Der M4 erzeugt zehn Puts aus der Task vor Get, ohne Timerstart. Prüfen Sie acht Annahmen und zwei Drops sowie die Mailboxbilanz. Das ist kein Test physischer Interruptlatenzen.
+7. Falls vorbereitet: normaler Lauf mit `Lab09_CM7_Run(25u)` oder aktivierter begrenzter UART-Ausgabe. Erwarten Sie mögliche zusätzliche Ersetzungen, keinen festen Snapshot-Sollwert. Der Filter berechnet auf der tatsächlich kopierten Folge. Ausgabe bleibt außerhalb des HSEM.
+
+| Konfiguration | Ihre Angabe |
+|---|---|
+| Boardrevision, CubeMX, HAL, Extension, Kerneladapter | |
+| Kern-/Bustakte, TIM2-Takt, PSC/ARR, Kerneltick | |
+| Boot-/Nutz-HSEM, MPU-Region, Shared-Adressen und Section | |
+| beide CMake-Ziele, Starttabellen, Heap/Stack geprüft | |
+
+| Lauf | $I,A,D_q,E_{put}$ | $Q,F,P,D_{task}$ | $S,O,U$ | Fehler / Erklärung |
+|---|---|---|---|---|
+| normal | | | | |
+| Sättigung | | | | |
+| langsam / UART optional | | | | |
+
+::: {.content-visible when-profile="solution"}
+**Musterlösung Labor**
+
+Normallauf: I=20. Ohne andere Abweisungen oder Verwürfe gilt A=P=20, aber S kann kleiner sein; O erklärt die übrigen Publikationen. Finale U=0, weil M7 den letzten Stand kopiert. Sättigung: I=10, A=8, Dq=2, Eput=0, ohne Taskverwurf P=8. Finale Q=F=U=0, also P=S+O. Die genaue Snapshotzahl hängt vom tatsächlichen Ablauf ab. Filterergebnisse müssen zur aufgezeichneten kopierten Folge passen, nicht zu erfundenen ausgelassenen Werten. Keine Beobachtungszelle wird ohne Lauf ausgefüllt.
+:::
+
+## Abnahmeblatt und Aussagegrenzen
+
+Für jedes Kriterium werden Bedingungen, Beleg und Status getrennt notiert. Zeitziele brauchen eine geeignete Aufnahme und gemeinsame beziehungsweise lokal passende Zeitbasis. `event_tick` ist der lokale M4-HAL-Millisekundenwert der Ereignisroutine; er wird nicht von einer unkorrelierten M7-Uhr subtrahiert und löst 50 µs nicht auf. Kopierte neue Stände tragen dieselbe Ereignis- und Publikationskennung wie die zugehörige M4-Publikation. Eine Aufnahme muss auch Auslassungen und fehlende Paare nennen.
+
+| Kriterium | Ziel / Umfang | Beleg und Status |
+|---|---|---|
+| C1 | Last und Takte: normal 20 Eingaben, nominal 100 Hz | |
+| C2 | kontrolliert 8 Annahmen, 2 Queue-Drops | |
+| C3 | normale Publikationsantwort höchstens 1 ms | |
+| C4 | neu kopierter Stand höchstens 50 ms alt | |
+| C5 | Besitz, Layout, Start, Sichtbarkeit | |
+| C6 | lokale Haltezeit je Seite höchstens 50 µs | |
+| C7 | Watchdogrechnung und Fortschrittsentwurf | |
+| C8 | Eingang-/Worker- und Mailboxbilanzen | |
+
+Zulässige Statuswerte: **nicht geprüft**, **bestanden unter genannten Bedingungen**, **verletzt**, **Messung ungültig**. Ohne gemeinsame Aufnahme bleibt C4 nicht geprüft. Ein Quellreview oder Hosttest ist kein Boardlauf. Ein beobachtetes Maximum beweist keine allgemeine obere Antwortzeit oder WCET, Worst-Case Execution Time. Abgabe: vier Papierlösungen, Konfigurationsblatt, echte Beobachtungswerte, Bilanzprüfung und Kriterienstatus.

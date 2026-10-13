@@ -1,715 +1,961 @@
 ---
 title: "09 · Capstone-Projekt & Architekturmuster"
-subtitle: "Architektur begründen, Protokoll und Prüfung festlegen · EZS · DHBW Stuttgart"
+subtitle: "Architektur, Datenvertrag und begründete Abnahme · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Vortrag:  quarto preview vorlesungen/09_capstone-architekturmuster.qmd
-# Handout:  quarto render vorlesungen/09_capstone-architekturmuster.qmd --profile handout --to pdf
-format: revealjs
+format:
+  revealjs:
+    title: ""
+    pagetitle: "09 · Capstone-Projekt & Architekturmuster"
+    css: ../assets/styles/lecture09.css
+center: false
 ---
 
-## Das große Finale!
+## 09 · Aus Bausteinen wird ein System
 
-- Neunter Termin: Architektur begründen und unter Bedingungen prüfen
-- Plattform wie VL6–VL8: STM32H755, M4 FreeRTOS, M7 Bare Metal
-- Vier Ziele: Muster trennen, Datenvertrag erklären, Messpunkte definieren, Abnahme begründen
-- Ein beobachtetes Maximum ist kein WCET-Beweis
-
-::: notes
-Die bisherigen Termine haben Bausteine geliefert. Heute werden sie zu einer prüfbaren Architektur. EZS ist das Modul Echtzeitsysteme, DHBW die Duale Hochschule Baden-Württemberg. Der Cortex-M4 führt FreeRTOS über CMSIS-RTOS2. CMSIS ist der Cortex Microcontroller Software Interface Standard, RTOS das Echtzeitbetriebssystem. Der Cortex-M7 läuft Bare Metal, also ohne diesen Kernel. MCU ist die Microcontroller Unit, hier der STM32H755. NUCLEO-H755ZI-Q nennen wir nur, wenn das Projekt dieses Board wirklich nutzt.
-
-WCET, Worst-Case Execution Time, ist eine obere Ausführungszeit unter benannten Annahmen. Die Antwortzeit $R_i$ enthält zusätzlich Warten und Interferenz. $D_i$ ist die relative Deadline. „Es lief im Test“ beschreibt gültige Läufe. „Die Frist ist begründet“ braucht das Modell. Cache abzuschalten ändert einen Einfluss und beweist den Determinismus nicht.
-
-Die vier Ziele sind beobachtbar: ein Muster einer Frage zuordnen, den Latest-Value-Vertrag erklären, Messpunkte benennen und eine Abnahme mit offenem Status begründen.
-
-Die Agenda geht von der Architekturentscheidung bis zum Versuchsergebnis.
-:::
-
-## Agenda für heute
-
-1. Semesterbausteine und drei Entwurfsprinzipien
-2. Edge, AMP, Fail-Safe und Lockstep als verschiedene Fragen
-3. AUTOSAR Classic als Schichtenbild, nicht als unser Code
-4. Ein Datenvertrag und die Kriterien C1–C8
-5. Messpunkte, auch ohne ein bestimmtes Trace-Gerät
+- Capstone-Projekt und Architekturmuster
+- Ereignisse erfassen, Stände austauschen, Ergebnisse prüfen
+- Rollen, Datenvertrag und Zeitvertrag gemeinsam entwerfen
+- Ein endlicher Demonstrator auf dem NUCLEO-H755ZI-Q
 
 ::: notes
-Die fünf Blöcke beantworten nacheinander: Was haben wir gebaut, welche Architekturfrage ist welche, wie sieht ein standardisiertes Schichtenbild aus, welchen Vertrag nutzt unser Demonstrator, und woran erkennt man, dass ein Kriterium geprüft wurde. Edge ist der Ort der Verarbeitung. AMP, Asymmetric Multiprocessing, ist die ungleiche Rollenverteilung zweier Kerne. Beides kommt erst im zweiten Block, nicht als Synonym.
+Capstone bezeichnet das Abschlussprojekt, in dem die bisher einzeln behandelten Bausteine zusammenwirken. Eine Architektur beschreibt Aufgaben, ihre Verteilung und die Verträge zwischen ihnen. Auf dem NUCLEO-H755ZI-Q verwenden wir weiterhin den STM32H755 mit zwei Kernen: Cortex-M4 mit FreeRTOS, dem bekannten Echtzeitbetriebssystem, und Cortex-M7 ohne Kernel, also Bare Metal. Ein synthetischer Sensor liefert Zahlen; eine reale physische Regelstrecke wird nicht vorausgesetzt.
 
-PC13 ist ein Tasterpin für einen Funktionstest, kein Hochfrequenztakt. BlueBox ist ein Produktname für einen Recorder, keine Zeitgarantie. Fehlt ein geeigneter gemeinsamer Zeitbezug, bleiben die betroffenen Zeitkriterien ungeprüft. Der Architekturteil kann trotzdem fertig sein. HSEM, Hardware Semaphore, ID 0 bleibt dem Boot, wenn Vorlesung 6 sie so benutzt.
-
-Der Semesterüberblick zeigt den Sensorpfad als Kette von Verträgen.
+Heute soll aus einem plausiblen Blockbild ein prüfbarer Entwurf werden. Dazu gehören die Bedeutung jeder Nachricht, zulässige Auslassungen, Fristen und die Aussagekraft einer Beobachtung. Eine korrekt gezählte Ereignisfolge beantwortet noch keine Zeitfrage. Ein schneller Testlauf beweist umgekehrt keine Vollständigkeit der Daten. Wir behandeln diese Fragen getrennt und führen sie am Ende in einer Abnahmetabelle zusammen. Der Demonstrator ist endlich, damit seine Bilanz nach Abschluss beider Kerne ohne laufende Änderungen geprüft werden kann.
 :::
 
-## Die Reise dieses Semesters
+## Die bisherigen Vorlesungen sind die Grundlage
 
-Abbildung A. Jeder Pfeil ist ein Vertrag, kein Automatismus.
+| Bisher erarbeitet | Anwendung heute |
+|---|---|
+| Frist, Antwortzeit und Scheduling | messbare Teilanforderungen |
+| Task, Queue und Interrupt | Ereigniskette auf M4 |
+| Shared Memory, Cache und MPU | gemeinsamer Datenblock |
+| Trace, HSEM und Watchdog | Diagnose, Besitz und Fortschritt |
+
+::: notes
+Scheduling ist die Zuteilung von Prozessorzeit. Eine Task ist ein vom Kernel verwalteter Ausführungspfad, eine Queue eine Nachrichtenwarteschlange mit begrenztem Platz. Ein Interrupt unterbricht den normalen Ablauf zugunsten eines Handlers. M4 bezeichnet den Cortex-M4. Shared Memory ist gemeinsam erreichbarer Speicher; der Cache enthält lokale Kopien. MPU heißt Memory Protection Unit, Speicherschutzeinheit eines Kerns. Trace bedeutet geordnete Ereignisaufzeichnung, HSEM Hardware Semaphore, das Hardware-Schloss. Ein Watchdog überwacht das rechtzeitige Nachladen eines Zählers.
+
+Diese Vorkenntnisse aus Vorlesungen 1–8 genügen. Neu ist die Verknüpfung: Der Empfang einer Nachricht, ihre Veröffentlichung und ihr späteres Kopieren sind verschiedene Ereignisse. Jede Stufe hat ihre eigenen möglichen Verzögerungen und Auslassungen. Der Capstone wiederholt die Schutzmechanismen deshalb nur an der Stelle, an der ihr Vertrag gebraucht wird. Die folgende Orientierung zeigt, welche Ergebnisse Sie nach diesem Termin begründen können.
+:::
+
+## Fünf konkrete Ergebnisse dieses Termins
+
+1. Architekturfragen voneinander unterscheiden
+2. Queue und Latest-Value passend auswählen
+3. Ereignis- und Publikationsnummern getrennt bilanzieren
+4. Antwortzeit, Datenalter und Haltezeit richtig messen
+5. Ein Kriterium mit Bedingungen und Prüfstatus abnehmen
+
+::: notes
+Latest-Value bezeichnet einen Speicherplatz für den jeweils neuesten veröffentlichten Stand. Eine Queue bewahrt dagegen angenommene Nachrichten bis zu ihrer Entnahme. Die Auswahl hängt davon ab, ob jede Zwischeninformation gebraucht wird. Eine Ereignisnummer entsteht am Eingang; eine Publikationsnummer erst bei erfolgreicher Veröffentlichung. Diese beiden Nummern erklären unterschiedliche Lücken.
+
+Antwortzeit ist hier die Zeit zwischen benanntem Eingang und gefordertem Abschluss. Datenalter misst, wie alt die kopierte Information an ihrem festgelegten Bezugspunkt ist. Haltezeit beschreibt nur die Dauer des bestätigten Schlossbesitzes. Ein Prüfstatus unterscheidet beispielsweise einen gültigen beobachteten Lauf von einem noch nicht ausgeführten Versuch. Am Ende liefern Sie daher nicht nur Code, sondern Lastbeschreibung, Protokoll, Rechenbeispiele und eine begründete Ergebnisübersicht. Der gleiche Entwurf kann logisch korrekt sein und trotzdem eine Zeitgrenze verletzen. Genau diese Unterscheidung soll der Abschlussversuch sichtbar machen.
+:::
+
+## Vier Schulstunden: Entwurf und Abnahme
+
+| Tätigkeit | Minuten |
+|---|---:|
+| Architektur und Schnittstellen · Folien 1–23 | 45 |
+| Capstone-Vertrag und Verifikation · Folien 24–50 | 45 |
+| Vier Papieraufgaben mit Besprechung | 50 |
+| Vorbereiteter STM32-Versuch | 25 |
+| Quiz und gemeinsame Klärung | 15 |
+| Gesamt | 180 |
+
+::: notes
+Vier Schulstunden mit je 45 Minuten ergeben 180 Minuten. STM32 ist die verwendete Mikrocontrollerfamilie. Die 25 Labor-Minuten setzen ein vorbereitetes Dual-Core-Projekt voraus: zwei getrennte Firmwares, gemeinsamer Start und der Speichervertrag der vorherigen Versuche. Die erstmalige Installation von CubeMX oder der Entwicklungsumgebung ist darin nicht enthalten.
+
+Der erste Block führt von Architekturentscheidungen zu Schnittstellen. Der zweite verfolgt eine einzelne Ereigniskette und macht ihre Abnahmebedingungen ausdrücklich. In den Papieraufgaben werden unter anderem Queuebelegung, Mailboxbilanz, Zeitabstände und Filterwerte ausgerechnet. Der Programmierteil prüft dieselben Begriffe an einer endlichen Implementierung. Bei fehlendem Board bleiben die vier Pflichtaufgaben vollständig lösbar. Das Quiz fragt anschließend nach Unterscheidungen, die auch in einer Klausur relevant sind. Hardwarebeobachtungen werden dabei nicht durch Modellzahlen ersetzt.
+:::
+
+## Ein Blockbild braucht Verträge
+
+| Übergang | Zu klären |
+|---|---|
+| Ereignis → Queue | Annahme, Reihenfolge, voller Puffer |
+| Worker → Mailbox | Einheit, Besitz, vollständiger Datensatz |
+| Mailbox → Filter | Auslassungen, Alter, Gültigkeit |
+| Fehler → Reaktion | Nachweis, Frist, Wiederanlauf |
+
+Pfeile beschreiben Beziehungen, keine garantierten Laufzeiten.
+
+::: notes
+Ein Worker ist der Ausführungspfad, der angenommene Arbeit verarbeitet. Eine Mailbox ist hier der gemeinsam erreichbare Speicher für Latest-Value, den neuesten Stand. Ein Datensatz besteht aus Nutzwert und den zugehörigen Kennungen. Die Tabelle fragt bei jedem Übergang, was vorher bekannt sein muss und was danach tatsächlich zugesagt wird.
+
+Ein Pfeil von Ereignis zur Queue bedeutet beispielsweise nicht, dass jede physische Flanke angenommen wird. Der Eingang kann zusammengefasste Hardwareereignisse sehen, und die Queue kann voll sein. Ein Pfeil zur Mailbox bedeutet nicht, dass jeder veröffentlichte Zwischenwert später kopiert wird. Ein Fehlerpfeil braucht wiederum eine definierte Reaktion und ihre maximale Zeit. HSEM, Hardware Semaphore, schützt den gemeinsamen Abschnitt; die MPU, Memory Protection Unit, prüft Adressrechte dieses Kerns. Keines davon füllt die fehlenden Verträge von selbst. Zuerst formulieren wir deshalb die Anforderungen in messbaren Teilgrößen.
+:::
+
+## Aus „schnell und verlustfrei“ werden Anforderungen
+
+Lehrziele unter ausdrücklich benannter Normallast:
+
+- 100 Eingabeereignisse je Sekunde, Queue-Tiefe 8
+- Publikationsantwort höchstens 1 ms
+- Alter eines neu kopierten Stands höchstens 50 ms
+- HSEM-Haltezeit je Seite höchstens 50 µs
+- Jede Abweisung und jede erlaubte Ersetzung wird gezählt
+
+Das sind Anforderungen, keine bereits gemessenen Ergebnisse.
+
+::: notes
+100 Ereignisse pro Sekunde bedeuten einen nominalen Abstand von zehn Millisekunden. Die Queue ist der lokale Nachrichtenpuffer. HSEM bedeutet Hardware Semaphore. Die Publikationsantwort reicht vom definierten Eingangspunkt bis zur Veröffentlichung. Das Snapshotalter bezieht sich nur auf wirklich kopierte neue Stände; ein Snapshot ist eine lokale Kopie eines konsistenten Datensatzes. Die Haltezeit beginnt nach dem erfolgreichen Erwerb und endet bei der Freigabe.
+
+Diese Zahlen sind Lehrfestlegungen. Sie gelten im Normalversuch mit vorbereitetem Eingang und endlichen Datenmengen. Der Queue-Sättigungsversuch und ein dauerhaft blockierter Partner haben andere Erwartungen. „Verlustfrei“ wäre für eine Latest-Value-Mailbox die falsche Forderung: Sie darf Zwischenstände ersetzen. Gefordert ist stattdessen eine vollständige Erklärung der gezählten Übergänge. Auch die Ausgabedauer bekommt bei Bedarf ein eigenes Ziel; sie wird nicht heimlich in die 50 Millisekunden hineingelesen. Die nächsten Folien wiederholen die Zeitbegriffe, bevor wir Architekturvarianten vergleichen.
+:::
+
+## Antwortzeit und eigene Rechenzeit
+
+Ein synthetischer Job:
+
+$r=1$ ms, $s=2$ ms, $f=7$ ms, $d=8$ ms.
+
+$$R=f-r=6\,\mathrm{ms},\qquad C=3\,\mathrm{ms}$$
+
+- $r$: Freigabe, $s$: erster Start, $f$: Abschluss
+- $d$: absolute Deadline, $C$: eigene Rechenzeit
+- Frist eingehalten, Reserve $d-f=1$ ms
+
+Wartezeit und fremde Arbeit gehören nicht zu $C$.
+
+::: notes
+Ein Job ist eine konkrete Aktivierung einer Task. r bezeichnet seine Freigabe, s den ersten Ausführungsbeginn, f den Abschluss und d die absolute Deadline, also die geforderte Abschlusszeit. C ist die eigene Prozessorarbeit des Jobs. R ist seine Antwortzeit. Die Modellzahlen stammen aus dem bekannten Zeitbeispiel: Eigene Ausführung liegt von zwei bis vier und von sechs bis sieben Millisekunden, insgesamt drei Millisekunden. Von Freigabe eins bis Abschluss sieben vergehen dagegen sechs Millisekunden.
+
+Die Deadline acht ist eingehalten; es bleibt eine Millisekunde Reserve. Zwischen vier und sechs kann eine andere Aufgabe laufen. Diese fremde Arbeit ist Bestandteil der verstrichenen Antwortzeit, aber nicht der eigenen Rechenzeit des Jobs. Auch das anfängliche Warten von eins bis zwei gehört nur zur Antwortzeit. Ein schneller Filter mit drei Millisekunden eigener Arbeit kann daher eine zu enge Ende-zu-Ende-Frist verletzen, wenn die anderen Anteile groß sind. Das Timing-Diagramm zeigt genau diese Trennung.
+:::
+
+## Ready und Running bleiben verschieden
+
+Ein-Kern-Lehrmodell in ms · Kontextwechselkosten hier null.
+
+```{.plantuml}
+@startuml
+skinparam backgroundColor transparent
+skinparam defaultFontName "Inter, sans-serif"
+skinparam defaultFontSize 16
+skinparam defaultFontColor #1D1D1F
+skinparam ArrowColor #86868B
+skinparam NoteBackgroundColor #F5F5F7
+skinparam NoteBorderColor #E5E5EA
+skinparam timing {
+ BackgroundColor #FFFFFF
+ BorderColor #E5E5EA
+ LineColor #1D1D1F
+ SignalColor #E2001A
+}
+<style>
+timingDiagram {
+ FontName sans-serif
+ concise {
+  FontName sans-serif
+  LineColor #1D1D1F
+  BackGroundColor #F5F5F7
+  FontColor #1D1D1F
+ }
+}
+</style>
+scale 1 as 55 pixels
+concise "Job" as J
+concise "CPU" as C
+@0
+J is "–"
+C is "B"
+@1
+J is "Rdy"
+@2
+J is "Run"
+C is "A"
+@4
+J is "Rdy"
+C is "B"
+@6
+J is "Run"
+C is "A"
+@7
+J is "Ende"
+C is "–"
+
+@enduml
+```
+
+::: notes
+Das Timing-Diagramm hat eine waagerechte Millisekundenachse von null bis acht. Die obere Spur beschreibt den Jobzustand. Rdy steht für Ready, ausführungsbereit, und Run für Running, tatsächlich laufend. Die untere Spur zeigt die CPU, Central Processing Unit, also den Kern: A ist der betrachtete Job und B fremde Arbeit. Die Namen bezeichnen hier keine Hardwarekerne. Der Job wird bei eins bereit, läuft von zwei bis vier, wartet ausführungsbereit bis sechs und läuft erneut bis sieben. Ende markiert seinen Abschluss; der Gedankenstrich eine hier nicht weiter modellierte Aktivität.
+
+Die beiden Laufsegmente ergeben drei Millisekunden eigene Arbeit. Freigabe bis Ende ergibt sechs Millisekunden Antwortzeit. Die Deadline liegt bei acht; der abschließende freie Abschnitt zeigt die eine Millisekunde Reserve. Kontextwechselkosten sind ausdrücklich null im Modell. Eine reale Messung müsste sie sinnvoll zuordnen. Das Bild ist ein Schedulingmodell und keine Traceaufnahme. Es zeigt, warum der Zustand einer Task und die momentan laufende Kernarbeit gemeinsam betrachtet werden müssen.
+:::
+
+## Jitter nur mit benannter Größe
+
+Lehrstichprobe von Publikationsantworten:
+
+$$R_{\mathrm{pub}}=0{,}50;\ 0{,}75;\ 0{,}90\,\mathrm{ms}$$
+
+$$J_R=\max R_{\mathrm{pub}}-\min R_{\mathrm{pub}}=0{,}40\,\mathrm{ms}$$
+
+- beobachtetes Maximum: 0,90 ms
+- Ziel der Stichprobe: höchstens 1 ms
+- kein WCET-Beweis aus drei Werten
+
+Periodenabweichung wäre eine andere Jitterdefinition.
+
+::: notes
+Jitter bezeichnet eine Schwankung einer ausdrücklich festgelegten Zeitgröße. Hier ist J R die Spanne der beobachteten Publikationsantworten R pub. Die drei Werte sind didaktische Zahlen, keine Aufnahme auf dem Board. Der größte ist 0,90 und der kleinste 0,50 Millisekunden; die Differenz ist 0,40 Millisekunden. Alle drei Werte liegen unter dem Lehrziel von einer Millisekunde.
+
+Das beobachtete Maximum ist jedoch keine allgemeine obere Grenze. WCET bedeutet Worst-Case Execution Time, obere Ausführungszeit unter benannten Annahmen, und betrifft zusätzlich ein festgelegtes Stück eigener Arbeit. Antwortzeit kann andere Verzögerungen enthalten. Eine Periodenabweichung würde stattdessen die Ereignisabstände mit einem Sollabstand vergleichen. Diese zwei Definitionen dürfen nicht mit derselben unbeschrifteten Zahl vermischt werden. Ein Kernel, ein schneller Prozessor oder ausgeschalteter Cache ersetzen keinen vollständigen Zeitnachweis. Die Architektur muss nun entscheiden, wo die fristkritische Arbeit ausgeführt wird.
+:::
+
+## CPS: lokaler Wirkungspfad und Telemetrie
+
+Eine physische Regelstrecke ist das allgemeine Bild, kein Teil unseres Zahlengenerators.
 
 ```{mermaid}
-%%| fig-width: 8.6
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  E["Ereignis"] --> Q["Queue, angenommen"]
-  Q --> W["Worker"]
-  W --> M["Mailbox, publiziert"]
-  M --> S["Snapshot, kopiert"]
-  S --> U["Ausgabe"]
-  V["Ueberwachung"] -.-> W
-  V -.-> S
+ S["Sensor"] --> R["lokaler Regler"] --> A["Aktor"]
+ R -.-> T["Telemetrie"] -.-> N["Netz"]
+
 ```
 
-| Gruppe | Vertrag im Capstone |
-|--------|---------------------|
-| Erfassen | ISR erkennt, Put mit Timeout 0 |
-| Verarbeiten | lokale Queue, Arbeit außerhalb des Schlosses |
-| Austauschen | Latest-Value in SRAM4, HSEM ungleich Boot |
-| Überwachen | Fortschritt, nicht die Tasterrate |
-
 ::: notes
-Die Agenda hat die Reihenfolge genannt. Diese Folie zeigt, wo ein Ereignis angenommen, veröffentlicht, kopiert oder verworfen werden kann. ISR ist die Interrupt Service Routine, EXTI der External Interrupt Controller. Eine Queue ist ein Puffer mit Entnahmereihenfolge. SRAM4 ist die gemeinsame Speicherbank aus Vorlesung 6, nicht ein vierter Kern. Die Überwachung sitzt daneben, weil ein Watchdog keine Nutzdatenstation ist.
+CPS bedeutet Cyber-Physical System, ein System mit gekoppelter Rechnung und physischer Wirkung. Ein Aktor setzt eine Stellgröße physisch um. Telemetrie überträgt Beobachtungen nach außen. Das Architekturdiagramm liest sich von links nach rechts: Die durchgezogenen Pfeile verbinden Sensor, lokalen Regler und Aktor. Die gestrichelten Pfeile bilden den zusätzlichen Telemetriepfad zum Netz. Sie kennzeichnen einen anderen Vertrag, keine langsameren Pfeilgeschwindigkeiten.
 
-PC als Program Counter ist die Befehlsadresse im Kern. PC13 ist Port C, Pin 13, der Taster auf vielen Nucleo-Boards. Die beiden Kürzel teilen sich Buchstaben und nicht die Bedeutung. Für den Capstone brauchen wir PC13 nur als möglichen Funktionstest.
-
-Die MPU, Memory Protection Unit, sieht Regionen eines Kerns, nicht jede Arraygrenze und nicht DMA, Direct Memory Access. Der Watchdog sieht nur, ob rechtzeitig und im Fenster aufgefrischt wurde. Ein blinder Feed verdeckt einen Stillstand.
-
-Aus den Bausteinen folgen drei Entwurfsprinzipien.
+Der lokale Kreis kann eigene enge Fristen haben. Eine variable Netzlatenz soll diese Fristen nicht heimlich bestimmen. Fällt das Netz aus, muss die Anwendung festlegen, wie der lokale Kreis weiterarbeitet oder in einen definierten Zustand übergeht. Ein CPS braucht kein öffentliches Netz, und ein Telemetrieausfall ist nicht automatisch ein Fehler der lokalen Berechnung. Im Kursdemonstrator gibt es nur synthetische Zahlen und keine angeschlossene Maschine. Das Bild erklärt die allgemeine Architekturfrage. Die folgende Rechnung zeigt einen möglichen Grund, Daten bereits nahe an ihrer Quelle auszuwerten.
 :::
 
-## Erkenntnis 1: Determinismus schlägt Rohleistung
+## Edge: eine Datenrate transparent rechnen
 
-Eine Super-Loop kann harte Fristen halten, wenn jede relevante Arbeit und jeder Wartepfad ein Budget hat. FreeRTOS beweist das nicht allein. Cache aus verkleinert einen Einfluss und lässt Bus, IRQ und Protokoll stehen.
+Modell: 40 000 Proben/s · 1 000 Sensoren · 2 Byte/Probe.
 
-Jitter benennen wir entweder als Spanne einer festgelegten Antwortzeit oder als Abweichung von einer Sollperiode. Nicht beides mit derselben Zahl.
+$$40000\cdot1000\cdot2=80\,000\,000\,\mathrm{Byte/s}$$
 
-::: notes
-Deterministisch heißt hier: unter genannten Bedingungen bleibt das Verhalten in den begründeten Grenzen. Eine Super-Loop ist eine Endlosschleife ohne Kernel. Sie hält eine Frist, wenn die längste Runde inklusive aller Interrupts in das Budget passt. Ein schneller Kern mit einer langen fremden Busnutzung kann trotzdem zu spät sein. Das ist das Gegenbeispiel zur Rohleistung.
+$$80\,\mathrm{MB/s}=640\,\mathrm{Mbit/s}$$
 
-IRQ ist die Interruptanforderung. WCET ist die obere Ausführungszeit eines benannten Stücks, nicht automatisch die Antwortzeit. In Vorlesung 2 war die Rate-Monotonic-Schranke hinreichend unter ihren Annahmen, nicht eine Aussage über jede Anlage. Ein gemessenes Maximum beschreibt die gültigen Läufe. Ohne Analyse der übrigen Pfade ist es keine WCET.
-
-Frage: Warum ist das beobachtete Maximum kein WCET-Beweis? Weil nicht gelaufene Pfade und Interferenzen fehlen können.
-
-Zeitbudgets enthalten auch die Kosten der Synchronisation.
-:::
-
-## Synchronisation braucht kurze Abschnitte
-
-- Das Schloss hält die Konsistenz des einen Datensatzes
-- Es verspricht nicht, dass jede ältere Fassung den Leser erreicht
-- Unter dem Schloss nur schreiben oder kopieren
-- Filter, UART und `printf` danach
-- Verlorenes Aufwecken aus VL8 bleibt unzulässig
-
-Latest-Value darf Zwischenwerte ersetzen. „Kein Verlust“ wäre ein anderer Vertrag.
+- MB dezimal: $10^6$ Byte
+- Nutzdaten ohne Protokoll; keine STM32-Leistungsangabe
 
 ::: notes
-Der Titel der älteren Folie klang nach einem Verbot. Gemeint ist der Preis: Erwerbswartezeit und Haltezeit. Ein Mutex ordnet Tasks eines Kernels. HSEM, Hardware Semaphore, ordnet den Inter-Core-Besitz, wenn die Kennungen stimmen. Der Producer schreibt einen vollständigen Datensatz. Der Consumer kopiert ihn. Danach rechnen und senden beide außerhalb. UART ist der Universal Asynchronous Receiver/Transmitter.
+Edge bezeichnet Verarbeitung nahe an der Datenquelle, beispielsweise auf dem Gerät oder einem örtlichen Gateway. Die Rechnung verwendet frei gesetzte Lehrannahmen. 40000 Proben je Sekunde mal 1000 Sensoren mal zwei Byte je Probe ergibt 80 Millionen Byte pro Sekunde. MB bedeutet hier dezimale Megabyte mit einer Million Byte. Ein Byte enthält acht Bit, daher sind es 640 Millionen Bit pro Sekunde oder 640 Megabit pro Sekunde. MiB wäre Mebibyte mit 1048576 Byte und eine andere Einheit.
 
-Latest-Value, auch Mailbox genannt, behält den neuesten Stand. Eine ältere Publikation darf überschrieben werden, bevor der M7 sie kopiert. Das ist erlaubt und muss in der Bilanz als Auslassung erscheinen. Eine Queue, die jede Nachricht bis zur Ausgabe behält, ist eine andere Architektur mit Gegendruck. Beides gleichzeitig „verlustfrei“ zu nennen, widerspricht sich.
-
-Genau ein lokaler Nutzer je Core- und ProcessID-Kombination im einfachen Capstone. Weitere Tasks brauchen lokale Serialisierung. Eine HSEM-Notification ist die Meldung einer Freigabe, kein Besitz. Das Warten speichert das Ereignis vor dem Wait, wie in Vorlesung 8.
-
-Schutz- und Diagnosemechanismen sehen nur ihr eigenes Fehlerbild.
+Die Zahl ist ausschließlich Nutzdaten. Adressierung, Rahmen, Prüfinformationen und Pausen könnten den benötigten Transport weiter erhöhen. Sie ist keine gemessene Rate des STM32, der verwendeten Mikrocontrollerfamilie. Vorverarbeitung kann die Übertragungsmenge verkleinern, kostet aber selbst Rechenzeit und muss in den Zeitvertrag passen. Die Rechnung begründet eine Entwurfsentscheidung und keine Pflicht, sämtliche Rohdaten immer zu unterdrücken.
 :::
 
-## Überwachung wirkt nur mit einem passenden Fehlerbild
+## Was am Edge übertragen werden kann
 
-| Mechanismus | sieht | sieht nicht |
-|-------------|-------|-------------|
-| Watchdog | ob der Refresh in Zeit und Fenster lag | die fachliche Richtigkeit |
-| MPU | Regionen dieses Kerns | DMA und den anderen Kern |
-| Trace | vollständig angekommene Läufe | die nicht aufgezeichneten |
+| Option | Nutzen | offene Frage |
+|---|---|---|
+| Rohdaten | spätere freie Auswertung | Datenrate und Puffer |
+| Ausschnitte | relevante Ereignisse erhalten | Auswahlkriterium |
+| Merkmale | geringe Datenmenge | Information ausreichend? |
+| Zustandsmeldung | einfacher Überblick | Fehler und Alter erkennbar? |
 
-Sensorstille und ein Burst sind erlaubte Lasten. Sie sind kein Hänger und kein Grund, bei jedem Taster zu füttern.
+Der lokale Fristpfad bleibt unabhängig vom Telemetrievertrag.
 
 ::: notes
-Die Schlösser haben die Daten konsistent gehalten. Sie haben nicht geprüft, ob der Worker noch lebt oder das Ergebnis stimmt. Die Software muss die Gesundheitsbedingung liefern. Der Watchdog prüft den zeitlichen Refresh. Die MPU prüft Adressen eines Kerns. Ein Trace ist die Aufzeichnung der Ereignisse, die den Recorder erreicht haben. Ein fehlendes Ereignis ist keine Latenz von null.
+Ein Merkmal ist eine aus Rohdaten berechnete zusammenfassende Größe, etwa Mittelwert oder Spitze. Ein Ausschnitt hält ausgewählte Rohdaten fest. Eine Zustandsmeldung gibt einen interpretierten Zustand samt Gültigkeit und Alter weiter. Edge heißt Verarbeitung nahe an der Quelle. Keine dieser Optionen ist allein durch den Begriff Edge vorgeschrieben.
 
-WWDG, Window Watchdog, darf nicht an jede Tasterflanke gekoppelt werden. Ein Burst kann zu früh refreshen. Eine legitime Pause kann zu spät wirken, obwohl die Tasks ihre Kontrollrunde beendet haben. Der Supervisor aus Vorlesung 8 prüft frische Fortschrittsnachweise mit eigenen Fristen. Ein weiterlaufender M4-Feed darf einen toten M7 nicht verdecken, wenn dessen Fortschritt zum Vertrag gehört.
-
-Frage: Warum füttert man den WWDG nicht bei jedem Taster? Weil Burst und Stille die Fensterbedingung aus dem falschen Grund treffen.
-
-Vom einzelnen Controller geht es zur Systemarchitektur.
+Wer ausschließlich einen Mittelwert überträgt, kann später möglicherweise keine kurze Störung mehr rekonstruieren. Wer alle Rohdaten überträgt, braucht genügend Transportkapazität und Speicher. Beide Entscheidungen können sinnvoll sein, wenn ihr Vertrag passt. Der Capstone verwendet einen kleinen Filter als Beispiel für lokale Verarbeitung. Seine Latest-Value-Mailbox erlaubt bereits vor dem Filter Auslassungen; der Filter erhält also nicht automatisch jede ursprüngliche Probe. Das muss zur fachlichen Auswertung passen. Der Ort der Verarbeitung sagt zudem noch nichts darüber, welcher der beiden Kerne die jeweilige Aufgabe übernimmt. Diese zweite Frage beantwortet die asymmetrische Rollenverteilung.
 :::
 
-## Vom Mikrocontroller zum CPS
+## AMP: verschiedene Rollen, gemeinsame Hardware
 
-Ein CPS, Cyber-Physical System, koppelt Rechnung und physische Wirkung. Es braucht kein öffentliches Netz.
-
-Abbildung B. Der lokale Kreis hat eigene Fristen. Die Telemetrie ist ein zweiter Pfad.
-
-Edge kann der MCU, ein Gateway oder ein Industrie-PC sein. Edge ist nicht AMP. Eine WAN-Latenz von 50 ms ist ein Anlass, den Pfad zu wählen, keine allgemeine Stabilitätsgrenze für jeden PID-Regler. PID ist der Regler mit proportionalem, integrierendem und differenzierendem Anteil. WAN ist ein Weitverkehrsnetz.
-
-Fällt das Netz aus, bleibt der lokale Kreis im definierten Betrieb. Er stürzt nicht, weil die Telemetrie fehlt.
+Die Aufgabenverteilung ist eine Entwurfsgrenze, keine zeitliche Mauer.
 
 ```{mermaid}
-%%| fig-width: 8.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  S["Sensor"] --> R["lokaler Regler"]
-  R --> A["Aktor"]
-  R -.-> T["Telemetrie"]
-  T -.-> N["Netz, darf ausfallen"]
+ M4["M4: Erfassen"] --> B["Mailbox"] --> M7["M7: Filtern"]
+ M4 --- H["Bus / Takt / Reset"]
+ M7 --- H
+
 ```
 
 ::: notes
-Die Überwachung hat zum Controller gehört. Ein CPS fragt zusätzlich, welcher Pfad die Stellgröße erzeugen darf. Der lokale Sensor-Regler-Aktor-Weg bleibt auf dem Gerät. Die Telemetrie darf Daten nach außen tragen und bei Netzausfall ausfallen, ohne den lokalen Kreis mitzunehmen. 50 ms sind hier eine Lehrannahme für eine langsame Strecke, nicht die Grenze, ab der jeder PID instabil wird. Das hängt von Strecke und Entwurf ab.
+AMP bedeutet Asymmetric Multiprocessing, asymmetrische Verarbeitung mit getrennten Programmen und Rollen. M4 ist der Cortex-M4 mit FreeRTOS, dem Echtzeitkernel. M7 ist der Cortex-M7 ohne Kernel. Im Diagramm überträgt die Mailbox den Anwendungsdatensatz vom erfassenden zum auswertenden Kern. Die unteren ungerichteten Linien kennzeichnen gemeinsam genutzte Hardwarebereiche wie Bus, Taktverwaltung und Reset. Sie sind keine zusätzlichen Nachrichtenpfeile.
 
-Ein fiktives Beispiel, kein Industrienachweis: Der Stromregler taktet lokal im Millisekundenbereich. Dieselbe Stellgröße über eine variable WAN-Strecke wäre der falsche Pfad. Bei Netzausfall setzt die Telemetrie ein Kennzeichen „nicht verbunden“. Die lokale Regelung behält ihren letzten gültigen Betrieb oder einen benannten Ersatz, den die Anwendung festlegt. Wir erfinden dafür keinen Motor.
-
-Die nächste Rechnung zeigt, warum man nicht jede Rohprobe ins Netz schickt.
+Edge beantwortet den Ort der Verarbeitung, AMP die Rollenverteilung. Beide können gleichzeitig gelten. Ein getrennter Speichervertrag beseitigt keine Businterferenz. Zusätzliche Last auf dem M7 kann daher Zeitverhalten auf dem M4 beeinflussen. Ein System-Reset betrifft ebenfalls beide Programme nach dem vorgesehenen Startvertrag. Die zwei unterschiedlichen Cortex-Kerne rechnen hier keine gleiche Funktion im Lockstep und sind nicht automatisch gegenseitige Sicherheitsersatzkanäle. Ihre Aufteilung ist zunächst eine nachvollziehbare Arbeitsorganisation, die mit eigener Zeit- und Fehlersemantik ergänzt werden muss.
 :::
 
-## Das Edge-Computing Pattern
+## Fail-Safe und Fail-Operational benennen das Ziel
 
-Lehrannahme, keine Messung: 40 000 Samples je Sekunde, 1 000 Sensoren, 2 Byte je Sample.
+| Muster | nach einem benannten Fehler |
+|---|---|
+| Fail-Safe | definierter sicherer Zustand |
+| Fail-Operational | definierte Restfunktion bleibt verfügbar |
 
-$$40000 \times 1000 \times 2 = 8\cdot 10^{7}\,\text{Byte/s} = 80\,\text{MB/s}$$
+Dazu gehören Fehlerannahme, Reaktionszeit und zulässige Dauer.
 
-$$80 \times 8 = 640\,\text{Mbit/s}$$
-
-MB ist hier dezimal, $10^{6}$ Byte. Das ist Nutzdatenrate ohne Protokoll, Adressierung und Pausen. Rohdaten, ein Ausschnitt, Merkmale oder Telemetrie sind Entwurfsoptionen. „Nur Metadaten“ ist keine Pflicht. Der zeitkritische Pfad bleibt lokal, auch wenn die Nutzlast sinkt.
+Ein Reset ist nur mit passendem Ausgangs- und Startkonzept eine sichere Reaktion.
 
 ::: notes
-Die vorige Folie hat den lokalen Kreis vom Netz getrennt. Die Rechnung begründet, warum die Trennung oft nötig ist. 40 000 mal 1 000 mal 2 ist 80 Millionen Byte je Sekunde. Mal 8 sind 640 Millionen Bit je Sekunde, also 640 Mbit/s Nutzdaten. Ein MB mit $10^{6}$ Byte ist nicht das binäre MiB. Die Annahmen stehen nicht auf dem Board. Ein anderes Kompressionsverhältnis oder ein Cloudtarif werden nicht erfunden.
+Fail-Safe führt bei einem betrachteten Fehler in einen definierten sicheren Zustand. Fail-Operational erhält nach einem betrachteten Fehler eine benannte Funktion, gegebenenfalls eingeschränkt und zeitlich begrenzt. Safety ist der Schutz vor unvertretbaren Folgen einer Fehlfunktion. Ohne Beschreibung der Anwendung, des Fehlers und der benötigten Reaktion sagen diese Wörter wenig aus.
 
-Vorverarbeitung am Edge kann Merkmale statt Rohproben senden. Sie darf den Regelkreis nicht hinter das Netz legen, wenn dessen Latenz die lokale Frist verletzt. Abbildung B bleibt gültig: Netzausfall trifft den Telemetriepfeil. Der lokale Pfad läuft weiter, sofern sein eigener Vertrag das vorsieht.
-
-Wo gerechnet wird, ist eine andere Frage als die Rollen der beiden Kerne.
+Abschalten ist nicht in jeder Maschine ungefährlich: Eine frei fallende Last könnte gerade durch das Ausschalten gefährlich werden. Unser Zahlendemonstrator hat keinen solchen Aktor. Eine ungültige Ausgabe wird als ungültig behandelt; es wird kein erfundener Antrieb freigegeben. Auch ein Watchdog-Reset braucht das aus Vorlesung 8 bekannte Pegelkonzept während Reset und Boot. MPU, Memory Protection Unit, und HSEM, Hardware Semaphore, beantworten andere Schutzfragen. Die beiden Kerne des Demonstrators allein machen aus dem Entwurf keine Fail-Operational-Architektur. Ein Weiterbetrieb nach Fehlern benötigt passende Diagnose und häufig zusätzliche Ressourcen.
 :::
 
-## Asymmetrische Lastverteilung in der Praxis
+## Redundanz: Vergleich, Umschaltung oder Abstimmung
 
-Abbildung C. Die gestrichelte Linie ist die gewünschte Aufgabengrenze, nicht eine gemessene zeitliche Isolation.
+| Muster | Leistung | zusätzliche Voraussetzung |
+|---|---|---|
+| zwei Kanäle | Abweichung erkennen | Diagnose des richtigen Kanals |
+| Active/Standby | auf Ersatz umschalten | gültiger aktueller Ersatzstand |
+| 2oo3 | einen Abweichler überstimmen | passende Fehler- und Auswahlannahmen |
+
+Gemeinsame Ursache und fehlerhafter Entscheider bleiben mögliche Fehler.
+
+::: notes
+Redundanz bedeutet zusätzliche Ressourcen für eine benannte Aufgabe. Active ist der aktuell wirksame Kanal, Standby der vorbereitete Ersatz. Ein Zweikanalvergleich liefert bei unterschiedlichen Ergebnissen zunächst nur ein Abweichungszeichen. Ohne weitere Diagnose ist nicht bekannt, welcher Wert stimmt. Eine Umschaltung hilft nur, wenn der Ersatzkanal rechtzeitig verfügbar ist und einen gültigen ausreichend aktuellen Zustand hat.
+
+2oo3 bedeutet two out of three, zwei von drei. Eine Abstimmung kann unter geeigneten Annahmen einen einzelnen abweichenden Kanal maskieren. Der Entscheider, Voter genannt, ist ebenfalls Teil des Fehlerkonzepts. Gleiche Anforderungsfehler, eine gemeinsame Versorgung oder derselbe falsche Algorithmus können mehrere Kanäle gleich betreffen. Unterschiedliche Chiphersteller sind deshalb nicht automatisch unterschiedliche Software. Eine Sicherheitswahrscheinlichkeit wird hier nicht aus der Zahl der Kästen berechnet. Das nächste Zahlenbeispiel macht insbesondere den Unterschied zwischen Erkennen einer Abweichung und Erkennen des richtigen Ergebnisses sichtbar.
+:::
+
+## Drei Werte brauchen eine Entscheidungsregel
+
+Lehrwerte: 10,0 · 10,1 · 40,0.
+
+- exakte Gleichheit: keine Zweiermehrheit
+- bei erlaubter Nähe 0,2: erste zwei stimmen überein
+- Median als festgelegte Auswahlregel: 10,1
+- gemeinsame Falschwerte: auch eine Mehrheit kann falsch sein
+
+Zwei Werte 10 und 40 verraten allein keinen richtigen Kanal.
+
+::: notes
+Die Werte sind frei gewählte Zahlen ohne Maßeinheit für einen Abstimmungsfall. Bei exakter Gleichheit sind alle drei verschieden. Ein Voter, der Entscheider, könnte deshalb keine exakte Zweiermehrheit finden. Erlaubt der Vertrag Abweichungen bis 0,2, passen 10,0 und 10,1 zusammen. Eine andere ausdrücklich definierte Regel ist der Median, der mittlere sortierte Wert: Nach Sortierung 10,0, 10,1, 40,0 ist das Ergebnis 10,1.
+
+Weder Nähe noch Median beweisen, dass dieser Wert die wirkliche physische Größe trifft. Die ersten zwei Kanäle könnten dieselbe falsche Grundlage haben. Bei nur zwei Werten 10 und 40 ist die Abweichung sichtbar, aber die richtige Seite bleibt ohne zusätzliche Information unbekannt. Die Entscheidung muss zur Art des Signals passen. Für binäre Schutzanforderungen kann eine Mehrheitsregel anders aussehen als für kontinuierliche Werte. Diese Betrachtung verhindert, dass jede Wiederholung einer Rechnung als automatisch richtiger Ersatz interpretiert wird.
+:::
+
+## Lockstep vergleicht dieselbe Rechnung
+
+Allgemeines Prinzip, keine Registerkonfiguration des H755.
 
 ```{mermaid}
-%%| fig-width: 8.8
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  S["Sensor oder Timer"] --> M4["M4, FreeRTOS"]
-  M4 --> SH["SRAM4 und HSEM"]
-  SH --> M7["M7, Bare Metal"]
-  M7 --> U["UART"]
-  M4 --- B["Bus, Takt, Reset"]
-  M7 --- B
+ I["gleicher Eingang"] --> A["Rechnung A"]
+ I --> B["Checker"]
+ A --> V["ausgerichteter Vergleich"]
+ B --> V
+ V --> E["Abweichungsmeldung"]
+
 ```
 
-Auf dem M7 läuft kein Linux. Ein Cortex-A-Gateway ist ein anderes Beispiel. Eine M4-Latenz von 10 µs steht hier nicht, solange sie niemand gemessen hat.
-
 ::: notes
-AMP, Asymmetric Multiprocessing, heißt: die Kerne haben verschiedene Programme und Rollen. Der M4 erfasst mit FreeRTOS. Der M7 filtert Bare Metal und sendet. Edge sagte nur, dass die Verarbeitung nah an der Anlage liegt. Beides kann zusammenfallen und bleibt trotzdem nicht dasselbe. RCC, Reset and Clock Control, gehört zu den geteilten Ressourcen, zusammen mit Bus, Speicher und Teilen der Peripherie.
+Lockstep bezeichnet die kontrollierte Ausführung derselben Funktion mit einem zweiten prüfenden Rechenpfad. Ein Checker ist dieser Prüfer. In Varianten mit zeitversetzter Ausführung werden die Ergebnisse vor dem Vergleich zeitlich ausgerichtet. Das Diagramm zeigt links denselben Eingang für beide Pfade und rechts den Vergleich mit einer möglichen Abweichungsmeldung. Die Pfeile beschreiben Datenabhängigkeiten, keine Hardwaretaktflanken oder garantierten Verzögerungswerte.
 
-Die gestrichelte Grenze im Text ist diese Rollengrenze. Sie ist keine Mauer gegen Interferenz. Last auf dem M7 kann den M4 über den gemeinsamen Bus verzögern, wie in Vorlesung 6. „Gemeinsam ist nur der vereinbarte Block“ gilt später für die Anwendungsdaten, nicht für die Hardware. Frage: Warum sind die Kerne nicht vollständig zeitlich isoliert? Weil sie Bus, Takt und Peripherie teilen.
-
-Eine solche Aufteilung ist noch kein Sicherheitskonzept.
+Eine Abweichung sagt zunächst, dass die verglichenen Ergebnisse nicht zusammenpassen. Sie liefert nicht automatisch ein richtiges Ersatzergebnis. Ein gemeinsamer systematischer Fehler kann beide Rechnungen gleich falsch machen. Lockstep allein ist daher keine Zusage einer Restfunktion. H755 bezeichnet hier den STM32H755 mit Cortex-M4 und Cortex-M7. Im Kurs erhalten diese Kerne verschiedene Aufgaben; sie führen dieses Lockstep-Prinzip nicht aus. Die konkrete Diagnose- und Reaktionskonfiguration einer Lockstep-Produktfamilie wäre ein eigener Gegenstand und wird nicht auf die vorhandene Plattform übertragen.
 :::
 
-## Safety-Muster: Fail-Safe vs. Fail-Operational
+## Gleicher Funktionsname ist noch keine Schnittstelle
 
-Dieselbe fiktive Anwendung, derselbe benannte Fehler. Links ein definierter Zustand. Rechts eine benannte Restfunktion, befristet und degradiert.
+Ein Sensorport muss mehr sagen als „Wert lesen“:
 
-Fail-Safe braucht den sicheren Zustand und die zulässige Reaktionszeit, einschließlich Reset und Boot. „Motor aus“ kann eine hängende Last gefährden. Für den Sensordemonstrator heißt die Reaktion: Ausgabe als ungültig kennzeichnen, keinen Stellantrieb erfinden.
+- Datentyp und Einheit
+- Skalierung und gültiger Wertebereich
+- Bedeutung von Alter und Ungültigkeit
+- Aktualisierung, Auslassungen und Zugriff
+- Zeit- und Fehlervertrag
 
-Abbildung D ist ein Schema, kein Nachweis.
+Port ist hier ein Softwareanschluss.
+
+::: notes
+Ein Port ist ein definierter Anschluss einer Softwarekomponente, kein bestimmter digitaler Pin. Ein Funktionsname wie read_sensor legt allein weder Einheit noch Alter eines Werts fest. Zehn kann zehn Volt, ein Rohcode oder ein bereits skalierter Temperaturwert bedeuten. Ebenso kann ein unveränderter Wert einen gesunden ruhigen Eingang oder eine veraltete Nachricht darstellen.
+
+Eine Schnittstelle beschreibt deshalb Datentyp, Einheit, Skalierung, Wertebereich, Gültigkeit und Aktualisierung. Dazu kommen die Zeit- und Fehlerbedingungen. Im Capstone ist der Nutzwert ein synthetischer dimensionsloser Code zwischen null und 1023. Die Ereignis- und Publikationsnummern beschreiben seine Herkunft. Ein Zeitstempel gehört zu einer festgelegten lokalen Uhr und wird nicht beliebig auf dem anderen Kern subtrahiert. Diese kleine Schnittstelle zeigt dasselbe Entwurfsproblem, das größere Standards über viele Komponenten und Steuergeräte hinweg organisieren. Der folgende Exkurs ordnet deren Ebenen ein.
+:::
+
+## AUTOSAR Classic: Schichten
+
+Schichtenbild · Labor ohne AUTOSAR-Stack.
 
 ```{mermaid}
-%%| fig-width: 8.2
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  F["benannter Fehler"] --> S["definierter Zustand"]
-  F --> O["benannte Restfunktion"]
-  S --> B["Reset und Boot gehoeren dazu"]
+ A["SWC"] --> R["RTE"] --> B
+ subgraph B["BSW"]
+ direction TB
+ S["Services"] --> E["ECU-A"] --> M["MCAL"]
+ C["CD"]
+ end
+ B --> H["HW"]
 ```
 
 ::: notes
-Safety ist hier der Schutz vor unvertretbaren Folgen, keine Zertifizierung. Fail-Safe führt in einen benannten Zustand. Fail-Operational erhält eine benannte Funktion nach einem benannten Fehler. Ohne diese drei Angaben ist das Wort leer. Ein Watchdog-Reset ist nur dann der sichere Zustand, wenn die Pegel während Reset und die Freigabe nach dem Boot zur Anwendung passen. Pins können hochohmig werden. Das haben wir in Vorlesung 8 festgehalten.
+AUTOSAR heißt AUTomotive Open System ARchitecture und bezeichnet Standards für Fahrzeugsoftware. Classic Platform organisiert eine Steuergerätearchitektur. SWC heißt Software Component, fachliche Softwarekomponente. RTE heißt Runtime Environment, die konkret konfigurierte Laufzeitumgebung zwischen Anwendung und Basissoftware. BSW bedeutet Basic Software. ECU heißt Electronic Control Unit, Steuergerät. MCAL heißt Microcontroller Abstraction Layer, die hardwarenahe Abstraktionsschicht. ECU-A bezeichnet im Bild die ECU-Abstraktion, CD den Complex Driver und HW die Hardware. Ein Complex Driver ist ein besonderer hardwarenaher Pfad innerhalb der BSW.
 
-Gegenbeispiel: Eine Last, die beim Abschalten unkontrolliert fällt, ist durch „Ausgang aus“ nicht automatisch sicher. Der Sensordemonstrator hat keinen solchen Aktor. Seine definierte Reaktion ist ein Ungültig-Kennzeichen und keine erfundene Bremse.
-
-Weiterbetrieb braucht oft Redundanz. Deren Aussage muss zuerst klar sein.
+Das Diagramm liest sich für die Hauptschichten von links nach rechts: Anwendung, RTE, umrandete BSW und Hardware. Innerhalb der BSW sind Services, ECU-Abstraktion und MCAL als Teilfolge angeordnet. Services, ECU-Abstraktion, MCAL und Complex Driver liegen innerhalb dieser Umrandung. Hardware steht außerhalb rechts. Die Pfeile zeigen mögliche Beziehungen; nicht jeder Aufruf muss seriell alle Kästen durchlaufen. Der Complex Driver ist keine SWC oberhalb der RTE. Die STM32-HAL, Hardware Abstraction Layer, hat eine Treiberrolle im Labor, ist dadurch aber kein nachgewiesener AUTOSAR-MCAL-Stack. Der Nutzen des Exkurses ist die klare Zuordnung von Verantwortung und Schnittstellen.
 :::
 
-## Redundanz-Architekturen
+## Eine Softwarekomponente ist keine Task
 
-Zuerst die Entscheidungsgröße: binäre Schutzanforderung oder numerischer Wert.
-
-| Muster | liefert | liefert nicht |
-|--------|---------|----------------|
-| zwei Kanäle | ein Abweichungszeichen | den richtigen Wert |
-| Active/Standby | einen Umschaltpfad | dass der Standby aktuell ist |
-| 2oo3 | Maskierung eines Abweichlers | dass die Mehrheit wahr ist |
-
-2oo3 heißt two out of three, zwei von drei. Gemeinsame Versorgung, derselbe Anforderungsfehler und ein fehlerhafter Voter treffen alle. Zwei Chiphersteller sind keine Diversität der Software.
+Fiktive Zuordnung von ausführbaren Einheiten, kein Schedulingdiagramm.
 
 ```{mermaid}
-%%| fig-width: 8.6
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  K1["Kanal 1"] --> V["Vergleich oder Voter"]
-  K2["Kanal 2"] --> V
-  K3["Kanal 3, nur bei 2oo3"] --> V
-  C["gemeinsame Ursache"] -.-> K1
-  C -.-> K2
+ A["Runnable lesen"] --> T1["Task 1"]
+ B["Runnable prüfen"] --> T1
+ C["Runnable stellen"] --> T2["Task 2"]
+
 ```
 
 ::: notes
-Abbildung E trennt Vergleich, Umschaltung und Abstimmung. Zwei Kanäle erkennen, dass sie auseinanderliegen. Ohne weitere Diagnose weiß man nicht, welcher stimmt. Active ist der gerade wirkende Kanal, Standby der bereite. Der Umschaltpfad braucht Fehlererkennung und einen gültigen, hinreichend aktuellen Standbyzustand. Sonst schaltet man auf einen alten Wert. 2oo3 kann unter der Annahme unabhängiger Einzelfehler einen Abweichler überstimmen. Bei analogen Werten braucht der Voter eine Toleranz oder eine Auswahlregel, zum Beispiel einen Median. Die Mehrheit kann gemeinsam falsch liegen. Common Cause ist diese gemeinsame Ursache.
+Ein Runnable ist eine ausführbare Einheit innerhalb einer AUTOSAR-Softwarekomponente. AUTOSAR steht für AUTomotive Open System ARchitecture. Eine Task ist dagegen ein Ausführungspfad des Betriebssystems. Das Zuordnungsdiagramm zeigt von links nach rechts drei fiktive Runnables auf zwei Tasks: lesen und prüfen werden Task eins zugeordnet, stellen Task zwei. Die Pfeile sind Zuordnungen. Sie zeigen keine Zeitfolge, Priorität oder Präemption.
 
-Diversität der Hersteller betrifft das Silizium, nicht automatisch den Algorithmus. Eine unbelegte Flugzeuggeschichte und eine Sicherheitswahrscheinlichkeit fügen wir nicht hinzu. Das Bild bleibt ein Lehrschema.
-
-Lockstep ist eine integrierte Diagnose, kein zweites unabhängiges System.
+Eine SWC, Software Component, kann mehrere Runnables enthalten. Deren Abbildung auf Tasks und ihre Auslöseereignisse gehören zur Konfiguration. Zwei Runnables in derselben Task teilen deren Ablauf und müssen zusammen in den Zeitvertrag passen. VFB bedeutet Virtual Functional Bus, das abstrakte Kommunikationsbild. RTE bedeutet Runtime Environment, dessen konkrete Realisierung für ein Steuergerät. Ein gleich benannter Datenport kann lokal kurz oder über ein Netzwerk deutlich verzögert realisiert sein. Daher bleibt die Antwortzeitanalyse nötig, auch wenn die logische Komponentenbeschreibung unverändert aussieht.
 :::
 
-## Lockstep-Prozessoren (Hardware-Safety)
+## Stackelemente und Bytes unterscheiden
 
-Abbildung F. AURIX TC3xx, Delayed Lockstep: gleiche Funktion, zeitversetzter Checker, Vergleich nach Ausrichtung, Meldung an die SMU. SMU ist die Safety Management Unit. Die Reaktion ist konfiguriert. Eine Abweichung ist kein automatisch richtiges Ersatzergebnis.
+Lehrannahme: ein `StackType_t`-Element hat 4 Byte.
 
-SafeTI ist eine Technologiebezeichnung von Texas Instruments, kein einzelner Prozessorname. Das H755-Lehrprojekt ist kein Lockstep: M4 und M7 haben verschiedene Rollen.
+$$256\ \text{Elemente}\cdot4\ \text{Byte}=1024\ \text{Byte}$$
+
+| Schnittstelle | Einheit |
+|---|---|
+| FreeRTOS `xTaskCreateStatic` | `StackType_t`-Elemente |
+| CMSIS-RTOS2 `stack_size` | Byte |
+
+Statische Objekterzeugung beweist weder ausreichenden Stack noch die Deadline.
+
+::: notes
+Der Stack ist der Speicher eines Ausführungspfads für gesicherte Zustände und lokale Daten. FreeRTOS ist der bekannte Echtzeitkernel. xTaskCreateStatic erzeugt eine Task mit vom Aufrufer bereitgestelltem Speicher und erwartet ihre Stacktiefe in StackType_t-Elementen. Im angenommenen Port hat ein solches Element vier Byte. Daher entsprechen 256 Elemente 1024 Byte.
+
+CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. Ihr Feld stack_size im Typ osThreadAttr_t wird dagegen in Byte angegeben. Die Zahl 256 würde dort 256 Byte bedeuten, nicht denselben 1024-Byte-Stack. Port und Adapter werden im echten Projekt geprüft. Statische Konfiguration und statische Speicherbereitstellung sind ebenfalls verschiedene Aussagen. osThreadNew ohne eigene Stack- und Verwaltungsbereiche beweist keine statische Allokation. Ein korrekt bereitgestellter Bereich beweist noch nicht, dass er für alle Pfade groß genug ist, oder dass die Task ihre geforderte Abschlussfrist, die Deadline, einhält.
+:::
+
+## Classic und Adaptive bleiben verschiedene Ebenen
+
+| Vergleich | Classic | Adaptive |
+|---|---|---|
+| Schwerpunkt | konfigurierte Steuergeräte | größere Diensteplattformen |
+| Schnittstellenbild | RTE und BSW | ARA-Dienste |
+| Betriebssystembezug | Classic-OS | spezifizierte POSIX-Bezüge |
+
+FreeRTOS ist ein Kernel. AUTOSAR ist ein Standardsatz.
+
+::: notes
+AUTOSAR heißt AUTomotive Open System ARchitecture. Die Classic Platform beschreibt das zuvor gezeigte Steuergerätebild. RTE bedeutet Runtime Environment, BSW Basic Software und OS Operating System, Betriebssystem. Die Adaptive Platform ist eine andere Plattformlinie. ARA steht für AUTOSAR Runtime for Adaptive Applications, deren Laufzeitdienste. POSIX bedeutet Portable Operating System Interface und bezeichnet standardisierte Betriebssystemschnittstellen.
+
+Die Tabelle vergleicht Ziel und Schnittstellenebene, keine Rangliste. Adaptive ist nicht einfach Classic mit Linux; ein bestimmtes Betriebssystem allein definiert die Plattform nicht. OTA bedeutet Over-the-Air-Update, eine drahtlose oder über ein Netz übertragene Aktualisierung. Das ist eine Funktion, die nicht ausschließlich Adaptive vorbehalten ist. FreeRTOS kann statische Objekte unterstützen, wird dadurch aber nicht zum Classic-Betriebssystem. Unser STM32-Demonstrator ist keine Umsetzung eines der beiden AUTOSAR-Stacks. Für ihn übernehmen wir die Forderung nach eindeutigen Schnittstellen und einer nachvollziehbaren Konfiguration.
+:::
+
+## Was der kleine Capstone davon übernimmt
+
+- eine schmale und vollständige Datenschnittstelle
+- klare Eigentümer für Peripherie und Speicher
+- kurze gemeinsame Abschnitte
+- getrennte Nutzdaten- und Gesundheitsnachweise
+- dokumentierte Zeit- und Fehlerbedingungen
+
+Ein zusätzlicher Software-Layer ersetzt keinen dieser Verträge.
+
+::: notes
+Ein Layer ist eine Softwareebene mit benannten Aufgaben und Schnittstellen. Der Kurs übernimmt die Entwurfsprinzipien, implementiert aber keinen AUTOSAR-Stack; AUTOSAR bedeutet AUTomotive Open System ARchitecture. Für den Demonstrator ist ein kleiner selbst nachvollziehbarer Vertrag didaktisch passend. Seine Initialisierung, Übergänge und Zähler sind vollständig überschaubar.
+
+Die Eigentümerfrage betrifft auch Peripherie: Ein Timer wird nur auf dem erfassenden Kern eingerichtet und gestartet. Eine gemeinsame Speicherregion erhält genau einen Initialisierer. Das Hardware-Schloss umschließt nur den vollständigen Datensatz. Die Datenrate sagt nicht automatisch etwas über die Gesundheit eines Workers aus. Ein unveränderter gültiger Sensorwert und ein hängender Ausführungspfad bleiben unterschiedliche Fälle. Die zweite Hälfte setzt diese Prinzipien als konkrete Ereigniskette um. Dazu werden zuerst Eingabe, Annahme, Veröffentlichung und Kopie voneinander abgegrenzt. Erst danach lassen sich Zeitgrößen und Abnahmestatus sinnvoll zuordnen.
+:::
+
+## Die Ereigniskette des Demonstrators
+
+M4 besitzt die Queue · M7 filtert eine lokale Kopie.
 
 ```{mermaid}
-%%| fig-width: 8.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
 flowchart LR
-  IN["gleicher Eingang"] --> M["Master"]
-  IN --> C["Checker, zeitversetzt"]
-  M --> CMP["Vergleich, ausgerichtet"]
-  C --> CMP
-  CMP --> SMU["SMU, konfigurierte Reaktion"]
+ E["M4: Ereignis"] --> Q["Queue 8"] --> W["Worker"]
+ W --> B["Mailbox / HSEM"] --> F["M7: Kopie + Filter"]
+
 ```
 
 ::: notes
-Der Checker rechnet dieselbe Funktion später. Vor dem Vergleich werden die Ergebnisse zeitlich ausgerichtet. Stimmen sie nicht überein, meldet die Logik an die SMU. Welche Reaktion folgt, steht in der Konfiguration, nicht als „immer Halt“ in jedem Chip. Dieselbe systematische Fehlerursache kann beide Läufe gleich falsch machen. Der Vergleich sieht das dann nicht. Lockstep allein ist deshalb nicht Fail-Operational.
+M4 ist der Cortex-M4 mit FreeRTOS, dem Echtzeitkernel. M7 ist der Cortex-M7 ohne Kernel. HSEM bedeutet Hardware Semaphore. Das Datenflussdiagramm liest sich von links nach rechts. Die Ereignisroutine des M4 übergibt eine Nachricht an die lokale Queue mit acht Plätzen. Der Worker entnimmt sie und veröffentlicht einen vollständigen Datensatz unter dem Hardware-Schloss. Der M7 erwirbt dasselbe Schloss nur zum Kopieren und bestätigt die kopierte Publikation. Der Filter arbeitet danach außerhalb.
 
-Die genaue Verzögerung nennen wir nicht, solange sie nicht aus dem gelesenen AURIX-Handbuch der Familie TC3xx stammt. Infineon beschreibt Delayed Lockstep und die SMU in der Sicherheitsdokumentation dieser Familie. Wir übertragen keine Register auf den STM32.
-
-Frage: Warum ist das H755-AMP kein Lockstep? Weil die Kerne verschiedene Aufgaben rechnen und niemand dieselbe Rechnung zeitversetzt vergleicht.
-
-Die Muster lassen sich vergleichen, ohne sie gleichzusetzen.
+Die Queue ist kein gemeinsam benutztes Kernelobjekt des M7. Nur die Mailbox liegt im gemeinsamen Speicher. Der Normallauf erzeugt 20 synthetische Zahlen mit nominal zehn Millisekunden Abstand. Ein zweiter Lauf erzeugt zehn kontrollierte Puts vor dem ersten Get und prüft die Queuekapazität. Put und Get bedeuten Einfügen und Entnehmen. Der Programmierkern bleibt endlich und speichert seine Auswertung zunächst im privaten Arbeitsspeicher. Eine serielle Ausgabe kann danach bewusst als zusätzliche Last aktiviert werden.
 :::
 
-## Zusammenfassung Architekturmuster
+## Normallast, Burst und Sättigung unterscheiden
 
-| Frage | Mechanismus | Grenze |
-|-------|-------------|--------|
-| Wo rechnen? | Edge | Netzausfall ist ein eigener Pfad |
-| Wer rechnet was? | AMP | gemeinsame Hardware bleibt |
-| Was bleibt nach dem Fehler? | Fail-Safe oder Restfunktion | nur mit benanntem System |
-| Ist dieselbe Rechnung gleich? | Lockstep | kein richtiges Ersatzergebnis |
+| Versuch | Eingabe | Aussage |
+|---|---|---|
+| normal | 20 Ereignisse, nominal 10 ms Abstand | fortlaufende Verarbeitung |
+| Burst-Modell | zehn Ereignisse bei 0…9 ms | Drops hängen von Entnahmen ab |
+| Sättigung | zehn Puts ohne Get, Queue zunächst leer | genau 8 Annahmen, 2 Drops |
 
-Frage: Warum sind Edge und AMP keine Synonyme? Edge ist der Ort, AMP die Rollenverteilung. Frage: Was liefert ein Zweikanalvergleich? Ein Abweichungszeichen, nicht den richtigen Wert.
+Zehn physische Flanken sind nicht automatisch zehn Software-Puts.
 
 ::: notes
-Die Tabelle hält die vier Fragen auseinander. Sie können in einer Anlage zusammenkommen und bleiben verschiedene Nachweise. Ein Gateway am Netzrand kann AMP sein und trotzdem keine Lockstep-Redundanz haben. Der H755 bleibt zwei Firmwares mit geteiltem Bus. Der vereinbarte Datenblock ist der Anwendungskanal. Er ist nicht die einzige gemeinsame Ressource.
+Ein Burst ist eine kurze dichte Folge. Ein Put fügt eine Nachricht in die Queue ein, ein Get entnimmt eine. Im Normalversuch werden 20 Ereignisse mit nominal zehn Millisekunden Abstand erzeugt, also 100 pro Sekunde. Im Burst-Modell liegen zehn Ereignisse bei null bis neun Millisekunden; der Worker kann zwischen ihnen bereits entnehmen. Daher folgt aus Queue-Tiefe acht allein nicht, dass dieser Burst zwei Drops erzeugt. Ein Drop ist eine gezählte Abweisung.
 
-Die zwei Antworten stehen fest, damit sie in der Diskussion nicht wieder zusammenfallen. Als Nächstes geht es um Software-Schichten und standardisierte Schnittstellen. Das ist ein Exkurs zum Verstehen, kein Anspruch, dass unser Binary AUTOSAR enthält.
-
-AUTOSAR Classic ist der Gegenstand des nächsten Blocks.
+Der kontrollierte Sättigungsmodus des Codes erzeugt zehn korrekte Puts aus der Task, bevor sie das erste Get aufruft. Bei leerer Queue und acht Plätzen müssen genau acht angenommen und zwei wegen fehlendem Platz abgewiesen werden. Dieser Modus prüft die Kapazitätslogik, keine physische Interruptlatenz. Hardware-Pending, der gespeicherte Zustand einer Unterbrechungsquelle, kann mehrere Flanken zusammenfassen. Ein Taster hat außerdem Entprellung als eigenen Vertrag. Der Demo-Timer wird deshalb nicht stillschweigend durch einen ungeprüften Tasterburst ersetzt.
 :::
 
-## AUTOSAR Classic als Schnittstellenbild
+## In der Ereignisroutine wird nicht blockiert
 
-AUTOSAR, AUTomotive Open System ARchitecture, Classic Platform beschreibt Schichten, Schnittstellen und ein konfiguriertes Steuergeräte-Image. Das Labor ist keine AUTOSAR-Implementierung.
-
-Ein fiktiver Sensorbaustein und ein fiktiver Regler tauschen einen benannten Wert über eine Schnittstelle. Der Algorithmus sieht den Port, nicht das Register des gerade eingebauten MCU. Das gelingt nur so weit, wie Konfiguration und Nachweise mitziehen.
-
-::: notes
-Der Architekturblock hat Fragen getrennt. Dieser Exkurs zeigt, wie eine Industrie das Schnittstellenproblem organisiert. AUTOSAR Classic ist die Plattform für klassische Steuergeräte. ECU, Electronic Control Unit, ist ein Steuergerät. Die Motivation ist Wiederverwendung: derselbe fachliche Baustein soll nicht bei jedem Mikrocontroller neu an die Register geschrieben werden. Ein fiktives Beispiel genügt. Historische Preise, Mitgliederzahlen und unbelegte Portierungsdauern bleiben draußen.
-
-Unser Capstone bleibt FreeRTOS und Bare Metal mit einem eigenen, kleinen Vertrag. Wer die Schichten später wiedererkennt, soll sie nicht mit der STM32-HAL verwechseln. HAL, Hardware Abstraction Layer, ist die ST-Treiberschicht.
-
-Ohne gemeinsame Schnittstelle koppelt jede Schicht direkt an die nächste Implementierung.
-:::
-
-## Warum gemeinsame Schnittstellen helfen
-
-Ein fiktiver Regler liest das Sensorregister selbst, ein zweiter erwartet einen anderen Typ, ein dritter nimmt an, der Wert sei schon über das Netz gefiltert. Dieselben Funktionsnamen reichen nicht. Es fehlen Semantik, Einheit, Gültigkeit und ein Zeitvertrag.
-
-Das ist die Motivation des Exkurses, keine belegte Wirtschaftsakte und keine Projektgeschichte.
-
-::: notes
-Die vorige Folie hat das Ziel genannt. Hier steht das Problem ohne eine historische Krise zu behaupten. Drei fiktive Teams koppeln denselben Sensor unterschiedlich: direkte Register, ein `uint16_t` gegen ein `float`, und die Annahme, die Entstörung sei schon auf einem anderen Gerät passiert. Der C-Name `read_sensor` ist dann gleich und die Bedeutung nicht. Wiederverwendung braucht den Vertrag: Einheit, Gültigkeit, Alter und wer schreiben darf.
-
-AUTOSAR beantwortet das mit spezifizierten Schnittstellen und einer Konfiguration je ECU. Die Ausgabe, an der wir das Schichtenbild festmachen, ist die Layered Software Architecture der Classic Platform. Die Plattformübersicht wurde als R25-11 geführt. Für die Lage des Complex Drivers ist die Ausgabe R23-11 im öffentlichen PDF nachvollziehbar. Wir zitieren das Schichtenprinzip, keine ungelesene Klausel.
-
-Die standardisierte Antwort ist das Schichtenbild, nicht eine Firmenchronik.
-:::
-
-## Classic-Schichten und die andere Plattform
-
-Classic spezifiziert Schichten und ein weitgehend statisch konfiguriertes OS-Bild. Adaptive ist eine andere Plattform mit ARA, der AUTOSAR Runtime for Adaptive Applications, und spezifizierten POSIX-Bezügen. POSIX ist das Portable Operating System Interface. Adaptive ist nicht „Classic mit Linux“.
-
-OTA, Over-the-Air-Update, ist eine Update-Art. Sie ist keine Eigenschaft, die nur Adaptive hätte.
-
-::: notes
-Die Problemfolie hat den fehlenden Vertrag gezeigt. Classic antwortet mit Schichten, Schnittstellen und einer Konfiguration, die Tasks, Runnables und Kommunikation vor dem Lauf festlegt. Adaptive richtet sich an größere Plattformen und Dienste. Die Design-Erklärung der Adaptive Platform, Ausgabe R25-11, beschreibt ARA und POSIX-Bezüge. Ein bestimmtes Linux-Gerät oder eine GPU, Graphics Processing Unit, ist keine Definition. Der H755 ist kein Adaptive-Ziel dieses Labors.
-
-OTA kann in beiden Welten vorkommen oder in keiner. Wer es als Alleinstellungsmerkmal von Adaptive nennt, verwechselt eine Funktion mit der Plattformlinie. Für das Schichtenbild bleibt Classic der Gegenstand. Adaptive kommt als Ausblick zurück, nachdem die Schichten stehen.
-
-Das Bild muss die Basic Software sichtbar umranden.
-:::
-
-## Das AUTOSAR Schichtenmodell
-
-Abbildung G. Application, RTE, umrandete BSW, Hardware darunter. Der Complex Driver liegt in der BSW, nicht auf Anwendungshöhe.
-
-```{mermaid}
-%%| fig-width: 8.8
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TB
-  APP["Application, SWC"] --> RTE["RTE"]
-  subgraph BSW["BSW, Basic Software"]
-    SVC["Services"]
-    ECUA["ECU-Abstraktion"]
-    MCAL["MCAL"]
-    CD["Complex Driver"]
-  end
-  RTE --> SVC
-  SVC --> ECUA
-  ECUA --> MCAL
-  MCAL --> HW["Hardware"]
-  CD --> HW
-  RTE --> CD
-```
-
-Rechts daneben, nicht gleichgesetzt: unser Labor aus Algorithmus, schmaler eigener Schnittstelle, HAL oder FreeRTOS und Hardware. STM32-HAL ist kein AUTOSAR-MCAL.
-
-::: notes
-BSW ist die Basic Software. MCAL, Microcontroller Abstraction Layer, ist darin die hardwarenahe Schicht, nicht eine vierte Hauptschicht neben der BSW. RTE, Runtime Environment, sitzt zwischen Anwendung und BSW. Ein Complex Driver ist der Sonderpfad in der BSW: eng an Hardware und Anwendung, aber nicht eine Softwarekomponente oberhalb der RTE. Die öffentliche Layered Software Architecture, Classic R23-11, zeichnet diesen Bereich in der BSW. Nicht jeder Pfeil ist ein zwingender serieller Aufruf durch alle Kästen. Lokale Kommunikation kann kürzer sein.
-
-Das Laborbild hat weniger Kästen und einen anderen Namen. Portabilität einer Schnittstelle ersetzt nicht OS-Port, Linker, Konfiguration und Timingnachweis. Ein MCU-Wechsel kann all das mitziehen. „Nur ein paar Dateien tauschen“ ist zu wenig, und „vollständig portabel“ wäre zu viel.
-
-Die nächste Folie bleibt bei den Aufgaben innerhalb der BSW.
-:::
-
-## MCAL als Teil der BSW
-
-Services, ECU-Abstraktion und MCAL sind Teile der BSW. Services sind nicht die ganze BSW. Die RTE sitzt darüber.
-
-Ein Sensorzugriff läuft vom hardwarenahen Treiber über die Abstraktion zu einer Schnittstelle, die der Algorithmus nutzen kann. Dieselbe Schnittstelle erspart nicht Integration und nicht den Nachweis der Frist.
-
-::: notes
-Der Titel nennt MCAL und BSW zusammen, weil die MCAL in der BSW liegt. ECU ist das Steuergerät, dessen Abstraktionsschicht Zugriffe bündelt, die nicht mehr das einzelne Register zeigen. Ein fiktiver Pfad: Der MCAL-Treiber liest das Peripherieregister. Die ECU-Abstraktion bietet eine kanalbezogene Funktion. Ein Service kann Diagnose oder Speicher dazunehmen. Die RTE stellt der Anwendung den Port bereit. Wer nur die Services zeichnet, hat die BSW zu klein gezeichnet.
-
-Eine standardisierte Schnittstelle fördert Wiederverwendung. Sie beweist nicht, dass der Stack reicht oder die Deadline hält. Beim Wechsel des MCU prüfen wir OS-Port, Konfiguration, Complex Driver, Linker und die Zeitanalyse erneut. Die STM32-HAL kann eine ähnliche Rolle wie ein Treiber spielen. Sie wird dadurch nicht zur AUTOSAR-MCAL unseres nicht vorhandenen Stacks.
-
-Das Betriebssystem ist die nächste Vergleichsebene, nicht eine weitere Hardwarezeile.
-:::
-
-## Das AUTOSAR OS und FreeRTOS
-
-Classic konfiguriert OS-Objekte statisch. Das ist keine Aussage über jede Adaptive-Plattform und kein Beweis, dass der Stack nie überläuft.
-
-FreeRTOS kann Objekte statisch anlegen. `xTaskCreateStatic` zählt die Stacktiefe in `StackType_t`-Elementen und braucht die statische Allokation im Kernel. `osThreadNew` ist CMSIS-RTOS2. `osThreadAttr_t.stack_size` ist in Bytes. Der Aufruf allein zeigt nicht, ob Control Block und Stack statisch bereitstehen.
-
-Beispiel, portabhängig: 256 `StackType_t` zu 4 Byte sind 1024 Byte. `stack_size = 256` sind 256 Byte. Dieselbe Zahl ist nicht dieselbe Größe.
-
-::: notes
-Statische Konfiguration legt die Objekte vor dem Lauf fest. Statische Speicherbereitstellung heißt: der Speicher für Task und Control Block wird vom Programm gestellt, nicht zur Laufzeit aus einem Heap geholt. Beides kann zusammenfallen und ist nicht dasselbe Wort. TCB, Task Control Block, sind die Verwaltungsdaten. Ihre Größe hängt vom Port ab. Wir übernehmen keine feste Bytezahl aus einem fremden RTX-Port.
-
-Auf dem Cortex-M ist `StackType_t` im üblichen Port 32 Bit. 256 Elemente sind dann 1024 Byte. Die CMSIS-Angabe in Bytes würde für denselben Stack 1024 lauten, nicht 256. Ob der konkrete Port abweicht, steht im Adapter. `osThreadNew` ohne `stack_mem` und `cb_mem` beweist die statische Bereitstellung nicht. Ein reservierter Stack beweist weder, dass er reicht, noch eine Deadline.
-
-Die RTE bildet die fachlichen Einheiten auf dieses OS ab.
-:::
-
-## Die RTE und das Runnable-Mapping
-
-Die VFB, Virtual Functional Bus, ist das abstrakte Kommunikationsbild. Die RTE ist die ECU-spezifische Realisierung, oft generiertes C. Sie packt nicht allein CAN-Rahmen. CAN ist das Controller Area Network. Entfernte Sender-Receiver laufen durch die konfigurierte BSW. Lokal kann der Zugriff direkt sein. Client-Server ist das Dienstmodell, nicht dasselbe wie ein Datenport.
-
-Eine SWC, Software Component, ist keine Task. Ein Runnable ist die ausführbare Einheit, ausgelöst durch ein Ereignis. Die Zuordnung auf Tasks ist fiktiv im folgenden Bild.
-
-::: notes
-Abbildung H hat zwei Teile. Oben sprechen zwei SWCs über die VFB. Darunter einmal dieselbe ECU, einmal zwei ECUs mit Netz. Die Netzlatenz, die Puffer und die Fehler der BSW bleiben in der Analyse. Unten ein fiktives Mapping: drei Runnables auf zwei Tasks. Zwei können in einer Task nacheinander liegen, das dritte in einer anderen. Die SWC bleibt die logische Komponente. Sie wird nicht zur FreeRTOS-Task, nur weil ein Runnable dort läuft.
-
-Sender-Receiver transportiert Daten. Client-Server ruft einen Dienst und kann auf die Antwort warten. Ein gleicher Portname auf einer anderen Verteilung hat nicht dieselbe Antwortzeit. Datenalter und Queue-Tiefe rechnen wir neu.
-
-Frage: Ist eine SWC eine Task? Nein. Runnables werden auf Tasks abgebildet.
-
-Der Algorithmus sieht danach nur noch seine Ports.
-:::
-
-## Application Layer und SWC
-
-```{mermaid}
-%%| fig-width: 8.4
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TB
-  subgraph VFB["VFB, abstrakt"]
-    A["SWC Sensor"] --> B["SWC Regler"]
-  end
-  subgraph MAP["fiktiv, eine ECU"]
-    T1["Task 1: Runnable lesen, Runnable pruefen"]
-    T2["Task 2: Runnable stellen"]
-  end
-```
-
-Der fiktive Regler liest einen Sensorport, prüft Gültigkeit und Alter und liefert ein Ergebnis. Das Register bleibt unter der RTE. Derselbe Portname auf zwei ECUs garantiert nicht dieselbe Latenz.
-
-::: notes
-Ein Port ist der Anschluss einer SWC, nicht der GPIO-Port des STM32. Die Daten- oder Dienstschnittstelle sagt, was hindurchgeht. Das Runnable „prüfen“ sieht den Wert und sein Alter. Es sieht nicht, ob der MCAL-Treiber gerade den Bus belegt. Hardwaretreiber bleiben in der BSW. Wechselt die Verteilung von einer ECU auf zwei, kann zwischen den Runnables ein Netzwerkpfad liegen. Die Analyse von Datenalter und Frist beginnt neu, auch wenn der C-Name gleich bleibt.
-
-Das Bild ist fiktiv und klein genug, um die Zuordnung zu zeigen: zwei Runnables in Task 1, eines in Task 2. Eine dritte Task wäre nur ein weiteres Beispiel, keine Vorschrift. Für unser Labor bleibt die Lehre: die schmale Schnittstelle ersetzt nicht den Zeitvertrag.
-
-Adaptive ist die andere Plattformlinie, kein größerer Classic-Stapel.
-:::
-
-## Ausblick: AUTOSAR Adaptive
-
-| Ebene | Classic, dieser Exkurs | Adaptive, Ausblick |
-|-------|------------------------|--------------------|
-| Ziel | Steuergerät, oft MCU | größere Plattform |
-| Kommunikation | RTE, BSW, auch CAN | ARA-Dienste |
-| OS-Bezug | konfiguriertes Classic-OS | POSIX-Bezug, nicht unser FreeRTOS |
-| Integration | Konfiguration und Nachweis | andere Prozesse und Updates |
-
-FreeRTOS ist ein Kernel. AUTOSAR ist ein Satz von Standards. Keine Rangliste.
-
-::: notes
-ARA bündelt die Laufzeitdienste der Adaptive Platform. POSIX-Bezüge betreffen Schnittstellen, die ein passendes Betriebssystem bereitstellt. Typische Ziele sind größere Prozessoren, oft Cortex-A. Ein bestimmtes Linux, eine GPU oder „alles wird dynamisch allokiert“ ist nicht die Definition. Der H755-Demonstrator wechselt dadurch nicht den Modus.
-
-Die Tabelle vergleicht Ebenen, nicht den Sieger. Classic-OS, FreeRTOS und Adaptive nebeneinanderzulegen, ohne die Ebene zu nennen, erzeugt Scheinwidersprüche. Unser Kernel kann statische Objekte anlegen. Das macht ihn nicht zum Classic-OS. OTA bleibt eine Funktion, die beide Linien betreffen kann.
-
-Die Kursentscheidung begründet, warum wir den kleinen Vertrag selbst schreiben.
-:::
-
-## Warum der Capstone klein bleibt
-
-Für dieses Labor ist die Einarbeitung in einen AUTOSAR-Stack größer als der Gewinn der fertigen Schnittstelle. Das ist eine Kursentscheidung, keine Marktstudie.
-
-Übertragbar bleiben: eine schmale Schnittstelle, ein benannter Speichervertrag, kurze kritische Abschnitte und eine definierte Zeit- und Fehlersemantik. Nicht übertragbar ist der Satz, ein zusätzlicher Layer mache den Demonstrator robust.
-
-::: notes
-Die Vergleichstabelle hat die Standards neben unseren Kernel gestellt. Die Entscheidung folgt aus dem Lernziel: die Studierenden sollen den Vertrag selbst festlegen und prüfen können. Ein abstrakter Layer, dessen Konfiguration niemand im Kurs liest, würde diese Arbeit verdecken. Kosten in Geld oder Personenwochen nennen wir nicht.
-
-Was bleibt, ist in den nächsten Folien konkret. Die Schnittstelle ist die Mailbox mit Gültigkeit, Kennung und Zeitpunkt. Der Speichervertrag ist der aus Vorlesung 6: eine nicht cachebare Region, ein Initialisierer, Barrieren. Die kurzen Abschnitte sind Schreiben und Kopieren unter HSEM. Die Fehlersemantik sind Queue-Drops, Mailbox-Auslassungen und ein Supervisor, der nicht an der Tasterrate hängt.
-
-Damit endet der Exkurs bei den übertragbaren Regeln, nicht bei einem Produkturteil.
-:::
-
-## Fazit des Schnittstellenexkurses
-
-Classic erklärt Schichten, VFB und RTE sowie die Abbildung von Runnables auf Tasks. Adaptive ist die andere Linie. Der Capstone bleibt FreeRTOS auf dem M4 und Bare Metal auf dem M7, mit einem benannten Protokoll.
-
-Frage: Wo liegen MCAL und Complex Driver? In der BSW, unter der RTE. Frage: Warum sind 256 Stackelemente nicht 256 Byte? Weil FreeRTOS `StackType_t` zählt und CMSIS Bytes.
-
-::: notes
-Die vier Sätze fassen den Exkurs, ohne ihn zu wiederholen. Die RTE realisiert die VFB auf einer ECU. Runnables sind keine Tasks. Classic und Adaptive bleiben getrennte Plattformen. Unser Binary enthält davon nichts. Die gleichen Schnittstellenfragen kehren jetzt als eigener kleiner Vertrag zurück: Was wird veröffentlicht, was darf verloren gehen, woran misst man die Zeit, und wann ist ein Kriterium geprüft.
-
-Die zwei Antworten verhindern die häufigsten Verwechslungen aus diesem Block. Als Nächstes stehen die Stufen des Capstone, nicht noch eine Schicht.
-
-Stufe A, B und C bekommen je eine Bedeutung.
-:::
-
-## Das Capstone-Projekt
-
-Drei Stufen, eine Bedeutung je Buchstabe:
-
-| Stufe | Inhalt | Zeitkriterium |
-|-------|--------|----------------|
-| A | M4: Erfassung, Queue, Zähler, Watchdogrechnung | Vorbereitung |
-| B | beide Kerne, Latest-Value und HSEM | Architekturpflicht |
-| C | geeignete Messung der geforderten Größen | sonst „nicht geprüft“ |
-
-C ist keine Pflicht, ein bestimmtes BlueBox-Modell zu besitzen. Ohne gemeinsamen Zeitbezug bleibt das Zeitkriterium ungeprüft. Ungeprüft ist nicht bestanden und nicht automatisch verfehlt.
-
-::: notes
-Die Stufen lösen den Widerspruch, Multicore und Trace seien gleichzeitig Muss und Erweiterung. A ist der M4-Grunddemonstrator: Ereignisse, Queue, Fehlerzähler und eine dokumentierte Watchdogrechnung. B ist der eigentliche Capstone: M7 und M4 mit dem Mailboxvertrag. C ist die instrumentierte Prüfung. Ein Diagramm oder eine Rechnung macht C nicht zu einem bestandenen Hardwaretest.
-
-Liefergegenstände, auch ohne Board: Konfigurationsblatt, Datenvertrag, Ablauf von Producer und Consumer, die Tabelle C1–C8, eine Testmatrix und ein Ergebnisblatt mit leeren Beobachtungsfeldern. Statusworte sind: geplant oder nicht geprüft, bestanden unter Bedingungen, verletzt, Messung ungültig, nicht anwendbar mit Begründung.
-
-Der Kern von B ist der Datenvertrag. Der Eingang beschreibt, welche Versuche ihn treffen.
-:::
-
-## Der Smart-Sensor: drei Versuche
-
-PC13, wenn das Board den Taster dort hat: Funktion und Entprellung. Keine Hochfrequenzabnahme. Der Timer erzeugt die reproduzierbare Folge. Ein externer Generator mit Input Capture misst die physische Flanke. EXTI-Pending kann Flanken zusammenfassen. Zehn physische Flanken sind daher nicht automatisch zehn Put-Versuche.
-
-Lehrfestlegungen, keine Messwerte: Grundlast 100 Hz, also 10 ms Abstand. Burst: zehn Ereignisse bei 0, 1, …, 9 ms. Queue-Sättigung: Tiefe 8, anfangs leer, zehn Put-Versuche ohne Get. Dann genau acht Annahmen und zwei Drops, wenn jeder Put korrekt war.
-
-Entprellung nur im Tasterversuch, in der Task, als eigener Verwurf. Im Timerversuch keine versteckte Entprellung.
-
-::: notes
-Drei Versuche dürfen nicht in einen Topf. Die Grundlast prüft den Dauerbetrieb. Der Burst prüft eine kurze dichte Folge. Ob der Worker zwischen den Millisekunden schon entnimmt, hängt von Priorität und Laufzeit ab. Mindestens zwei Drops folgen daraus nicht automatisch. Die Sättigung schaltet das Get während der zehn Puts ab und zählt dann. Eine Vorbelegung oder ein weiterer Fehler kann mehr Abweisungen erzeugen. `osMessageQueuePut` mit Timeout 0 in der ISR unterscheidet volle Queue, ungültiges Objekt und eine unzulässige Priorität. Im regulären Lehrlauf erwarten wir nur die vollen-Queue-Drops, die anderen Fehlerzähler bei null.
-
-Die Bilanz, die hier gilt, ist nicht „angenommen gleich Drops plus Queue plus letzter Snapshot“. Ein Snapshot ist ein Datensatz. Die Zähler stehen auf der Kriterienfolie. Schon hier gilt: Erfasstes $I$ teilt sich in angenommen $A$, Queue-Drops $D_q$ und sonstige Put-Fehler. $A$ teilt sich in noch liegend $Q$, in Bearbeitung $F$, veröffentlicht $P$ und Taskverwurf $D_{\mathrm{task}}$. Beim Taster kann $D_{\mathrm{task}}$ die Entprellung sein. Beim Timer bleibt sie null, solange nichts anderes verworfen wird.
-
-Die Architektur zeigt, wo diese Zähler sitzen.
-:::
-
-## System-Architektur des Capstone
-
-Abbildung I. Die Queue ist lokal auf dem M4. Filter und UART liegen außerhalb des HSEM.
-
-```{mermaid}
-%%| fig-width: 8.8
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  T["Timer oder EXTI"] --> ISR["M4-ISR"]
-  ISR --> Q["Queue, Tiefe 8"]
-  Q --> TASK["Worker"]
-  TASK --> MB["Latest-Value"]
-  MB --> FIL["M7 ausserhalb Lock"]
-  FIL --> UART["UART"]
-  SUP["Supervisor"] -.-> WD["WWDG"]
-```
-
-Lehrziele unter benannter Last, keine Messung: Publikation von ISR-Eintritt bis Freigabe höchstens 1 ms. Alter des wirklich kopierten neuen Snapshots höchstens 50 ms. Die Ausgabe bis UART ist eine eigene Größe.
-
-::: notes
-Producer und Consumer sind nicht dieselbe Operation. Der Worker veröffentlicht unter der Nutzdaten-HSEM. Der M7 kopiert unter derselben ID und filtert danach. Die gestrichelte Überwachung ist keine Station der Nutzdaten. C3 betrifft die Publikationsantwort angenommener Nachrichten, die zur Veröffentlichung vorgesehen sind. C4 betrifft das Alter der kopierten Publikation und braucht einen gemeinsamen Zeitbezug. Ein GPIO-Puls um Take und Release vermischt Erwerbswarten und Haltezeit. Die Haltezeit beginnt nach bestätigtem Besitz.
-
-Die 1 ms und 50 ms sind Lehrfestlegungen für die Normallast, nicht für den Fall „M7 hält das Schloss und hängt“. Dort gilt ein Timeout- und Recoverypfad, keine bestandene 1-ms-Prüfung. UART-Blockierung auf dem M7 kann die Snapshotrate senken und damit erlaubte Latest-Value-Auslassungen erhöhen. Die müssen bilanziert werden, nicht als verbotener Verlust und nicht als Null-Latenz.
-
-Die Kriterien machen daraus eine Tabelle ohne die falsche Snapshot-Summe.
-:::
-
-## Capstone-Pflichtenheft C1–C8
-
-| ID | Lehrgrenze | gilt für |
-|----|------------|----------|
-| C1 | 100 Hz und getrennt der 1-ms-Burst | Beschreibung der Last, nicht eine Flanke gleich ein Put |
-| C2 | Tiefe 8; Sättigung: 8 Annahmen, 2 Drops | leere Queue, kein Get, korrekte Puts |
-| C3 | $R_{\mathrm{pub}}=t_4-t_1 \le 1\,\text{ms}$ | angenommene, zur Publikation vorgesehene Events, Normallast |
-| C4 | $A_{\mathrm{snap}}=t_5-t_1 \le 50\,\text{ms}$ | kopierte neue Publikationen, plus Stale-Regel und Abdeckung |
-| C5 | Boot-ID reserviert, Nutz-ID frei und geprüft | nicht „Boot-ID benutzen“ |
-| C6 | Haltezeit $\le 50\,\text{µs}$ je Seite | nach Erwerb, ohne Wartezeit |
-| C7 | Fenster aus PCLK, nicht aus dem Taster | früh, gültig, spät |
-| C8 | zwei Bilanzen, kein Snapshot als Summe | kohärenter Zeitpunkt |
-
-Abbildung K. Lehrsequenz, keine Boardmessung: zehn Put-Versuche, acht Annahmen, zwei Queue-Drops. M7 kann weniger als acht Snapshots sehen. Das ist $O$, nicht ein Fehler von C2.
-
-```{mermaid}
-%%| fig-width: 8.6
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TB
-  I["I Eingaben"] --> A["A angenommen"]
-  I --> DQ["Dq Queue voll"]
-  I --> E["E sonstiger Put-Fehler"]
-  A --> P["P publiziert"]
-  A --> Q["Q noch in Queue"]
-  A --> F["F in Bearbeitung"]
-  A --> DT["Dtask verworfen"]
-  P --> S["S kopiert"]
-  P --> O["O ersetzt"]
-  P --> U["U ungelesen"]
-```
-
-Abbildung J. Unter dem Lock nur der vollständige Satz. Filter danach. Eine neue Publikation darf eine unbestätigte alte ersetzen.
-
-::: notes
-$I$ sind bilanzierte Eingabeereignisse der ISR, nicht automatisch jede physische Flanke. $A$ wurde in die Queue angenommen, $D_q$ wegen voller Queue abgewiesen, $E_{\mathrm{put}}$ sind andere Put-Fehler und im regulären Lauf 0. Dann gilt $I = A + D_q + E_{\mathrm{put}}$. $Q$ liegt noch in der Queue, $F$ ist entnommen und noch nicht abgeschlossen, $P$ ist erfolgreich veröffentlicht, $D_{\mathrm{task}}$ danach verworfen. Dann gilt $A = Q + F + P + D_{\mathrm{task}}$. Nach einem sauber beendeten Versuch sind $Q$ und $F$ null. Im Beispiel ohne Taskverwurf: $I=10$, $A=8$, $D_q=2$, $P=8$.
-
-Die Mailbox getrennt: $P = S + O + U$. $S$ hat der M7 verschieden kopiert, $O$ wurde ersetzt, bevor es ein erstes Mal kopiert wurde, $U$ ist die noch ungelesene Publikation, 0 oder 1. Ein Ack unter demselben Lock kann das tragen: der M7 bestätigt die kopierte Publikationsnummer, der M4 sieht vor dem Überschreiben, ob die alte schon bestätigt war. Das ist ein Lehrverfahren, kein vorhandener Code. Eine Lücke in der Ereignisnummer allein trennt Queue-Drop und Mailbox-Auslassung nicht, wenn die Nummer vor dem Put vergeben wird. Eine eigene Publikationsnummer steigt nur bei erfolgreicher Veröffentlichung.
-
-C6: $T_{\mathrm{wait}}$ ist Bitte bis Besitz, $T_{\mathrm{hold}}$ ist Besitz bis Freigabe. Der GPIO von vor Take bis nach Release kann beides enthalten. Die 50 µs sind die Lehrgrenze der Haltezeit für Producer und Consumer, mit dokumentierter Marke und Unsicherheit. Eine 1-ms-Tickuhr löst das nicht auf. C5 reserviert die Boot-ID. C7 übernimmt die Lehrkonfiguration aus Vorlesung 8, wenn kein Projekt-PCLK da ist: WWDG2, Teiler 8, Reload 127, Window 80, PCLK-Annahme 100 MHz. Der Feed hängt am frischen Nachweis, nicht am Taster.
-
-Die Abnahme trennt diese Grenzen von leeren Beobachtungsfeldern.
-:::
-
-## Abnahmekriterien
-
-Definition of Done heißt hier: je Kriterium ein Test, eine Beobachtung und ein Status. Nicht „kein Verlust“, sondern keine ungeklärte Lücke. Erlaubte Queue-Drops und erlaubte Mailbox-Auslassungen stehen in der Bilanz.
-
-| Kriterium | Stufe | Normallast-Erwartung | Status ohne Lauf |
-|-----------|-------|----------------------|------------------|
-| C1, C2, C7-Rechnung | A | wie Tabelle | nicht geprüft |
-| C3–C6, C8 | B | Vertrag, Messung in C | nicht geprüft |
-| Zeitgrößen | C | gültige Paare, Abdeckung | nicht geprüft |
-
-„M7 hält HSEM und hängt“ ist Fehlerinjektion. Dort gilt Timeout und Recovery, nicht die 1 ms. „Queue voll“ erwartet die Drops, nicht gleichzeitig null Verlust.
-
-::: notes
-Jedes Kriterium bekommt Test-ID, Last, Konfiguration, analytische Erwartung, Artefakt, beobachtete Größe, Zahl gültiger Stichproben und einen Status. Die Beobachtung bleibt leer, bis ein Lauf sie füllt. Ein Architekturdiagramm füllt sie nicht. Für C3 und C4 zählen nur korrelierte Kennungen. Fehlende $t_5$ sind keine Latenz null und kein Grund, die Publikation aus $O$ zu streichen, ohne sie zu berichten. Min, Median, ein benanntes Perzentil und das beobachtete Maximum brauchen die Anzahl und die Methode. Ein Prozent aus wenigen Samples ist kein harter Zeitnachweis.
-
-Die Testmatrix trennt Normallast und Fehlerinjektion: Ruhe, Einzelevent, 100 Hz, 1-ms-Burst, kontrollierte Sättigung, M7-Last, UART-Last, kurze HSEM-Kollision, M7 hängt, M4 hängt, Refresh früh, gültig und spät. Optional ein MPU-Versuch mit eigener Recovery, weil die MPU keine Task beendet. M7-Last darf den M4 über den Bus beeinflussen. Das ist ein mögliches Ergebnis, kein Fehler der Anleitung. Durch alle Lasten beobachtet zu haben, beweist keine universelle Deadlockfreiheit.
-
-Ohne geeignete Aufnahme bleibt das Zeitkriterium nicht geprüft. Der Bericht nennt das so.
-
-Die Messpunkte machen die Paare eindeutig.
-:::
-
-## Labor-Checkliste: Messpunkte
-
-Abbildung L. $t_3$ ist der Verarbeitungsbeginn dieser Nachricht, nicht der einmalige Taskstart. $t_5$ gibt es nur für kopierte Publikationen.
-
-| Marke | Bedeutung |
-|-------|-----------|
-| $t_0$ | physische Flanke, nur mit Capture-Bezug |
-| $t_1$ | Beginn der M4-ISR für dieses Ereignis |
-| $t_2$ | nach erfolgreichem Put dieser Nachricht |
-| $t_3$ | erfolgreiches Get, Beginn dieser Bearbeitung |
-| $t_4$ | dokumentierte Freigabe der Publikation |
-| $t_5$ | Abschluss des M7-Snapshots dieser Publikation |
-| $t_6$ | Filter zu derselben Kennung fertig |
-| $t_7$ | definierter UART-Abschluss, nicht der Snapshot |
-
-$R_{\mathrm{pub}} = t_4 - t_1$. $A_{\mathrm{snap}} = t_5 - t_1$ nur für kopierte neue Stände. Zwei lokale DWT-Zähler werden nicht subtrahiert. Eine Haltezeit von $50\,\text{µs}$ braucht eine feinere Uhr als den 1-ms-Tick.
-
-```{mermaid}
-%%| fig-width: 8.8
-%%{init: {'theme': 'base', 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart LR
-  t0["t0 Flanke"] --> t1["t1 ISR"]
-  t1 --> t2["t2 Put"]
-  t2 --> t3["t3 Get"]
-  t3 --> t4["t4 Release"]
-  t4 --> t5["t5 Snapshot"]
-  t5 --> t6["t6 Filter"]
-  t6 --> t7["t7 UART"]
-  DQ["Queue-Drop"] -.-> t2
-  OV["ersetzt"] -.-> t4
-```
-
-::: notes
-DWT, Data Watchpoint and Trace, und CYCCNT, der lokale Zykluszähler, messen Intervalle eines Kerns bei bekanntem Takt. Sie sind ohne belegte Korrelation keine gemeinsame Uhr von M4 und M7. Für $t_5 - t_1$ braucht es eine der drei offenen Methoden: gemeinsame externe Aufnahme, ein beiden Kernen zugänglicher Timer mit einem Takt, oder eine korrelierte Traceaufnahme. Welche Instanz das Projekt hat, steht nicht im Repo. Bis dahin bleibt C4 nicht geprüft. Ein vom M4 gespeicherter Tick minus ein M7-Tick ist keine dieser Methoden.
-
-`HAL_HSEM_Release` liefert in der üblichen HAL keinen Erfolgscode. Die Marke für $t_4$ liegt an einer dokumentierten Stelle relativ zum Release. Eine Marke danach kann sich schon mit dem anderen Kern überlappen. Sie erzwingt keine falsche Gesamtordnung. $t_7$ ist entweder die Softwareübergabe, das DMA-Ende oder das Ende des letzten Bits. Der DMA-Transfer kann fertig sein, während der UART noch sendet. Für 8N1, acht Datenbits, keine Parität, ein Stopbit plus Startbit, dauert die Leitung analytisch etwa $10L$ Bitzeiten. Baudrate und Paketlänge sind Projektparameter, keine Folienkonstanten. Die 50 ms des Snapshots ersetzen ein Ausgabeziel nicht.
-
-Ein Queue-Drop endet vor $t_3$. Eine ersetzte Publikation hat kein $t_5$. Dieselbe alte Publikation nach Sensorstille wird als stale gekennzeichnet, nicht als frische Messung. Stille ist kein CPU-Hänger. Der Watchdog bleibt an den Fortschrittsfristen. Debug-Freeze aus, wenn der Reset geprüft wird. EWI, Early Wakeup Interrupt, setzt einen GPIO-Puls, kein `printf`. PB14 und LD3 nur, wenn UM2408 und die Bestückung den Pin so zeigen.
-
-Die Schlussfolie bindet die Ziele an die Artefakte, die abzugeben sind.
-:::
-
-## Die Essenz des Capstone {background-color="#FFFFFF"}
-
-- Muster bleiben verschiedene Fragen: Ort, Rolle, Fehlerreaktion, gleiche Rechnung
-- Gemeinsame Anwendungsdaten sind der Mailbox-Block. Bus, Takt und Reset bleiben geteilt
-- Latest-Value erlaubt benannte Auslassungen. Ungeklärte Lücken sind keine davon
-- Eine Frist gilt nur mit Messpunkt, Abdeckung und Status. Sonst: nicht geprüft
-
-Frage: Warum ist eine Notification kein Besitz? Weil danach neu genommen werden muss. Frage: Warum ist ein Snapshot keine Verlustbilanz? Weil er ein Datensatz ist, keine Summe. Frage: Warum ist das GPIO um Take nicht immer die Haltezeit? Weil das Warten vor dem Besitz darin stecken kann.
-
-::: notes
-Die vier Lernziele haben Antworten. Muster lassen sich trennen. Der Vertrag ist Latest-Value mit Gültigkeit, Ereignis- und bei Bedarf Publikationsnummer, Zeitpunkt, kurzem Schreiben und kurzem Kopieren. Die Messpunkte $t_0$ bis $t_7$ sind je Ereignis oder je Publikation definiert. Die Abnahme nennt Status und leere Beobachtung, solange kein Lauf da ist. „Gemeinsam ist nur der vereinbarte Block“ gilt für diese Anwendungsdaten. Die Hardwareinterferenz aus der AMP-Folie bleibt.
-
-Abzugeben sind das Konfigurationsblatt, der Datenvertrag, die Kriterien C1–C8, die Testmatrix und das Ergebnisblatt. Offene Felder: Boardrevision, HAL- und Portstand, echte Taktwerte, NVIC-Prioritäten, freie HSEM-ID, UART-Parameter und die gemeinsame Zeitbasis. Quellen der Erklärung, nicht als Firmware nachgewiesen: AUTOSAR Classic Layered Software Architecture R23-11 für das Schichtenbild, Adaptive Platform Design R25-11, CMSIS-RTOS2 für Queue und `stack_size`, FreeRTOS `xTaskCreateStatic`, AN5557 Rev. 3 zur Dual-Core-Architektur, RM0399 und das H755-Datenblatt in der gelesenen Revision, AURIX TC3xx für Lockstep und SMU. Im Repo liegt kein Firmwarebuild und keine Messaufnahme.
-
-Der nächste Arbeitsschritt ist das Ausfüllen der Blätter für den eigenen Versuch, nicht ein behaupteter Hardwaretest.
-:::
-
-## Datenvertrag und Glossar, zu Folie 31
-
-Lehrstruktur, ungebaut, ein Initialisierer, Region wie VL6 nicht cachebar. Das Ping-Pong-`ipc` ist ein anderes Protokoll und wird nicht gleichzeitig auf dieselben Felder gelegt.
+Aus dem M4-Modul · Queue existiert vor der Quellenfreigabe.
 
 ```c
-typedef struct {
-    uint32_t valid;
-    uint32_t event_seq;
-    uint32_t pub_seq;
-    uint32_t event_tick;
-    uint32_t payload;
-    uint32_t ack_pub; /* M7 bestaetigt, Lehrverfahren */
-} cap_box_t;
+osStatus_t status = osMessageQueuePut(queue, &event, 0u, 0u);
+if (status == osOK) {
+    ++lab09_stats.accepted;
+} else if (status == osErrorResource) {
+    ++lab09_stats.queue_drops;
+} else {
+    ++lab09_stats.put_errors;
+}
 ```
 
-| Kurz | hier |
-|------|------|
-| $I,A,D_q,F,P$ | Queuebilanz |
-| $S,O,U$ | Mailboxbilanz |
-| $t_4-t_1$ | Publikation, Lehrziel 1 ms |
-| $t_5-t_1$ | Alter kopierter Stände, Lehrziel 50 ms |
-| Haltezeit | nach Erwerb, Lehrziel 50 µs |
+Kein HSEM, kein Filter und keine Ausgabe in dieser Routine.
 
 ::: notes
-Dieser Anhang gehört zur Schlussfolie. `valid` sagt, ob der Stand lesbar ist. `event_seq` entsteht vor dem Put und kann Lücken aus Drops und aus späterem Überschreiben enthalten. `pub_seq` steigt nur bei gelungener Veröffentlichung. `ack_pub` lässt den Producer erkennen, ob die alte Publikation schon kopiert wurde. Wiederholtes Kopieren derselben Nummer erhöht $S$ nicht. Nach Reset braucht die Versuchsgeneration einen definierten Anfang, sonst sieht eine Null wie ein neuer Lauf aus. NOLOAD und ein einzelner Initialisierer bleiben der Vertrag aus Vorlesung 6: das andere Startup löscht den Block nicht ein zweites Mal. HSEM ersetzt keine Cache-Kohärenz. Die nicht cachebare Region ersetzt keine MPU.
+M4 ist der Cortex-M4. Der C-Ausschnitt verwendet CMSIS-RTOS2, die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. osMessageQueuePut fügt die Nachricht event in queue ein. Der erste Nullparameter ist die Nachrichtenpriorität, der zweite der Timeout null: Der Aufruf wartet nicht auf einen freien Platz. osOK bedeutet erfolgreich angenommen. osErrorResource bedeutet im gültigen Queuevertrag fehlenden Platz; andere Rückgaben werden separat in put_errors gezählt.
 
-Die Tabelle ist die Nachschlagehilfe. Die lokale Erklärung steht auf der Kriterien- und auf der Messfolie.
+accepted zählt Annahmen, queue_drops die wegen voller Queue abgewiesenen Ereignisse. Die Routine erhält vor jedem Put eine Ereignisnummer und einen lokalen Zeitstempel. ISR bedeutet Interrupt Service Routine, Interruptroutine. Für ISR-Aufrufe muss die numerische NVIC-Priorität zur Systemaufrufgrenze des FreeRTOS-Ports passen; NVIC ist der Nested Vectored Interrupt Controller. Eine unzulässige Priorität kann einen Kernelassert auslösen und ist nicht automatisch eine gezählte Rückgabe. HSEM, Hardware Semaphore, wird erst im Worker genommen. Der vollständige Code enthält die endliche Quellenfreigabe und die Behandlung des Abschlusses.
 :::
 
+## Die Queuebelegung lässt sich auf Papier verfolgen
+
+Queue-Tiefe 3, zunächst leer · FIFO-Reihenfolge.
+
+| Operation | Inhalt danach | Ergebnis |
+|---|---|---|
+| Put 1, Put 2 | 1, 2 | beide angenommen |
+| Get | 2 | entnimmt 1 |
+| Put 3, Put 4 | 2, 3, 4 | beide angenommen |
+| Put 5 | 2, 3, 4 | voller Puffer, Drop |
+| Get | 3, 4 | entnimmt 2 |
+
+::: notes
+FIFO bedeutet First In, First Out: Zuerst angenommene Nachrichten werden zuerst entnommen. Put bezeichnet Einfügen, Get Entnehmen und Drop die hier wegen voller Queue abgewiesene Nachricht. Das Modell benutzt drei Plätze und gleich priorisierte Nachrichten. Es beginnt leer. Nach den ersten beiden Puts enthält es eins und zwei. Das erste Get entnimmt eins, sodass zwei bleibt. Die nächsten Puts füllen mit drei und vier auf. Fünf findet keinen Platz und ändert den Inhalt nicht. Das letzte Get entnimmt zwei.
+
+Insgesamt wurden fünf Eingaben versucht, vier angenommen und eine abgewiesen. Zwei angenommene Nachrichten wurden bereits entnommen und zwei liegen noch in der Queue. Die Queue selbst kennt keine Mailboxkopie und keine Filterausgabe. Ein voller Puffer bedeutet auch nicht, dass alle früheren Nachrichten bereits verarbeitet sind. Dieses einfache Modell wird in der Übung mit acht Plätzen und verschiedenen Entnahmefolgen erweitert. Seine Bilanz trennt Eingang und Weiterverarbeitung.
+:::
+
+## Erste Bilanz: Eingang und Worker
+
+$$I=A+D_q+E_{\mathrm{put}}$$
+
+$$A=Q+F+P+D_{\mathrm{task}}$$
+
+| Größe | Bedeutung |
+|---|---|
+| $I,A,D_q,E_{\mathrm{put}}$ | Eingaben, Annahmen, Queue-Drops, sonstige Put-Fehler |
+| $Q,F$ | noch in Queue, gerade in Bearbeitung |
+| $P,D_{\mathrm{task}}$ | publiziert, nach Entnahme verworfen |
+
+::: notes
+I zählt die Softwareeingaben dieser Ereignisroutine, nicht automatisch jede physische Flanke. A wurde in die Queue angenommen, D q wegen voller Queue abgewiesen, E put aus einem anderen zurückgegebenen Grund abgewiesen. Die erste Summe zerlegt daher alle abgeschlossenen Putversuche. Q bezeichnet noch enthaltene Nachrichten, F entnommene noch nicht abgeschlossene Bearbeitungen. P zählt erfolgreiche Publikationen. D task zählt nach Entnahme verworfene Nachrichten, etwa einen ungültigen Nutzwert oder einen begrenzt erfolglosen Schlosserwerb.
+
+Jede angenommene Nachricht steht an einem konsistenten Bilanzpunkt genau in einer dieser vier Gruppen. Ein beliebiges Live-Lesen mehrerer Zähler während ihres Übergangs ist kein atomarer Schnappschuss. Der endliche Demonstrator prüft daher nach gestoppter Quelle und Abschluss beider Kerne; dann sind Q und F null. Im Sättigungsbeispiel ohne nachträglichen Verwurf gelten I gleich zehn, A gleich acht, D q gleich zwei und P gleich acht. Was der andere Kern davon sieht, kommt erst in die zweite Bilanz.
+:::
+
+## Latest-Value und FIFO
+
+Ein ungelesener Stand darf ersetzt werden.
+
+```{mermaid}
+%%| fig-width: 5.4
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B'}}}%%
+stateDiagram-v2
+ direction TB
+ Leer --> Ungelesen: Publish
+ Ungelesen --> Ungelesen: ersetzen
+ Ungelesen --> Gelesen: Snapshot / Ack
+ Gelesen --> Ungelesen: Publish
+```
+
+::: notes
+Latest-Value bedeutet der jeweils neueste Stand. FIFO bedeutet First In, First Out, die Entnahmereihenfolge der lokalen Queue. Im Zustandsautomaten wird die Mailbox von oben nach unten erstmals durch Publish, Veröffentlichung, ungelesen. Eine weitere Publikation kann diesen Stand ersetzen; O ist der Zähler solcher Ersetzungen. Snapshot heißt lokale vollständige Kopie, Ack Acknowledgement, Bestätigung. Die Kopie und Bestätigung machen den aktuellen Stand gelesen. Eine spätere Publikation ist wieder ungelesen.
+
+Der Automat beschreibt Nutzdatenzustände, keine Taskzustände oder zeitliche Zusagen. Eine zweite Kopie desselben bereits bestätigten Stands zählt nicht als neue Beobachtung. Latest-Value passt zu einer Anwendung, die den aktuellen Stand braucht. Ein Algorithmus, der jede ursprüngliche Probe integrieren muss, braucht dagegen eine andere Transportstrategie oder zusätzliche Informationen. Der Filter im Demonstrator arbeitet bewusst auf der Folge der tatsächlich kopierten Stände. Daher ist eine Sequenzlücke sichtbar, aber nicht automatisch ein Protokollfehler. Ihre Herkunft muss mit den beiden Bilanzebenen getrennt werden.
+:::
+
+## Der Mailbox-Datensatz hat eindeutige Felder
+
+Neues Layout in `code/lab09` · ersetzt die früheren Shared-Objekte.
+
+| Feld | Vertrag |
+|---|---|
+| `magic / mode / valid` | Layoutkennung, Eingabemodus, gültiger Stand |
+| `event_seq / pub_seq` | Eingabenummer / Publikationsnummer |
+| `event_tick / payload` | M4-lokaler Zeitpunkt / synthetischer Code |
+| `ack_pub / overwritten / snapshots` | bestätigte Nummer / $O$ / $S$ |
+| `producer_done` | Quelle gestoppt und Worker fertig |
+
+44 Byte Struktur, 64 Byte gepolsterte Section.
+
+::: notes
+M4 ist der Cortex-M4. Shared bezeichnet gemeinsam erreichbaren Speicher. magic ist die Kennung 0x49504339 des neuen Vertrags, mode der normal oder sättigend gewählte Eingabemodus und valid die Gültigkeit. event_seq wird vor dem Put vergeben; Lücken können deshalb aus Queueabweisung, Taskverwurf und Mailboxersetzung stammen. pub_seq steigt nur bei erfolgreicher Veröffentlichung. event_tick ist der lokale HAL-Zeitpunkt der Ereignisroutine; HAL bedeutet Hardware Abstraction Layer. payload ist der dimensionslose Code zwischen null und 1023.
+
+ack_pub ist die zuletzt bestätigte Publikationsnummer. overwritten und snapshots zählen O, vor erster Kopie ersetzte Stände, und S, verschieden kopierte Stände. producer_done wird erst nach Quellenstopp und vollständiger Queuebearbeitung gesetzt. Die elf 32-Bit-Wörter ergeben 44 Byte. Der Linker ergänzt auf 64 Byte bei 32-Byte-Ausrichtung. Beide Images, die Firmwares der Kerne, legen dieses Objekt in SRAM4, der gemeinsamen Bank des Static Random Access Memory, ab 0x38000000. Alte Objekte aus Vorlesung 6 oder 8 dürfen dort nicht gleichzeitig liegen.
+:::
+
+## Publizieren heißt einen vollständigen Satz ändern
+
+Unter HSEM nach bestätigtem Erwerb:
+
+```c
+if (lab09_box.valid && lab09_box.ack_pub != lab09_box.pub_seq) {
+    ++lab09_box.overwritten;
+}
+lab09_box.event_seq = event.event_seq;
+lab09_box.pub_seq = event.pub_seq;
+lab09_box.event_tick = event.event_tick;
+lab09_box.payload = event.sample;
+lab09_box.valid = 1u;
+```
+
+Danach DMB und passende Freigabe. Keine Ausgabe unter dem Schloss.
+
+::: notes
+HSEM heißt Hardware Semaphore, DMB Data Memory Barrier zur Ordnung von Speicherzugriffen. Der C-Ausschnitt steht innerhalb der vollständigen Publish-Funktion. event ist die lokal entnommene Nachricht mit der neu vergebenen Publikationsnummer. Vor dem Überschreiben prüft der Producer, der veröffentlichende Worker, ob der alte gültige Stand bereits bestätigt wurde. Ist ack_pub ungleich pub_seq, zählt overwritten eine erlaubte Ersetzung.
+
+Anschließend werden Herkunftsnummer, Publikationsnummer, lokaler Ereigniszeitpunkt und Nutzwert gemeinsam geändert. valid markiert den gültigen Stand. Das Hardware-Schloss verhindert ein gemischtes Lesen dieser Felder. Die vollständige Implementierung prüft das Protokoll, nimmt mit der Prozesskennung 0x34 und gibt mit derselben Kennung frei. Sie benutzt nach Erwerb und vor Freigabe eine Barriere. Der Cortex-M7 verwendet die andere Kennung 0x37. Sichtbarkeit kommt zusätzlich aus der nicht cachebaren Region. Ein fehlgeschlagener Erwerb darf nicht zu einem ungeschützten Teilupdate führen; im begrenzten Versuch wird die Nachricht stattdessen separat als Taskverwurf gezählt.
+:::
+
+## Kopieren, bestätigen, dann filtern
+
+Lehrfolge mit Publikationsnummern:
+
+| Aktion | Mailbox | Wirkung |
+|---|---|---|
+| M4 publiziert 1, dann 2 | 2 ungelesen | 1 ersetzt |
+| M7 kopiert 2 und bestätigt | 2 gelesen | ein neuer Snapshot |
+| M7 liest 2 erneut | 2 gelesen | kein neuer Snapshot |
+| M4 publiziert 3 | 3 ungelesen | bleibt zunächst ungelesen |
+
+Am Ende: $P=3$, $S=1$, $O=1$, $U=1$.
+
+::: notes
+M4 und M7 bezeichnen die Cortex-Kerne. P zählt Publikationen, S verschieden kopierte Stände, O vor ihrer ersten Kopie ersetzte Stände und U den aktuell noch ungelesenen Stand. Die Tabelle beginnt leer. Der M4 veröffentlicht eins und anschließend zwei, bevor der M7 liest. Damit wurde eins ersetzt und O ist eins. Der M7 kopiert zwei vollständig unter dem Schloss und schreibt ack_pub gleich zwei, seine Bestätigung. S wird eins. Ein erneutes Lesen von zwei erhöht S nicht.
+
+Danach veröffentlicht der M4 drei. Weil zwei bestätigt war, entsteht keine zusätzliche Ersetzung. Drei ist noch ungelesen, daher U gleich eins. Die Summe eins plus eins plus eins ist drei. Der Filter läuft erst nach der Freigabe auf der lokalen Kopie. Eine langsame Ausgabe kann weitere spätere Ersetzungen begünstigen, macht aber die bereits kopierten Felder nicht gemischt. Der Abschlussversuch kopiert auch den letzten Stand vor dem Ende; seine finale Bilanz hat deshalb U gleich null.
+:::
+
+## Mailboxbilanz: Publikation und Kopie
+
+Unter dem gemeinsamen Schloss oder nach kontrolliertem Abschluss:
+
+$$P=S+O+U,\qquad U\in\{0,1\}$$
+
+Beispiel: $P=8$, $S=5$, letzter Stand bestätigt.
+
+$$8=5+3+0$$
+
+Ereignislücken allein erklären die Ursache nicht.
+
+::: notes
+P ist die Zahl erfolgreicher Publikationen, S die Zahl erstmals kopierter verschiedener Publikationen und O die Zahl vor ihrer ersten Kopie ersetzter Publikationen. U ist null oder eins und zeigt, ob der aktuelle Stand noch ungelesen ist. Unter dem HSEM, Hardware Semaphore, werden die Felder der Mailbox gemeinsam geprüft und verändert. Die Implementierung prüft diese Invariante, eine an den Transaktionsgrenzen gültige Eigenschaft, vor ihren Änderungen.
+
+Im Beispiel sind acht Stände publiziert. Fünf wurden verschieden kopiert und der letzte ist bestätigt. Es bleiben genau drei Ersetzungen, weil U null ist. Ein Snapshot ist ein Datensatz, keine Summe aller verarbeiteten Nachrichten. Werden die acht Publikationen aus zehn Eingaben mit zwei Queue-Drops erzeugt, ist die Eingangsabweisung eine andere Gruppe als die drei Mailboxersetzungen. Eine Ereignisnummer wird bereits vor dem Put vergeben und kann beide Ursachen widerspiegeln. Die zusätzliche Publikationsnummer und die Bestätigung ermöglichen erst diese saubere zweite Bilanz. In den 20-Ereignis-Läufen tritt kein Nummernumlauf auf.
+:::
+
+## Erwerbswartezeit und Haltezeit unterscheiden
+
+Gemeinsame Modelluhr in µs:
+
+| Marke | Zeitpunkt |
+|---|---:|
+| Bitte um das Schloss | 100 |
+| bestätigter Erwerb | 140 |
+| Freigabe | 165 |
+
+$$T_{\mathrm{wait}}=40\,\text{µs},\qquad T_{\mathrm{hold}}=25\,\text{µs}$$
+
+Ein Marker um den gesamten Aufrufpfad kann 65 µs umfassen.
+
+::: notes
+T wait ist die Erwerbswartezeit, T hold die Haltezeit. Die Modelluhr ist gemeinsam und in Mikrosekunden angegeben. Von der Bitte bei 100 bis zum bestätigten Erwerb bei 140 vergehen 40 Mikrosekunden. Von Erwerb bis Freigabe bei 165 sind es 25 Mikrosekunden. Zusammen ergeben sich 65 Mikrosekunden für das gesamte betrachtete Intervall.
+
+HSEM bedeutet Hardware Semaphore. Der Erwerbsversuch kann scheitern und wiederholt werden. Eine kurze Haltezeit allein begrenzt deshalb nicht die gesamte Wartezeit: Andere Teilnehmer, eigene Pausen und fehlende Fairness gehören in den Vertrag. Das Lehrziel von 50 Mikrosekunden gilt für die Haltezeit je Seite. Ein GPIO, General Purpose Input/Output, ist ein digitaler Ein- oder Ausgang. Ein GPIO-Marker vor Take und nach Release kann beide Anteile enthalten und ist ohne weitere Definition kein Nachweis genau dieser Haltezeit. Zudem kosten die Marker selbst Zeit. Ein Millisekundentick kann 25 oder 50 Mikrosekunden nicht sinnvoll auflösen; die Zeitquelle muss dazu passen.
+:::
+
+## Ein Filter auf der tatsächlich kopierten Folge
+
+Gleitender Mittelwert der letzten höchstens vier Kopien:
+
+$$y_k=\left\lfloor\frac{\sum_{j=0}^{m-1}x_{k-j}}{m}\right\rfloor,\quad m=\min(k,4)$$
+
+| kopierte Eingaben | 10 | 14 | 18 | 22 | 26 |
+|---|---:|---:|---:|---:|---:|
+| Ergebnis | 10 | 12 | 14 | 16 | 20 |
+
+Keine Nullauffüllung am Start. Ausgelassene Publikationen sind keine Filtereingaben.
+
+::: notes
+x ist der kopierte synthetische Nutzwert, y das gefilterte Ergebnis und k der ab eins gezählte neue Snapshot. m ist die Zahl bereits verfügbarer Fensterwerte, höchstens vier. Die Bodenklammer bedeutet Abrunden der nichtnegativen Division auf eine ganze Zahl. Am Anfang wird durch die wirklich vorhandene Zahl dividiert, nicht durch vier mit hinzugefügten Nullen.
+
+Bei zehn ist der Mittelwert zehn. Zehn plus 14 durch zwei ist zwölf. Mit 18 ergeben 42 durch drei den Wert 14. Mit 22 ergeben 64 durch vier den Wert 16. Der fünfte Wert ersetzt zehn im Fenster; 14 plus 18 plus 22 plus 26 ist 80, durch vier ergibt 20. Das C-Modul hält einen Ringpuffer mit vier Werten und aktualisiert seine Summe außerhalb des HSEM, Hardware Semaphore. Mit Nutzwerten höchstens 1023 bleibt die Summe höchstens 4092 und passt in den 32-Bit-Typ. Der Filter sieht ausschließlich tatsächlich kopierte Stände. Soll er jede ursprüngliche Probe berücksichtigen, wäre Latest-Value, der neueste Stand, kein ausreichender Transportvertrag.
+:::
+
+## Serielle Ausgabe ist ein eigener Zeitpfad
+
+Lehrpaket `P=0001\r\n`: acht ASCII-Zeichen.
+
+$$8\cdot10=80\ \text{Bit},\qquad
+\frac{80}{115200}=0{,}69444\,\mathrm{ms}$$
+
+- 8N1: Startbit, 8 Datenbits, keine Parität, Stopbit
+- reine Leitungszeit, keine CPU-Zeit
+- tatsächliche Demozeilen haben variable Länge
+- UART-Ausgabe stets außerhalb des HSEM
+
+::: notes
+UART heißt Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle. ASCII bedeutet American Standard Code for Information Interchange und ist die Zeichenkodierung des Lehrpakets. P gleich 0001 enthält sechs Zeichen; der Wagenrücklauf und der Zeilenumbruch, als Backslash r und Backslash n dargestellt, ergeben zwei weitere. Unter 8N1 werden pro Zeichen ein Startbit, acht Datenbits und ein Stopbit übertragen. Keine Parität bedeutet, dass kein Paritätsbit dazukommt. Acht Zeichen brauchen 80 Bitzeiten.
+
+Bei 115200 Bit pro Sekunde sind das rund 0,69444 Millisekunden reine Leitungszeit. CPU bedeutet Central Processing Unit, Prozessorkern. Die Leitungszeit ist nicht die eigene Prozessorarbeit. Ein blockierender Sender kann diese Zeit dennoch zum verstrichenen Ausgabeintervall hinzufügen. HSEM bedeutet Hardware Semaphore; es wird vorher freigegeben. Die optionalen Demozeilen enthalten mehrere Felder und haben eine andere tatsächliche Länge. Im Basislauf bleiben Ergebnisse im privaten Arbeitsspeicher. Eine aktivierte Ausgabe verändert die Snapshotrate und kann erlaubte Mailboxersetzungen erhöhen.
+:::
+
+## Zeitmarken brauchen dieselbe Kennung
+
+| Marke | festgelegtes Ereignis |
+|---|---|
+| $t_1$ | Beginn der M4-Ereignisroutine |
+| $t_2$ | erfolgreicher Put dieser Nachricht beendet |
+| $t_3$ | Get dieser Nachricht, Bearbeitung beginnt |
+| $t_4$ | Veröffentlichung an definierter Freigabestelle |
+| $t_5$ | neue lokale M7-Kopie abgeschlossen |
+| $t_6,t_7$ | Filter / definierter Ausgabeabschluss |
+
+Ein lokaler Tick im Datensatz ist keine gemeinsame Uhr.
+
+::: notes
+M4 ist der Cortex-M4, M7 der Cortex-M7. Die Zeitpunkte t eins bis t sieben gehören jeweils zu derselben Nachricht beziehungsweise ihrer Publikation. Put bezeichnet Einfügen in die Queue, Get Entnehmen. t eins liegt am dokumentierten Beginn der Software-Ereignisroutine, nicht automatisch an der ersten physischen Flanke oder am ersten Maschinenbefehl der Exception. t vier benötigt eine präzise Marke relativ zur Hardwarefreigabe. Eine Marke nach Release kann vom anderen Kern zeitlich schon überholt werden.
+
+Die Publikationsantwort ist t vier minus t eins, das Alter eines kopierten neuen Stands t fünf minus t eins. Für diese Inter-Core-Differenz braucht man einen gemeinsamen externen Zeitbezug, einen geeignet gemeinsam gelesenen Timer oder eine belegte Korrelation. Zwei lokale DWT-Zähler, Data Watchpoint and Trace, sind nicht automatisch synchron. Der gespeicherte event_tick stammt aus der lokalen HAL-Millisekundenuhr des M4; HAL bedeutet Hardware Abstraction Layer. Er hilft bei der Herkunftsdiagnose, beweist aber keine feine Haltezeit und darf nicht von einer beliebigen M7-Uhr subtrahiert werden.
+:::
+
+## Physische Flanke und Softwaremarke trennen
+
+Synthetische digitale Spuren · oben Eingang, unten Marker der Ereignisroutine.
+
+```{.wavedrom}
+{"signal":[{"name":" ","wave":"01...."},{"name":" ","wave":"0...10"}],"foot":{"tick":0,"text":"Ein Raster = 1 µs · Modell"},"config":{"hscale":2}}
+```
+
+Flanke bei 1 µs, Marker bei 4 µs → Abstand 3 µs.
+
+::: notes
+Die obere digitale Spur stellt den Eingang dar, die untere den GPIO-Marker, General Purpose Input/Output, am dokumentierten Beginn der Ereignisroutine. Die waagerechte Achse hat ein Mikrosekundenraster. Der Eingang steigt bei eins, der Marker bei vier und fällt bei fünf. Der Abstand der steigenden Flanken ist drei Mikrosekunden; die Markerbreite ist eine Mikrosekunde und eine andere Größe. Beide Zahlen sind ein synthetisches Modell, keine Messung des Boards.
+
+Zwischen physischer Flanke und Softwaremarke können Peripherieerkennung, Interruptannahme, Eintrittscode und ein Framework-Handler liegen. Diese Verzögerung gehört nicht automatisch zu einer erst an der Marke beginnenden Publikationsantwort. Ein externer gemeinsamer Recorder kann beide Flanken zeitlich beziehen. Der Marker ist selbst zusätzliche Arbeit und bildet keine analoge Flankensteilheit ab. Wiederholte Eingaben brauchen zudem eine eindeutige Zuordnung. Fehlt ein Ereignis im Trace, der geordneten Aufzeichnung, darf man dafür weder null Verzögerung noch eine erfundene interpolierte Zeit einsetzen.
+:::
+
+## Publikationsantwort und Spanne auswerten
+
+Gemeinsame Modelluhr, korrelierte Ereignisse, alle Zeiten in µs.
+
+| Ereignis | $t_1$ | $t_4$ | $R_{\mathrm{pub}}$ |
+|---|---:|---:|---:|
+| 1 | 100 | 600 | 500 |
+| 2 | 10000 | 10750 | 750 |
+| 3 | 20000 | 20900 | 900 |
+
+$$R_{\mathrm{pub}}=t_4-t_1,\quad J_R=900-500=400\,\text{µs}$$
+
+::: notes
+R pub ist die Publikationsantwort vom Beginn der M4-Ereignisroutine t eins bis zur definierten Veröffentlichung t vier. M4 bezeichnet den Cortex-M4. J R ist die Spanne der drei Antworten. Die erste Differenz ist 600 minus 100 gleich 500 Mikrosekunden, die zweite 10750 minus 10000 gleich 750 und die dritte 20900 minus 20000 gleich 900. Die Spanne ist 900 minus 500 gleich 400 Mikrosekunden.
+
+Im Lehrmodell sind die Kennungen vollständig und die Zeitbasis gemeinsam. Die drei Stichproben erfüllen jeweils das Ziel einer Millisekunde, denn 900 Mikrosekunden sind 0,90 Millisekunden. Eine reale Aufnahme bräuchte diese Voraussetzungen ebenfalls und müsste die Zahl gültiger Paare nennen. Abgewiesene Queueeingaben haben keinen Publikationsabschluss und erhalten keine künstliche Antwortzeit. Geplante Publikationen ohne gültige Endmarke bleiben in der Abdeckung sichtbar. Das beobachtete Maximum bleibt ein Stichprobenergebnis und kein allgemeiner Zeitbeweis. Die zweite Zeitgröße betrachtet nun die tatsächlich kopierten Publikationen.
+:::
+
+## Datenalter ist keine Vollständigkeitsbilanz
+
+Gemeinsame Modelluhr in ms:
+
+| Publikation | $t_1$ | $t_5$ | Bewertung |
+|---|---:|---:|---|
+| 1 | 0 | — | vor Kopie ersetzt |
+| 2 | 10 | 45 | Alter 35 ms, Ziel erfüllt |
+| 3 | 20 | 80 | Alter 60 ms, Ziel verletzt |
+
+$$A_{\mathrm{snap}}=t_5-t_1$$
+
+Ersetzt heißt kein Alterspaar; es bleibt eine gezählte Auslassung.
+
+::: notes
+A snap ist das Alter eines tatsächlich neu kopierten Stands vom Beginn seiner Ereignisroutine t eins bis zum Abschluss seiner Kopie t fünf. Die erste Publikation wurde vor einer Kopie ersetzt. Für sie existiert kein t fünf und somit kein gültiges Alterspaar. Das bedeutet nicht Alter null. Sie wird stattdessen in O, der Zahl vor erster Kopie ersetzter Publikationen, gezählt.
+
+Für die zweite Publikation ergibt 45 minus zehn ein Alter von 35 Millisekunden, innerhalb des Lehrziels 50. Die dritte ergibt 80 minus 20 gleich 60 Millisekunden und verletzt das Ziel. Diese Modellfälle unterscheiden also Ersetzung von einer wirklich beobachteten Fristverletzung. Ein gültiger alter Datensatz kann bei Sensorstille weiter dieselbe Zahl enthalten. Er darf nicht allein wegen unveränderter Publikationsnummer als frischer Wert gelten. Eine konkrete Anwendung muss das zulässige Alter und den Umgang mit einem veralteten Stand festlegen. Die Frische des Ausführungspfads ist wiederum eine andere Frage als die Neuheit des Nutzwerts.
+:::
+
+## Eine Antwortzeit ohne doppelte Anteile zerlegen
+
+Gemeinsames Lehrmodell, Zeiten in µs:
+
+| Abschnitt | Abstand |
+|---|---:|
+| Ereignisroutine: $100\rightarrow110$ | 10 |
+| bis Get: $110\rightarrow300$ | 190 |
+| Vorbereitung: $300\rightarrow330$ | 30 |
+| Erwerbswarten: $330\rightarrow350$ | 20 |
+| Halten/Publizieren: $350\rightarrow370$ | 20 |
+
+$$R_{\mathrm{pub}}=10+190+30+20+20=270\,\text{µs}$$
+
+::: notes
+Das Modell zerlegt die verstrichene Publikationsantwort R pub in direkt aneinander anschließende Intervalle. Get ist die Entnahme der betrachteten Nachricht. Das erste Intervall endet nach dem erfolgreichen Put. Das zweite umfasst alle Verzögerungen bis zum Get, einschließlich möglicher restlicher Interruptarbeit und Einplanung. Die Vorbereitung endet bei der Bitte um das Schloss. Es folgen Erwerbswarten und der tatsächliche Besitz bis zur Veröffentlichung.
+
+Die fünf disjunkten Abstände sind zehn, 190, 30, 20 und 20 Mikrosekunden. Ihre Summe ist 270, ebenso wie 370 minus 100. Es werden keine überlappenden Intervalle zusätzlich summiert. Die gesamte Wartezeit und der darin enthaltene Erwerbsabstand dürfen beispielsweise nicht beide nochmals in dieselbe Summe eingehen. Das ist eine Modellrechnung, keine gemessene Worst-Case-Grenze. Für eine echte obere Antwortzeit müssen auch zulässige Eingabelast, Prioritäten, Maskierung, Buslast und die maximalen Einzelanteile begründet werden. Ein beobachteter schneller Normalfall ersetzt diese Annahmen nicht.
+:::
+
+## Nutzdatenstille ist kein Worker-Stillstand
+
+Der Supervisor prüft frische vollständige Kontrollrunden.
+
+| Fall | Datenfolge | Gesundheitsfrage |
+|---|---|---|
+| kein neues Eingangssignal | Nummer steht | läuft die Kontrollrunde weiter? |
+| Burst | viele Eingaben | Queue/Verarbeitung begrenzt? |
+| M7 hängt | keine neuen Kopien | fehlt sein erforderlicher Nachweis? |
+
+WWDG-Refresh folgt der geprüften Policy, nicht jeder Eingabe.
+
+::: notes
+Ein Supervisor ist die überwachende Stelle. M4 ist der Cortex-M4, M7 der Cortex-M7. WWDG bedeutet Window Watchdog, Fenster-Watchdog. Refresh ist das Nachladen des Zählers. Ein gesundes System kann zeitweise keine neuen Nutzdaten erhalten. Der Worker muss trotzdem die vereinbarte Kontrollrunde oder eine andere unabhängig begründete Fortschrittsbedingung erfüllen. Ein bloß unveränderter Nutzwert ist deshalb kein Hängernachweis.
+
+Umgekehrt kann ein weiterlaufender M4-Refresh einen ausgefallenen M7 verdecken, wenn dessen Fortschritt nicht in die Gesundheitsbedingung eingeht. Ein Burst darf nicht zu jedem Eingang einen Refresh auslösen, weil die kurzen Abstände das Hardwarefenster verletzen können. Unterschiedliche Rundenperioden benötigen die eigenen Frischefristen aus Vorlesung 8. Der endliche Programmierkern dieses Termins demonstriert die Datenkette und ihre Bilanzen; er enthält ausdrücklich keinen kompletten laufenden Supervisor. Für einen integrierten Wächter müssten der gültige Normalbetrieb, die legitime Stille, das bewusst endliche Versuchsende und der Fehlerzustand zusätzlich geregelt werden. Die Watchdogstation aus Vorlesung 8 bleibt ein separater Versuch.
+:::
+
+## Das Fenster bleibt eine Hardwarebedingung
+
+Lehrkonfiguration WWDG2: PCLK 100 MHz, Teiler 8, Reload 127, Window 80.
+
+$\Delta t=4096\cdot8/100\,000\,000=0{,}32768\,\mathrm{ms}$.
+
+| Grenze | idealer Zeitpunkt nach Reload |
+|---|---:|
+| $T=80$ · Refresh erlaubt | 15,40096 ms |
+| $T=64$ · EWI | 20,64384 ms |
+| $T=63$ · Reset | 20,97152 ms |
+
+18 ms ist ein geplantes Ziel, kein garantierter Ausführungstermin.
+
+::: notes
+WWDG heißt Window Watchdog, PCLK Peripheral Clock, hier der APB1-Bustakt; APB bedeutet Advanced Peripheral Bus. Reload ist der Nachladewert, Window die obere Refreshgrenze und T der aktuelle abwärts laufende Zählerstand. EWI bedeutet Early Wakeup Interrupt, Warnunterbrechung. Die Lehrwerte sind dieselben wie in Vorlesung 8. Ein Schritt dauert 4096 mal acht geteilt durch 100 Millionen Sekunden, also 0,32768 Millisekunden.
+
+Bis 80 sind 47 Schritte nötig, bis 64 63 und bis 63 64. Multiplikation liefert die drei Tabellenzeiten. Hardwareseitig erlaubt ist 63 kleiner T und T höchstens 80; Gleichheit mit 80 gehört dazu. Die Tabelle nimmt den ersten Schritt einen vollen Tick nach Reload an. Die wirkliche Vorteilerphase und die Softwareverzögerung brauchen Reserve. Ein periodisches 18-Millisekunden-Ziel kann unabhängig von Eingabebursts geplant werden, ist aber ohne begrenzten Aufwachverzug kein Zeitbeweis. Der EWI ist maskierbar und kein garantierter Abschaltpfad. Diese Rechnung gehört zur Entwurfsprüfung, nicht zu vorab ausgefüllten Beobachtungszellen.
+:::
+
+## Kriterien C1–C4: Last und Nutzdatenzeiten
+
+| Kriterium | Lehrziel | Voraussetzung |
+|---|---|---|
+| C1 | 20 normale Eingaben, nominal 100 Hz | Quelle und reale Takte dokumentiert |
+| C2 | Sättigung: 8 Annahmen, 2 Queue-Drops | leer, 10 korrekte Puts, kein Get |
+| C3 | $R_{\mathrm{pub}}\le1$ ms | Normallast, vorgesehene Publikationen |
+| C4 | $A_{\mathrm{snap}}\le50$ ms | neue Kopien, gemeinsame Zeitbasis |
+
+Zu C3/C4 gehören Zahl gültiger Paare und die nicht erfassten Fälle.
+
+::: notes
+C eins bis C vier sind Kennungen von Abnahmekriterien. C eins beschreibt die endliche normale Eingabe mit 100 Ereignissen pro Sekunde. C zwei ist ein gesonderter Kapazitätstest der Queue, des lokalen Nachrichtenpuffers. Sein exakter Sollwert folgt aus den ausdrücklich gesetzten Bedingungen, nicht aus jedem beliebigen Burst. C drei prüft R pub, die Publikationsantwort vom Beginn der Ereignisroutine bis zur definierten Veröffentlichung. C vier prüft A snap, das Alter einer tatsächlich neu kopierten Publikation.
+
+C drei gilt für angenommene zur Publikation vorgesehene Nachrichten unter der Normallast. Ein absichtlich verworfener Datensatz wird bilanziert und nicht als Nullantwortzeit eingetragen. C vier braucht einen gemeinsamen Zeitbezug der Cortex-Kerne; unkorrelierte lokale Uhren reichen nicht. Auch eine vollständige Mailboxbilanz beweist diese Zeitziele nicht. Fehlende Endmarken werden als fehlende Abdeckung genannt. Die Architektur und die beobachtete Stichprobe können getrennte Status erhalten. Die übrigen Kriterien prüfen nun die Voraussetzungen dieses Zeitpfads.
+:::
+
+## Kriterien C5–C8: Vertrag und Prüfgrenzen
+
+| Kriterium | zu prüfen |
+|---|---|
+| C5 | eigener HSEM, Shared-Layout, Start und Sichtbarkeit |
+| C6 | Besitzhaltezeit je Seite höchstens 50 µs |
+| C7 | Watchdogrechnung und passende Fortschrittspolicy |
+| C8 | beide Bilanzen an konsistentem Prüfpunkt |
+
+Für den endlichen Code ist C7 eine Entwurfs-/Rechenprüfung. Ein integrierter Watchdoglauf wäre eine Erweiterung.
+
+::: notes
+HSEM heißt Hardware Semaphore. Shared-Layout ist die Anordnung des gemeinsamen Datensatzes, mit gleichem Zielort in beiden Images, den Firmwares der Kerne. C fünf reserviert eine eigene Nutzdatenressource und lässt das Boot-Schloss separat. Es prüft außerdem den einzigen Initialisierer und die nicht cachebare Sichtbarkeit. C sechs betrifft die Haltezeit nach bestätigtem Erwerb, nicht die gesamte Erwerbswartezeit.
+
+C sieben behandelt die Rechnung des Hardwarefensters und die Gesundheitsbedingungen. Das bereitgestellte endliche Datenmodul startet keinen Watchdog. Deshalb ist dessen Codeabschluss kein bestandener integrierter Watchdogtest. Die separate Station aus Vorlesung 8 oder ein eigens erweiterter Supervisor benötigen einen eigenen Versuch und Status. C acht prüft I gleich A plus D q plus E put, A gleich Q plus F plus P plus D task und P gleich S plus O plus U. I sind Eingaben, A Annahmen, D q Queueabweisungen und E put sonstige Putfehler. Q liegt noch im Puffer, F wird bearbeitet, P ist publiziert und D task nach Entnahme verworfen. S ist verschieden kopiert, O vorher ersetzt und U der ungelesene aktuelle Stand. Die Größen werden nach kontrolliertem Abschluss beziehungsweise innerhalb der jeweiligen Besitztransaktion gelesen. Leere Beobachtungsfelder bleiben ungeprüft.
+:::
+
+## Eine Testmatrix trennt Erwartung von Befund
+
+| Test | analytische Erwartung | ohne Lauf |
+|---|---|---|
+| normale Datenkette | Bilanzen und Kennungen konsistent | nicht geprüft |
+| kontrollierte Sättigung | 8 Annahmen, 2 Drops | nicht geprüft |
+| langsamere M7-Kopie | mögliche Ersetzungen, gezählt | nicht geprüft |
+| ungültige Messung | kein verwendbares Zeitpaar | Messung ungültig |
+| stehender Partner | begrenzter Abbruchpfad | nicht geprüft |
+
+::: notes
+M7 bezeichnet den Cortex-M7. Eine analytische Erwartung folgt aus Modell und Programmvertrag. Ein Befund braucht dagegen einen tatsächlich ausgeführten Versuch. Die normale Datenkette hat kein pauschales Soll von 20 Snapshots: Latest-Value erlaubt Ersetzungen, solange sie korrekt gezählt werden. Die Sättigung hat unter ihren streng kontrollierten Bedingungen die genaue Annahmezahl acht und Dropzahl zwei. Eine bewusst langsamere M7-Schleife kann weniger Stände kopieren; die Bilanzen müssen trotzdem passen.
+
+Die Statusworte sind getrennt: nicht geprüft, bestanden unter den dokumentierten Bedingungen, verletzt oder Messung ungültig. Fehlt eine gemeinsame Zeitbasis, ist ein Zeitkriterium nicht geprüft. Eine beschädigte Aufnahme wird nicht durch null Latenz vervollständigt. Ein absichtlich angehaltener Partner ist Fehlerinjektion und kann den Abbruch prüfen, nicht die normale Publikationsfrist. Der Timeout braucht laufenden prüfenden Code und seine Zeitbasis. Er ersetzt keinen Hardwarewächter. Der Bericht nennt deshalb, welcher Pfad tatsächlich geprüft wurde und welche Annahmen offen bleiben.
+:::
+
+## Der Programmierteil hat zwei klare Läufe
+
+NUCLEO-H755ZI-Q · CubeMX · VS Code mit STM32 VS Code Extension.
+
+1. Vorbereitetes Dual-Core-CMake-Projekt weiterverwenden
+2. `code/lab09` anstelle vorheriger Laborobjekte einbinden
+3. normal: M4-Timer, 20 Ereignisse, M7-Pause 1 ms
+4. Sättigung: 10 Puts vor Get, kein Timerstart
+5. beide Kerne abschließen, dann Bilanzen und Filter prüfen
+
+25-ms-M7-Pause und UART sind gezielte Vergleichslasten.
+
+::: notes
+CubeMX ist das Konfigurations- und Generierungswerkzeug von STMicroelectronics. VS Code ist der Editor, STM32 VS Code Extension die Entwicklungs- und Debugerweiterung. CMake beschreibt die beiden Buildziele. M4 und M7 sind die Cortex-Kerne. UART heißt Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle. Der vollständige Anwendungscode und die Integration stehen unter code/lab09. Ein generiertes Boardprojekt ist zusätzlich Voraussetzung, kein erfundenes Ergebnis des Folienexports.
+
+Der M7 konfiguriert den gemeinsamen Speicher bei ausgeschaltetem Datencache und initialisiert ihn vor der bestehenden Freigabe des noch wartenden M4. Beide Linkerskripte reservieren die Region und entfernen frühere Laborobjekte. Auf dem M4 existiert die Queue vor der Timerfreigabe. Der Modus wird einmal vom M7 veröffentlicht. Nach dem endlichen Lauf sind Quelle gestoppt, Queue gelöscht und Producer, der veröffentlichende Worker, fertig. Der M7 kopiert den letzten Stand und beendet die Schleife. Erst danach werden private und gemeinsame Diagnosewerte bei angehaltenen Kernen gelesen. Zusätzliche Ausgabe- oder Pausenlast verändert den Versuch und wird separat dokumentiert.
+:::
+
+## Papiertransfer: zwei Bilanzen gleichzeitig
+
+Konsistenter Prüfpunkt:
+
+$I=12$, $A=10$, $D_q=2$, $E_{\mathrm{put}}=0$.
+
+$$Q=1,\ F=1,\ D_{\mathrm{task}}=1,\ S=4,\ U=1$$
+
+Bestimmen Sie $P$ und $O$. Ist „Snapshotwert gleich zehn“ eine ausreichende Bilanz?
+
+Zusatz: Wie ändert sich $U$, wenn der letzte Stand jetzt erstmals kopiert wird?
+
+::: notes
+I sind Eingaben, A Annahmen, D q Queueabweisungen und E put andere Putfehler. Die Eingangsbilanz zwölf gleich zehn plus zwei plus null ist erfüllt. Q liegt noch in der Queue, F ist in Bearbeitung und D task nach Entnahme verworfen. Aus A gleich Q plus F plus P plus D task folgt P gleich zehn minus eins minus eins minus eins, also sieben.
+
+S sind verschieden kopierte Stände und U die aktuelle ungelesene Publikation. Aus P gleich S plus O plus U folgt O gleich sieben minus vier minus eins, also zwei. Ein Nutzwert zehn enthält keine dieser Zählinformationen und kann die Bilanz nicht ersetzen. Wird der aktuelle Stand erstmals kopiert und bestätigt, steigt S von vier auf fünf und U fällt von eins auf null. P und O bleiben sieben beziehungsweise zwei. Damit bleibt sieben gleich fünf plus zwei plus null. Der Prüfpunkt ist ausdrücklich konsistent; ein beliebiges gleichzeitiges Lesen laufender Übergangszähler wäre keine Grundlage dieser Rechnung.
+:::
+
+## Was eine abgeschlossene Abnahme enthalten muss
+
+- Last, Projektstand und Messvertrag
+- nachvollziehbare Rechen- und Codebefunde
+- echte Beobachtungen mit Kennung und Abdeckung
+- Prüfstatus je Kriterium und begründete Grenzen
+- offener Wiederanlauf- und Fehlervertrag für Erweiterungen
+
+Ein gemessenes Maximum beschreibt die gültige Stichprobe.
+
+::: notes
+Ein Messvertrag legt Ereignisgrenzen, Einheit, Zeitquelle und Bedingungen fest. Abdeckung beschreibt, welche erforderlichen Ereignisse und Pfade tatsächlich erfasst wurden. Die Abnahme verknüpft diese Angaben mit den Kriterien und ihren Statuswerten. Eine logische Hostprüfung, also eine Ausführung mit modellierten Hardwarefunktionen auf dem Entwicklungsrechner, kann Programmzustände und Bilanzen prüfen. Sie beweist keine Cortex-Buslatenzen oder echte Watchdogzeiten.
+
+Auch ein erfolgreiches Ziel-Binary, die kompilierte Firmware, wäre noch keine Messung auf dem Board. Ein gültiger Boardlauf zeigt wiederum die geprüften Bedingungen, nicht alle unbekannten Pfade. WCET heißt Worst-Case Execution Time, obere Ausführungszeit unter einem begründeten Modell. Das beobachtete Maximum ist kein automatischer WCET-Nachweis. Für das Abschlussprojekt genügt deshalb kein grünes Gesamtetikett. Der Bericht nennt die einzelnen Ergebnisse und ihre praktischen Grenzen. Damit werden Architekturwahl, Datentransport, Zeitpfad und Fehlerreaktion zu einer nachvollziehbaren Argumentation.
+:::
+
+## Quellen und nächste Schritte
+
+- Buttazzo: *Hard Real-Time Computing Systems*
+- AUTOSAR: [Classic-Schichten](https://www.autosar.org/fileadmin/standards/R23-11/CP/AUTOSAR_EXP_LayeredSoftwareArchitecture.pdf), [Adaptive Platform Design](https://www.autosar.org/fileadmin/standards/R25-11/AP/AUTOSAR_EXP_PlatformDesign.pdf)
+- Arm: [CMSIS-RTOS2 Queue](https://arm-software.github.io/CMSIS_6/latest/RTOS2/group__CMSIS__RTOS__Message.html), [Threadattribute](https://arm-software.github.io/CMSIS_6/latest/RTOS2/group__CMSIS__RTOS__ThreadMgmt.html)
+- ST: [HSEM-Treiber](https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Src/stm32h7xx_hal_hsem.c), [H755-Geräteheader](https://github.com/STMicroelectronics/cmsis-device-h7/blob/master/Include/stm32h755xx.h)
+
+Abgabe: Papierlösungen, Integrationsbefund, Bilanz und Kriterienstatus.
+
+::: notes
+Giorgio C. Buttazzos Standardwerk trägt die Zeit- und Synchronisationsbegriffe des Moduls. AUTOSAR bedeutet AUTomotive Open System ARchitecture. Die verlinkten Classic- und Adaptive-Dokumente dienen zur Vertiefung des Schichtenexkurses; der Demonstrator enthält keinen AUTOSAR-Stack. CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard in Version zwei. Ihre Queue- und Threadverträge bestimmen Aufrufkontext, Timeout und Speichereinheiten.
+
+STMicroelectronics dokumentiert die konkrete Hardware und die HAL, Hardware Abstraction Layer. HSEM bedeutet Hardware Semaphore. Die lokal verfügbaren öffentlichen Header und Treiber werden für die Anwendungsprüfung benutzt; ihre Version ist von der späteren Cube-Projektversion zu unterscheiden. Die externen Standardsdokumente konnten in dieser Cloud nicht erneut abgerufen werden, daher wird kein neuer revisionsspezifischer Hardware- oder Normnachweis behauptet. Modellrechnungen, Quellprüfung, Hostprüfung und Boardmessung erhalten im Ergebnisblatt unterschiedliche Bezeichnungen. Die nächsten Schritte sind Ihre eigenen Integrations- und Versuchsbefunde, nicht vorab ausgefüllte Messwerte.
+:::
