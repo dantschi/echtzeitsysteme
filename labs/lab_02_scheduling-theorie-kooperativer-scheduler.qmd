@@ -1,19 +1,36 @@
 ---
-title: "Übungsblatt 2: Scheduling-Theorie und kooperativer Scheduler"
+title: "Übungsblatt 2: Scheduling-Theorie und kooperativer Dispatcher"
 author: "Prof. Dr.-Ing. Daniel Klünder"
+format:
+  pdf:
+    colorlinks: true
+    linkcolor: dhbwred
+    urlcolor: dhbwred
+    citecolor: dhbwred
+    include-in-header:
+      - text: |
+          \usepackage{xcolor}
+          \definecolor{dhbwred}{HTML}{E2001A}
+# Studierende: quarto render lab_02_scheduling-theorie-kooperativer-scheduler.qmd --to pdf
+# Musterlösung: gleicher Aufruf zusätzlich mit --profile solution
 ---
 
 ::: {.content-visible when-profile="solution"}
-> Musterlösung
+> **Musterlösung** · Die Rechenzahlen sind Lehrannahmen, keine Boardmessungen.
 :::
 
 ## Ziele, Voraussetzungen und Zeitplan
 
-Sie unterscheiden Ausführungs- und Antwortzeit, prüfen Fristen unter verschiedenen Auswahlregeln und setzen einen kooperativen Dispatcher um. Vorausgesetzt werden **nur Vorlesungen 1 und 2**: Bare-Metal, Interrupts, C-Funktionen und das Aufgabenmodell. Ein Echtzeitbetriebssystem wird für den Programmierteil nicht eingesetzt. FreeRTOS und fortsetzbare Threads folgen in Vorlesung 3.
+Sie beschreiben Jobs mit Zeitparametern, prüfen Fristen unter verschiedenen Regeln und erklären einen kooperativen Aufrufring. Vorausgesetzt werden Vorlesung 1 und die heutige Theorie: C-Funktionen, Variablen, Schleifen, Zeitvertrag und Interrupts. Ein Echtzeitbetriebssystem wird für den Programmvergleich nicht eingesetzt. Funktionszeiger und Verwaltungsstrukturen werden in der Vorlesung erklärt.
 
-**Teil A enthält fünf klausurnahe Papieraufgaben mit insgesamt 32 Punkten.** Planen Sie etwa 50 Minuten einschließlich kurzer Auswertung. Teil B benötigt mit vorbereitetem Projekt etwa 45 Minuten; die zusätzliche Hardwaremessung etwa 15 Minuten. Papierlösungen sind auch ohne Hardware vollständig möglich. Die Installation der Werkzeuge und ein erstmaliger Dual-Core-Start sind Vorbereitung.
+| Abschnitt | Minuten | Umfang |
+|---|---:|---|
+| Fünf Papieraufgaben mit Besprechung | 50 | 32 Punkte |
+| Vorbereiteter Programmvergleich | 25 | vier Varianten und Protokoll |
 
-Teil B verwendet **STM32CubeMX und VS Code mit STM32 VS Code Extension** auf dem **NUCLEO-H755ZI-Q mit STM32H755ZIT6**. Die Anwendungsfunktionen stehen vollständig in der Musterlösung dieses Blatts. Ein generiertes Firmwareprojekt liegt im Repository nicht vor. Konfiguration, Build und Hardwarelauf werden deshalb am bereitgestellten Projekt nachgewiesen, nicht aus den Zahlenbeispielen behauptet.
+Zusammen mit 90 Minuten Vortrag und 15 Minuten Quiz ergibt dies **180 Minuten**. Installation, erster Dual-Core-Start und erstmalige Moduleinbindung sind Vorbereitung. Die Papieraufgaben sind vollständig ohne Board lösbar. Die vollständigen Anwendungsbausteine und Integrationsschritte liegen für alle Studierenden in [code/lab02](../code/lab02/README.md).
+
+Der Programmvergleich verwendet **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die Anwendung läuft auf Cortex-M4 ohne Kernel; Cortex-M7 erhält den vorbereiteten generierten Start. Ein fertig erzeugtes Boardprojekt und ausgeführte Hardwaremessungen werden nicht behauptet. Theorie und Messwerte bleiben getrennt.
 
 ## Teil A: Papieraufgaben
 
@@ -33,7 +50,7 @@ Sofern nicht anders angegeben: genau ein Prozessor, unabhängige periodische Auf
 
 Task bedeutet wiederkehrende Aufgabe, Job eine einzelne Aktivierung. Zeitintervalle sind halboffen: $[a,b)$ enthält den Anfang, aber nicht den Endpunkt. Abschluss genau auf der Deadline gilt als rechtzeitig.
 
-### Aufgabe 1: Ein Job auf der Zeitachse · 6 Punkte
+### Aufgabe 1: Ein Job auf der Zeitachse · 8 Minuten · 6 Punkte
 
 Eine Aufgabe hat $T=10\,\mathrm{ms}$ und $D=8\,\mathrm{ms}$. Ein Job wird bei $r=0$ freigegeben. Er wartet bis $s=2$, rechnet von 2 bis 3, wird von einer anderen Aufgabe verdrängt und rechnet von 5 bis 7 weiter. Alle Zeitpunkte sind in Millisekunden.
 
@@ -60,7 +77,7 @@ Eigene Prozessorzeit: $(3-2)+(7-5)=3\,\mathrm{ms}$. Startlatenz: $s-r=2\,\mathrm
 Ready heißt ausführungsbereit, Blocked auf eine sachliche Bedingung oder Wartezeit wartend. Die Aufgabe könnte sofort weiterrechnen, wenn sie den Prozessor bekäme. Sie ist deshalb verdrängt und Ready, nicht Blocked. Der Abstand zwischen Freigabe und Abschluss enthält auch fremde Arbeit und ist nicht mit dem eigenen Bedarf $C$ gleichzusetzen.
 :::
 
-### Aufgabe 2: RMS-Schranke richtig interpretieren · 6 Punkte
+### Aufgabe 2: RMS-Schranke richtig interpretieren · 8 Minuten · 6 Punkte
 
 Für alle drei Aufgaben gilt $D_i=T_i$:
 
@@ -68,7 +85,7 @@ Für alle drei Aufgaben gilt $D_i=T_i$:
 |---|---:|---:|
 | $\tau_1$ | 1 | 4 |
 | $\tau_2$ | 2 | 6 |
-| $\tau_3$ | 1 | 12 |
+| $\tau_3$ | 2 | 12 |
 
 1. Berechnen Sie $U=\sum_i C_i/T_i$ als Bruch und Prozentwert. (2 P)
 2. Vergeben Sie Prioritäten nach RMS, Rate Monotonic Scheduling. Prüfen Sie die hinreichende Liu-und-Layland-Schranke $U\le n(2^{1/n}-1)$ für $n=3$. (2 P)
@@ -78,9 +95,9 @@ Für alle drei Aufgaben gilt $D_i=T_i$:
 **Musterlösung Aufgabe 2**
 
 $$
-U=\frac14+\frac26+\frac1{12}
- =\frac3{12}+\frac4{12}+\frac1{12}
- =\frac23\approx66{,}67\,\%.
+U=\frac14+\frac26+\frac2{12}
+ =\frac3{12}+\frac4{12}+\frac2{12}
+ =\frac34=75\,\%.
 $$
 
 RMS vergibt die höchste feste Priorität an die kürzeste Periode: $\tau_1>\tau_2>\tau_3$. Für drei Aufgaben beträgt die Schranke $3(2^{1/3}-1)\approx0{,}779763$, also etwa 77,98 %. Unser Wert liegt darunter; das Set ist unter den gemeinsamen Modellannahmen mit RMS nachgewiesen.
@@ -90,7 +107,7 @@ Die Schranke ist hinreichend, nicht notwendig: Bei Überschreitung bis 100 % ble
 Der Nachweis gilt nicht für beliebige Auswahlregeln. Der Labor-Dispatcher verwendet weder RMS-Prioritäten noch Task-Präemption. Lange zurückkehrende Schritte können andere Aufgaben verzögern. Gleiche Namen oder dieselbe Auslastung ersetzen diese fehlenden Voraussetzungen nicht.
 :::
 
-### Aufgabe 3: Antwortzeit trotz überschrittener Schranke · 8 Punkte
+### Aufgabe 3: Antwortzeit trotz überschrittener Schranke · 14 Minuten · 8 Punkte
 
 Dieses Set entspricht dem 85-%-Beispiel der Vorlesung; es ist **ein anderes Set als in Aufgabe 2**. Wieder gilt $D_i=T_i$:
 
@@ -136,7 +153,7 @@ Fixpunkt $R_3=8\,\mathrm{ms}\le10\,\mathrm{ms}$. Alle Fristen halten im angegebe
 Die konkreten Perioden und Bedarfe tragen den Nachweis. Ein anderes Set mit 85 % kann eine andere Antwortzeit haben. Prozessorzeit und Antwortzeit sind auch hier verschieden: $C_3=2$, aber $R_3=8$ ms.
 :::
 
-### Aufgabe 4: RMS und EDF am selben Set · 6 Punkte
+### Aufgabe 4: RMS und EDF am selben Set · 12 Minuten · 6 Punkte
 
 Zwei Aufgaben starten synchron bei null:
 
@@ -171,12 +188,12 @@ Bei 7 ms fehlen dem ersten Job von $\tau_2$ noch 1 ms; seine absolute Deadline s
 | $[6,8)$ | $\tau_1/J_2$ | 10 |
 | $[8,12)$ | $\tau_2/J_2$ | 14 |
 
-Bei 5 ms bleibt $\tau_2/J_1$ laufend: Deadline sieben ist früher als die Deadline zehn des neu freigegebenen $\tau_1/J_2$. Bei 10 ms hat der laufende $\tau_2/J_2$ Deadline vierzehn, der neue $\tau_1/J_3$ Deadline fünfzehn. Daher bleibt auch dort der laufende Job. Bei 12 ms ist er fertig und $\tau_1/J_3$ kann bis 14 ms rechnen.
+Bei 5 ms bleibt $\tau_2/J_1$ laufend: Deadline sieben ist früher als die Deadline zehn des neu freigegebenen $\tau_1/J_2$. Bei 10 ms hat der laufende $\tau_2/J_2$ Deadline vierzehn, der neue $\tau_1/J_3$ Deadline fünfzehn. Daher bleibt auch dort der laufende Job. Bei 12 ms ist er fertig und $\tau_1/J_3$ kann bis 14 ms rechnen. Bei 14 wird $\tau_2/J_3$ neu freigegeben und läuft zunächst bis 15; dort liegt kein Leerlauf. Bei 15 kommt $\tau_1/J_4$ mit Deadline 20 vor der Deadline 21 des laufenden Jobs.
 
 Das Scheitern einer Auswahlregel beweist keine Unmöglichkeit jeder Auswahlregel. Für unabhängige vollständig präemptierbare periodische Aufgaben mit $D_i=T_i$ und ohne Zusatzlast ist $U\le1$ der EDF-Nachweis. Der Test belegt im benannten Idealmodell alle periodischen Jobs; die kurze Zeichnung illustriert ihn nur. Bei kürzeren Deadlines oder zusätzlichen Kosten genügt diese Aussage nicht unverändert.
 :::
 
-### Aufgabe 5: Kooperative Runden und Jitter · 6 Punkte
+### Aufgabe 5: Kooperative Runden und Jitter · 8 Minuten · 6 Punkte
 
 Hier gilt ausdrücklich ein **anderes Modell**: Drei Schritte A, B und C sind ständig bereit. Der Dispatcher ruft sie zyklisch A, B, C auf. Jeder Schritt kehrt nach seiner Arbeit zurück. Es gibt keine erzwungenen Zeitscheiben und keine periodischen Jobfreigaben. Erster A-Start ist bei null; Aufruf- und Interruptkosten sind null.
 
@@ -200,210 +217,100 @@ Jede Runde braucht $C_A+C_B+C_C$. Konstante Mehrarbeit verlängert die Abstände
 Ohne Rückkehr aus B bleibt der Dispatcher in B. Weitere A- und C-Aufrufe bleiben aus, obwohl zulässige Interrupts die Zeitbasis weiterhin bedienen können. Eine Hilfsfunktion, die Zustand und `wake_at` ändert, beendet nicht den aufrufenden Schritt. Dieser muss selbst `return` ausführen. Nach erreichtem Wake-Ziel wird ein Schritt nur Ready; der nächste Aufruf hängt von den noch laufenden Schritten und der Ringauswahl ab. Der Laborcode besitzt keinen eigenen pausierten Stack je Schritt.
 :::
 
-## Teil B: Kooperativen Dispatcher auf dem Board untersuchen
 
-### Aufgabe 6: Projekt vorbereiten und eigene Funktionen erstellen
+## Teil B: Vorbereiteter Programmvergleich · 25 Minuten
 
-Verwenden Sie eine funktionierende Dual-Core-Bare-Metal-Basis für das **NUCLEO-H755ZI-Q** aus Vorlesung 1. CM4 bezeichnet den Cortex-M4-Projektteil, CM7 den Cortex-M7-Projektteil. Die heutige Anwendung läuft nur auf CM4; der vorbereitete CM7-Boot- und Systemstart bleibt erhalten. Der zweite Kern verdoppelt den Ein-Prozessor-Nachweis aus Teil A nicht.
+### Aufbau kontrollieren · 5 Minuten
 
-1. Öffnen Sie die Basis in **STM32CubeMX**. Prüfen Sie Board, STM32H755ZIT6, CM4-/CM7-Ziele und die für **VS Code mit STM32 VS Code Extension** benötigte CMake-Generierung. CMake beschreibt Übersetzung und Verknüpfung. Nutzen Sie die Versionen und Importmöglichkeiten der installierten Erweiterung. Build, Flash und Debug erfolgen über die genannte VS-Code-Erweiterung.
-2. Aktivieren Sie **kein FreeRTOS**. Prüfen Sie die laufende HAL-Zeitbasis auf CM4: `HAL_GetTick()` muss die 32-Bit-Zeit in Millisekunden fortschalten, üblicherweise mit 1-kHz-Interrupt. HAL bedeutet Hardware Abstraction Layer, Hardwareabstraktion. Übernehmen Sie eine tatsächlich funktionierende Zeitbasis, nicht eine unbestätigte Taktannahme. Der Tickinterrupt wählt keinen anderen Schritt aus.
-3. Deaktivieren Sie zusätzliche Anwendungslasten und den Timer-LED-Versuch aus Übung 1. Der CM7 darf nicht parallel denselben Markerpin schreiben. Interrupts für die Zeitbasis bleiben aktiv.
-4. Wählen Sie anhand von Boardrevision, Schaltplan und Belegung einen freien, herausgeführten GPIO-Pin. GPIO bedeutet General Purpose Input/Output, allgemeiner Ein- und Ausgang. Geben Sie ihm in CubeMX das **User Label `LAB_MARKER`**, Ausgangsmodus und Anfangspegel Low. Ordnen Sie ihn dem CM4-Projekt zu und prüfen Sie Takt und Initialisierung. CubeMX erzeugt dafür `LAB_MARKER_GPIO_Port` und `LAB_MARKER_Pin` in der zugehörigen `main.h`. PA0 ist nur eine Möglichkeit nach Prüfung der tatsächlichen Belegung, keine pauschale Vorgabe.
-5. Generieren Sie die Quellen und öffnen Sie das erzeugte Projekt in VS Code. Prüfen Sie die CM4-/CM7-Buildziele, Flash- und Debugkonfiguration. Die erzeugte .ioc-Datei dokumentiert die CubeMX-Konfiguration. Ein erfolgreicher Build wird erst nach tatsächlichem Ausführen so eingetragen.
+1. Die Dual-Core-Bare-Metal-Basis aus Vorlesung 1 ist bereits generiert, gebaut, geladen und korrekt gestartet. CM4 bezeichnet das Cortex-M4-Firmwareziel, CM7 das Cortex-M7-Ziel. Die generierte Bootfolge bleibt erhalten.
+2. Prüfen Sie die tatsächlichen Takte und die fortschreitende **HAL-Zeitbasis mit 1 kHz** auf CM4. HAL bedeutet Hardware Abstraction Layer. `HAL_GetTickFreq()` meldet `HAL_TICK_FREQ_1KHZ`, `HAL_GetTick()` muss aber auch wirklich fortschreiten. Der Tickinterrupt wählt keinen anderen Schritt aus. Kein FreeRTOS aktivieren.
+3. Entfernen Sie das alte Lab01-Modul aus dem CM4-Bauziel und dessen Timer-/LED-Aufrufe aus Übung 1, ohne die erforderliche Zeitbasisbehandlung zu löschen. Wählen Sie anhand Schaltplan und Boardbelegung einen freien herausgeführten GPIO-Ausgang, nur CM4 zugeordnet. GPIO heißt General-Purpose Input/Output. In CubeMX erhält er das **User Label `LAB_MARKER`**, Ausgangsmodus und Anfangspegel LOW. Port-/Pinmakros in CM4 `main.h` und den tatsächlichen Messanschluss prüfen. PA0 ist keine pauschale Vorgabe.
+4. Werkzeugstände, Compiler-/Optimierungsoptionen und die CM4-/CM7-CMake-, Flash- und Debugkonfiguration dokumentieren. Die Quelle `lab02_demo.c` sowie deren Header sind bereits nur in CM4 eingebunden; erneute Generierung darf diese Einbindung nicht verlieren.
 
-Implementieren Sie im vorgesehenen Benutzerbereich der **CM4-`main.c`**:
+Im vorgesehenen Anwender-Include-Bereich von CM4 `main.c` steht `#include "lab02_demo.h"`. Nach erfolgreichem generierten HAL-/GPIO-Setup:
 
-- Einen TCB, Task Control Block oder Verwaltungsdatensatz, mit Funktionszeiger `step`, Zustand Ready/Blocked und Wake-Zeit `wake_at`. Es gibt keinen Stackpointer pro Schritt.
-- Drei endliche Schritte, die eine begrenzte Rechnung ausführen. Jeder schreibt seinen eigenen Ergebniswert. A setzt seinen Marker vor der Rechnung High und danach Low. B kann zwischen kurzer und längerer Rechnung wechseln. C arbeitet kurz.
-- Eine zentrale Funktion `LabDispatchOnce()`: zuerst fällige Wake-Zeiten bearbeiten, danach höchstens drei Einträge ab dem Ringcursor prüfen, genau einen bereiten Schritt aufrufen und nach dessen Rückkehr zurückkehren. Niemand bereit: auf den weiter aktiven Tickinterrupt warten.
-- Einen überlaufsicheren Vergleich der 32-Bit-Tickzeit. Alle relevanten Warteintervalle und Verspätungen bleiben für diese Übung strikt kleiner als $2^{31}$ Millisekunden; ein einfacher Vergleich `now >= wake_at` genügt beim Überlauf nicht.
-- `LabSleepAfterStep(ms)`: Wake-Ziel und Blocked setzen. **Der aufrufende Schritt kehrt danach selbst sofort zurück.** Der Dispatcher wird nicht rekursiv aufgerufen.
+```c
+if (!Lab02_Init(LAB02_SHORT)) {
+    Error_Handler();
+}
+```
 
-Für die Zählerschleifen werden im Referenzcode 30000 und 120000 Iterationen verwendet. Das sind **keine zugesicherten Millisekundenzeiten**. Prüfen Sie Optimierung, Takte und beobachtbare Dauer. Falls nötig, passt die Lehrperson die beiden Zahlen vor dem Kurs an; alle Vergleichsläufe behalten danach denselben Build- und Taktstand.
+Im Rumpf der **vorhandenen** `while (1)` steht:
 
-### Aufgabe 7: Drei Varianten vergleichen
+```c
+Lab02_DispatchOnce();
+```
 
-1. **Kurze konstante Schritte:** Alle drei Schritte bleiben Ready. Kontrollieren Sie die fortschreitenden Aufrufzähler `lab_runs` und Ergebnisse `lab_result`. Der Marker gehört allein A. Eine Ringrunde erzwingt keine gleichen Zeitquanten.
-2. **Lange konstante B-Arbeit:** Ändern Sie nur B auf die größere Iterationszahl. Startabstände von A werden voraussichtlich größer. Ohne Messung werden weder Abstände noch Jitterwerte behauptet.
-3. **Wechselnde B-Arbeit:** B verwendet abwechselnd kleine und große Iterationszahl. Vergleichen Sie mit der konstanten langen Variante. Begründen Sie, welche Größe durch die Nachbararbeit verändert wird und welche zusätzlich von Interrupts abhängen kann.
-4. **Kooperatives Schlafen von A:** Setzen Sie im Referenzcode `LAB_A_SLEEP_MS` auf 10, bauen und resetten Sie erneut. A setzt nach seiner Arbeit die Wake-Zeit auf aktuell plus zehn Millisekunden und kehrt zurück. B und C bleiben bereit. Der nächste A-Aufruf startet erst nach erreichtem Ziel und passender Ringauswahl. Das ist keine feste Releasefolge bei 0, 10, 20 ms. Die Referenz benutzt relatives Schlafen nach Arbeit, keinen periodischen RMS-Plan.
-5. Lesen Sie die Dispatcherfunktionen bei angehaltenem Debugger. Welche Felder werden nur in der Hauptschleife geschrieben? Was bedeutet der ungültige Index in `running_idx` außerhalb eines Schrittaufrufs? Warum ist die Kandidatensuche begrenzt? Was würde bei drei Blocked-Einträgen passieren?
+Keine zusätzliche Endlosschleife, kein Step-Aufruf aus einem anderen Step und kein eigener PendSV- oder SysTick-Handler. Die vollständige Vorbereitung steht im Modul-README.
 
-**Keine verpflichtende Endlosschleifenprobe:** Diagnostizieren Sie den fehlenden Rücksprung von B auf Papier. Zum Experiment genügt die begrenzte längere Last. Während eines Debuggerhalts wird das ursprüngliche Zeitverhalten verändert; Diagnosefelder sind keine ungestörte Laufzeitmessung.
+### Vier Läufe lesen und vergleichen · 15 Minuten
+
+Ändern Sie nur die Modusauswahl in `Lab02_Init`, bauen und starten Sie nach Reset neu. Die vorbereitete Basis und die Iterationszahlen bleiben gleich.
+
+| Auswahl | Was verändert wird |
+|---|---|
+| `LAB02_SHORT` | A, B und C bleiben mit kurzer Arbeit bereit |
+| `LAB02_LONG_B` | B hat konstant mehr Iterationen |
+| `LAB02_VARIABLE_B` | B wechselt zwischen kurzer und langer Arbeit |
+| `LAB02_SLEEP_A` | A setzt nach Arbeit ein Wake-Ziel plus zehn Tickwerte und kehrt zurück |
+
+Die Standardzahlen 30000 beziehungsweise 120000 Iterationen sind **keine zugesicherten Millisekundenzeiten**. Diagnosefelder `lab02_diag.runs`, `result`, `idle_entries` und `failures` sind nur für einen bei angehaltenem CM4 konsistent gelesenen Zustand gedacht. Ein Debughalt gehört nicht in eine Zeitmessreihe.
+
+Bearbeiten Sie dazu:
+
+- Warum hat jeder ständig bereite Schritt eine Ringposition, aber keine fest zugesagte Zeitscheibe?
+- Welcher Teil des Kontrollflusses verhindert einen A-Aufruf während laufender B-Arbeit, obwohl Tickinterrupts die Zeit fortschreiben?
+- Was speichert der TCB, Task Control Block oder Verwaltungsdatensatz? Warum ist `running_idx` außerhalb eines Schrittaufrufs ungültig?
+- Warum muss A nach erfolgreichem `Lab02_SleepAfterStep(10U)` selbst zurückkehren? Weshalb sind zehn Tickwerte keine genaue physische Startperiode?
+- Warum prüft der Dispatcher höchstens drei Kandidaten? Was tut er bei drei Blocked-Einträgen? Lesen Sie dazu den Idle-Pfad mit `__WFI`, Wait For Interrupt; eine aktive Wake-Quelle ist erforderlich.
+- Warum reicht `now >= wake_at` beim Überlauf nicht? Der Modulovergleich ist nur bei Warteintervallen und unbeobachteten Verspätungen strikt unter $2^{31}$ Millisekunden gültig.
+
+Eine nie zurückkehrende B-Funktion wird **auf Papier** besprochen, nicht als verpflichtender Boardversuch ausgeführt. Zum Vergleich genügt die begrenzte längere Last.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgaben 6–7: vollständiger Anwendungscode**
+### Musterlösung des Programmvergleichs
 
-Die folgende C-Referenz gehört in den vorgesehenen Benutzer-Funktionsbereich der CM4-`main.c`. Deren vorhandene `#include "main.h"` stellt die HAL- und Cortex-M-Funktionen sowie die generierten Markernamen bereit. Ergänzen Sie `<stdint.h>` im erhaltenen Include-Bereich. Der Code ist vollständig für die Anwendungslogik; Boot, Takte, GPIO und Interruptvektoren bleiben die Verantwortung der erzeugten Basis.
+Der Ringcursor legt den Suchbeginn fest und rückt nach einer Auswahl auf den Nachfolger. Bei endlichen Schritten erhalten ständig bereite Teilnehmer wiederholt Aufrufe, aber unterschiedlich lange Schritte behalten den Kern unterschiedlich lange. Die Tickroutine aktualisiert nur die Zeit; sie tauscht im Demonstrator keine Taskkontexte. Daher kann A erst nach Rückkehr aus B und späterer Auswahl erneut laufen.
 
-```c
-#define LAB_N 3u
-#define LAB_NONE UINT8_MAX
-#define LAB_HALF_RANGE UINT32_C(0x80000000)
-#define LAB_SMALL_WORK UINT32_C(30000)
-#define LAB_LARGE_WORK UINT32_C(120000)
-#define LAB_B_LONG 0u
-#define LAB_B_VARIABLE 0u
-#define LAB_A_SLEEP_MS 0u
+Der TCB enthält Funktionszeiger, Bereitschaftsfeld und Wake-Zeit. Es gibt keinen pausierten Stack pro Schritt. `running_idx` bezeichnet nur zwischen Funktionsaufruf und Rückkehr den aktiven Eintrag; außerhalb steht `LAB02_NONE`. Die Schlafhilfe setzt Verwaltungsdaten, beendet aber nicht den aufrufenden Schritt. A tut dies selbst mit `return`. Relative Warteziele nach Arbeit, Tick-Abtastphase und Ringauswahl erzeugen keinen festen Startplan bei 0, 10, 20 ms.
 
-typedef enum { ST_READY, ST_BLOCKED } TaskState;
-typedef void (*TaskStep_t)(void);
+Die Suche hat höchstens drei Kandidaten, statt endlos nach einem bereiten Eintrag zu suchen. Im All-Blocked-Fall zählt sie Idle und wartet mit `__WFI` auf eine zugelassene Quelle. Ein gerade vorher behandelter Tick kann die nächste Prüfung erst durch den folgenden Tick ermöglichen. Im unveränderten Demonstrator bleiben B und C bereit; der vollständige Idle-Pfad ist trotzdem implementiert.
 
-typedef struct {
-    TaskStep_t step;
-    TaskState state;
-    uint32_t wake_at;
-} MyTCB_t;
-
-static void TaskA_step(void);
-static void TaskB_step(void);
-static void TaskC_step(void);
-
-static MyTCB_t task_list[LAB_N] = {
-    { TaskA_step, ST_READY, 0u },
-    { TaskB_step, ST_READY, 0u },
-    { TaskC_step, ST_READY, 0u }
-};
-static uint8_t rr_cursor;
-static uint8_t running_idx = LAB_NONE;
-
-/* Debuggerdiagnose: nur die Hauptschleife schreibt diese Felder.
-   volatile bietet keine allgemeine Synchronisation oder Zeitmessung. */
-volatile uint32_t lab_runs[LAB_N];
-volatile uint32_t lab_result[LAB_N];
-volatile uint32_t lab_idle_entries;
-
-static void LabFail(void)
-{
-    Error_Handler();
-    for (;;) {}
-}
-
-static int LabTimeReached(uint32_t now, uint32_t target)
-{
-    /* Modulovergleich; alle relevanten Abstaende < 2^31 ms. */
-    return (uint32_t)(now - target) < LAB_HALF_RANGE;
-}
-
-static void LabSleepAfterStep(uint32_t ms)
-{
-    if (running_idx >= LAB_N || ms == 0u || ms >= LAB_HALF_RANGE) {
-        LabFail();
-    }
-    task_list[running_idx].wake_at = HAL_GetTick() + ms;
-    task_list[running_idx].state = ST_BLOCKED;
-    /* Aufrufender Schritt muss danach selbst sofort return ausfuehren. */
-}
-
-static void LabCpuWork(uint32_t iterations, uint8_t index)
-{
-    while (iterations-- > 0u) {
-        lab_result[index] = lab_result[index] * UINT32_C(1664525)
-                           + UINT32_C(1013904223);
-    }
-}
-
-static void TaskA_step(void)
-{
-    HAL_GPIO_WritePin(LAB_MARKER_GPIO_Port, LAB_MARKER_Pin, GPIO_PIN_SET);
-    LabCpuWork(LAB_SMALL_WORK, 0u);
-    HAL_GPIO_WritePin(LAB_MARKER_GPIO_Port, LAB_MARKER_Pin, GPIO_PIN_RESET);
-    ++lab_runs[0];
-    if (LAB_A_SLEEP_MS != 0u) {
-        LabSleepAfterStep(LAB_A_SLEEP_MS);
-        return;
-    }
-}
-
-static void TaskB_step(void)
-{
-    uint32_t work = LAB_B_LONG ? LAB_LARGE_WORK : LAB_SMALL_WORK;
-    if (LAB_B_VARIABLE != 0u) {
-        work = ((lab_runs[1] & 1u) == 0u) ? LAB_SMALL_WORK : LAB_LARGE_WORK;
-    }
-    LabCpuWork(work, 1u);
-    ++lab_runs[1];
-}
-
-static void TaskC_step(void)
-{
-    LabCpuWork(LAB_SMALL_WORK, 2u);
-    ++lab_runs[2];
-}
-
-static void LabDispatchOnce(void)
-{
-    if (running_idx != LAB_NONE) {
-        LabFail(); /* Kein rekursiver Dispatch aus einem Schritt. */
-    }
-    uint32_t now = HAL_GetTick();
-    for (uint8_t i = 0u; i < LAB_N; ++i) {
-        if (task_list[i].state == ST_BLOCKED &&
-            LabTimeReached(now, task_list[i].wake_at)) {
-            task_list[i].state = ST_READY;
-        }
-    }
-    int selected = -1;
-    for (uint8_t k = 0u; k < LAB_N; ++k) {
-        uint8_t i = (uint8_t)((rr_cursor + k) % LAB_N);
-        if (task_list[i].state == ST_READY) {
-            selected = (int)i;
-            break;
-        }
-    }
-    if (selected < 0) {
-        ++lab_idle_entries;
-        __WFI(); /* Wait For Interrupt: aktive Wake-Quelle erforderlich. */
-        return;
-    }
-    rr_cursor = (uint8_t)(((unsigned)selected + 1u) % LAB_N);
-    running_idx = (uint8_t)selected;
-    task_list[selected].step();
-    running_idx = LAB_NONE;
-}
-```
-
-Rufen Sie **innerhalb der vorhandenen generierten Hauptschleife** auf, nach erfolgreicher Boot-, HAL- und GPIO-Initialisierung:
-
-```c
-/* USER CODE BEGIN 3: innerhalb der bereits vorhandenen while (1) */
-LabDispatchOnce();
-/* USER CODE END 3 */
-```
-
-Keine zweite `main`-Funktion, keine verschachtelte Dispatcher-Endlosschleife und kein Step-Aufruf aus einem anderen Step. Entfernen Sie die alte Anwendungsarbeit aus derselben Schleife. Falls der Funktionsbereich hinter `main` liegt, deklarieren Sie `static void LabDispatchOnce(void);` einmal im vorgesehenen Prototypbereich. Prüfen Sie einen Build und eine erneute CubeMX-Generierung auf Erhalt der Benutzerbereiche.
-
-**Varianten:** Grundlauf mit allen drei Schaltern null; konstant lange B-Arbeit mit `LAB_B_LONG = 1`, `LAB_B_VARIABLE = 0`; wechselnde B-Arbeit mit `LAB_B_VARIABLE = 1`. In letzterem Fall entscheidet dieser Schalter über die kleine/große Folge. Für den Schlafversuch wird `LAB_A_SLEEP_MS = 10` gesetzt, die B-Schalter werden zunächst wieder null. Reset vor jedem Lauf.
-
-**Erklärung:** Der Ringcursor zeigt nach einer Auswahl auf den Nachfolger. Blockierte Einträge werden übersprungen; die Suche betrachtet höchstens drei Kandidaten. Wenn alle Schritte Blocked sind, wartet `__WFI`, Wait For Interrupt, auf eine aktive Interruptquelle. Die Tickbasis muss weiterlaufen; ein Tick, der schon vor dem Warten behandelt wurde, kann die Kontrolle erst beim folgenden Tick erneut zurückbringen. Dieses einfache Idle-Muster beansprucht keinen sofortigen Start am Wake-Ziel.
-
-`running_idx` gilt nur zwischen Aufruf und Rückkehr eines Schritts. Außerhalb steht dort `LAB_NONE`. Das Speichern einer Wake-Zeit verändert die Liste, nicht den C-Aufrufstack. Die übrigen lokalen Berechnungen werden nicht an beliebigen Stellen fortgesetzt. Bei längerfristiger Fortsetzung muss der Schritt seinen Arbeitszustand ausdrücklich in Anwendungsdaten speichern.
-
-Der Modulovergleich verwendet vorzeichenlose 32-Bit-Arithmetik und funktioniert auch beim Überlauf. Der Abstand muss strikt kleiner als die halbe Spanne sein; auch ein überfälliger Eintrag darf nicht länger als diese Spanne unbeobachtet bleiben. `wake_at = 0` ist ein gültiger Zeitpunkt, deshalb kennzeichnet das separate Zustandsfeld das Warten. Interrupts schreiben hier nur die von HAL verwaltete Zeitbasis; die TCB-Liste und Diagnosezähler haben genau einen Schreiber, den Dispatcher beziehungsweise den aufgerufenen Schritt. Die Referenz ist ein kooperativer Round-Robin, keine RMS-/EDF-Implementierung und kein präemptives Betriebssystem.
+Vorzeichenlose Differenzbildung modulo $2^{32}$ unterstützt den Überlauf. Bei `now = 0xFFFFFFF0` und `target = 0x00000010` ist das Ziel noch 32 Tickwerte entfernt, also nicht erreicht. Bei `now = 0x00000020` ist es um 16 Tickwerte überschritten, also erreicht. Die halbe Spanne begrenzt die eindeutige Ordnung. Ein Zielwert null ist zulässig; deshalb wird die Wartebedingung durch ein eigenes Zustandssymbol markiert. Der konkrete Code liegt offen im Modul und wird nicht als eigener präemptiver RMS-/EDF-Scheduler ausgegeben.
 :::
 
-### Zusatzaufgabe: Marker messen und Grenzen dokumentieren
+### Protokoll und Grenzen · 5 Minuten
 
-Ein Oszilloskop oder Logikanalysator ist nur für diese Zusatzaufgabe erforderlich. Messen Sie den in CubeMX gewählten A-Marker; verbinden Sie Gerätemasse und Boardmasse und beachten Sie die zulässigen Pegel. Der Marker umfasst die A-Rechnung sowie Teile der GPIO-Aufrufe und mögliche Interruptunterbrechungen. Er markiert nicht die komplette Dispatcherfunktion.
+Mit geeignetem Oszilloskop/Logikanalysator können beispielsweise 20 A-Pulse je verglichener Variante erfasst werden. Prüfen Sie den tatsächlichen Pinanschluss und gemeinsamen Massebezug. Die Pulsbreite umfasst A-Arbeit, Teile der GPIO-Aufrufe und mögliche Interruptunterbrechungen. Der Abstand steigender Flanken erfasst die Wiederaufrufe. Die ganze Dispatcherfunktion wird dadurch nicht markiert.
 
-- Erfassen Sie für jede Lastvariante mindestens 20 Pulse unter gleichem Takt und gleicher Optimierung. Dokumentieren Sie Pin/Boardanschluss, Tickquelle, Werkzeugversionen, Geräteauflösung, Samplezahl und Lastschalter.
-- Bestimmen Sie $w_k=f_k-s_k$, $P_k=s_{k+1}-s_k$ sowie $J_P=\max(P_k)-\min(P_k)$ für Ihre endliche Messreihe. Trennen Sie Pulsbreite und Startabstand. Die Modellwerte aus Aufgabe 5 gehören nicht in die Messspalten.
-- Vergleichen Sie konstante kurze, konstante lange und wechselnde B-Arbeit. Auch im konstanten Fall kann die reale Messung Schwankungen durch Interrupts zeigen.
-- Erklären Sie, warum die größte gemessene Markerbreite keine allgemein nachgewiesene WCET, Worst-Case Execution Time oder größte eigene Ausführungszeit, ist.
+| Konfiguration | Eigener Eintrag |
+|---|---|
+| Board / Firmwarepaket / Werkzeugversionen | |
+| Compiler und Optimierung | |
+| M4- / M7-Takt, Tickquelle und Tickfrequenz | |
+| Markerpin und Boardanschluss | |
+| Iterationszahlen / Modus / Reset | |
+| Trigger / Zeitauflösung / Anzahl | |
 
-Ohne Messgerät bleiben alle Hardwarezeiten leer. Dann werden Konfiguration, Buildstatus, Diagnosefelder und die begründete Ablaufprognose abgegeben. Sichtbares Blinken allein wäre ebenfalls kein Fristnachweis.
+| Variante | Anzahl | Pulsbreite min./max. | Startabstand min./max. | Startabstandsspanne | Einheit / Status |
+|---|---:|---|---|---|---|
+| Kurz konstant | | | | | |
+| B lang konstant | | | | | |
+| B wechselnd | | | | | |
+| A wartet relativ | | | | | |
+
+Die Tabelle bleibt bis zur realen Messung leer. Status beispielsweise **gemessen**, **nur Code/Diagnose betrachtet**, **fehlgeschlagen** oder **nicht durchgeführt**. Ohne Messgerät werden keine Hardwarezeiten eingesetzt. Die Zahlen aus Aufgabe 5 gehören nicht in diese Spalten.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung der Messauswertung**
+### Musterlösung der Messauswertung
 
-Konstante Mehrarbeit in B verlängert erwartbar den mittleren Abstand zwischen A-Starts. Wechselnde B-Arbeit kann diesen Abstand zusätzlich schwanken lassen. Die A-Rechnung selbst bleibt gleich; trotzdem kann die verstrichene Pulsbreite wegen Interrupts und Markeraufwand variieren. Die Zählschleifen sind ohne Messung keine bekannten Millisekundenbudgets.
+Konstante zusätzliche B-Arbeit vergrößert im idealisierten Ring den A-Startabstand, ohne allein eine Schwankung innerhalb des Laufs zu erzeugen. Wechselnde B-Arbeit kann die Abstände schwanken lassen. Auf dem echten Board können auch konstante Läufe durch Interrupts oder Speicherzugriffe variieren. A-Arbeit selbst bleibt gleich, ihre verstrichene Markerbreite kann dennoch zusätzliche Unterbrechungszeit enthalten.
 
-Ein endlicher beobachteter Höchstwert erfasst weder jeden Programmpfad noch alle Störungen, und die Markerbreite enthält möglicherweise fremde Interruptarbeit. Ein allgemeiner WCET-Nachweis braucht ein dazu passendes Modell und begründete Grenzen. Relatives Schlafen nach A-Arbeit fügt mindestens die konfigurierte Tickdifferenz bis zur erneuten Bereitschaft hinzu; Start und Freigabe bleiben verschieden. Insbesondere beweist dieser Versuch weder die Liu-und-Layland-Annahmen noch die Deadline-Einhaltung der Sets aus Teil A.
+Die Spanne ist Maximum minus Minimum der **benannten** Messgröße. Ein endliches Maximum der Markerbreite beweist keine WCET, Worst-Case Execution Time oder sichere obere eigene Ausführungszeit. Die Pflichtlast der theoretischen Sets wird im kooperativen Programm nicht nachgebildet; ihre RMS-/EDF-Tests sind dadurch nicht bestätigt. Bei fehlendem Aufbau oder Gerät bleiben die Zeitspalten leer und der tatsächlich erfolgte Prüfstatus wird angegeben.
 :::
 
 ## Abgabe und Quellen
 
-Teil A: Zeitachsen beziehungsweise Intervalltabellen, Rechnungen und begründete Entscheidungen zu Aufgaben 1–5, insgesamt 32 Punkte. Teil B: .ioc-Konfiguration, eigene Quellen, Werkzeug- und Buildangaben, Vergleich der Varianten und Erklärung der Dispatcherzustände. Kennzeichnen Sie jeweils **durchgeführt**, **fehlgeschlagen** oder **nicht durchgeführt**. Geben Sie Messergebnisse nur mit tatsächlichem Messprotokoll an.
+Teil A: beschriftete Zeitachsen oder Intervalltabellen, Zwischenrechnungen und begründete Entscheidungen zu Aufgaben 1–5, insgesamt 32 Punkte. Teil B: .ioc-Konfiguration, Moduleinbindung, Werkzeug-/Buildangaben, Erklärung des Kontrollflusses und tatsächlicher Prüfstatus. Messergebnisse nur mit realem Protokoll und definierten Messpunkten abgeben.
 
-Quellen: Vorlesungen 1–2; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*, 3. Auflage; Liu und Layland (1973) zur RMS-Schranke; die in Vorlesung 2 behandelte Antwortzeitanalyse; ST UM2408 und RM0399 für Board und Mikrocontroller sowie die Dokumentation der installierten STM32 VS Code Extension. Konkrete Pins, Startpfade und Zeitbasen werden an Ihrer bereitgestellten Projektversion geprüft.
+Quellen: Vorlesungen 1–2; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; Liu und Layland (1973) zur RMS-Schranke; die behandelte Antwortzeitanalyse; ST UM2408, RM0399 und PM0214 sowie die Dokumentation der tatsächlich verwendeten STM32-Erweiterung. [Vollständiger Anwendungsbaustein und Integrationsanleitung](../code/lab02/README.md).
