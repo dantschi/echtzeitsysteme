@@ -1,175 +1,172 @@
 ---
-title: "Übungsblatt 1: Bare-Metal, Polling und Interrupts"
+title: "Übungsblatt 1: Zeitvertrag, Polling und Interrupts"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Studierende:  quarto render lab_01_bare-metal-polling-interrupts.qmd --to pdf
-# Musterlösung: quarto render lab_01_bare-metal-polling-interrupts.qmd --to pdf --profile solution
+# Studierende: quarto render lab_01_bare-metal-polling-interrupts.qmd --to pdf
+# Musterlösung: gleicher Aufruf zusätzlich mit --profile solution
 ---
 
 ::: {.content-visible when-profile="solution"}
-> **Musterlösung**
+> **Musterlösung** · Rechenwerte sind Lehrannahmen, keine Hardwaremessungen.
 :::
 
-## Zielsetzung
+## Ziele und Zeitrahmen
 
-In dieser ersten Laborübung machen Sie sich mit der Entwicklungsumgebung und der Hardware vertraut. Sie lernen Grenzen und Einsatzbedingungen von Polling-Architekturen (Super-Loops) kennen — insbesondere das *Heavy-Load-Problem* bei langen unzerlegten Abschnitten. Anschließend verlagern Sie die periodische LED-Aktion in einen Timer-Interrupt (Foreground/Background). Hardware: **Board NUCLEO-H755ZI-Q** (MB1363), **MCU STM32H755ZIT6**, Arbeit auf dem Cortex-M4.
+Sie formulieren einen Zeitvertrag, berechnen Antwortzeit und Schwankung und beurteilen Polling beziehungsweise Interrupts unter benannten Annahmen. Die vier Papieraufgaben sind ohne Board lösbar und üben klausurtypische Rechnungen und Begründungen. Danach vergleichen Sie einfache Programmstrukturen auf dem **NUCLEO-H755ZI-Q** mit STM32H755ZIT6: **Cortex-M4 ohne Betriebssystem**, Cortex-M7 mit vorbereitetem generiertem Startcode.
 
----
+| Abschnitt | Minuten | Umfang |
+|---|---:|---|
+| Papieraufgabe 1 | 8 | 8 Punkte |
+| Papieraufgabe 2 | 12 | 8 Punkte |
+| Papieraufgabe 3 | 10 | 8 Punkte |
+| Papieraufgabe 4 | 10 | 8 Punkte |
+| Vorbereiteter Programmvergleich | 35 | Beobachtung und Protokoll |
 
-## Aufgabe 1: Hello World (LED Blink)
+Die 75 Minuten ergänzen 90 Minuten Vorlesung und 15 Minuten Quiz zum Termin mit 180 Minuten. Installation und erster Dual-Core-Start sind Vorbereitung. Alle folgenden Zahlen sind **didaktische Annahmen**, soweit keine eigenen Messwerte eingetragen werden. Fertigstellung auf der Deadline gilt als rechtzeitig.
 
-Um die Toolchain zu überprüfen, erstellen wir ein einfaches Bare-Metal-Programm auf dem Cortex-M4-Kern.
+## Papieraufgabe 1: Vertrag und Echtzeitklasse
 
-1. Legen Sie ein neues Projekt für das Board **NUCLEO-H755ZI-Q** (MCU STM32H755ZIT6) in der STM32CubeIDE an.
-2. Konfigurieren Sie die gelbe LED **LD2 an PE1** (MB1363) als `GPIO_Output` und weisen Sie sie dem Cortex-M4 zu (*Pin Context Assignment*). Boardrevision/Bestückung bei Bedarf in UM2408 prüfen.
-3. Generieren Sie den Code; prüfen Sie GPIO- und Clock-Initialisierung.
-4. Lassen Sie die LED in der `main.c` des CM4-Projekts toggeln (`HAL_Delay(500)`). Hinweis: Toggle alle $500\,\mathrm{ms}$ ergibt Flankenabstand $500\,\mathrm{ms}$, aber einen vollständigen On-Off-Zyklus von $\approx 1\,\mathrm{s}$ ($1\,\mathrm{Hz}$).
+Ein Sensor meldet ein Werkstück. Der richtige Stellauftrag muss innerhalb von $10\,\mathrm{ms}$ am Ausgang anliegen. Die mechanische Klappenbewegung gehört **nicht** zu diesem Softwarevertrag. Für den Stellauftrag ist kein Miss zulässig. Ein Prüfbild desselben Geräts ist nach seiner Frist wertlos; ein fehlendes Bild je Block von 100 Bildern ist zulässig. Eine Statusanzeige besitzt auch bei verspäteter Aktualisierung noch Restnutzen.
 
-### Ihre Lösung {.unnumbered}
+1. Benennen Sie Beginn, Abschluss und relative Frist des Stellauftrags. Warum reicht „die Software soll schnell sein“ nicht? (2 P.)
+2. Ordnen Sie die drei Aufgaben Hard, Firm und Soft zu. Begründen Sie jede Zuordnung aus dem Vertrag. (3 P.)
+3. Das Sensorereignis gibt den Auftrag bei $r=2\,\mathrm{ms}$ frei. Berechnen Sie die absolute Deadline $d$. Beurteilen Sie einen richtigen Auftrag bei $f=12\,\mathrm{ms}$ und bei $f=12{,}1\,\mathrm{ms}$. (2 P.)
+4. Ein fachlich falscher Stellauftrag liegt schon bei $f=8\,\mathrm{ms}$ vor. Ist der Vertrag erfüllt? Begründen Sie. (1 P.)
 
-*(Notieren Sie Ihre Lösung hier.)*
+Ihre Lösung: Zeitpunkte, Klassen und kurze Begründungen auf einem separaten Blatt.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 1**
+### Musterlösung Papieraufgabe 1
 
-Code nur in `USER CODE`-Blöcken; die generierte `while(1)` nicht durch eine zweite Endlosschleife im USER-Block ersetzen.
-
-```c
-/* USER CODE BEGIN 3 — Inhalt der vorhandenen while(1) */
-HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2 gelb */
-HAL_Delay(500); /* blockiert; kompletter LED-Zyklus ≈ 1 s */
-/* USER CODE END 3 */
-```
+1. Beginn ist die Freigabe durch das erfasste Sensorereignis, Abschluss der **richtige** Stellauftrag am Ausgang, relative Frist $D=10\,\mathrm{ms}$. „Schnell“ legt weder Endpunkte noch einen zulässigen Maximalwert fest. Je 1 P. für den vollständigen Vertrag und die Begründung.
+2. Stellauftrag **Hard**: kein deadline miss, also keine Fristverletzung, erlaubt. Prüfbild **Firm**: verspätetes Einzelergebnis wertlos, zugleich eine benannte Auslassung zulässig. Anzeige **Soft**: verspäteter Stand hat Restnutzen. Je 1 P. mit Begründung. Gerätetyp oder Branche ersetzen die Zuordnung nicht.
+3. $d=r+D=2+10=12\,\mathrm{ms}$. Bei $f=12$ liegt der richtige Auftrag genau auf der Frist und ist nach der gewählten Konvention zulässig. Bei $f=12{,}1$ ist er $0{,}1\,\mathrm{ms}$ verspätet. Je 1 P. für Rechnung und beide Bewertungen.
+4. Nein: Die Zeitbedingung ist erfüllt, die funktionale Bedingung verletzt. Ein pünktlich falscher Wert erfüllt den Gesamtvertrag nicht. 1 P.
 :::
 
----
+## Papieraufgabe 2: Zeitachse, Jitter und Nachweis
 
-## Aufgabe 2: Das Polling-Desaster
+Ein Auftrag wird bei $r=2\,\mathrm{ms}$ freigegeben und startet erstmals bei $s=4\,\mathrm{ms}$. Er rechnet von 4 bis 6, wird von 6 bis 8 unterbrochen und rechnet von 8 bis 9 weiter. Die absolute Deadline liegt bei $d=12\,\mathrm{ms}$. Verwaltungsaufwand ist im Modell nicht zusätzlich angesetzt.
 
-Wir provozieren einen Timing-Fehler, der Grenzen einer Super-Loop bei langer Hintergrundarbeit zeigt. Polling ist nicht grundsätzlich ungeeignet — lange unzerlegte Arbeit kann aber das Zeitbudget sprengen.
+1. Skizzieren Sie die Abschnitte. Berechnen Sie eigenen Rechenbedarf $C$, Startverzug, Antwortzeit $R$, relative Deadline $D$ und Reserve. Prüfen Sie die Frist. (3 P.)
+2. Eine Ausgabe hat bei Sollperiode $T=10\,\mathrm{ms}$ die Lehrzeitpunkte 0; 9,8; 20; 29,8; 40 ms. Berechnen Sie die vier Istperioden, deren Mittelwert und Peak-to-Peak-Periodenspanne. (2 P.)
+3. Berechnen Sie die Abweichungen gegenüber den Sollzeitpunkten 0; 10; 20; 30; 40 ms und deren Spanne. Weshalb ist sie nicht der Periodenjitter aus Teil 2? (1 P.)
+4. Eine andere Funktion zeigt in 100 untersuchten Läufen höchstens $80\,\text{µs}$ eigene Ausführungszeit. Darf man deshalb WCET $=80\,\text{µs}$ garantieren? Beweisen konstante Latenzen von je $5\,\mathrm{ms}$ eine Frist von $3\,\mathrm{ms}$? Begründen Sie beides. (2 P.)
 
-1. Schreiben Sie eine *Heavy-Load*-Funktion (Zählschleife), deren Arbeit der Compiler nicht entfernt (Parameter/`volatile`, Ergebnis ggf. nach außen nutzen). Iterationen sind **keine** bekannte Millisekunden-Dauer; Buildoptionen notieren.
-2. Rufen Sie die Funktion in der vorhandenen `while(1)` direkt vor dem LED-Toggle auf.
-3. Beobachten Sie die LED. Unterscheiden Sie: **konstante** Last verlängert den Abstand konstant (noch kein Periodenjitter); für Schwankungen bewusst **variable** Lasten einsetzen.
-
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+WCET steht für Worst-Case Execution Time. Peak-to-Peak bezeichnet Maximum minus Minimum.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 2**
+### Musterlösung Papieraufgabe 2
 
-Hilfsfunktion (z. B. `USER CODE BEGIN 0`; Parameter `volatile`, damit die Schleife nicht wegoptimiert wird):
-
-```c
-void Heavy_Load(volatile uint32_t n)
-{
-    while (n-- > 0) {
-        /* absichtlich leer: reine CPU-Last */
-    }
-}
-```
-
-```c
-/* USER CODE BEGIN 3 — in vorhandener while(1) */
-Heavy_Load(800000); /* Iterationen ≠ bekannte ms-Dauer */
-HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-HAL_Delay(500);
-/* USER CODE END 3 */
-```
-
-**Erklärung:** In der Super-Loop liegen Last und Toggle sequenziell. Die Laufzeit von `Heavy_Load()` addiert sich zum Delay — der sichtbare Takt weicht vom Soll ab. Bei konstanter Last ist das zunächst eine Periodenverschiebung; Jitter entsteht erst bei schwankender Laufzeit (Optimierung, Interrupts, variable $n$).
+1. Die Skizze muss Warten 2–4, Rechnen 4–6, Unterbrechung 6–8 und Rechnen 8–9 zeigen. $C=(6-4)+(9-8)=3\,\mathrm{ms}$, Startverzug $s-r=2\,\mathrm{ms}$, $R=f-r=9-2=7\,\mathrm{ms}$, $D=d-r=12-2=10\,\mathrm{ms}$, Reserve $d-f=3\,\mathrm{ms}$. $R\leq D$: der Modelllauf ist rechtzeitig. Je 1 P. für Skizze mit Rechenbedarf, weitere Größen und Fristbewertung.
+2. Istperioden: 9,8; 10,2; 9,8; 10,2 ms. Mittelwert $=(9{,}8+10{,}2+9{,}8+10{,}2)/4=10\,\mathrm{ms}$. Spanne $=10{,}2-9{,}8=0{,}4\,\mathrm{ms}$. Je 1 P. für Perioden und Auswertung.
+3. Phasenabweichungen: 0; −0,2; 0; −0,2; 0 ms. Spanne $=0-(-0{,}2)=0{,}2\,\mathrm{ms}$. Die Phase vergleicht Ist mit Soll desselben Ereignisses, die Periode dagegen benachbarte Istereignisse. 1 P. mit dieser Unterscheidung.
+4. Nein: 80 µs ist das größte beobachtete Ergebnis; ungesehene Eingaben oder andere zugelassene Zustände können länger dauern. Eine sichere Schranke braucht eine begründete Abdeckung beziehungsweise Analyse. Auch 5 ms bei jedem Lauf verletzen $D=3\,\mathrm{ms}$, obwohl die beobachtete Latenzspanne null ist. Je 1 P. Eine Reserve auf das Messmaximum allein beweist ebenfalls keine Schranke.
 :::
 
----
+## Papieraufgabe 3: Polling und gespeicherte Ereignisse
 
-## Aufgabe 3: Rettung durch den Timer
+Eine Super-Loop prüft pro Runde einmal einen Eingang (höchstens 0,1 ms), reagiert bei Auftrag (höchstens 0,2 ms) und bearbeitet die Anzeige (höchstens 5,0 ms). Ein Auftrag bleibt bis zur Abfrage gespeichert und wird im Modell jeweils am Ende der Eingangsprüfung erkannt. Es gibt höchstens einen relevanten Auftrag und keine Unterbrechungen. Für eine konservative Abschätzung begrenzen Sie das Warten bis zur Erkennung durch eine maximale ganze Runde und addieren anschließend die Reaktion. Die Frist ist $D=10\,\mathrm{ms}$.
 
-Wir stellen periodische Flanken per Hardware-Timer wieder her — unter dokumentierten Bedingungen messbar, aber ohne automatischen harten Fristnachweis.
-
-1. Aktivieren Sie für den CM4 im Device Configuration Tool **TIM2**, *Clock Source* „Internal Clock“.
-2. NVIC: Haken bei „TIM2 global interrupt“.
-3. Berechnen Sie `PSC` und `ARR` für Update alle $500\,\mathrm{ms}$ ($f_{\mathrm{UPD}}=2\,\mathrm{Hz}$):
-
-$$
-f_{\mathrm{UPD}} = \frac{f_{\mathrm{TIM}}}{(PSC+1)\,(ARR+1)}
-$$
-
-   $f_{\mathrm{TIM}}$ aus dem Clock-Tree lesen (APB-Prescaler/TIMPRE beachten) — nicht automatisch `SystemCoreClock`.
-
-4. Generieren Sie den Code. Vor der Schleife: `HAL_TIM_Base_Start_IT(&htim2)` mit Fehlerprüfung. Handler-Kette prüfen: `TIM2_IRQHandler` → `HAL_TIM_IRQHandler` → Callback.
-5. Toggle/`HAL_Delay` aus der Main-Schleife entfernen (dort z. B. nur `Heavy_Load()`). Callback **einmal** im vorgesehenen USER-Block (nicht doppelt definieren).
-
-### Ihre Lösung {.unnumbered}
-
-*(Notieren Sie Ihre Lösung hier.)*
+1. Berechnen Sie maximale Rundenzeit und konservative Antwortgrenze. Ist die Modellfrist nachweisbar? (2 P.)
+2. Die Anzeigenarbeit benötigt nun 50 ms. Rechnen Sie erneut und beschreiben Sie eine Ereignisphase, in der tatsächlich eine Fristverletzung möglich ist. (2 P.)
+3. Statt des gespeicherten Auftrags wird nur der momentane Eingangspegel gelesen. Die Abfragen erfolgen bei 0, 5 und 10 ms; der Eingang ist nur von 1 bis 2 ms HIGH. Wird das Ereignis erkannt? Erklären Sie den Unterschied zwischen Verlust und Verspätung sowie die Funktion eines Latch. (2 P.)
+4. Die Anzeige wird in Schritte von höchstens 1 ms zerlegt, mit einer Eingangsprüfung nach jedem Schritt. Berechnen Sie die neue Runden- und Antwortgrenze. Welche zusätzliche Zustandsinformation braucht die Anzeige? (2 P.)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 3**
+### Musterlösung Papieraufgabe 3
 
-**1. Hardware-Konfiguration (Beispielrechnung):**  
-$f_{\mathrm{TIM}}$ am eigenen Projekt in CubeMX verifizieren. Lehrbeispiel bei $f_{\mathrm{TIM}}=100\,\mathrm{MHz}$: $PSC=9999$, $ARR=4999$ $\Rightarrow$ $f_{\mathrm{UPD}}=2\,\mathrm{Hz}$ (Updateabstand $500\,\mathrm{ms}$). LED-Toggle $\Rightarrow$ vollständiger Blinkzyklus $\approx 1\,\mathrm{Hz}$.
+1. Runde $=0{,}1+0{,}2+5{,}0=5{,}3\,\mathrm{ms}$, konservativ $R\leq5{,}3+0{,}2=5{,}5\,\mathrm{ms}$. Unter den gegebenen Annahmen gilt $R\leq D=10\,\mathrm{ms}$. Je 1 P. für die Grenzen und die bedingte Fristbewertung. Die Abschätzung muss nicht die engstmögliche sein.
+2. Runde $=50{,}3\,\mathrm{ms}$ und konservative Antwortgrenze $50{,}5\,\mathrm{ms}$. Eine Grenze oberhalb der Frist allein ist noch kein Beweis eines Miss. Ein Auftrag unmittelbar nach seiner Prüfung beziehungsweise vor Beginn der 50-ms-Anzeigenarbeit wartet aber im angegebenen Ablauf schon annähernd 50 ms und verletzt damit 10 ms tatsächlich. Je 1 P. für Rechnung und konkrete Phase.
+3. Alle drei Abfragen sehen LOW, daher wird der Puls nicht erkannt. Ein Verlust erzeugt keinen später bearbeiteten Auftrag; ein gespeicherter Auftrag kann dagegen erst verspätet bearbeitet werden. Ein Latch hält das Ereignismerkmal bis zur Abfrage fest, hat aber nicht automatisch Platz für beliebig viele Ereignisse. Je 1 P. für Erkennung und Begriffstrennung.
+4. Runde $=0{,}1+0{,}2+1{,}0=1{,}3\,\mathrm{ms}$, konservativ $R\leq1{,}5\,\mathrm{ms}$. Die Anzeige speichert ihren Fortschritt beziehungsweise den nächsten zu bearbeitenden Schritt zwischen Runden; die Gesamtanzeige braucht weiterhin mehrere Schritte. Je 1 P. für Rechnung und Zustand.
+:::
 
-**2. Main-Setup und Hintergrundschleife:**
+## Papieraufgabe 4: Interrupts und Timer
+
+1. Zwei Handler haben denselben Präemptionsrang 2, aber Subpriority 0 und 1. Kann der mit Subpriority 0 den laufenden anderen Handler allein deshalb unterbrechen? Was ändert eine zulässige Präemptionspriorität 1? Kleinere Zahlen sind dringender; die Gruppierung stellt die verwendeten Subpriority-Bits bereit. (2 P.)
+2. Main liest ein gesetztes Flag, dann setzt ein zweites Interrupt-Ereignis es erneut, danach löscht Main das Flag. Was geht verloren? Warum lösen `volatile` und ein einzelnes Flag die vollständige Ereigniszählung nicht? (2 P.)
+3. Nur für den gegebenen tatsächlichen Timer-Kerntakt $f_{\mathrm{TIM}}=100\,\mathrm{MHz}$ seien $PSC=9999$, $ARR=4999$. Berechnen Sie Updatefrequenz, Updateabstand und vollständige LED-Blinkfrequenz bei einem Toggle pro Update. (2 P.)
+4. Ein Handler erfasst früh, die Hauptbearbeitung startet aber erst 3 ms nach Freigabe und benötigt 1 ms. Prüfen Sie $D=3\,\mathrm{ms}$. Ist Pin-Flanke bis HAL-Callback-Marker dasselbe wie reine Ausnahme-Eintrittszeit? (2 P.)
+
+Verwenden Sie $f_{\mathrm{UPD}}=f_{\mathrm{TIM}}/((PSC+1)(ARR+1))$. PSC ist der Vorteilerregisterwert, ARR der Zählende-Registerwert. LED bedeutet Light-Emitting Diode, Leuchtdiode; HAL bedeutet Hardware Abstraction Layer, Hardware-Abstraktionsschicht.
+
+::: {.content-visible when-profile="solution"}
+### Musterlösung Papieraufgabe 4
+
+1. Nein. Subpriority ordnet gleichzeitig anstehende zulässige Anforderungen gleichen Präemptionsrangs; sie bewirkt keine Unterbrechung eines laufenden Handlers. Ein zulässiger Rang 1 kann Rang 2 unterbrechen. Je 1 P.
+2. Nach dem Löschen bleibt keine Information über das zweite Ereignis. `volatile` erhält erforderliche Zugriffe, macht Lesen und Löschen aber nicht zu einem unteilbaren Austausch. Auch ein geschützter Austausch zählt mit einem einzigen Flag nicht automatisch mehrere Ereignisse. Für jede einzeln benötigte Information braucht man geeignete Zählung oder Pufferung mit Kapazitätsregeln. Je 1 P. für Verlust und Begründung.
+3. $f_{\mathrm{UPD}}=100\cdot10^6/(10000\cdot5000)=2\,\mathrm{Hz}$. Updateabstand $1/2\,\mathrm{s}=500\,\mathrm{ms}$. Zwei Toggles ergeben einen kompletten An-Aus-Zyklus von 1 s, also 1 Hz Blinkfrequenz. Je 1 P. für Update und Blinkzyklus. Die Frequenz gilt nur bei tatsächlich geprüftem Timer-Takt, nicht automatisch beim gleichen CPU-Takt.
+4. $R=3+1=4\,\mathrm{ms}>D$: Verletzung um 1 ms, obwohl die frühe Erfassung kurz ist. Pin bis Callback enthält zusätzlich unter anderem Erkennung, Weiterleitung, Maskierung und Softwareaufrufe; es ist nicht reine Eintrittszeit. Je 1 P.
+:::
+
+## Programmvergleich: vorbereitete 35 Minuten
+
+Entwicklungsweg: **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q**. Benutzen Sie das von der Lehrperson vorbereitete Dual-Core-Projekt und die vollständigen Anwendungsbausteine in [code/lab01](../code/lab01/README.md). Deren README beschreibt Vorbereitung, Integration, Dateien und Prüfgrenzen. Es gibt kein Betriebssystem und keinen eigenen gemeinsamen Datenblock.
+
+### Vorbereitung prüfen · 5 Minuten
+
+- Beide Firmwareziele CM4 und CM7 sind bereits gebaut, geladen und korrekt gestartet. Generierten Bootcode erhalten.
+- Nur CM4 besitzt TIM2 und PE1 / gelbe LD2. Pinbelegung/Bestückung am Board prüfen.
+- TIM2 hat einen geprüften Updateabstand von 500 ms und eine aktivierte CM4-Interruptkette; TIM2 ist nicht die HAL-Zeitbasis. Der Anwendungsbaustein startet TIM2 nur im Timer-Modus.
+- CubeMX-, Firmwarepaket-, Erweiterungs- und Compilerstand sowie Takte festhalten. Bei nicht funktionierendem Aufbau die offene Stelle dokumentieren, keine Messergebnisse einsetzen.
+
+### Anwendung und vier Läufe · 20 Minuten
+
+`lab01_demo.c` und den Include-Pfad nur in das tatsächliche CM4-CMake-Ziel aufnehmen. Im vorhandenen Anwender-Include-Bereich `#include "lab01_demo.h"` ergänzen. Nach generierter GPIO-/TIM2-Initialisierung:
 
 ```c
-/* USER CODE BEGIN 2 */
-if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK) {
+if (!Lab01_Init(LAB01_BASELINE, &htim2)) {
     Error_Handler();
 }
-/* USER CODE END 2 */
-
-/* USER CODE BEGIN 3 — in vorhandener while(1) */
-Heavy_Load(800000); /* Hintergrund-Last */
-/* USER CODE END 3 */
 ```
 
-**3. Interrupt-Callback** (einmal, z. B. `USER CODE BEGIN 4`):
+Im Rumpf der **vorhandenen** Endlosschleife nur einen Anwendungsschritt aufrufen:
 
 ```c
-/* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance == TIM2) {
-        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1); /* LD2 gelb */
-    }
-}
-/* USER CODE END 4 */
+Lab01_Step();
 ```
 
-**Fazit:** Foreground/Background — die ISR toggelt neben der Main-Last. Unter dieser Konfiguration sind periodische Flanken trotz Hintergrundlast erwartbar; das ersetzt keinen allgemeinen harten Fristnachweis und keine Aussage „Jitter $\approx 0$“ ohne Messung.
-:::
+Den vorhandenen Timer-Callback einmal um `Lab01_TimerCallback(htim);` ergänzen. Vorhandene HAL-Zeitbasisbehandlung erhalten und keinen gleichnamigen Callback doppelt definieren. Die komplette Einbindung steht im README.
 
----
+Wechseln Sie nacheinander den ersten Initialisierungsparameter zu:
 
-## Aufgabe 4 (Bonus): Drei Messungen am Oszilloskop
+1. `LAB01_BASELINE`: Main-Umschaltung, Delay ohne Zusatzlast.
+2. `LAB01_POLL_CONSTANT`: feste Iterationszahl zusätzlich zum Delay.
+3. `LAB01_POLL_VARIABLE`: wechselnde Iterationszahl zusätzlich zum Delay.
+4. `LAB01_TIMER`: Main nur variable Last; Umschaltung ausschließlich im TIM2-Callback.
 
-Timing wird gemessen, nicht nur behauptet. Pin z. B. **PA0** erst nach Pinbelegung freigeben.
+Nach jeder Änderung neu bauen und nach Reset korrekt starten. Entfernen Sie anderen LED-/Delay-Code, der den Vergleich überlagern würde. Eine Zähliteration hat keine hier bekannte Dauer in Millisekunden. Lesen Sie die Diagnosedaten `lab01_diag` nur bei angehaltenem CM4 als konsistenten Gesamtstand; Debughalt nicht in eine Timing-Aufzeichnung aufnehmen.
 
-1. **Messung A:** Puls um `Heavy_Load()` (HIGH → Last → LOW). Breite = verstrichene Dauer inkl. möglicher IRQ-Unterbrechungen.
-2. **Messung B:** periodische Flanken Main (Aufgabe 2) vs. TIM2-Callback (Aufgabe 3); gleiche Sollperiode; konstante vs. variable Last getrennt untersuchen.
-3. **Messung C (optional):** Referenz/Stimulus mit gemeinsamem Zeitbezug vs. früher Handler-Marker; Anfang/Ende nennen (HAL-Callback $\neq$ reine Hardware-Entry).
-4. Trigger, Zeitbasis, Sampleanzahl notieren. Schema: Min/Max/Mittel/Peak-to-Peak — Zahlen erst nach Messung. Formulierung: „gemessene Schwankung unter dieser Konfiguration innerhalb …“, nicht „Jitter $\approx 0$“.
+### Protokoll und Interpretation · 10 Minuten
 
-### Ihre Lösung {.unnumbered}
+Mit geeignetem Messgerät erfassen Sie pro Modus beispielsweise 20 aufeinanderfolgende Toggle-Abstände. Der tatsächliche Messanschluss und gemeinsame Massebezug müssen geprüft sein. Falls nur steigende Flanken erfasst werden, dokumentieren Sie stattdessen vollständige Blinkzyklen und passen die Sollgröße an. Ohne Messgerät ist nur die qualitative LED-Beobachtung zulässig.
 
-*(Notieren Sie Ihre Lösung hier.)*
+| Konfigurationsangabe | Eigener Eintrag |
+|---|---|
+| Board und Firmwarepaket | |
+| CubeMX und STM32-Erweiterung | |
+| Compiler / Optimierung | |
+| M4- und tatsächlicher TIM2-Takt | |
+| PSC / ARR / Interruptkonfiguration | |
+| Messpunkte / Trigger / Zeitauflösung | |
+
+| Modus | Anzahl Abstände | Min. | Max. | Mittel | Spanne | Einheit / Status |
+|---|---:|---:|---:|---:|---:|---|
+| Baseline | | | | | | |
+| Polling konstant | | | | | | |
+| Polling variabel | | | | | | |
+| Timer | | | | | | |
+
+Die Tabelle bleibt bis zur Messung leer. Status beispielsweise „gemessen unter angegebenen Bedingungen“, „nur qualitativ beobachtet“ oder „nicht durchgeführt“. Beantworten Sie:
+
+- Welcher Anteil erklärt einen vergrößerten mittleren Flankenabstand, welcher eine Schwankung?
+- Weshalb kann ein Timer-Callback während langer Hauptarbeit reagieren?
+- Welche Verzögerungen bleiben möglich, und weshalb beweist der Versuch keine harte Zeitgarantie?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 4 (Bonus)**
+### Musterlösung Programmvergleich
 
-Messung A:
+Die Baseline enthält bereits Wartefunktions-, Tick- und Aufrufeffekte. Konstante Zusatzarbeit vergrößert im idealisierten Modell den Flankenabstand; allein daraus folgt noch kein Periodenjitter. Wechselnde Last kann unterschiedliche Abstände verursachen. Welche Spanne tatsächlich vorliegt, muss gemessen werden. Der Timer zählt unabhängig vom Ende der Hauptschleifenarbeit und kann diese bei zulässigem Interrupt unterbrechen. Maskierung, dringendere Handler, Bus-/Speicherlast und die Handlerkette bleiben als Verzögerungen relevant.
 
-```c
-HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-Heavy_Load(800000);
-HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
-```
-
-**Erwartete qualitative Aussage (keine erfundenen µs-Werte):**
-
-- **A:** Pulsweite = verstrichene Funktionsdauer; bei Präemption durch TIM2 ggf. mit ISR-Anteilen — ggf. zweite Markerspur.
-- **B:** Main-Loop zeigt oft größere Periodenschwankung bei variabler Last; TIM2-Pfad ist typischerweise stabiler — die gemessene Peak-to-Peak-Schwankung unter der konkreten Konfiguration dokumentieren.
-- **C:** Nur vergleichen, wenn Referenz und Ereignis denselben Zeitbezug haben.
-
-Optimierung, höhere IRQs und Debug-Halt beeinflussen Ergebnisse. Optisch stabiles Blinken ist kein harter Fristnachweis. Messmaximum $\neq$ sichere WCET-Schranke.
+Im Timer-Modus zählt `lab01_diag.timer_callbacks` die behandelten Callback-Aufrufe, nicht garantiert alle Hardwareupdates. Bei zu langsamer Bedienung können Ereignisse zusammenfallen. Zwei Toggles bilden einen LED-Zyklus, sodass 500-ms-Updateabstand ideal einen 1-Hz-Blinkzyklus ergibt. Eine optisch stabile LED oder 20 günstige Perioden beweisen weder eine sichere WCET-Schranke noch die maximale Antwortzeit für alle zugelassenen Lasten. Keine beispielhaften Zeitwerte in die leeren Tabellen eintragen. Ein fehlender Aufbau bleibt als „nicht durchgeführt“ markiert.
 :::
