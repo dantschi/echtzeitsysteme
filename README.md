@@ -34,7 +34,7 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF sowie Übungsblatt (Studierende / M
 
 | Dokument | Studierende | Musterlösung |
 |----------|:-----------:|:------------:|
-| Probeklausur (90 Min., Closed Book, 100 Punkte) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) |
+| Probeklausur (60 Min., 60 Punkte: 20 MC-Fragen und Papieraufgaben) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) |
 
 Quelltext: [`labs/probeklausur.qmd`](labs/probeklausur.qmd).
 
