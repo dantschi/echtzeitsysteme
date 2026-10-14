@@ -9,13 +9,23 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 > **Musterlösung**
 :::
 
-## Ziel und Voraussetzungen
+## Ziele und Ablauf
 
-Sie übertragen das Aufgabenmodell aus Vorlesung 2 auf einen präemptiven FreeRTOS-Kernel. Sie unterscheiden bereit, laufend und wartend, begründen eine Prozessorbelegung und planen Speicher sowie periodische Freigaben. Anschließend beobachten Sie dieselben Mechanismen auf einem **NUCLEO-H755ZI-Q** mit **STM32H755ZIT6**.
+Sie übertragen das Aufgabenmodell aus Vorlesung 2 auf einen präemptiven FreeRTOS-Kernel: Zustände, Zuteilung, periodische Freigaben und Speicherbedarf. RTOS bedeutet Real-Time Operating System, Echtzeitbetriebssystem. Ein Thread ist ein fortsetzbarer Ablauf, ein Job eine Aktivierung. FreeRTOS nennt einen Thread Task. CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard.
 
-RTOS bedeutet Real-Time Operating System, Echtzeitbetriebssystem. Ein Thread ist ein fortsetzbarer Ausführungsablauf; FreeRTOS nennt ihn Task. Ein Job ist eine einzelne Aktivierung. CMSIS-RTOS2 ist die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. Im Programmierteil läuft genau ein Kernel auf dem Cortex-M4. Der Cortex-M7 behält die System- und Startfunktion aus Vorlesung 1.
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
 
-**Teil A ist ohne Hardware vollständig lösbar und klausurrelevant.** Bearbeiten Sie ihn vor Teil B. Teil B demonstriert die Auswahlregel durch Programmieren mit **STM32CubeMX und VS Code mit STM32 VS Code Extension**. Ein Oszilloskop ist nur für die zusätzliche Messaufgabe erforderlich. Im Repository liegt kein vollständiges Firmwareprojekt; der C-Baustein unter `code/lab03/` ist Anwendungscode zur Integration in ein erzeugtes Projekt.
+| Abschnitt | Minuten | Zweck |
+|---|---:|---|
+| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
+| Transfer und Besprechung | 10 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
+
+Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
+
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 85 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten.
 
 ## Teil A: Papieraufgaben
 
@@ -97,117 +107,46 @@ Mit der zusätzlichen Ereignisfreigabe läuft die Ereignis-Task von 4 bis 5, Hea
 3. Logische Priorität 3 ist dringlicher als 5 und darf in dieser Konfiguration keine Kernel-API verwenden. Auch ein erlaubter IRQ darf nicht mit `osThreadFlagsWait` blockieren; er darf das passende Bit mit `osThreadFlagsSet` setzen. Ein Bit bleibt bei zweimaligem Setzen vor dem Wait nur gesetzt und zählt nicht verlustfrei zwei Ereignisse.
 :::
 
-## Teil B: Programmieren und Beobachten
+## Transfer: Eine Diagnose braucht Zustände · 10 Minuten
 
-### Aufgabe 5: Projekt mit CubeMX und VS Code vorbereiten
+Zusätzliche Klausurübung ohne weitere Punkte: Eine Heartbeat-LED steht still. Drei Erklärungen werden angeboten: fehlender GPIO-Takt, fehlgeschlagene Threadanlage und Starvation durch höhere dauerhaft bereite Arbeit.
 
-**Werkzeuge:** STM32CubeMX, STM32CubeH7-Paket, VS Code mit offizieller STM32 VS Code Extension und deren Build-/Debugwerkzeugen, USB-Verbindung zum ST-LINK des Boards. ST-LINK ist der integrierte Programmier- und Debugadapter. Ein erfolgreicher Dokumentbuild ist kein Firmwarebuild.
-
-1. Notieren Sie die Versionen von CubeMX, CubeH7, Extension, Compiler, FreeRTOS-Kernel und CMSIS-Adapter. Wählen Sie das Board **NUCLEO-H755ZI-Q**, MCU **STM32H755ZIT6**. Erzeugen Sie mit dem **CMake-Generator** die Projektteile für Cortex-M7 und Cortex-M4. CMake beschreibt Übersetzen und Verknüpfen. Öffnen Sie das erzeugte Projekt in VS Code und wählen Sie die vorgesehenen STM32-Build-/Debugfunktionen.
-
-   Prüfen Sie vor weiteren Änderungen, dass der installierte Generator die Kombination **Dual-Core, CMake und FreeRTOS auf CM4** unterstützt und tatsächlich zwei passende Ziele erzeugt. Menübezeichnungen und Dateistruktur sind versionsabhängig. Fehlt diese Unterstützung, dokumentieren Sie die konkrete Diagnose und verwenden Sie mit der Lehrperson einen passenden aktuellen Werkzeugstand oder ein bereitgestelltes Dual-Core-CMake-Projekt. Ein nur für CM7 erzeugtes Projekt erfüllt die Aufgabe nicht. Wechseln Sie nicht still zu CubeIDE.
-
-2. Übernehmen bzw. prüfen Sie die Bootfolge aus Vorlesung 1. CM7 enthält die System-/Startfunktion; CM4 die Anwendung. Laden Sie beide passenden Images, prüfen Sie beide Resets und das Erreichen der CM4-Anwendung. M7-400-MHz und M4-200-MHz sind Lehrvorgaben, keine automatisch erzeugten Taktraten. Wenn Sie vorhandene Firmware aus Vorlesung 1/2 verwenden, sichern Sie diese vor Flashänderungen.
-
-3. Konfigurieren Sie FreeRTOS **nur auf CM4**, Schnittstelle **CMSIS_V2**, Präemption aktiv, 32-Bit-Kernelticks, Labor-Tickfrequenz 1000 Hz. Prüfen Sie im erzeugten `FreeRTOSConfig.h` die Werte und im Adapter `cmsis_os2.c` die Prioritätsabbildung. `configMAX_PRIORITIES` muss die gewünschten CMSIS-Prioritäten unterstützen. Wählen Sie die Heapgröße anhand der tatsächlich erzeugten Objekte; 16 KiB kann ein Startwert sein, ist kein bestätigtes Minimum.
-
-4. Laborvariante: SysTick für den Kernel, einen freien **TIM6** für die HAL-Zeitbasis. Prüfen Sie Tickfrequenzen und Handlerketten. Ein gemeinsam korrekt integrierter SysTick wäre möglich, wird in diesem Versuch jedoch nicht verwendet.
-
-5. Konfigurieren Sie **LD2/PE1** und **LD1/PB0** als Ausgänge für CM4. Verifizieren Sie Boardrevision und Belegung gegen UM2408 bzw. den Schaltplan. Konfigurieren Sie Benutzer-Taster **PC13** mit passender Flanke und EXTI-Leitung für CM4. EXTI ist der External Interrupt/Event Controller. Prüfen Sie den elektrischen Ruhepegel, statt eine Flankenrichtung zu raten.
-
-6. Der Taster-IRQ **EXTI15_10** muss für Kernelaufrufe erlaubt sein und zu der in Aufgabe 4 erläuterten Bibliotheksschwelle passen. In diesem Labor darf keine weitere EXTI-Leitung diesen IRQ benutzen. Lassen Sie die NVIC-Freigabe bei der Generierung aus. NVIC bedeutet Nested Vectored Interrupt Controller. Falls CubeMX sie zwingend erzeugt, sperren Sie den IRQ unmittelbar nach der GPIO-Initialisierung in einem erhaltenen USER-CODE-Block, noch bevor ein gültiges Threadhandle vorausgesetzt wird. Er darf vor dem Kernelstart keinen Flagaufruf auslösen.
-
-7. Bauen Sie beide **noch unveränderten** Ziele in VS Code. Kontrollieren Sie Image, Kernzuordnung, Linkerskript und Map-Datei. Dokumentieren Sie die tatsächlichen Erfolgsmeldungen oder Fehler. Eine Map-Datei ist der Speicherbericht des Linkers. Erst nach funktionierendem Dual-Core-Start integrieren Sie die Threads.
-
-**Abgabe:** Versionstabelle, `.ioc`, Build-/Debugkonfiguration sowie Nachweis der beiden erzeugten und geladenen Ziele. Wenn Hardware oder Werkzeugunterstützung fehlt, bleibt Teil A vollständig bearbeitbar; dokumentieren Sie Teil B als nicht durchgeführt.
+1. Nennen Sie zu jeder Erklärung einen passenden Prüfpunkt. Warum folgt aus derselben sichtbaren LED allein keine eindeutige Diagnose?
+2. Im Modell sind GPIO und Kernelstart geprüft, das Heartbeat-Handle gültig und Heartbeat Ready. Eine höhere Task bleibt Ready. Welche Erklärung passt jetzt? Kann die höhere Task durch `osThreadYield()` Platz für Heartbeat schaffen?
 
 ::: {.content-visible when-profile="solution"}
-**Erwartete Kontrolle:** Zwei korrekt zugeordnete Images mit konsistenter Bootfolge, Kernel ausschließlich auf CM4. Der CM4-Kontext erreicht die Kernelinitialisierung. SysTick bedient die konfigurierte Kernelzeit, die erzeugte TIM6-Handlerkette die HAL-Zeitbasis. Ungeprüfte gemeinsame Handler und ein mitaktivierter Kernel auf CM7 sind keine Lösungen. Eine bestimmte hier erfundene Extension-Menüfolge oder ein angeblich getestetes Firmwareprojekt wird nicht vorausgesetzt.
+**Musterlösung Transfer 3**
+
+GPIO: tatsächliche Initialisierung, Takt und erreichter Schreibzugriff prüfen. Threadanlage: gültigen Rückgabewert und Fehlerpfad prüfen. Starvation: tatsächliche Prioritäten, Ready-Zustände und Zuteilung prüfen. Ein unveränderter Ausgang unterscheidet diese Ursachen nicht.
+
+Unter den zusätzlichen Voraussetzungen passt Starvation: Die höchste bereite Priorität bleibt höher als Heartbeat. Yield blockiert sie nicht. Echte Wartebedingungen oder eine begründete Prioritäts-/Laständerung können Heartbeat Auswahl ermöglichen. Eine geteilte Ressource wird nicht vorausgesetzt; daher ist dies keine Priority Inversion.
 :::
 
-### Aufgabe 6: Drei Threads integrieren
+## Teil B: Praxisfall · 15 Minuten
 
-Legen Sie in CubeMX diese drei CMSIS-RTOS2-Threads an. Benennen Sie einen eventuell erzeugten Default-Thread entsprechend um oder entfernen Sie ihn; eine zusätzliche hochpriore Endlosschleife würde den Versuch verändern.
+### Praxisfall 3: Yield oder echtes Warten?
 
-| Rolle | CMSIS-Priorität | Stackattribut in Byte |
-|---|---|---:|
-| Ereignis-Task | `osPriorityHigh` | 1024 |
-| Heartbeat | `osPriorityNormal` | 512 |
-| HeavyMath | `osPriorityBelowNormal` | 1024 |
+**Papieralternative, Ein-Kern-Lehrmodell:** Ereignis-Task hat höchste, HeavyMath mittlere und Heartbeat niedrigste Anwenderpriorität. Heartbeat ist bei null Ready, arbeitet einmal 1 ms und wartet danach. Seine relative Deadline ist 5 ms. Die Ereignis-Task wartet bis zu einem Ereignis bei 5 ms, arbeitet dann 1 ms und wartet erneut. Kosten der API und Wechsel sind null.
 
-Die Größen sind Ausgangswerte, keine nachgewiesenen sicheren Minima. Prüfen Sie die Einheit der CubeMX-Felder gegen `.stack_size` im generierten Code.
+HeavyMath führt wiederholt 2 ms Arbeit aus. Variante Y ruft danach `osThreadYield()` auf und bleibt Ready. Variante W ruft danach `osDelay(4)` auf. Für Variante W gelten ein 1-kHz-Tick, Aufruf genau auf Tickgrenzen und keine weiteren Verzögerungen. Der Kernel verwendet feste Prioritäten und Präemption.
 
-**Anwendungsbaustein:** Kopieren Sie `code/lab03/lab03_rtos.c` und `lab03_rtos.h` aus dem Kursrepository in einen eigenen CM4-Anwendungsordner. Fügen Sie Quelle und Include-Verzeichnis dem **CM4-CMake-Ziel** hinzu, vorzugsweise über dessen vorhandene Benutzer-Erweiterungsstelle. Der Baustein ist nicht für CM7 vorgesehen. Er benötigt die erzeugten Header `main.h` und `cmsis_os2.h`, GPIO-Initialisierung und Kernelkonfiguration. Kontrollieren Sie, dass eine erneute CubeMX-Generierung diese Einbindung und Ihre USER-CODE-Bereiche erhält.
+1. Zeichnen Sie die CPU-Belegung von 0 bis 6 ms für beide Varianten. Wird Heartbeat rechtzeitig fertig?
+2. Welche Zustandsänderung macht den Unterschied? Ist die Verzögerung eine Priority Inversion?
 
-1. Binden Sie `lab03_rtos.h` im erhaltenen Include-Bereich der erzeugten Threaddatei und der Datei mit dem HAL-Callback ein.
-2. Ersetzen Sie den generierten Schleifenkörper jeder Eintrittsfunktion durch **einen** Aufruf des passenden Bausteins. Erzeugen Sie keine zweite Definition der Threadfunktion. Beispiel für die vorhandene Heartbeat-Funktion:
-
-```c
-/* Innerhalb der generierten Heartbeat-Eintrittsfunktion */
-Lab03_Heartbeat(argument); /* tatsächlichen Argumentnamen verwenden */
-```
-
-   Analog rufen HeavyMath und Ereignis-Task `Lab03_HeavyMath(argument)` bzw. `Lab03_Event(argument)` auf. Die Funktionen kehren nicht zurück. Code gehört in Funktions-USER-CODE-Bereiche, nicht in `Header_...`-Kommentare.
-
-3. Prüfen Sie nach dem vorhandenen `osKernelInitialize` alle drei von `osThreadNew` erzeugten Handles auf `NULL`. Nach erfolgreicher Anlage, **vor** dem einzigen vorhandenen `osKernelStart`, rufen Sie auf:
-
-```c
-Lab03_BindEvent(eventTaskHandle); /* Ihren generierten Handle-Namen einsetzen */
-```
-
-   Der Kernel muss zu diesem Zeitpunkt im Zustand `osKernelReady` sein. `osKernelStart` kehrt bei Erfolg in der üblichen Integration nicht zurück; eine Rückkehr gehört in die Fehlerbehandlung.
-
-4. Verwenden Sie den **bestehenden** `HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)`. Fügen Sie darin `Lab03_ButtonIRQ(GPIO_Pin);` ein. Falls noch kein eigener Callback existiert, definieren Sie einmalig die von der HAL vorgesehene Funktion im erhaltenen Benutzerbereich. Definieren Sie keinen zusätzlichen `EXTI15_10_IRQHandler`: Die generierte Interrupt-/HAL-Kette muss weiter genau einmal zuständig bleiben.
-
-5. Lesen Sie den Baustein. Er setzt beim Start der Ereignis-Task alte PC13-Pending-Markierungen zurück und gibt danach den IRQ frei. Diese Startpolitik verwirft Flanken vor Betriebsbeginn. Danach werden angenommene Thread-Flags durch `osThreadFlagsWait` automatisch gelöscht, ohne zusätzliches blindes Löschen.
-
-6. Bauen und laden Sie wieder beide benötigten Images. Die Anwendungsquelle ist ein Lehrbaustein, kein schon auf Ihrem Board getesteter Komplettstand. Prüfen Sie mindestens eine erneute Generierung mit anschließendem Build auf Erhalt der Integration.
-
-**Beantworten Sie zusätzlich:** Warum darf die ISR (Interrupt Service Routine) hier `osThreadFlagsSet`, aber nicht `osThreadFlagsWait` aufrufen? Warum ist `osOK` der falsche Erfolgstest für Flagfunktionen?
+**Bei vorbereitetem Board:** Die Lehrperson zeigt den vorbereiteten Normal- und Starvation-Lauf des Moduls `lab03_rtos`. Die Papier-Varianten Y/W erklären anschließend die Abhilfe; ihre exakten Modellzeiten gehören nicht zum Boardversuch.
 
 ::: {.content-visible when-profile="solution"}
-**Begründung:** `osThreadFlagsSet` ist für zugelassenen Interruptkontext vorgesehen und wartet nicht. Der FreeRTOS-Port muss die IRQ-Priorität trotzdem erlauben. `osThreadFlagsWait` blockiert den aufrufenden Thread und gehört nicht in eine ISR. Flagfunktionen liefern Flagbits oder einen Wert mit reserviertem Fehlerbit. Daher wird `(flags & osFlagsError) != 0u` geprüft; `osOK` ist ein Statuscode anderer Aufrufe.
+**Musterlösung Praxisfall 3**
 
-**Bausteinverhalten:** `Lab03_Heartbeat` konvertiert 500 ms mit 64-Bit-Zwischenprodukt und Aufrundung in eine positive Tickzahl. `LabWaitNext` erhöht den vorherigen Solltermin. Bei abgelaufenem Ziel zählt es `lab03_target_misses`, richtet auf jetzt plus Periode neu aus und wartet. Ein zwischen Prüfung und Adapteraufruf verpasstes Ziel wird einmal ebenso behandelt; weitere Fehler führen zu `Error_Handler`. Der Zähler bezeichnet Wartezielverfehlungen, keine vollständige Deadlineanalyse.
+Y: HeavyMath 0–5 ms, Ereignis-Task 5–6 ms. Yield bei 2 und 4 ms lässt HeavyMath als höchste bereite Task übrig. Heartbeat erhält bis zur Deadline bei 5 ms keine Zuteilung und verfehlt sie.
 
-`Lab03_HeavyMath` bearbeitet eine eigene vorzeichenlose `volatile`-Variable dauerhaft und bleibt Ready. `volatile` erhält Speicherzugriffe, bietet aber keine gemeinsame Datensynchronisation. `Lab03_Event` wartet auf Bit null und schaltet LD1/PB0 um. LD2/PE1 bleibt ausschließlich Heartbeat zugeordnet. Die Ergebnisse `lab03_event_responses` zählen angenommene Hinweise, nicht verlustfrei einzelne physische Tastendrücke.
+W: HeavyMath 0–2, Heartbeat 2–3, Idle 3–5, Ereignis-Task 5–6 ms. HeavyMath ist nach dem Wait bis Tick 6 Blocked. Heartbeat endet bei 3 ms und hält die Frist. Nach 6 ms darf HeavyMath erneut ausgewählt werden. Es gibt keine Ressourcenabhängigkeit zu einem niedrigen Besitzer: Das Problem ist Starvation, keine Priority Inversion.
 :::
 
-### Aufgabe 7: Normalbetrieb und Starvation vergleichen
+## Ergebnis und freiwillige Vertiefung
 
-**Normalbetrieb**
+Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
 
-- Heartbeat schaltet LD2 ungefähr alle 500 ms um, obwohl HeavyMath nicht wartet. Ein ganzer LED-Zyklus dauert ungefähr eine Sekunde.
-- Tasterhinweise schalten LD1 um. Ein mechanischer Taster kann prellen. Das Flag beschreibt **mindestens einen ausstehenden Reaktionswunsch**, keinen garantierten Zähler entprellter Tastendrücke.
-- Kontrollieren Sie die Debugvariablen `lab03_accumulator`, `lab03_irq_errors`, `lab03_target_misses` und `lab03_event_responses`. Ihre Werte sind Beobachtungen des tatsächlich durchgeführten Laufs. Halten im Debugger verändert das Zeitverhalten; nutzen Sie die Variablen nicht als ungestörte Zeitmessung.
-- Begründen Sie die erwarteten Zustände aller drei Threads zwischen zwei Heartbeat-Aktionen.
-
-**Geänderte Priorität**
-
-1. Ändern Sie nur HeavyMath auf `osPriorityAboveNormal`, also über Heartbeat und unter Ereignis-Task. Vermeiden Sie gleiche Prioritäten. Erzeugen, bauen und starten Sie neu.
-2. Dokumentieren Sie LD2 und LD1. Die Heartbeat-LED darf in ihrem letzten Zustand stehen bleiben oder schon vor ihrer ersten Aktion gar nicht beginnen; beides passt zu fehlender Zuteilung.
-3. Erklären Sie, warum `osThreadYield()` in HeavyMath Heartbeat nicht rettet. Was passiert dagegen bei echtem Betriebssystem-Warten in HeavyMath?
-4. Stellen Sie `osPriorityBelowNormal` wieder her und prüfen Sie den Normalbetrieb erneut.
-
-**Abgabe:** Gegenüberstellung beider Konfigurationen, tatsächliche Beobachtungen und begründete Diagnose. Eine stehengebliebene LED allein ist noch kein Beweis für die Ursache. Prüfen Sie Handle, Kernelstart, Boot, GPIO, Ready-Zustand und tatsächliche Priorität.
-
-::: {.content-visible when-profile="solution"}
-Im Normalbetrieb sind Heartbeat und Ereignis-Task zwischen Aktionen Blocked, HeavyMath Running. Bei Freigabe einer höheren Aufgabe ist HeavyMath Ready, während diese läuft. Der Normalversuch demonstriert präemptive Zuteilung; sichtbar ruhiges Blinken beweist keine harte Frist und keinen Jitter von null.
-
-Mit HeavyMath über Heartbeat ist Heartbeat Ready ohne Zuteilung: Starvation. Die Ereignis-Task bleibt höher und kann reagieren. Yield nimmt HeavyMath nicht aus der Ready-Menge. Echtes Warten macht HeavyMath dagegen Blocked und erlaubt Heartbeat die Auswahl, wenn keine noch höhere Aufgabe bereit ist. Dieses Verhalten ist keine Priority Inversion, weil keine Ressource gehalten wird.
-:::
-
-### Zusatzaufgabe: Messen statt nur Blinken beobachten
-
-Falls ein Oszilloskop oder Logikanalysator verfügbar ist, legen Sie einen **separaten freien GPIO-Marker** um die Heartbeat-Arbeit. Pin und Boardanschluss müssen anhand des Schaltplans gewählt werden; benutzen Sie dafür nicht die von einem anderen Thread geschriebene LED.
-
-- Unterscheiden Sie Marker-Pulsbreite $w_k=f_k-s_k$ und Startabstand $P_k=s_{k+1}-s_k$. $s_k$ ist die Start-, $f_k$ die Endmarke. Eine Pulsbreite kann Präemption oder Interruptarbeit einschließen.
-- Notieren Sie Werkzeugstand, Taktraten, Tickrate, Messpin, Optimierung, Last und Geräteauflösung.
-- Erläutern Sie, warum eine gemessene maximale Pulsbreite in dieser endlichen Testreihe noch keine allgemein nachgewiesene größte Ausführungszeit ist.
-- Falls keine Messung stattfand, tragen Sie keine Modellzahlen als Messergebnis ein.
-
-## Abgabeübersicht
-
-Teil A: begründete Lösungen zu Aufgaben 1–4 (32 Punkte). Teil B: Projektkonfiguration und Versionsliste, Quellen und Build-/Debugeinstellungen, Integrations- und Regenerierungsprüfung, Beobachtungsvergleich mit wiederhergestelltem Normalbetrieb. Trennen Sie bestanden, fehlgeschlagen und nicht durchgeführt.
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
 
 **Quellen:** Vorlesung 3; Arm CMSIS-RTOS2-Dokumentation zu Wait, Threads und Thread Flags; FreeRTOS-Dokumentation zum Cortex-M-Port; ST UM2408, RM0399 und AN5361; Dokumentation der installierten STM32 VS Code Extension. Ihre Projektversionen haben Vorrang vor Annahmen über den aktuellen öffentlichen Entwicklungszweig.

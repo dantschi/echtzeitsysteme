@@ -7,13 +7,23 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 > Musterlösung
 :::
 
-## Ziele und Voraussetzungen
+## Ziele und Ablauf
 
-Sie begründen eine Mehrkern-Aufteilung, prüfen Speicherlayout und Besitz und unterscheiden Reihenfolge von Cache-Sichtbarkeit. Vorausgesetzt werden Vorlesungen 1–5, insbesondere Job-Antwortzeit, M4-Kernel, lokale Sperren und Pufferübergabe. AMP, Asymmetric Multiprocessing, bedeutet hier zwei getrennte Firmwarekontexte: **Cortex-M7 Bare Metal, Cortex-M4 mit FreeRTOS und CMSIS-RTOS2**. SMP, Symmetric Multiprocessing, würde eine gemeinsame Betriebssystemverwaltung mehrerer Kerne beschreiben.
+Sie begründen Kernrollen, Speicherlayout, Besitz und Sichtbarkeit. Grundlage sind Vorlesungen 1–6. AMP, Asymmetric Multiprocessing, bedeutet hier getrennte Firmwarekontexte; SMP, Symmetric Multiprocessing, eine gemeinsame Betriebssystemverwaltung mehrerer Kerne. MPU bedeutet Memory Protection Unit.
 
-Teil A enthält **vier klausurnahe Papieraufgaben mit 32 Punkten**, ohne Hardware vollständig lösbar. Planen Sie etwa 15 Minuten für Aufgabe 1, 15 für Aufgabe 2 und 20 für Aufgaben 3–4. Teil B benötigt mit geprüfter Projektbasis etwa 35 Minuten, einschließlich Integration und Auswertung. Installation, erstmaliger Dual-Core-Start und Reparatur eines neuen Linkerlayouts sind Vorbereitung durch die Lehrperson.
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
 
-Hardware ist das **NUCLEO-H755ZI-Q mit STM32H755ZIT6**. Konfiguration und Generierung erfolgen in **STM32CubeMX**, Build, Flash und Debug in **VS Code mit STM32 VS Code Extension**. Die vollständigen Anwendungsdateien liegen unter `code/lab06/`. Sie ersetzen kein generiertes Firmwareprojekt. Takte, Bootoptionen, Linker-/Startup-Code und tatsächliche MPU-Regionen werden am gestellten Projekt geprüft. Es werden keine bereits erfolgreichen Boardläufe oder Hardwarezeiten vorausgesetzt.
+| Abschnitt | Minuten | Zweck |
+|---|---:|---|
+| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
+| Transfer und Besprechung | 20 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
+
+Der Übungsblock umfasst **85 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
+
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 75 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten. Im Papierkern sind 15 Minuten für Aufgabe 1, 15 Minuten für Aufgabe 2 und zusammen 20 Minuten für Aufgaben 3–4 vorgesehen.
 
 ## Teil A: Papieraufgaben
 
@@ -108,119 +118,54 @@ $64\cdot1024=65536=2^{16}$ Byte. Die letzte eingeschlossene Adresse ist `0x3800F
 Nominell $2000/1000=2$ Sekunden M4-Tickbudget und 2000 ms gleich zwei Sekunden M7-Budget. Die tatsächliche Prüfung setzt laufende Zeitbasen und erneute Ausführung des Wartecodes voraus. M4-Start, Scheduling, andere Unterbrechungen und die definierte Gesamtreaktion sind damit nicht automatisch vollständig begrenzt; Tickzeit ist kein unabhängiger Watchdog. Bei Timeout wird lokal diagnostiziert und angehalten, nicht ohne Besitz `memset` ausgeführt. Die Gegenstelle könnte noch arbeiten. Der erneute Basisversuch benutzt gemeinsamen Reset.
 :::
 
-## Teil B: kontrollierter Ping-Pong auf dem NUCLEO-H755ZI-Q
+## Transfer: Vier Aussagen im Entwurfsreview · 20 Minuten
 
-### Aufgabe 5: vorbereitete Projektbasis prüfen
+Prüfen Sie zehn Minuten einzeln und besprechen Sie zehn Minuten. Keine zusätzlichen Punkte. Auf dem H755 werden ein nicht cachebarer Shared-Bereich und ein M4-Kernel verwendet. Es gibt keine automatische Schutzwirkung über beide Kerne.
 
-Die Lehrperson stellt eine lauffähige Dual-Core-Basis aus Vorlesung 3–5 mit geprüftem Start bereit. Im heutigen Versuch verwendet CM7 Bare Metal und CM4 genau einen FreeRTOS-Kernel. Vorherige Lastthreads, Button-/UART-Versuche und zusätzliche Schreiber werden deaktiviert. M7 und M4 dürfen dieselbe gemeinsame Takt- oder Peripheriekonfiguration nicht unkoordiniert ändern.
-
-1. Prüfen Sie die .ioc-Konfiguration in STM32CubeMX für Board und STM32H755ZIT6. Erfassen Sie tatsächliche Kerntakte, Startadressen, Bootoptionen und Softwareversionen. Spezifikationsmaxima sind keine Laborfrequenzen.
-2. Prüfen Sie die beiden CMake-Ziele in VS Code mit STM32 VS Code Extension. Startups, Vektortabellen und Linkerdateien gehören jeweils zum passenden Ziel. Bestätigen Sie die verwendeten Kernkennungen `CORE_CM7` beziehungsweise `CORE_CM4`.
-3. Bestätigen Sie den vorhandenen Boot-HSEM-Pfad: M4 bereitet Benachrichtigung vor und geht in Stop; M7 wartet, initialisiert und gibt frei. Stop ist nicht Reset. HSEM-ID, Taktfreigabe, Take-Status und Wartebedingungen werden aus dem konkreten erzeugten Code geprüft. Frühe Pollbudgets sind nicht ohne Zeitbasis als Millisekunden bezeichnet.
-4. Halten Sie die SRAM4-Domäne und benötigten Zugriffswege aktiv. Prüfen Sie die laufende HAL-Millisekundenbasis auf CM7 sowie den M4-Kerneltick. Für den nominalen Budgetvergleich wird ein 32-Bit-Kerneltick mit 1000 Hz gewählt. Der M4-Worker erhält zunächst `osPriorityNormal` und 1024 Byte Stack. Heap, Stack und Threadhandle werden am Projekt geprüft.
-5. Prüfen Sie den abgestimmten Flash-/Debugstart für beide Images. Ein Halt beider Kerne schon während des Boot-Wartens kann den erforderlichen Stop- oder Wake-Fortschritt verhindern. Starten Sie beide mit dem erprobten Vorgehen der installierten Erweiterung, ohne aus Erinnerung feste GDB-Ports oder einen zweiten konkurrierenden Debugserver einzusetzen.
-
-### Aufgabe 6: gemeinsames Objekt und MPU integrieren
-
-Die Anwendungsdateien enthalten die vollständige Protokoll- und Fehlerlogik. Für die kurze Kursphase sind der freie MPU-Platz und die Linker-/Startup-Anpassung bereits an der Projektbasis vorbereitet. Studierende prüfen die Ergebnisse gegen Teil A und integrieren die zugeordneten Quellen.
-
-| Datei in `code/lab06/` | Ziel und Rolle |
-|---|---|
-| `lab06_ipc.h` | beide Ziele, gemeinsamer Vertrag |
-| `lab06_shared.c` | genau einmal je Image, Definition von `ipc` |
-| `lab06_cm7.c` | ausschließlich CM7, MPU/Init und drei Anfragen |
-| `lab06_cm4.c` | ausschließlich CM4, ein CMSIS-Worker |
-| `shared-section.ld` | Fragment für beide tatsächlichen Linkerdateien |
-
-1. Fügen Sie `.c`-Dateien und Include-Verzeichnis den passenden CMake-Zielen hinzu. Ein kopierter Dateiname allein nimmt die Quelle nicht in den Build auf. Fügen Sie keinen weiteren Definitionsblock für `ipc` hinzu. Die eigenen statischen und Diagnosevariablen gehören in private Regionen außerhalb SRAM4.
-2. Reservieren Sie SRAM4 in beiden tatsächlichen Linkerdateien **einmal** für den Kanal. Im gelieferten Fragment heißt die Region `RAM_SHARED`: Ursprung `0x38000000`, Länge 64 KiB. Ersetzen Sie eine bestehende Zuordnung dieses Bereichs, statt einen überlappenden Alias einzufügen. Keine `.bss`, `.data`, Heap oder Stacks in dieser Region. Das Fragment ist keine komplette Linkerdatei und wird in den vorhandenen `SECTIONS`-Block integriert.
-3. Prüfen Sie beide erzeugten Maps und ELF-Dateien: `ipc` an `0x38000000`, Typ zwölf Byte, gepolsterte `.shared` 32 Byte und `NOLOAD`. Die Assertions des Fragments müssen bestehen. Prüfen Sie außerdem Copy-/Zero-Tabellen beider Startups auf Ausschluss der Region. `NOLOAD` verbietet keinen beliebigen späteren Schreibzugriff.
-4. Wählen Sie eine **tatsächlich freie** MPU-Regionsnummer, deren Priorität oberhalb widersprechender überlappender Regionen liegt. Lassen Sie die vorhandene grundlegende MPU-Politik der Projektbasis erhalten. Der Helfer setzt für den Kanal Lesen/Schreiben und Execute Never und benutzt `MPU_PRIVILEGED_DEFAULT`; das muss zur privilegierten M7-Bare-Metal-Basis passen. Er erkennt nicht automatisch jede Überlappung.
-5. Rufen Sie auf CM7 nach dessen vorhandener MPU-Konfiguration und **vor D-Cache-Aktivierung** auf:
-
-```c
-Lab06_CM7_ConfigureMemory(shared_region_number, LAB06_NONCACHED);
-```
-
-`shared_region_number` ist Ihre zuvor bestätigte freie Nummer. Ersetzen Sie die Angabe durch den tatsächlich gewählten Wert oder eine entsprechende Projektkonstante. Es ist kein universell vorgeschriebener Regionsplatz. Die Referenz prüft numerische Gültigkeit und ausgeschalteten D-Cache. Die effektiven Registerattribute werden zusätzlich kontrolliert.
-
-6. Viele Bootvorlagen haben einen frühen Cachehelper, der I- und D-Cache einschaltet. Für diesen Versuch wird **nur die D-Cache-Aktivierung einmal nach die Shared-Initialisierung gelegt**. Prüfen Sie auch `SystemInit` und weitere MPU-/Cachehelper. Ein nachträglich nochmals aufgerufener MPUhelper darf die Shared-Attribute nicht überschreiben. Die Konfigurationsänderung erfolgt im vorbereiteten Cold-Start-Ablauf, nicht live mit laufender Kommunikation.
-7. Fügen Sie nach der gemeinsamen Taktinitialisierung, bei weiterhin ausgeschaltetem D-Cache und vor dem **vorhandenen Boot-HSEM-Release** ein:
-
-```c
-Lab06_CM7_InitShared();
-SCB_EnableDCache();
-/* Danach der vorhandene geprüfte HSEM-Bootpfad. */
-```
-
-Die Bootfreigabe wird nicht ein zweites Mal implementiert. Prüfen Sie die konkrete Codeposition: Ein allgemeiner USER-CODE-Block nach der Peripherieanlage kann bereits hinter dem HSEM-Release liegen und damit zu spät sein. Die Initialdaten werden so selbst für den späteren Fehlerbuild zuerst im SRAM bereitgestellt.
-8. Rufen Sie `Lab06_CM7_Run()` nach der vorhandenen M4-Freigabe und dem erforderlichen lokalen Start **einmal** auf, nicht bei jedem Umlauf der Hauptschleife. Die Funktion kehrt nach drei Antworten zurück. Der normale Boot- und Fehlerpfad der Basis bleibt erhalten.
-9. Auf CM4 ruft die einzige erzeugte IPC-Worker-Einstiegsfunktion `Lab06_CM4_Run(argument)` auf. Übernehmen Sie den tatsächlichen Argumentnamen. Keine zusätzliche gleichnamige Eintrittsfunktion und kein zweites `osKernelInitialize` oder `osKernelStart`. Nach der dritten Antwort beendet die Funktion ihren Thread mit `osThreadExit`. CM4 initialisiert oder nullt `ipc` nicht.
-10. Bauen und flashen Sie die beiden passenden Images. Prüfen Sie auch nach erneuter CubeMX-Generierung, ob Quellen, Includes, Linkerwahl und Benutzerbereiche erhalten sind. Ein Buildfehler oder ein nicht durchgeführter Lauf wird entsprechend dokumentiert.
+1. „Nicht cachebar macht `counter++` zwischen M7 und M4 unteilbar.“ Widerlegen oder bestätigen Sie die Aussage mit einem Maschinenablauf ab Zählerstand 40.
+2. „Ein lokaler M4-Mutex um den Zähler genügt auch für den Bare-Metal-M7.“ Welche Teilnahme fehlt?
+3. „Nach einem Timeout darf M7 den ganzen Block neu initialisieren.“ Welche Besitz- und Wiederanlaufbedingung fehlt?
+4. Eine obere Antwortgrenze von 7 ms enthält ausdrücklich schon 2 ms Busverzögerung. Ein Review addiert nochmals dieselben 2 ms. Ist 9 ms damit eine korrekt zerlegte Grenze? Was wäre zu tun, wenn die Buslastannahme geändert wird?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgaben 5–6**
+**Musterlösung Transfer 6**
 
-Die vollständigen Anwendungsfunktionen stehen in `code/lab06/`. Der Datenvertrag bewahrt das aus Vorlesung 6 bekannte Layout: magic/state/payload mit Offsets 0/4/8. Die Kennung ist `IPC_MAGIC`, die Phase ein ausgerichtetes 32-Bit-Wort. Diese Zugriffskonvention ist eine ausdrückliche Armv7-M-/Toolchain-Vereinbarung, keine portable ISO-C-Thread-Synchronisation.
+Beide Kerne können 40 lesen, privat 41 berechnen und 41 schreiben; erwartet wäre 42. Nicht cachebar betrifft Sichtbarkeit, nicht die Unteilbarkeit einer mehrteiligen Operation. Der M7 nimmt am lokalen Kernelmutex nicht teil. Ein gemeinsamer Besitzvertrag, beispielsweise passend eingesetzter HSEM plus lokale Serialisierung, ist nötig.
 
-`Lab06_CM7_ConfigureMemory` konfiguriert eine passende Normal-Region mit TEX eins, C null, B null und S eins und erhält die anderen Regionsbeschreibungen. Seine Enable-Politik muss zur Basis passen. Vor jeder Verwendung werden Priorität und effektive Attribute geprüft. `Lab06_CM7_InitShared` verlangt konfigurierte Region und D-Cache aus. M4 ist noch im Boot-Stop; die Funktion setzt Kennung, Payload null und ersten Request geordnet. Erst danach wird D-Cache eingeschaltet und der vorhandene HSEM-Pfad freigegeben.
+Timeout beweist nicht, dass der andere Schreiber aufgehört hat. Im Basisvertrag erfolgt keine einseitige Neuinitialisierung; beide Kerne werden kontrolliert gemeinsam neu gestartet und der Block vor Freigabe einmal initialisiert.
 
-Auf CM4 startet der Kernel den einzigen Worker. Der Worker prüft zuerst Kennung und Phase, dann nach DMB den erwarteten geraden Anfragewert. Er antwortet mit dem nächsten ungeraden Wert und gibt den Zustand an M7. M7 kopiert die bestätigte Antwort privat und stellt nur die ersten beiden Folgeanfragen bereit. Nach der dritten Antwort bleibt Payload fünf, Zustand TURN_M7. Die private Diagnose wird nicht als zusätzlicher unkoordinierter Shared-Schreiber verwendet.
-
-Zwei getrennte Images dürfen je eine Definition desselben physischen Objekts enthalten. Zwei Definitionen innerhalb eines Images wären dagegen ein Integrationsfehler. Anwendungsquellen allein erzeugen weder Flashstart noch Taktbasis, Linkerskript oder Bootvektoren. Diese projektspezifischen Bestandteile werden am tatsächlich verwendeten Projekt nachgewiesen.
+Die 9 ms können als unnötig größere Zahl weiterhin oberhalb der angegebenen 7-ms-Grenze liegen, sind aber keine korrekte Zerlegung der Kosten: Derselbe Anteil wird doppelt gezählt. Mit unveränderten Annahmen bleibt die angegebene Grenze 7 ms. Bei anderer Buslast muss der betroffene Anteil beziehungsweise die gesamte Analyse unter neuen Annahmen neu begründet werden; nicht eine alte Mess- und Modellgröße blind aufsummieren.
 :::
 
-### Aufgabe 7: Basislauf und absichtlichen Fehlerbuild vergleichen
+## Teil B: Praxisfall · 15 Minuten
 
-**Basislauf, gemeinsamer Reset:**
+### Praxisfall 6: Beide Sichten nebeneinander
 
-- M7-Memorymode `LAB06_NONCACHED`; andere M7-Regionen dürfen D-Cache nutzen.
-- Nach Abschluss müssen CM7-Diagnose `lab06_cm7_reply` mit 1, 3, 5 und `lab06_cm7_done` mit eins sowie CM4-Diagnose `lab06_cm4_responses` mit drei und `lab06_cm4_done` mit eins zusammenpassen.
-- `lab06_error` ist ein privates Symbol in jedem Image, nicht ein gemeinsamer Fehlerzähler. Beide lokalen Werte sind im gültigen Lauf `LAB06_ERROR_NONE`.
-- Gemeinsamer Endblock: gültige Kennung, Payload fünf, Zustand `TURN_M7`. Der M4-Worker ist beendet, der M7 hat keinen vierten Request veröffentlicht.
-- Halten Sie für eine konsistente Momentaufnahme alle Kerne an, nachdem beide Abschlusskennzeichen gesetzt sind. Halten verändert das ursprüngliche Timing. Eine angehaltene Gegenstelle mitten im Warten ist kein unabhängiger Cachebeweis.
+**Papieralternative, explizites Cachemodell:** Der Phasenkanal hat genau einen Teilnehmer je Kern. `REQUEST_M4` übergibt an M4, `RESPONSE_M7` an M7. M7 besitzt eine gültige Write-Back-Kopie; es findet keine Cachewartung statt. Nach der ersten Antwort und einer lokal geschriebenen Folgeanfrage liegt der folgende Zustand vor:
 
-**Fehlerbuild, eigener gemeinsamer Reset:**
+| Sicht | state | payload |
+|---|---|---:|
+| M7-Cache, Dirty-Kopie | REQUEST_M4 | 2 |
+| SRAM, daraus liest M4 | RESPONSE_M7 | 1 |
 
-Ändern Sie ausschließlich den M7-Modus bei `Lab06_CM7_ConfigureMemory` auf `LAB06_CACHED_FAULT`. Der Helfer wählt TEX eins, C eins, B eins, S null, also cachebares Normal-Write-Back. Initialisierung bleibt bei D-Cache aus, danach D-Cache tatsächlich einschalten. M4-Code, Layout und Phasenfolge bleiben gleich. Es gibt bewusst keine Cachewartung an diesem gemischten Block.
+1. Worauf warten beide Teilnehmer? Kann allein DMB die Differenz beheben? Belegt die SRAM-Debugansicht den Wert eines laufenden M7-Loads?
+2. Vergleichen Sie mit einem korrekt nicht cachebaren, geordneten Kanal: Startpayload null, M4 erhöht pro Antwort um eins, M7 vor jeder Folgeanfrage ebenfalls. Welche drei Antworten und welcher finale Payload entstehen?
+3. Was ist bei Timeout erlaubt? Weshalb wird die Integration eines neuen Linker-/MPU-Layouts nicht für diesen Erklärversuch verlangt?
 
-1. Prüfen Sie effektive MPU-Attribute, aktive Region, Subregionen und Cachebit im M7-CCR, Configuration and Control Register. Fehlende Aktivierung oder eine höhere Überlappung wäre ein anderer Versuch.
-2. Dokumentieren Sie die tatsächlich erreichten Antworten, Phase und lokale Fehlercodes. Möglich sind veraltete Werte oder Timeout; ein vollständiger Stillstand oder identischer Fehler in jedem Build wird nicht vorausgesetzt. Bei erfolgreichem Lauf prüfen Sie ebenfalls die Voraussetzungen, bevor Sie einen sicheren Write-Back-Kanal behaupten.
-3. Erklären Sie, welche zwei Sichtbarkeitsfehler zum beobachteten Verlauf passen könnten. Eine SRAM-Debugansicht ist nicht automatisch die Kopie, aus der ein laufender M7-Load gelesen hat.
-4. Bei Fehler **keine spontane Neuinitialisierung**, keine laufende MPU-Umschaltung und kein pauschales Clean/Invalidate des Blocks. Die andere Seite könnte noch Besitzer sein oder Daten geschrieben haben. Diagnostizieren Sie und starten Sie für eine neue Runde gemeinsam.
-5. Stellen Sie `LAB06_NONCACHED` wieder her, bauen Sie neu und prüfen Sie den Basislauf erneut.
-
-| Kontrolle | Eigener Nachweis / Beobachtung |
-|---|---|
-| tatsächliches Board, Takte, Versionen | |
-| Boot-HSEM-ID und Startreihenfolge | |
-| beide Maps und Startup-Ausschluss | |
-| M7-Region, Priorität und Cachebit | |
-| CM4-Tickfrequenz, Threadhandle und Stack | |
-| Basis: Antworten und Abschluss beider Kerne | |
-| Fehlerbuild: Verlauf und lokale Fehlercodes | |
-| wiederhergestellte Basis | |
+**Bei vorbereitetem Board:** Die Lehrperson zeigt den nicht cachebaren Basislauf mit Antworten 1, 3, 5. Ein cachebarer Fehlerbuild ist nur mit eigener vorab geprüfter Projektvariante sinnvoll; der Fehler muss nicht in jedem Lauf sichtbar werden. Der Papierfall bleibt die verlässliche Erklärung.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 7**
+**Musterlösung Praxisfall 6**
 
-Der gültige Basislauf erfüllt die logische Folge 0 → 1 → 2 → 3 → 4 → 5 mit den drei privaten Antworten 1, 3 und 5. Nach der letzten Antwort bleibt fünf stehen, kein Payload sechs und kein weiterer Request. Genau ein Berechtigter schreibt je Phase. `volatile` und DMB bleiben nötig, obwohl der kleine Kanal nicht cachebar ist.
+M7 wartet auf eine Antwort zur neuen Anfrage; M4 sieht noch die alte Antwortphase und wartet auf die nächste Anfrage. DMB ordnet Zugriffe, schreibt die Dirty-Kopie aber nicht automatisch zurück. Ein Debuggerzugriff auf SRAM zeigt diese Sicht, nicht notwendigerweise die verwendete M7-Cachekopie.
 
-Im Fehlerbuild kann M7 noch eine alte Zustandskopie lesen, während M4 bereits geantwortet hat. Oder eine Folgeanfrage bleibt nur im Dirty-Cache, während M4 alten SRAM sieht. Cacheverdrängung und konkrete Startreihenfolge können den Fehler verdecken. Ein einmaliger Erfolg widerlegt das Sichtbarkeitsproblem nicht.
-
-Die lokale Timeoutprüfung verlangt fortschreitende Zeit und erneute Codeausführung. `HAL_Delay(1)` ist keine M4-Kernelblockierung; `osDelay(1)` zählt einen Kernel-Tick. Weder deren Parameter noch das Diagnosefenster liefern eine vollständige IPC-Latenz. Der tatsächliche Boardlauf bleibt ohne Projekt/Hardware als nicht durchgeführt gekennzeichnet.
+Im gültigen geordneten Kanal sind die Payloadschritte 0, 1, 2, 3, 4, 5; Antworten 1, 3, 5. Nach der dritten Antwort wird kein neuer Request veröffentlicht und Payload bleibt fünf. Die genaue Endphase ist `TURN_M7` wie im Modulvertrag. Timeout erlaubt Diagnose, aber kein Nullen bei möglicherweise arbeitendem Partner. Für einen neuen Basislauf gilt gemeinsamer Neustart. Das Sichtbarkeitskonzept lässt sich ohne laufenden Generator, Linker oder Debugger aus beiden vorgegebenen Sichten erklären.
 :::
 
-### Zusatzaufgabe: eine echte Zeitmessung definieren
+## Ergebnis und freiwillige Vertiefung
 
-Nur mit passendem Messgerät oder Trace. Legen Sie ein Anforderungsereignis und den geforderten Abschluss fest. Wählen Sie nach Board-/Pinprüfung getrennte GPIO-Marker für den Anfang und das Ende und eine gemeinsame Zeitbasis. Schalten Sie die Marker an den tatsächlichen Veröffentlichungs-/Antwortstellen; berücksichtigen Sie ihre Kosten. Nehmen Sie UART-Ausgabe und absichtliche Anzeige-/Pollingpausen nicht unbemerkt als IPC-Eigenschaft in die Interpretation auf.
+Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
 
-Dokumentieren Sie Auflösung, Samplezahl, Last, Kerntakte, Tickrate, Optimierung, Cache-/MPU-Attribute und Debugzustand. Subtrahieren Sie nicht einfach zwei lokale Zykluszähler ohne bestätigte Skalierung und Synchronisation. Der erste Durchlauf kann Boot- und Kernelstart enthalten; spätere Runden sind ein anderer Messfall. Ein endlicher beobachteter Höchstwert ist noch kein allgemeiner Worst-Case-Nachweis.
-
-Ohne Messung bleiben Mikrosekundenwerte leer. Eine sinnvoll definierte Messskizze und die begründete Daten-/Fehlerauswertung sind dann die Abgabe.
-
-## Abgabe und Quellen
-
-Teil A: begründete Lösungen zu Aufgaben 1–4, 32 Punkte. Teil B: Konfiguration, Quellenintegration, Linker-/Startup- und Regenerierungsprüfung, Basis-/Fehlerbuildvergleich sowie wiederhergestellte Basis. Trennen Sie Modellrechnung, erwartet, tatsächlich beobachtet und nicht durchgeführt.
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_06_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
 
 Quellen: Vorlesung 6; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*, 3. Auflage; ST RM0399, UM2408, AN5617, AN4838 und AN5361; eingebundene STM32H7-HAL- und CMSIS-M7-Header sowie die Dokumentation der installierten STM32 VS Code Extension. Das öffentlich eingesehene H745-Boottemplate illustriert das Muster; die H755-Projektbasis und ihre Versionen bestimmen die tatsächliche Integration.

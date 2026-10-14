@@ -9,13 +9,23 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 > **Musterlösung**
 :::
 
-## Ziel und Anschluss an Vorlesung 3
+## Ziele und Ablauf
 
-Sie bestimmen den nötigen Schutz gemeinsamer Daten, unterscheiden Mutexbesitz und Semaphor-Token und begründen die Wartezeiten einer Ressourcenabhängigkeit. Ein Thread ist ein fortsetzbarer Ablauf; FreeRTOS nennt ihn Task. Ready heißt ausführungsbereit, Running zugeteilt und Blocked wartend.
+Sie erkennen verlorene Updates, wählen Schutzmechanismen und erklären Deadlock sowie Priority Inversion. Grundlage sind Vorlesungen 1–4, insbesondere Ready, Running und Blocked. CMSIS-RTOS2 bezeichnet die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard.
 
-**Teil A ist ohne Hardware vollständig lösbar und klausurrelevant.** Teil B verwendet den funktionsfähigen **NUCLEO-H755ZI-Q / STM32H755ZIT6**-Grundstand aus Vorlesung 3: ein FreeRTOS-Kernel auf dem Cortex-M4 über **CMSIS-RTOS2**, die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. Cortex-M7 behält seinen dokumentierten System- und Startanteil. Programmiert wird mit **STM32CubeMX und VS Code mit STM32 VS Code Extension**, der Build verwendet die erzeugten **CMake-Ziele**.
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
 
-Für vier Schulstunden ist die Übung in die Erklärblöcke eingebettet: zuerst 20 Minuten für Aufgabe 1 und Teil 2.1, nach der Semaphor-/Deadlock-Erklärung 15 Minuten für Teile 2.2–2.3 und Aufgabe 3, nach dem Inversionsmodell 15 Minuten für Aufgabe 4. Danach folgen 10 Minuten Codeintegration und 25 Minuten Variantenvergleich. Zusammen mit 75 Minuten Erklärung und 20 Minuten Quiz/Abschluss ergibt das 180 Minuten. Werkzeuge und Dual-Core-Grundstart müssen vor dem Termin vorbereitet sein. Eine frische Installation und erstmalige Bootfehlersuche ist keine realistische Zusatzaufgabe in diesem Zeitfenster. Bei Demonstration statt eigener Ausführung wird diese Nachweisgrenze dokumentiert.
+| Abschnitt | Minuten | Zweck |
+|---|---:|---|
+| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
+| Transfer und Besprechung | 20 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
+
+Der Übungsblock umfasst **85 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
+
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 75 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten. Die 50 Minuten Papierkern können wie bisher in 20, 15 und 15 Minuten zwischen Erklärblöcken verteilt werden.
 
 ## Teil A: Papieraufgaben
 
@@ -93,105 +103,9 @@ Bei 1 ms bleiben vier, bei 2 ms drei Millisekunden L-Arbeit. H wartet $25-1=24\,
 In beiden Fällen beträgt die Gesamtarbeit $5+1+20=26\,\mathrm{ms}$. Entfernt wurde M als zusätzliche Verdrängung des L-Halters vor H. Ls vier Millisekunden Restarbeit bleiben. L könnte bei Zuteilung fortfahren; es gibt keinen geschlossenen Ressourcenzyklus. Ein einmaliger M-Job endet nach 20 ms, ein dauerhaft bereites M könnte ohne Vererbung L unbegrenzt ausschließen. Bei mehreren Mutexen oder Gerätewartezeiten gilt dieses einfache Ein-Mutex-Ergebnis nicht pauschal.
 :::
 
-## Teil B: Kontrollierter Programmversuch
+## Transfer: Nachrichtenschutz und asynchroner Abschluss · 20 Minuten
 
-### Aufgabe 5: CM4-Projekt und Anwendungsbaustein integrieren
-
-Verwenden Sie den **funktionsfähigen Dual-Core-Grundstand aus Vorlesung 3**. In STM32CubeMX behalten Sie Board und Takte sowie FreeRTOS nur auf CM4 über CMSIS_V2 bei. Bauen und debuggen Sie die CMake-Ziele mit **VS Code und STM32 VS Code Extension**. Ein aktueller Generator muss die verwendete Kombination unterstützen; die einmalige Einrichtung wird nicht durch eine behauptete versionsunabhängige Menüfolge ersetzt.
-
-1. Sichern Sie das bisherige Projekt. Halten Sie CubeMX-, CubeH7-, Compiler-, Extension-, Kernel- und Adapterversion fest. M7 bleibt beim dokumentierten Grundstart. Beide passenden Images werden geladen.
-2. Verwenden Sie **nur drei Anwenderthreads** für diesen Versuch:
-
-   | Rolle | CMSIS-Priorität | Stackattribut |
-   |---|---|---:|
-   | L | `osPriorityNormal` | 1024 Byte |
-   | M | `osPriorityAboveNormal` | 1024 Byte |
-   | H | `osPriorityHigh` | 1024 Byte |
-
-   Die Stackwerte sind Ausgangsgrößen, keine bewiesenen Minima. Entfernen oder deaktivieren Sie andere Anwenderlast, die alte HeavyMath-Schleife und kernelbezogene Tastercallbacks aus Vorlesung 3. Der Taster-IRQ bleibt für diesen Versuch gesperrt. Eine zusätzliche hochbereite Aufgabe würde den Vergleich ändern.
-
-3. Prüfen Sie Präemption, 32-Bit-Kernelticks, 1000-Hz-Labortick, dynamische Objektanlage sowie Mutex-/Semaphorunterstützung in der erzeugten Konfiguration. Prüfen Sie die Prioritätsabbildung in `cmsis_os2.c`; die drei Rollen müssen tatsächlich verschieden und wie angegeben geordnet sein. Der Heap muss Threads, Gates, Testobjekt und übrigen Kernelbedarf tragen. Kontrollieren Sie erfolgreiche Anlage, Map-Datei und gegebenenfalls Stackreserve, statt eine beliebige Heapgröße als Nachweis einzusetzen.
-
-4. Kopieren Sie `code/lab04/lab04_resources.c` und `lab04_resources.h` in einen eigenen CM4-Anwendungsordner. Fügen Sie Quelle und Include-Verzeichnis dem CM4-CMake-Ziel hinzu, über dessen vorhandene Benutzer-Erweiterungsstelle. Die Quelle benötigt die erzeugten Header `main.h` und `cmsis_os2.h`; sie ist kein selbstständiges Firmwareprojekt.
-
-5. Im erhaltenen Benutzer-Include-Bereich der Threaddatei binden Sie `lab04_resources.h` ein. Ersetzen Sie die Körper der vorhandenen generierten Eintrittsfunktionen jeweils durch genau einen passenden Aufruf:
-
-   ```c
-   /* In der jeweils passenden generierten Funktion, nicht dreimal in einer */
-   Lab04_Low(argument);    /* L */
-   Lab04_Medium(argument); /* M */
-   Lab04_High(argument);   /* H */
-   ```
-
-   Verwenden Sie den tatsächlich generierten Argumentnamen. Jede Funktion kehrt nicht zurück. Es wird **keine zweite Definition** derselben Eintrittsfunktion erzeugt. Code steht in Funktions-USER-CODE-Bereichen, nicht in `Header_...`-Kommentaren.
-
-6. Rufen Sie **nach dem vorhandenen `osKernelInitialize`, vor Anlage und Start der drei Threads** in einem erhaltenen Initialisierungsbereich einmalig auf:
-
-   ```c
-   Lab04_Init(LAB04_SEMAPHORE);
-   ```
-
-   Der Kernel ist dabei `osKernelReady`. Der Baustein legt die Gates und den Testschutz an und prüft jedes Handle. Prüfen Sie auch alle generierten Threadhandles auf `NULL`. Der vorhandene `osKernelStart` bleibt einmalig; Rückkehr gehört in die Fehlerbehandlung. Eine Fehlerbehandlung darf nicht mit ungültigen Objekten weiterlaufen.
-
-7. Lesen Sie die Startlogik und erklären Sie sie vor dem Flashen: H und M warten an **eigenen** Gates. L erwirbt den Testschutz und öffnet Hs Gate. H öffnet Ms Gate, bleibt zunächst höher als M und fordert dann den belegten Testschutz. Erst jetzt entscheidet die Vererbung, ob M oder L weiterarbeitet. Das zusätzliche dauerhaft leere Parking-Gate parkt beendete Einmal-Threads; `osDelay(osWaitForever)` wird nicht als Ersatz für diesen Objektwartevertrag benutzt.
-
-8. Regenerieren und bauen Sie beide benötigten Ziele. Prüfen Sie, dass Ihre Benutzerbereiche und die CM4-CMake-Einbindung erhalten bleiben. Laden Sie die passenden Images und führen Sie den Semaphorversuch einmal aus.
-
-**Abgabe:** Versionen, `.ioc`, Quellen, Build-/Debugkonfiguration und Ergebnis der Regenerierungsprüfung. Bei fehlender Hardware oder nicht unterstützter Werkzeugkombination dokumentieren Sie den konkreten Stand; Teil A bleibt vollständig lösbar.
-
-::: {.content-visible when-profile="solution"}
-Die Eintrittsfunktionen werden den drei Rollen eindeutig zugeordnet; die gezeigten drei Aufrufe sind Alternativen für drei verschiedene Funktionen. `Lab04_Init` wird einmal pro Neustart im initialisierten, noch nicht gestarteten Kernel aufgerufen.
-
-Die beiden Start-Gates und das Parking-Gate beginnen leer. Das Ressourcentoken beginnt bei eins. L hält es bereits, wenn H freigegeben wird. H macht M vor seinem eigenen Blockieren bereit. Dadurch entsteht ohne Vererbung die Auswahl M vor L; beim vererbenden Mutex wird L durch Hs Warten angehoben. Das ist derselbe Mechanismus wie auf Papier, aber **nicht** automatisch dieselbe Freigabe bei 1/2 ms oder dieselbe Millisekundendauer.
-:::
-
-### Aufgabe 6: Derselbe Versuch mit Mutex
-
-1. Ändern Sie ausschließlich den Modusaufruf zu `Lab04_Init(LAB04_MUTEX);`. Alle Iterationszahlen, Threadprioritäten, Gates, Takte und Optimierungen bleiben identisch.
-2. Bauen, laden und **starten Sie kontrolliert neu**. Der Baustein ist ein Einmalversuch, kein Ablauf zum mehrfachen Initialisieren während eines laufenden Kernels.
-3. Lesen Sie im Baustein die beiden vollständigen Objektpfade: Semaphor-New/Acquire/Release beziehungsweise Mutex-New/Acquire/Release. Ein Handle-Cast oder Umbenennen allein genügt nicht. Das Mutexattribut fordert `osMutexPrioInherit` an. Dessen Weglassen ist im geprüften öffentlichen FreeRTOS-Adapter kein verlässlicher Weg zum Abschalten der Vererbung; prüfen Sie Ihren lokalen Adapter.
-4. Vergleichen Sie die Debugvariablen erst nach dem Lauf:
-
-   | Beobachtung | Bedeutung |
-   |---|---|
-   | `lab04_log[LAB04_LOW]` | Ls eigene Zeit- und Zustandsmarken |
-   | `lab04_log[LAB04_MEDIUM]` | Ms erster Lauf und Arbeitsende |
-   | `lab04_log[LAB04_HIGH]` | Hs Anfrage, erfolgreicher Erwerb, Ende |
-   | `lab04_low_effective_priority` | Ls beobachtete wirksame Priorität nach H-Freigabe |
-   | `lab04_result[...]` | Ergebnis des identischen begrenzten Rechenpensums |
-
-   Jeder Thread schreibt nur seinen eigenen Log- und Ergebnisplatz. Hält ein Debugger den Prozessor an, verändert er das Zeitverhalten; solche Schritte sind keine ungestörte Zeitmessung. Ein Zustand `LAB04_LOCK_REQUEST` allein beweist keinen Kernelzustand Blocked: Kontrollieren Sie bei Bedarf die tatsächlichen Threadzustände beziehungsweise Traceereignisse.
-
-5. Bestimmen Sie aus Hs Markern das beobachtete Lockintervall `acquired_tick - request_tick`. Vorzeichenlose Differenzbildung berücksichtigt einen einzelnen Zählerumlauf, sofern das Messintervall kleiner als eine volle Zählerperiode ist. Bei 1000 Hz ist ein Tick eine nominale Millisekunde. Gleiche Tickwerte lassen kurze Ereignisse nicht auflösen und beweisen keine Nullwartezeit.
-
-6. Für ein **Marker-Antwortintervall** verwenden Sie Hs `done_tick` minus Ls `gate_release_request_tick`. Dieser Freigabemarker liegt **vor** dem Gate-Release-Aufruf. Das Intervall enthält daher dessen Kosten und ist nicht identisch mit einer isolierten Thread-CPU-Zeit. Legen Sie den Bezug explizit fest; setzen Sie nicht Hs Startmarker mit seiner Freigabe gleich.
-
-7. Ls `release_request_tick` liegt vor dem Test-Release-Aufruf. Ls `done_tick` wird erst nach dessen Rückkehr geschrieben; da H oder M vorher laufen können, ist dieser Marker **nicht** die exakte Ressourcenfreigabezeit. Erfinden Sie daraus keine ungeprüfte Haltedauer.
-
-8. Tragen Sie die tatsächlichen Werte ein. Lassen Sie ungemessene Felder offen. Falls Auflösung oder Ablauf zweifelhaft sind, verwenden Sie geeignete Traceereignisse oder getrennte geprüfte GPIO-Marker. GPIO ist ein allgemeiner Ein-/Ausgangspin; wählen Sie Belegung und Messmethode am Board. Live-`printf` bleibt aus diesem Timingvergleich entfernt.
-
-| Kontrollfeld | Semaphor | Mutex |
-|---|---|---|
-| L hält Testschutz vor H? | | |
-| H wartet tatsächlich am Testschutz? | | |
-| M-Gate vor Hs Warten geöffnet? | | |
-| Arbeitspensen und Build identisch? | | |
-| Ls beobachtete wirksame Priorität | | |
-| Hs Lockintervall, Einheit / Auflösung | | |
-| Hs Marker-Antwortintervall, Bezug | | |
-| Beobachtung / Messgrenze | | |
-
-**Diskussion:** Welche Beobachtung spricht für entfernte M-Verdrängung im Haltefenster? Warum ersetzt ein bestandenes Ergebnis weder den kompletten Firmware-/Portnachweis noch eine allgemeine Deadlineanalyse?
-
-::: {.content-visible when-profile="solution"}
-Ohne Vererbung ist L nach seiner Gatefreigabe weiter normal priorisiert, M liegt darüber und kann vor Ls weiterem Ressourcenabschnitt rechnen. Mit dem vererbenden einzelnen Mutex sollte L im jeweiligen geprüften Adapter die hohe effektive Priorität von H erhalten und den Abschnitt vor M beenden können. H wartet weiterhin auf Ls verbleibende Arbeit.
-
-Die Quelle enthält begrenzte 200000, 800000 und 1000 Iterationen für L, M und H. Daraus sind ohne Messung keine 5, 20 oder 1 ms ableitbar. Jeder Ergebnisplatz wird nur vom zugehörigen Thread bearbeitet; `volatile` erhält die Speicherzugriffe und ist kein allgemeines Lock. Die Gatephasen und Protokollierung erzeugen andere nichtnull Kosten als das idealisierte Papiermodell.
-
-Erwartet wird ein dokumentierter Verlauf mit tatsächlicher Ressourcenabhängigkeit und unverändertem Arbeitspensum. Verglichen werden nicht nur zwei Endzahlen. Die Werte 24/4 ms und 25/5 ms gehören zur Papieraufgabe. Auch eine eindeutig verbesserte beobachtete H-Reaktion beweist nur den untersuchten Lauf und die dabei geprüften Bedingungen.
-:::
-
-## Zusatzfrage: Nachrichtenschutz und asynchroner Abschluss
+Bearbeiten Sie zehn Minuten und besprechen Sie zehn Minuten. Keine zusätzlichen Punkte. IT bedeutet interruptgesteuerte Übertragung, DMA Direct Memory Access, direkten Hardware-Speicherzugriff.
 
 Ein UART sendet 100 Nutzbytes bei 115200 Baud im Format 8N1. UART ist die asynchrone serielle Schnittstelle, 8N1 bedeutet acht Datenbits, kein Paritätsbit, ein Stoppbit; ein Startbit kommt hinzu.
 
@@ -205,8 +119,34 @@ $100\cdot10/115200\,\mathrm{s}\approx8{,}68\,\mathrm{ms}$ reine Leitungszeit. Pr
 IT ist die interruptgesteuerte Übertragung, DMA direkter Hardware-Speicherzugriff. Der Puffer bleibt bis zu bestätigtem Abschluss oder sicherem Abbruch gültig und unverändert. Der Callback darf zulässig signalisieren; der Besitzerthread gibt den Mutex frei. Ein Timeout allein bestätigt noch keine ruhende Hardware. Vererbung verändert die Taskzuteilung, nicht die Leitungsrate.
 :::
 
-## Abgabe und Quellen
+## Teil B: Praxisfall · 15 Minuten
 
-Teil A: begründete Lösungen zu Aufgaben 1–4, insgesamt 32 Punkte. Teil B: vorbereiteter Grundstand, Integration, Regenerierungs-/Buildprüfung und beide beobachteten Varianten mit Grenzen der Auflösung. Unterscheiden Sie durchgeführt, fehlgeschlagen und nicht durchgeführt.
+### Praxisfall 4: Ablauf und Marker lesen
+
+**Papieralternative, synthetische Reihenfolgen:** Drei Threads haben $H>M>L$ und verwenden genau eine Ressource. L hält sie vor Hs Anforderung. H blockiert am belegten Schutzobjekt; M ist dann Ready und greift nicht auf die Ressource zu. L hält keine weiteren Locks und wartet nicht auf Geräte.
+
+| Ohne Vererbung | Mit Vererbung |
+|---|---|
+| L erwirbt, H fordert, M arbeitet, L gibt frei, H erwirbt und endet | L erwirbt, H fordert, L gibt frei, H erwirbt und endet, M arbeitet |
+
+1. Erklären Sie die Reihenfolge und die verbleibende H-Warteursache. Welche Eigenschaft des Mutex ist erforderlich?
+2. In einem zusätzlichen **synthetischen 1-kHz-Ticklog** liegen H-Anfrage und H-Erwerb beide bei 100, H-Ende bei 101. Beweist dies eine Lockwartezeit von exakt null? Ist der Unterschied zwischen Anfrage und Ende eigene CPU-Zeit?
+3. L schreibt seinen Ende-Marker erst nach Rückkehr aus dem Release-Aufruf. Warum ist dieser Marker keine verlässliche genaue Ressourcenfreigabezeit?
+
+**Bei vorbereitetem Board:** Die Lehrperson zeigt je einen fertigen Semaphor- und Mutexlauf des `lab04_resources`-Moduls. Die Gruppe erklärt die Auswahlreihenfolge. Neuaufbau und Laufzeitmessung mit zusätzlichen GPIOs sind freiwillig.
+
+::: {.content-visible when-profile="solution"}
+**Musterlösung Praxisfall 4**
+
+Ohne Vererbung verdrängt M den niedrigen Halter L, während H auf Ls Freigabe wartet. Mit Prioritätsvererbung erhält L vorübergehend Hs effektive Priorität und kann vor M freigeben. H wartet weiter auf Ls verbleibende geschützte Arbeit; diese verschwindet nicht.
+
+Gleiche Tickwerte geben keine Auflösung unter einem Tick und beweisen keine physische Nullwartezeit. Anfrage bis Ende enthält Warten und Arbeit, gegebenenfalls weitere Kosten, keine isolierte H-CPU-Zeit. Nach dem Release kann H oder M vor Ls Rückkehr laufen. Ls späterer Ende-Marker liegt dann nach der tatsächlichen Freigabe. Die Tabelle belegt nur das genannte einfache Modell, keine allgemeine Deadlinegarantie.
+:::
+
+## Ergebnis und freiwillige Vertiefung
+
+Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
+
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_04_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
 
 Quellen: Vorlesung 4, Arm CMSIS-RTOS2 zu Mutex und Semaphore, die **lokale** `cmsis_os2.c` und FreeRTOS-Konfiguration, ST UM2408/RM0399/AN5361 und Dokumentation der eingesetzten STM32 VS Code Extension. Der öffentliche Adapterstand ist keine automatisch bestätigte Firmwareversion Ihres Boards.

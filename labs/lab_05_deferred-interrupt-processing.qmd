@@ -9,9 +9,21 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Ziele und Ablauf
 
-Sie wählen einen passenden Kommunikationsvertrag, rechnen Queue-Belegung und Zeitgrößen nach und untersuchen eine begrenzte Nachrichtenübergabe. Voraussetzung sind Vorlesungen 1–4. Die vier Papieraufgaben ergeben **30 Punkte** und sind ohne Board lösbar; ihre Rechenwege entsprechen möglichen Klausuraufgaben. Planen Sie 20 Minuten für Aufgabe 1, insgesamt 20 Minuten für Aufgaben 2–3 und 10 Minuten für Aufgabe 4.
+Sie wählen einen Kommunikationsvertrag, verfolgen Queue-Belegung, prüfen Pufferbesitz und rechnen eine Interruptübergabe nach. Grundlage sind Vorlesungen 1–5. FIFO bedeutet First In, First Out: Entnahme in Einfügereihenfolge.
 
-Die Programmierphase dauert mit vorbereitetem Projekt etwa 35 Minuten: 10 Minuten Integration und 25 Minuten Versuch/Auswertung. Sie nutzt STM32CubeMX, VS Code mit STM32 VS Code Extension und das **NUCLEO-H755ZI-Q mit STM32H755ZIT6**. Eine neue Toolinstallation oder erstmalige Reparatur des Dual-Core-Starts ist Vorbereitung und gehört nicht in diese Zeit. Das Repository enthält das vollständige Anwendungsmodul in `code/lab05/`, kein generiertes Zielprojekt. Tickphase, Heap, Stack, GPIO, Interruptzuordnung und Prioritäten werden am bereitgestellten Projekt geprüft. Ein erfolgreicher Build beweist noch keine Echtzeitfrist.
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
+
+| Abschnitt | Minuten | Zweck |
+|---|---:|---|
+| Papierkern mit Besprechung | 50 | 30 Orientierungspunkte |
+| Transfer und Besprechung | 20 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
+
+Der Übungsblock umfasst **85 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
+
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 75 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten. Planen Sie im Papierkern 20 Minuten für Aufgabe 1, 20 Minuten für Aufgaben 2–3 und 10 Minuten für Aufgabe 4.
 
 ## Aufgabe 1: Ring und Wartezustände · 8 Punkte
 
@@ -98,94 +110,54 @@ Eintrittslatenz: $3-0=3$ µs. ISR-Dauer: $12-3=9$ µs. Ready-bis-Running: $16-8=
 Ein Release gelingt, zwei melden fehlende Kapazität. Das ist Zusammenfassung mehrerer Arbeitshinweise. Prellen erzeugt mehrere elektrische Flanken; ein Queue-Drop lehnt eine bereits erfasste Nachricht wegen Vollbelegung ab. Hardware-Pendingbits können schon vor dem Callback zusammenfassen. Keine dieser Zählungen ist automatisch die Zahl entprellter Betätigungen.
 :::
 
-## Aufgabe 5: Wertqueue im vorhandenen CM4-Projekt
+## Transfer: Zwei Nachrichten, ein Speicher · 20 Minuten
 
-### Vorbereitung durch die Lehrperson
+Bearbeiten Sie den Fall zehn Minuten und besprechen Sie die Besitzregeln zehn Minuten. Keine zusätzlichen Punkte. Das folgende **abstrakte Ablaufmodell** hat keine gleichzeitigen Zugriffe: Der Consumer beginnt erst nach allen Producer-Schritten. Die Queue besitzt zwei Plätze, alle Puts gelingen.
 
-Verwenden Sie die lauffähige Basis aus Vorlesung 3, mit einem FreeRTOS-Kernel auf CM4 und dem vorhandenen CM7-Systemstart. In STM32CubeMX prüfen Sie CMSIS_V2, Präemption, dynamische Queue-/Semaphorunterstützung und einen 32-Bit-Kernel-Tick mit 1000 Hz. Übernehmen Sie die begründete HAL-Zeitbasis der Basis. Deaktivieren Sie die bisherigen Lastthreads, Semaphore-/Mutexversuche und Buttoncallbacks. Es laufen in Teil A nur die beiden heutigen Anwendungsthreads zusätzlich zu den Kernelthreads.
-
-Erzeugen Sie Producer mit `osPriorityNormal` und Consumer mit `osPriorityAboveNormal`, zunächst je 1024 Byte Stack. Prüfen Sie Heap und Stack am konkreten Build und unter Laufzeitlast. STM32CubeMX erzeugt die Quellen; Build, Flash und Debug erfolgen in VS Code mit STM32 VS Code Extension für die zugehörigen CM4- und CM7-CMake-Ziele. Es wird kein Wechsel zur eigenständigen STM32CubeIDE verlangt.
-
-### Integration und Durchführung
-
-1. Kopieren Sie `code/lab05/lab05_messages.c` und `.h` in den CM4-Anwendungsbereich. Fügen Sie die `.c`-Datei dem tatsächlichen CM4-CMake-Ziel und ihren Ordner den Include-Verzeichnissen hinzu. Nutzen Sie eine von Cube-Regeneration erhaltene Anpassungsstelle. Ein bloßer Dateikopiervorgang garantiert keine Einbindung in den Build.
-2. Fügen Sie `#include "lab05_messages.h"` im vorgesehenen Benutzerbereich ein. Rufen Sie `Lab05_Init()` **einmal nach dem vorhandenen erfolgreichen `osKernelInitialize()` und vor der Threadanlage** auf. Der Kernelstart wird nicht dupliziert. Das Modul prüft alle Handles; ein Fehler stoppt die Anwendung.
-3. Die generierte Producer-Einstiegsfunktion ruft nur `Lab05_Producer(argument)` auf, die Consumer-Einstiegsfunktion nur `Lab05_Consumer(argument)`. Legen Sie keine zweiten gleichnamigen Cube-Einstiegsfunktionen an. Der Button-Interrupt bleibt deaktiviert.
-4. Bauen und flashen Sie das vorbereitete Dual-Core-Projekt. Starten Sie den Versuch nach Reset. Die Datenqueue besitzt vier Plätze. Der Producer bietet Sequenzen 1–20 mit `sample = 10 * seq` an, verwendet Timeout null und wartet danach jeweils zehn Ticks. Der Consumer entnimmt mit `osWaitForever`, protokolliert und wartet je Datenmessage vierzig Ticks. Beide Wartezeiten sind **keine exklusive CPU-Last** und kein exakt garantiertes periodisches Raster.
-5. Nach den zwanzig Versuchen sendet der Producer eine STOP-Nachricht mit wartendem Put. Die STOP-Nachricht hat einen eigenen Typ und zählt nicht zu den Datenversuchen. Der aktive Consumer leert vorherige Nachrichten und parkt nach STOP. Der Producer parkt nach erfolgreicher Übergabe. Niemand released den leeren Park-Semaphor.
-6. Halten Sie alle Kerne nach Abschluss an und prüfen Sie `lab05_producer_done`, `lab05_consumer_done`, `lab05_attempt`, `lab05_received`, `lab05_accepted`, `lab05_dropped` und `lab05_received_count`. Interpretieren Sie die Bilanz erst bei beiden Done-Werten eins. Andere als erwartete Kapazitätsfehler führen zum Fehlerpfad und damit zu keinem gültigen abgeschlossenen Versuch.
-
-| Prüfkriterium | Eigene Beobachtung |
+| Schritt | Producer / Queue |
 |---|---|
-| Tickrate und Threadprioritäten | |
-| Build/Flash/Start tatsächlich erfolgreich | |
-| Beide Done-Werte nach STOP | |
-| 20 Datenversuche = angenommen + verworfen | |
-| Nach STOP: angenommen = empfangen | |
-| Streng steigende empfangene Sequenzen | |
-| Inhalt jeder Nachricht: 10 × Sequenz | |
-| Welche Sequenzen fehlen laut Producerlog? | |
+| 1 | statisches Array `buf` enthält `[10, 20]` |
+| 2 | Pointer auf `buf` wird eingereiht |
+| 3 | Producer ändert dasselbe Array auf `[30, 40]` |
+| 4 | derselbe Pointer wird nochmals eingereiht |
+| 5 | Consumer entnimmt beide Pointer und liest die jeweiligen Arrays |
 
-Ändern Sie für einen zweiten Lauf die Consumerpause im Modul von vierzig auf zehn Ticks, bauen und resetten Sie erneut. Halten Sie Queuegröße und andere Einstellungen gleich. Begründen Sie die beobachtete Veränderung. Gleiche mittlere Wartewerte garantieren wegen tatsächlicher Ausführungszeiten und Tickphase keine beliebige verlustfreie Dauerlast. Halten Sie die beobachteten Zahlen fest, statt die Papierwerte aus Aufgabe 2 einzutragen.
+1. Welche beiden Inhalte liest der Consumer? Warum sind zwei Queueplätze keine zwei unabhängigen Bildpuffer?
+2. Vergleichen Sie mit einer Queue, die bei jedem Put die beiden Zahlen **als Werte** kopiert. Welche Inhalte werden dann entnommen?
+3. Entwerfen Sie für die Pointervariante einen Besitzablauf mit zwei verschiedenen Puffern und Free-Pool. Was geschieht nach fehlgeschlagenem Put? Reicht `static` zur exklusiven Nutzung?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 5**
+**Musterlösung Transfer 5**
 
-Die vollständigen Threads liegen in `code/lab05/lab05_messages.c`. Es werden keine zusätzlichen Schleifen um ihre Aufrufe gebaut; beide kehren im gültigen Ablauf nicht zurück. Bei Teil A schreiben Producer und Consumer ausschließlich ihre eigenen Diagnosebereiche. Der normale Daten-Put akzeptiert oder verwirft die neue Nachricht. Andere Fehler stoppen den Versuch. Get wird nur nach `osOK` ausgewertet. Die private Wertkopie schützt die empfangenen Zahlen vor Wiederverwendung der Producer-Variable.
+Beide Pointer bezeichnen dasselbe Array; zweimal wird `[30, 40]` gelesen. Der erste Bildstand ist überschrieben. Es gibt nur einen Datenpuffer, obwohl zwei Adressen gespeichert sind. Im gegebenen Ablauf liegt kein gleichzeitiger C-Zugriff vor; der Fehler ist bereits durch falsche Wiederverwendung erklärbar.
 
-Die langsamere Consumerpause erzeugt erwartbar Rückstau und Kapazitätsverluste, deren genaue Anzahl von Tickphase, Scheduling und Build abhängt. Nach STOP und angehaltenem Ablauf gilt $20=\mathrm{accepted}+\mathrm{dropped}$ sowie $\mathrm{accepted}=\mathrm{received}$. STOP steht hinter allen angenommenen Daten und wird separat verarbeitet. Fehlende Endsequenzen sieht man im Producerlog, auch wenn das Consumerlog keinen späteren Wert mehr enthält.
-
-Eine kürzere Consumerpause reduziert den Rückstau unter sonst gleichen Bedingungen. Ohne Boardlauf werden keine Verlustzahl und kein erfolgreiches Flashen behauptet. Tickstempel liefern grobe verstrichene Zeit, keinen Nachweis exklusiver CPU-Ausführungszeit oder einer Mikrosekundenfrist.
+Die Wertqueue liefert `[10, 20]` und `[30, 40]`, weil sie jeweils die Datensatzbytes kopiert. Der Pointervertrag braucht dagegen zwei freie eigenständige Puffer: Producer nimmt einen, füllt ihn und übergibt ihn bei erfolgreichem Put. Consumer entnimmt, verarbeitet und gibt ihn genau einmal frei. Vor der Rückgabe darf Producer ihn nicht überschreiben. Bei fehlgeschlagenem Put bleibt der Producer zuständig und kann erneut versuchen oder zurückgeben. `static` sichert Lebensdauer, keinen Besitz.
 :::
 
-## Aufgabe 6: Buttonereignis aus EXTI an einen Worker
+## Praxisfall · 15 Minuten
 
-Teil B wird **nach Reset als eigener Versuch** durchgeführt. Deaktivieren Sie Producer und Consumer. Ein ButtonWorker mit `osPriorityAboveNormal` und zunächst 1024 Byte Stack bleibt. `Lab05_Init()` wird weiterhin einmal vor Threadanlage ausgeführt.
+### Praxisfall 5: Einen abgeschlossenen Queue-Lauf prüfen
 
-1. Prüfen Sie Boardrevision, Lötbrücken, Pin, Aktivpegel und Flanke anhand der bereitgestellten Unterlagen. Bei bestätigtem PC13 wird dessen EXTI-Leitung dem CM4 zugeordnet. Nutzen Sie in anderen bestätigten Konfigurationen die passende Pinmaske und IRQ. Deaktivieren Sie einen unkoordinierten CM7-Handler derselben Leitung.
-2. Prüfen Sie `__NVIC_PRIO_BITS`, die Gruppierung und die Definitionen `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` sowie `configMAX_SYSCALL_INTERRUPT_PRIORITY`. Setzen Sie die **logische** EXTI-Priorität auf einen im konkreten Projekt zulässigen Wert. Es gilt nicht allgemein „immer fünf“.
-3. Halten Sie diese NVIC-IRQ während GPIO-Initialisierung, Objektanlage und Kernelstart deaktiviert. Falls CubeMX einen frühen Enable-Aufruf generiert, passen Sie die Generierungs-/Benutzerstelle so an, dass kein Zeitfenster für einen frühen Callback bleibt. Die Freigabe erfolgt erst am Anfang der laufenden Button-Einstiegsfunktion, vor `Lab05_ButtonWorker(argument)`.
-4. Bei bestätigtem PC13 kann der folgende Code im laufenden Thread verwendet werden. Er verwirft absichtlich vor der Freigabe anstehende Altflags. Konfiguration und Freigabe bilden eine dokumentierte Erfassungsgrenze; ein Ereignis exakt an dieser Grenze ist nicht als sicher erfasst behauptet. Prüfen Sie die Makros und den Handler im lokalen HAL-Paket.
+**Papieralternative, synthetischer Diagnosefall:** Eine FIFO-Wertqueue hat einen Producer, einen Consumer und keine anderen Entnahmen. Angeboten werden Sequenzen 1–20 mit Nutzwert $10\cdot\mathrm{seq}$. Angenommen wurden 1, 2, 3, 4, 5, 9, 13 und 17; alle anderen Puts wurden ausschließlich wegen Vollbelegung verworfen. Eine separate STOP-Nachricht folgt hinter den angenommenen Daten. Beide Done-Kennzeichen sind gesetzt, alle Daten verarbeitet und die Queue leer. Das Consumerlog enthält dieselbe Folge mit den passenden Nutzwerten.
 
-```c
-/* Nur für bestätigte EXTI13/EXTI15_10_IRQn-Konfiguration auf CM4. */
-__HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_13);
-HAL_NVIC_ClearPendingIRQ(EXTI15_10_IRQn);
-HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-Lab05_ButtonWorker(argument);
-```
+1. Bestimmen Sie `accepted`, `dropped` und `received` und prüfen Sie beide Bilanzen. Wird STOP als Datenversuch mitgezählt?
+2. Welche Endsequenzen fehlen? Kann das Consumerlog allein diese Verluste erkennen, wenn es die Gesamtzahl der Angebote nicht kennt?
+3. Ein anderer angeblich gültiger Endlog nennt 1, 2, 4, 3, 5, 9, 13, 17. Ist das mit diesem Kanalvertrag vereinbar? Begründen Sie, bevor Sie die Ursache einem Scheduler zuschreiben.
 
-5. Der generierte CM4-IRQ-Handler ruft `HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13)` auf. HAL behandelt das Hardwareflag und ruft den Callback. Fügen Sie den Callback genau einmal außerhalb generierter Funktionstexte hinzu, beispielsweise in einer erhaltenen Benutzer-Code-Sektion. Keine zweite Quittung und kein zusätzliches Yield.
-
-```c
-void HAL_GPIO_EXTI_Callback(uint16_t pin)
-{
-    if (pin == GPIO_PIN_13) {
-        Lab05_ButtonIRQ();
-    }
-}
-```
-
-6. Das Modul übergibt Sequenz und Kernel-Tick in eine separate Queue mit vier Plätzen. Der Worker liest sie und pausiert fünfzig Ticks. Drücken Sie den Taster zunächst langsam, dann mehrfach. Beobachten Sie nach angehaltenen Kernen `lab05_button_offered`, `lab05_button_accepted`, `lab05_button_dropped`, `lab05_button_errors`, `lab05_button_processed` und `lab05_button_last`. Die Zähler werden nicht in einem parallelen Reportingthread gelesen oder zurückgesetzt. Bei laufender Anwendung ist eine zusammengehörige Momentaufnahme nicht garantiert.
-7. Unterscheiden Sie Callbackanzahl, empfangene Nachrichten und echte Betätigungen. Das Modul enthält **keine Entprellung**. Mechanisches Prellen muss nicht in jedem Lauf einen Überlauf erzeugen; ein unbeobachteter Drop wird nicht erfunden. Eine Sequenzlücke zeigt nicht die Zahl vor dem Callback zusammengefasster Flanken.
-8. Optional: Beobachten Sie ISR-Eintritt/-Austritt und Workerstart über zusätzliche GPIO-Marker mit Logic Analyzer oder geeignetem Trace. Marker müssen am richtigen Punkt im tatsächlichen IRQ-/Workerpfad sitzen. Dokumentieren Sie Zeitbasis und Messkosten. Ohne Messgerät lassen Sie ISR-Dauer, Workerstartlatenz und Mikrosekundenwerte offen. UART-Ausgabe bleibt außerhalb der ISR und außerhalb der bewerteten Zeitabschnitte.
-
-| Aussage | Beobachtung und Begründung |
-|---|---|
-| Erlaubte Funktion, Timeout, IRQ-Priorität | |
-| Offered = Accepted + Dropped + technische Put-Fehler? | |
-| Noch wartende Nachrichten bzw. vollständig geleert? | |
-| Callbacksequenz gegenüber Betätigungen | |
-| Grenzen der Tickstempel und Diagnose | |
-
-Die zweite Bilanz gilt nur bei gültigem Start und ohne Diagnosezählerüberlauf. `lab05_button_errors` enthält auch erkannte Frühaufrufe, die nicht als angeboten gezählt wurden. Ein solcher Frühaufruf ist ein Konfigurationsfehler und wird vor der Bilanz korrigiert. Alle ISR-Zähler haben genau einen Schreiber, die eine geprüfte CM4-Button-IRQ; `volatile` ersetzt keine allgemeine Synchronisation.
+**Bei vorbereitetem Board:** Die Lehrperson zeigt einen bereits abgeschlossenen Wertqueue-Lauf und dessen Bilanzen. Ein eigener Button-/EXTI-Versuch ist Vertiefung; er wird für die Erklärung des Queue-Vertrags nicht benötigt.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 6**
+**Musterlösung Praxisfall 5**
 
-Im erlaubten HAL-Pfad genügt der Callback mit `Lab05_ButtonIRQ()`. Der Adapter erledigt bei erfolgreichem Put die erforderliche native Wechselanforderung. Der Worker wird Ready und kann erst nach ISR-Ende und zulässigem Scheduling Running werden. Seine Threadpriorität macht eine zu dringliche NVIC-Priorität nicht zulässig.
+Acht Annahmen, zwölf Drops, acht empfangene Daten. $20=8+12$ und nach Abschluss $8=8+0$. STOP wird separat behandelt und ist kein Datenversuch. Unter den gegebenen Bedingungen fehlt nach 17 auch 18, 19 und 20. Ohne Wissen über alle Angebote ist dieser hintere Verlust aus dem Consumerlog allein nicht erkennbar.
 
-Die Queue bewahrt nur angenommene Callbacknachrichten und ist endlich. Bei vollem Kanal zählt der neue Callback als Drop, ältere Nachrichten bleiben stehen. `lab05_button_processed` wird beim erfolgreichen Get erhöht; die anschließende Pause ist nicht Teil einer behaupteten Entprellung. Bei gesperrter Quelle und vollständig entnommener Queue entspricht angenommen der Zahl entnommener Nachrichten. Bei angehaltenem Ablauf mit Rückstau muss dieser Rest berücksichtigt werden. Eine kurze Debuggeranzeige einer LED oder ein erfolgreicher Build ersetzt keine Messung der fertigen Reaktion.
-
-Ein gültiger Start hat keine Frühaufrufe und keine technischen Fehler. Das Diagnosefeld für technische Fehler dient dem Erkennen eines ungültigen Laufs. Es wird in der ISR kein potentiell blockierender Error_Handler aufgerufen. Für die reine Boardbeobachtung bleiben konkrete Messwerte bis zum tatsächlichen Lauf leer.
+Die vertauschten Sequenzen 4 und 3 widersprechen der Einfügereihenfolge bei einem Producer, einem Consumer und einer FIFO-Wertqueue. Scheduling kann die Ausführungszeit beeinflussen, ändert aber diesen Vertrag nicht. Der Log- oder Kanalvertrag muss überprüft werden. Dies sind vorgegebene Papierdaten, keine vorhergesagten realen Dropzahlen.
 :::
+
+## Ergebnis und freiwillige Vertiefung
+
+Halten Sie die begründeten Papierlösungen (30 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
+
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_05_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
+
+Quellen: Vorlesung 5; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; die in der Vorlesung und der freiwilligen Integrationsanleitung genannten Herstellerdokumente.

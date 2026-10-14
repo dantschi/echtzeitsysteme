@@ -19,18 +19,23 @@ format:
 > **Musterlösung** · Die Rechenzahlen sind Lehrannahmen, keine Boardmessungen.
 :::
 
-## Ziele, Voraussetzungen und Zeitplan
+## Ziele und Ablauf
 
-Sie beschreiben Jobs mit Zeitparametern, prüfen Fristen unter verschiedenen Regeln und erklären einen kooperativen Aufrufring. Vorausgesetzt werden Vorlesung 1 und die heutige Theorie: C-Funktionen, Variablen, Schleifen, Zeitvertrag und Interrupts. Ein Echtzeitbetriebssystem wird für den Programmvergleich nicht eingesetzt. Funktionszeiger und Verwaltungsstrukturen werden in der Vorlesung erklärt.
+Sie beschreiben Jobs, prüfen RMS und EDF unter benannten Annahmen und erklären den kooperativen Aufrufring. Grundlage sind Vorlesungen 1–2. RMS bedeutet Rate Monotonic Scheduling, EDF Earliest Deadline First. Für den Aufrufring wird kein Echtzeitbetriebssystem benötigt.
 
-| Abschnitt | Minuten | Umfang |
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
+
+| Abschnitt | Minuten | Zweck |
 |---|---:|---|
-| Fünf Papieraufgaben mit Besprechung | 50 | 32 Punkte |
-| Vorbereiteter Programmvergleich | 25 | vier Varianten und Protokoll |
+| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
+| Transfer und Besprechung | 10 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
 
-Zusammen mit 90 Minuten Vortrag und 15 Minuten Quiz ergibt dies **180 Minuten**. Installation, erster Dual-Core-Start und erstmalige Moduleinbindung sind Vorbereitung. Die Papieraufgaben sind vollständig ohne Board lösbar. Die vollständigen Anwendungsbausteine und Integrationsschritte liegen für alle Studierenden in [code/lab02](../code/lab02/README.md).
+Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
 
-Der Programmvergleich verwendet **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die Anwendung läuft auf Cortex-M4 ohne Kernel; Cortex-M7 erhält den vorbereiteten generierten Start. Ein fertig erzeugtes Boardprojekt und ausgeführte Hardwaremessungen werden nicht behauptet. Theorie und Messwerte bleiben getrennt.
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 90 Minuten Erklärung und 15 Minuten Quiz zum Termin mit 180 Minuten.
 
 ## Teil A: Papieraufgaben
 
@@ -217,100 +222,43 @@ Jede Runde braucht $C_A+C_B+C_C$. Konstante Mehrarbeit verlängert die Abstände
 Ohne Rückkehr aus B bleibt der Dispatcher in B. Weitere A- und C-Aufrufe bleiben aus, obwohl zulässige Interrupts die Zeitbasis weiterhin bedienen können. Eine Hilfsfunktion, die Zustand und `wake_at` ändert, beendet nicht den aufrufenden Schritt. Dieser muss selbst `return` ausführen. Nach erreichtem Wake-Ziel wird ein Schritt nur Ready; der nächste Aufruf hängt von den noch laufenden Schritten und der Ringauswahl ab. Der Laborcode besitzt keinen eigenen pausierten Stack je Schritt.
 :::
 
+## Transfer: Ein kleiner Wert genügt nicht · 10 Minuten
 
-## Teil B: Vorbereiteter Programmvergleich · 25 Minuten
+Diese zusätzliche Klausurübung hat keine weiteren Punkte. Ein präemptives Ein-Prozessor-Modell verwendet unabhängige periodische Jobs, keine Zusatzkosten und synchrone Freigaben bei null. Zwei Aufgaben haben jeweils $C=2\,\mathrm{ms}$, $T=10\,\mathrm{ms}$ und $D=3\,\mathrm{ms}$.
 
-### Aufbau kontrollieren · 5 Minuten
-
-1. Die Dual-Core-Bare-Metal-Basis aus Vorlesung 1 ist bereits generiert, gebaut, geladen und korrekt gestartet. CM4 bezeichnet das Cortex-M4-Firmwareziel, CM7 das Cortex-M7-Ziel. Die generierte Bootfolge bleibt erhalten.
-2. Prüfen Sie die tatsächlichen Takte und die fortschreitende **HAL-Zeitbasis mit 1 kHz** auf CM4. HAL bedeutet Hardware Abstraction Layer. `HAL_GetTickFreq()` meldet `HAL_TICK_FREQ_1KHZ`, `HAL_GetTick()` muss aber auch wirklich fortschreiten. Der Tickinterrupt wählt keinen anderen Schritt aus. Kein FreeRTOS aktivieren.
-3. Entfernen Sie das alte Lab01-Modul aus dem CM4-Bauziel und dessen Timer-/LED-Aufrufe aus Übung 1, ohne die erforderliche Zeitbasisbehandlung zu löschen. Wählen Sie anhand Schaltplan und Boardbelegung einen freien herausgeführten GPIO-Ausgang, nur CM4 zugeordnet. GPIO heißt General-Purpose Input/Output. In CubeMX erhält er das **User Label `LAB_MARKER`**, Ausgangsmodus und Anfangspegel LOW. Port-/Pinmakros in CM4 `main.h` und den tatsächlichen Messanschluss prüfen. PA0 ist keine pauschale Vorgabe.
-4. Werkzeugstände, Compiler-/Optimierungsoptionen und die CM4-/CM7-CMake-, Flash- und Debugkonfiguration dokumentieren. Die Quelle `lab02_demo.c` sowie deren Header sind bereits nur in CM4 eingebunden; erneute Generierung darf diese Einbindung nicht verlieren.
-
-Im vorgesehenen Anwender-Include-Bereich von CM4 `main.c` steht `#include "lab02_demo.h"`. Nach erfolgreichem generierten HAL-/GPIO-Setup:
-
-```c
-if (!Lab02_Init(LAB02_SHORT)) {
-    Error_Handler();
-}
-```
-
-Im Rumpf der **vorhandenen** `while (1)` steht:
-
-```c
-Lab02_DispatchOnce();
-```
-
-Keine zusätzliche Endlosschleife, kein Step-Aufruf aus einem anderen Step und kein eigener PendSV- oder SysTick-Handler. Die vollständige Vorbereitung steht im Modul-README.
-
-### Vier Läufe lesen und vergleichen · 15 Minuten
-
-Ändern Sie nur die Modusauswahl in `Lab02_Init`, bauen und starten Sie nach Reset neu. Die vorbereitete Basis und die Iterationszahlen bleiben gleich.
-
-| Auswahl | Was verändert wird |
-|---|---|
-| `LAB02_SHORT` | A, B und C bleiben mit kurzer Arbeit bereit |
-| `LAB02_LONG_B` | B hat konstant mehr Iterationen |
-| `LAB02_VARIABLE_B` | B wechselt zwischen kurzer und langer Arbeit |
-| `LAB02_SLEEP_A` | A setzt nach Arbeit ein Wake-Ziel plus zehn Tickwerte und kehrt zurück |
-
-Die Standardzahlen 30000 beziehungsweise 120000 Iterationen sind **keine zugesicherten Millisekundenzeiten**. Diagnosefelder `lab02_diag.runs`, `result`, `idle_entries` und `failures` sind nur für einen bei angehaltenem CM4 konsistent gelesenen Zustand gedacht. Ein Debughalt gehört nicht in eine Zeitmessreihe.
-
-Bearbeiten Sie dazu:
-
-- Warum hat jeder ständig bereite Schritt eine Ringposition, aber keine fest zugesagte Zeitscheibe?
-- Welcher Teil des Kontrollflusses verhindert einen A-Aufruf während laufender B-Arbeit, obwohl Tickinterrupts die Zeit fortschreiben?
-- Was speichert der TCB, Task Control Block oder Verwaltungsdatensatz? Warum ist `running_idx` außerhalb eines Schrittaufrufs ungültig?
-- Warum muss A nach erfolgreichem `Lab02_SleepAfterStep(10U)` selbst zurückkehren? Weshalb sind zehn Tickwerte keine genaue physische Startperiode?
-- Warum prüft der Dispatcher höchstens drei Kandidaten? Was tut er bei drei Blocked-Einträgen? Lesen Sie dazu den Idle-Pfad mit `__WFI`, Wait For Interrupt; eine aktive Wake-Quelle ist erforderlich.
-- Warum reicht `now >= wake_at` beim Überlauf nicht? Der Modulovergleich ist nur bei Warteintervallen und unbeobachteten Verspätungen strikt unter $2^{31}$ Millisekunden gültig.
-
-Eine nie zurückkehrende B-Funktion wird **auf Papier** besprochen, nicht als verpflichtender Boardversuch ausgeführt. Zum Vergleich genügt die begrenzte längere Last.
+1. Berechnen Sie $U$. Eine Person behauptet: „Unter 100 % hält EDF jede Frist.“ Prüfen Sie die fehlende Voraussetzung und zeichnen Sie den ersten kritischen Abschnitt.
+2. Lässt sich das Problem durch einen anderen Tie-Breaker oder RMS beheben? Begründen Sie mit der benötigten Arbeit bis zur gemeinsamen absoluten Deadline.
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung des Programmvergleichs
+**Musterlösung Transfer 2**
 
-Der Ringcursor legt den Suchbeginn fest und rückt nach einer Auswahl auf den Nachfolger. Bei endlichen Schritten erhalten ständig bereite Teilnehmer wiederholt Aufrufe, aber unterschiedlich lange Schritte behalten den Kern unterschiedlich lange. Die Tickroutine aktualisiert nur die Zeit; sie tauscht im Demonstrator keine Taskkontexte. Daher kann A erst nach Rückkehr aus B und späterer Auswahl erneut laufen.
-
-Der TCB enthält Funktionszeiger, Bereitschaftsfeld und Wake-Zeit. Es gibt keinen pausierten Stack pro Schritt. `running_idx` bezeichnet nur zwischen Funktionsaufruf und Rückkehr den aktiven Eintrag; außerhalb steht `LAB02_NONE`. Die Schlafhilfe setzt Verwaltungsdaten, beendet aber nicht den aufrufenden Schritt. A tut dies selbst mit `return`. Relative Warteziele nach Arbeit, Tick-Abtastphase und Ringauswahl erzeugen keinen festen Startplan bei 0, 10, 20 ms.
-
-Die Suche hat höchstens drei Kandidaten, statt endlos nach einem bereiten Eintrag zu suchen. Im All-Blocked-Fall zählt sie Idle und wartet mit `__WFI` auf eine zugelassene Quelle. Ein gerade vorher behandelter Tick kann die nächste Prüfung erst durch den folgenden Tick ermöglichen. Im unveränderten Demonstrator bleiben B und C bereit; der vollständige Idle-Pfad ist trotzdem implementiert.
-
-Vorzeichenlose Differenzbildung modulo $2^{32}$ unterstützt den Überlauf. Bei `now = 0xFFFFFFF0` und `target = 0x00000010` ist das Ziel noch 32 Tickwerte entfernt, also nicht erreicht. Bei `now = 0x00000020` ist es um 16 Tickwerte überschritten, also erreicht. Die halbe Spanne begrenzt die eindeutige Ordnung. Ein Zielwert null ist zulässig; deshalb wird die Wartebedingung durch ein eigenes Zustandssymbol markiert. Der konkrete Code liegt offen im Modul und wird nicht als eigener präemptiver RMS-/EDF-Scheduler ausgegeben.
+$U=2/10+2/10=0{,}4=40\,\%$. Hier gilt $D<T$; der einfache EDF-Auslastungstest für implizite Deadlines ist nicht anwendbar. Bis $t=3\,\mathrm{ms}$ sind vier Millisekunden Arbeit nötig, aber nur drei verfügbar. Beispielsweise läuft A von 0 bis 2 und B von 2 bis 4; B verfehlt die Frist. Auch bei anderer Reihenfolge oder Präemption kann die gemeinsame Anforderung nicht erfüllt werden. Die Auslastung beschreibt Langzeitbedarf und löst diesen kurzen Engpass nicht.
 :::
 
-### Protokoll und Grenzen · 5 Minuten
+## Teil B: Praxisfall · 15 Minuten
 
-Mit geeignetem Oszilloskop/Logikanalysator können beispielsweise 20 A-Pulse je verglichener Variante erfasst werden. Prüfen Sie den tatsächlichen Pinanschluss und gemeinsamen Massebezug. Die Pulsbreite umfasst A-Arbeit, Teile der GPIO-Aufrufe und mögliche Interruptunterbrechungen. Der Abstand steigender Flanken erfasst die Wiederaufrufe. Die ganze Dispatcherfunktion wird dadurch nicht markiert.
+### Praxisfall 2: Aufgewacht heißt noch nicht aufgerufen
 
-| Konfiguration | Eigener Eintrag |
-|---|---|
-| Board / Firmwarepaket / Werkzeugversionen | |
-| Compiler und Optimierung | |
-| M4- / M7-Takt, Tickquelle und Tickfrequenz | |
-| Markerpin und Boardanschluss | |
-| Iterationszahlen / Modus / Reset | |
-| Trigger / Zeitauflösung / Anzahl | |
+**Papieralternative, Lehrmodell:** Der Ring durchsucht A, B und C in dieser Reihenfolge. Alle sind zunächst Ready. Ein Aufruf läuft bis zur Rückkehr. A arbeitet 1 ms, setzt am Arbeitsende ein Wake-Ziel „jetzt plus 10 ms“ und kehrt sofort zurück. B arbeitet 6 ms, C 1 ms; beide bleiben Ready. Zeit läuft auch während B weiter, wechselt aber keinen Schritt. Verwaltungs- und Interruptkosten sind null. Der erste A-Aufruf beginnt bei null.
 
-| Variante | Anzahl | Pulsbreite min./max. | Startabstand min./max. | Startabstandsspanne | Einheit / Status |
-|---|---:|---|---|---|---|
-| Kurz konstant | | | | | |
-| B lang konstant | | | | | |
-| B wechselnd | | | | | |
-| A wartet relativ | | | | | |
+1. Verfolgen Sie die ersten sechs Aufrufe. Wann endet As erster Aufruf, wann ist sein Wake-Ziel erreicht und wann beginnt sein zweiter Aufruf?
+2. Kennzeichnen Sie A als Blocked oder Ready zwischen den Aufrufen. Warum kann A bei Erreichen seines Ziels B nicht unterbrechen?
+3. Würde ein weiterer Tickhandler oder eine nicht zurückkehrende B-Funktion das Problem lösen?
 
-Die Tabelle bleibt bis zur realen Messung leer. Status beispielsweise **gemessen**, **nur Code/Diagnose betrachtet**, **fehlgeschlagen** oder **nicht durchgeführt**. Ohne Messgerät werden keine Hardwarezeiten eingesetzt. Die Zahlen aus Aufgabe 5 gehören nicht in diese Spalten.
+**Bei vorbereitetem Board:** Die Lehrperson zeigt den Unterschied zwischen `LAB02_SHORT` und `LAB02_SLEEP_A`. Die Gruppe erklärt Verwaltungszustand, Rückkehr und Auswahl. Keine Millisekundendauer wird aus Iterationszahlen abgeleitet.
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung der Messauswertung
+**Musterlösung Praxisfall 2**
 
-Konstante zusätzliche B-Arbeit vergrößert im idealisierten Ring den A-Startabstand, ohne allein eine Schwankung innerhalb des Laufs zu erzeugen. Wechselnde B-Arbeit kann die Abstände schwanken lassen. Auf dem echten Board können auch konstante Läufe durch Interrupts oder Speicherzugriffe variieren. A-Arbeit selbst bleibt gleich, ihre verstrichene Markerbreite kann dennoch zusätzliche Unterbrechungszeit enthalten.
+Aufrufe: A 0–1, B 1–7, C 7–8, B 8–14, C 14–15, A 15–16 ms. Bei 8 ms wird das noch wartende A übersprungen. Das Wake-Ziel des ersten Aufrufs liegt bei 11 ms; A ist logisch bis dahin Blocked und danach ausführungsbereit, sein gespeichertes Zustandsfeld wird erst bei der nächsten Dispatcherprüfung aktualisiert. A läuft erst bei 15 ms, vier Millisekunden nach dem Ziel.
 
-Die Spanne ist Maximum minus Minimum der **benannten** Messgröße. Ein endliches Maximum der Markerbreite beweist keine WCET, Worst-Case Execution Time oder sichere obere eigene Ausführungszeit. Die Pflichtlast der theoretischen Sets wird im kooperativen Programm nicht nachgebildet; ihre RMS-/EDF-Tests sind dadurch nicht bestätigt. Bei fehlendem Aufbau oder Gerät bleiben die Zeitspalten leer und der tatsächlich erfolgte Prüfstatus wird angegeben.
+Der Tick schreibt Zeit fort und führt keinen Taskkontextwechsel aus. Der Dispatcher kann erst nach Rückkehr des aktiven Schritts auswählen. Zusätzliche Tickaufrufe erzeugen keine solche Präemption. Ein nie zurückkehrendes B hält die weiteren Aufrufe auf; erlaubte Interrupts können trotzdem laufen. Das Modell ist kein RMS-/EDF-Nachweis und keine Messung des realen Moduls.
 :::
 
-## Abgabe und Quellen
+## Ergebnis und freiwillige Vertiefung
 
-Teil A: beschriftete Zeitachsen oder Intervalltabellen, Zwischenrechnungen und begründete Entscheidungen zu Aufgaben 1–5, insgesamt 32 Punkte. Teil B: .ioc-Konfiguration, Moduleinbindung, Werkzeug-/Buildangaben, Erklärung des Kontrollflusses und tatsächlicher Prüfstatus. Messergebnisse nur mit realem Protokoll und definierten Messpunkten abgeben.
+Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
 
-Quellen: Vorlesungen 1–2; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; Liu und Layland (1973) zur RMS-Schranke; die behandelte Antwortzeitanalyse; ST UM2408, RM0399 und PM0214 sowie die Dokumentation der tatsächlich verwendeten STM32-Erweiterung. [Vollständiger Anwendungsbaustein und Integrationsanleitung](../code/lab02/README.md).
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_02_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
+
+Quellen: Vorlesungen 1–2; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; Liu und Layland (1973) zur RMS-Schranke; die behandelte Antwortzeitanalyse; ST UM2408, RM0399 und PM0214 sowie die Dokumentation der tatsächlich verwendeten STM32-Erweiterung. [Vollständiger Anwendungsbaustein und Integrationsanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/code/lab02/README.md).

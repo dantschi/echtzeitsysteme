@@ -11,9 +11,21 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 
 ## Ziele und Ablauf
 
-Sie erklären Konkurrenzfehler, entwerfen ein Warteprotokoll, berechnen Watchdog-Zeitfenster und beurteilen Speicher- sowie Ausgangsschutz. Grundlage sind Vorlesungen 1–7 und Vorlesung 8. HSEM bedeutet Hardware Semaphore, IWDG Independent Watchdog, WWDG Window Watchdog, EWI Early Wakeup Interrupt und MPU Memory Protection Unit.
+Sie erklären Konkurrenzfehler, Warteprotokolle, Watchdogfenster und Fehlerreaktionen. Grundlage sind Vorlesungen 1–8. HSEM bedeutet Hardware Semaphore, IWDG Independent Watchdog, WWDG Window Watchdog, EWI Early Wakeup Interrupt und MPU Memory Protection Unit.
 
-Plan: vier Papieraufgaben mit insgesamt **32 Punkten in 50 Minuten**, anschließend **25 Minuten** im vorbereiteten STM32-Labor. Das Abschlussquiz benötigt weitere 15 Minuten. Alle Papieraufgaben sind ohne Board lösbar. Alle Zahlen sind Lehrannahmen. Messfelder bleiben leer, bis Sie selbst gemessen haben.
+**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
+
+| Abschnitt | Minuten | Zweck |
+|---|---:|---|
+| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
+| Transfer und Besprechung | 10 | Rechnen und begründen |
+| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
+
+Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
+
+Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
+
+Der Übungsblock ergänzt 90 Minuten Erklärung und 15 Minuten Quiz zum Termin mit 180 Minuten.
 
 ## Aufgabe 1 · Konkurrenz und Endwert · 8 Punkte · 12 Minuten
 
@@ -101,56 +113,52 @@ Ein Supervisor hat bei jetzt 25 ms zuletzt neue Epochen von Worker A bei 20 ms u
 4. Beim Reset kann der Pin hochohmig werden, sodass ein vorheriger Low-Schreibwert keine Pegelzusage mehr ist. Ein externer Pull-down hält die isolierte aktive-High-Anzeige inaktiv. Der Startpfad initialisiert Low und gibt erst nach Prüfung wieder frei. EWI allein kann wegen Maskierung oder frühem Reset fehlen. Je ein Punkt für Resetzustand und Beschaltung/Startregel.
 :::
 
-## Labor A · Der endliche Zähler · 25 Minuten
+## Transfer: Reset ist noch kein inaktiver Ausgang · 10 Minuten
 
-Verwenden Sie **STM32CubeMX und VS Code mit STM32 VS Code Extension für ein NUCLEO-H755ZI-Q**. M7 bleibt ohne Kernel, M4 verwendet FreeRTOS über CMSIS-RTOS2. Ein bereits gemeinsam startendes Projekt und die Speicherbasis aus Vorlesung 6 müssen vorbereitet sein. Die vollständige Integration steht in [code/lab08/README.md](../code/lab08/README.md).
+Zusätzliche Klausurübung ohne weitere Punkte. Ein isolierter aktiver High-Ausgang ENABLE hat einen externen Pull-up. Beim Reset wird der GPIO hochohmig. Das Programm setzt ENABLE erst 8 ms später auf Low. Ein zu früher WWDG-Refresh löst einen Reset aus; für diesen Fall ist kein EWI garantiert.
 
-1. Übernehmen Sie `lab08_counter.h`, `lab08_counter.c`, `lab08_shared.c` in beide tatsächlichen CMake-Ziele. Definieren Sie pro Ziel genau `CORE_CM7` oder `CORE_CM4`. Entfernen Sie vorherige Labor-Anwendungsobjekte. Reservieren Sie HSEM 1 ausschließlich für je einen Worker pro Kern.
-2. Der neue Shared-Block **ersetzt** den Vorlesung-6-Block: 28 Byte Nutzstruktur, 32 Byte Section, SRAM4 ab `0x38000000`. Übernehmen Sie `shared-section.ld` in beide tatsächlich verwendeten Linkerskripte, ohne Speicheralias. Prüfen Sie die beiden ELF-/Map-Dateien und dass Startcode/Debugger die Section nicht nachträglich nullen.
-3. M7 konfiguriert bei ausgeschaltetem Datencache eine tatsächlich freie MPU-Region als Normal, nicht cachebar und führt `Lab08_CM7_InitShared(LAB08_PROTECTED)` aus, während M4 noch im vorhandenen Boot-Stop wartet. Anschließend darf der Cache an, dann folgt die **bestehende** Bootfreigabe. M7 ruft danach einmal `Lab08_CM7_Run()` auf. Der einzige M4-Worker ruft `Lab08_CM4_Run(argument)` auf.
-4. Bauen und programmieren Sie **beide Images**, starten Sie gemeinsam und lassen Sie den endlichen Versuch frei laufen. Erst bei M7-`lab08_complete=1` halten Sie beide Kerne an. Notieren Sie Treffer, Fehlschläge, Fehlercode, Endwert und Erfolgssumme. Bei Timeout kein Ergebnis als abgeschlossenen Lauf bewerten.
-5. Für den Vergleich ändern Sie nur die einmalige M7-Initialisierung auf `LAB08_UNPROTECTED`. Beide Images neu bauen/programmieren, gemeinsam neu starten, dieselben Werte notieren. Der Shared-Modus wird von beiden gelesen. Interpretieren Sie auch den möglichen zufällig passenden Endwert. Nie den Zähler bei laufendem Partner neu initialisieren.
-
-| Projektbedingung | Ihre Angabe |
-|---|---|
-| Boardrevision, CubeMX / HAL / Extension-Version | |
-| beide Kern- und Bustakte, M4-Kerneltick | |
-| Boot-HSEM / Zähler-HSEM / freie MPU-Region | |
-| Shared-Adressen, Größe, Starttabellen geprüft | |
-
-| Lauf | Treffer M7 / M4 | Fehlschläge | Endwert / Sollsumme | Fehler / Erklärung |
-|---|---|---|---|---|
-| geschützt | | | | |
-| ungeschützt | | | | |
+1. Welcher Pegel ist während der acht Millisekunden zu erwarten? Erfüllt dies „auch während Reset und Boot inaktiv“?
+2. Warum reicht der Satz „der EWI setzt Low“ nicht? Formulieren Sie eine passende Beschaltungs- und Bootregel für die isolierte Anzeige.
+3. Würde ein regelmäßiger Refresh durch die Idle-Task zusätzlich den Fortschritt aller Worker nachweisen?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Labor A**
+**Musterlösung Transfer 8**
 
-Geschützt gilt bei beiden veröffentlichten Abschlüssen $c=h_7+h_4$. Bei je 100 Erfolgen sind es 200, bei fehlgeschlagenen Takes entsprechend weniger. Die Treffer- und Fehlersummen eines Workers ergeben 100 Versuche. Ungeschützt sind alle 100 Schritte pro Kern als ausgeführt gezählt, aber deren Speicherwirkung kann überlappen. Ein Ergebnis 200 ist möglich und kein Race-Freiheitsbeweis. Es wurden hier keine Boardwerte vorgegeben. Prüfen Sie den privaten Fehlercode pro Image. `HAL_Delay(1)` und `osDelay(1)` gehören zu verschiedenen Zeitbasen; kein garantierter Fairness- oder Timingnachweis folgt aus diesen Pausen.
+Der Pull-up zieht den hochohmigen Ausgang auf High und damit aktiv; der Vertrag ist verletzt. Der Reset kann ohne EWI eintreten, und ein vorheriger Low-Schreibwert hält den hochohmigen Pin nicht Low.
+
+Für die aktive-High-Lehranzeige ist ein passend dimensionierter externer Pull-down mit geprüften Pegeln geeignet. Der Startpfad initialisiert inaktiv und erlaubt die Freigabe erst nach den vereinbarten Prüfungen. Das ist ein Lehrentwurf, kein allgemeiner Maschinensicherheitsnachweis. Idle-Lauf beziehungsweise Refresh belegt nicht die frischen vollständigen Kontrollrunden der erforderlichen Worker.
 :::
 
-## Vorbereitete Zusatzstation · WWDG2 und isolierter Ausgang
+## Praxisfall · 15 Minuten
 
-Diese Station ergänzt den Zählerversuch, wenn ein zweites fertig vorbereitetes Projekt und ein Logikanalysator verfügbar sind. Sie benötigt keine neue Pflicht-Toolchain. Bei engem Zeitbudget zeigt die Lehrperson die drei Fälle. WWDG2 läuft auf M4 in einer **separaten Projektkopie**, ohne Zählerworker und ohne fremdes Füttern. Kein Aktor wird angeschlossen.
+### Praxisfall 8: Erfolgssumme und Endwert
 
-- Nutzen Sie `lab08_wwdg.h`, `lab08_wwdg.c`, `lab08_board.c` nur im M4-Ziel. Das Modul startet WWDG2 erst im laufenden Task. Entfernen Sie einen vorherigen generierten `MX_WWDG2_Init()`-Aufruf. APB1-PCLK 100 MHz, Kerneltick 1 kHz, Teiler 8, Fenster 80, Reload 127, EWI an. Andere Watchdogs und deren Startoptionen sind aus.
-- Wählen Sie anhand Boardplan drei freie GPIOs mit CubeMX-Labels `LAB_ENABLE`, `LAB_REFRESH`, `LAB_EWI`. Ausgangsstart Low, Takte an, nur isolierte Anzeige/Messpunkte. ENABLE ist aktiv High und benötigt einen externen Pull-down für die Resetphase. Die Anleitung enthält vollständige GPIO-Funktionen und verlangt bewusst keine angenommene Boardpinzahl.
-- Die generierte `WWDG_IRQHandler` ruft genau einmal `Lab08_WWDG_IRQHandler()` auf. EWI gehört laut H755-Header zu `WWDG_IRQn`, nicht zu `WWDG_RST_IRQn`. Die Projektpriorität wird in einer statischen `Lab08_WWDG_Config` angegeben. Der Callback benutzt keine Kernel-API, kein Delay und keinen Refresh.
-- Testen Sie je Neustart genau einen Modus: `LAB08_WWDG_EARLY` (5 Ticks), `LAB08_WWDG_VALID` (zehn absolute 18-Tick-Ziele, dann bewusst nicht weiterfüttern), `LAB08_WWDG_LATE` (25 Ticks ohne Refresh). Das Modul prüft im gültigen Fall zusätzlich den Zähler vor dem Schreiben. Die kurze Interruptmaskierung hält nicht den Hardwarezähler an und ist kein Timingbeweis.
-- Beobachten Sie Marker direkt am Vorgang. EWI kann bei frühem Reset fehlen. Ergänzen Sie `lab08_reset.h/.c` nur im M7-Ziel und rufen Sie `Lab08_CM7_CaptureReset()` früh vor HAL-/Cacheinitialisierung auf. M7 sichert und löscht als einziger die gemeinsame Resetursache; M4 löscht sie nicht. Dokumentieren Sie Debug-Freeze, tatsächlichen freien Lauf und Pinpegel während Reset/Boot. Keine langen Haltepunkte im laufenden Fenster. Diagnosewörter sind nach Reset kein automatisch erhaltenes Log.
+**Papieralternative, synthetische abgeschlossene Zählerläufe:** Jeder Kern führt 100 Versuche aus. Die Kennungen, Sichtbarkeit und Abschlussbedingungen sind im Modell gültig, Diagnosezähler laufen nicht über. In G schützt ein gemeinsamer Besitzvertrag das ganze Inkrement. U hat denselben nicht cachebaren Speicher, aber keinen gegenseitigen Ausschluss.
 
-| Fall | Modell | Resetursache / Markerzeit / Pegel beobachtet |
-|---|---|---|
-| früh | Refresh außerhalb Fenster, EWI nicht erforderlich | |
-| gültig | zehn akzeptierte Refreshversuche, danach geplanter Reset | |
-| spät | EWI falls bedient, anschließend Reset vor 25 Ticks | |
+| Lauf | Erfolge M7 | Erfolge M4 | Endwert ab null |
+|---|---:|---:|---:|
+| G, geschützt | 98 | 99 | 197 |
+| U1, ungeschützt | 100 | 100 | 198 |
+| U2, ungeschützt | 100 | 100 | 200 |
+
+1. Bestimmen Sie je Lauf Sollsumme und Differenz. Welche Fehlversuchszahlen gehören zu G?
+2. Beweist U2 die Freiheit von Lost Updates? Darf eine passende Datenbilanz als Frist- oder Fortschrittsgarantie für alle Zustände ausgegeben werden?
+3. Bei einem vierten Lauf fehlt M4s Abschlussmeldung. Darf dessen momentaner Endwert in derselben Weise abgenommen werden?
+
+**Bei vorbereitetem Board:** Die Lehrperson wählt **einen** kurzen Vergleich: geschützter/ungeschützter Zähler oder die separat vorbereitete WWDG-Station. Die Gruppe erklärt die Beobachtung anhand der Papiermodelle. Watchdog, Shared-Layout und GPIO-Verdrahtung werden im Termin nicht neu eingerichtet.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Zusatzstation**
+**Musterlösung Praxisfall 8**
 
-Die 18-Tick-Ziele sind eine Versuchsplanung, keine Zusage. Mit dem angenommenen 1-kHz-Tick und 100-MHz-PCLK liegt der Zielabstand im Modell im Fenster. Der erste Schritt kann phasenverschoben sein; Aufwach- und Handlerverzug müssen geprüft werden. Der Referenztreiber startet bei Init und prüft bei Refresh nicht selbst das Fenster. Im gültigen Modul wird $65\le T\le80$ verlangt, um die Warnkante 64 auszuschließen. EWI setzt die isolierte Freigabe aus und füttert nicht. Ein externer Pull-down und ein gesperrter Startpfad tragen den Ausgang auch bei fehlendem Callback. Alle Beobachtungszellen bleiben ohne tatsächlichen Lauf leer.
+G: Sollsumme $98+99=197$, Differenz null; zwei M7- und ein M4-Fehlversuch. U1: Sollsumme 200, Endwert zwei darunter. U2: Sollsumme 200, passender Endwert. Die günstige U2-Reihenfolge widerlegt das mögliche Lost Update nicht. Nicht cachebar ersetzt keinen gegenseitigen Ausschluss.
+
+Eine abgeschlossene Datenbilanz betrifft diesen Lauf, keine allgemeine Zeit- oder Fortschrittsgarantie. Fehlt ein Abschluss, liegt kein gültiger finaler Prüfpunkt vor. Ein momentaner Zähler wird nicht als abgeschlossenes Ergebnis bewertet. Alle Werte der Tabelle sind Lehrdaten und keine Boardmessungen.
 :::
 
-## Abgabe und Aussagegrenzen
+## Ergebnis und freiwillige Vertiefung
 
-Geben Sie die vier Papierlösungen, Ihre beiden Build-/Layoutbefunde und die tatsächlich ausgefüllten Beobachtungstabellen ab. Kennzeichnen Sie Modellrechnung, Quellprüfung und Boardmessung getrennt. Falls Sie keine Hardware ausführen konnten, dokumentieren Sie dies und geben Sie keine ausgedachten Messwerte an. Ein optionaler MPU-Test benötigt eine eigens vorbereitete No-Access-Adresse, aktiven Schutz, sichtbaren Maschinenzugriff und einen tragfähigen Fault-Stack; er wird nicht mit dem Watchdogfenster kombiniert.
+Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
+
+Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_08_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
+
+Quellen: Vorlesung 8; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; die in der Vorlesung und der freiwilligen Integrationsanleitung genannten Herstellerdokumente.
