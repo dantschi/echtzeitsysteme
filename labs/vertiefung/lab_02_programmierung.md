@@ -1,98 +1,41 @@
-# Freiwillige Programmiervertiefung zu Übungsblatt 2
+# Projektvorbereitung zu Übungsblatt 2
 
-Diese Anleitung ist für die **Vorbereitung durch die Lehrperson** oder eine **freiwillige Vertiefung außerhalb des Übungstermins** gedacht. Sie gehört nicht zum verbindlichen Papierkern. Die Zeitangaben der folgenden Abschnitte gelten allenfalls für einen bereits vollständig vorbereiteten, funktionierenden Projektstand; sie sind keine Zusage für Erstintegration und Fehlersuche.
+Die Studierenden implementieren in Aufgabe 6 eine eigene kooperative Signalfolge. Diese Anleitung beschreibt die vorher einzurichtende Projektbasis; sie ist keine zusätzliche Aufgabe auf dem Übungsblatt. Der bisherige A-/B-/C-Demonstrator bleibt als separates Vergleichsbeispiel verfügbar.
 
-Verwenden Sie STM32CubeMX und VS Code mit STM32 VS Code Extension für das NUCLEO-H755ZI-Q / STM32H755ZIT6. Die Quellen in `code/lab02/` sind Anwendungsbausteine; ein vollständig erzeugtes, auf dem Board geprüftes Firmwareprojekt wird hier nicht bereitgestellt. Versionen, Startfolge und tatsächliche Integration müssen vor der Demonstration geprüft werden.
+## Basis vor dem Termin bereitstellen
 
-Im Übungstermin wird höchstens eine kurze vorbereitete Demonstration gezeigt. Bei einem technischen Problem wechseln Sie spätestens nach drei Minuten zum vollständig angegebenen Papierfall im [Übungsblatt](../lab_02_scheduling-theorie-kooperativer-scheduler.qmd). Studierende müssen frühere Programmiervertiefungen nicht erfolgreich abgeschlossen haben, um dem nächsten Übungsblatt folgen zu können.
-
-Wer freiwillig selbst integriert, dokumentiert nur den tatsächlich erreichten Stand. Modellwerte werden nicht als Boardmesswerte eingetragen. Die folgenden technischen Erläuterungen sind offen lesbar und unterstützen die Vorbereitung; die klausurnahen Musterlösungen bleiben im Profil `solution` des Übungsblatts.
-
-## Teil B: Vorbereiteter Programmvergleich · 25 Minuten
-
-### Aufbau kontrollieren · 5 Minuten
-
-1. Die Dual-Core-Bare-Metal-Basis aus Vorlesung 1 ist bereits generiert, gebaut, geladen und korrekt gestartet. CM4 bezeichnet das Cortex-M4-Firmwareziel, CM7 das Cortex-M7-Ziel. Die generierte Bootfolge bleibt erhalten.
-2. Prüfen Sie die tatsächlichen Takte und die fortschreitende **HAL-Zeitbasis mit 1 kHz** auf CM4. HAL bedeutet Hardware Abstraction Layer. `HAL_GetTickFreq()` meldet `HAL_TICK_FREQ_1KHZ`, `HAL_GetTick()` muss aber auch wirklich fortschreiten. Der Tickinterrupt wählt keinen anderen Schritt aus. Kein FreeRTOS aktivieren.
-3. Entfernen Sie das alte Lab01-Modul aus dem CM4-Bauziel und dessen Timer-/LED-Aufrufe aus Übung 1, ohne die erforderliche Zeitbasisbehandlung zu löschen. Wählen Sie anhand Schaltplan und Boardbelegung einen freien herausgeführten GPIO-Ausgang, nur CM4 zugeordnet. GPIO heißt General-Purpose Input/Output. In CubeMX erhält er das **User Label `LAB_MARKER`**, Ausgangsmodus und Anfangspegel LOW. Port-/Pinmakros in CM4 `main.h` und den tatsächlichen Messanschluss prüfen. PA0 ist keine pauschale Vorgabe.
-4. Werkzeugstände, Compiler-/Optimierungsoptionen und die CM4-/CM7-CMake-, Flash- und Debugkonfiguration dokumentieren. Die Quelle `lab02_demo.c` sowie deren Header sind bereits nur in CM4 eingebunden; erneute Generierung darf diese Einbindung nicht verlieren.
-
-Im vorgesehenen Anwender-Include-Bereich von CM4 `main.c` steht `#include "lab02_demo.h"`. Nach erfolgreichem generierten HAL-/GPIO-Setup:
+1. Verwenden Sie **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Erzeugen bzw. übernehmen Sie ein Dual-Core-CMake-Projekt mit getrennten CM7-/CM4-Zielen. Die installierte Werkzeugkombination muss diese Erzeugung unterstützen. Erhalten Sie die generierte Boot-/HSEM-Startfolge; CM7 behält Systemstart und gemeinsame Taktkonfiguration, CM4 die Anwendung. Laden Sie die zusammengehörigen Images.
+2. Verwenden Sie auf CM4 **kein RTOS**. Entfernen Sie frühere Anwendungsmodule und deren Aufrufe aus dem aktiven Ziel. Behalten Sie eine funktionierende HAL-Zeitbasis mit 1 kHz bei. Prüfen Sie sowohl `HAL_GetTickFreq() == HAL_TICK_FREQ_1KHZ` als auch tatsächlich fortschreitende Tickwerte.
+3. Ordnen Sie zwei LEDs ausschließlich CM4 zu: **PB0 / LD1** als `LAB_MARKER`, **PE1 / LD2** als `LAB_STATUS`, jeweils Ausgang, anfangs LOW. Prüfen Sie die Belegung und aktive Polarität anhand der tatsächlichen Boardrevision und UM2408. Die Namen müssen in CM4 `main.h` als Port-/Pin-Makros erscheinen. CM7 darf diese Pins weder konfigurieren noch schreiben.
+4. Nehmen Sie `lab02_demo.c`, `lab02_signal.c` und die studentische Startdatei `signal_step.c` aus `code/lab02/` sowie deren Include-Verzeichnis in das **CM4-CMake-Ziel** auf. C11 oder neuer verwenden. Keine zweite Kopie von `Lab02_SignalStep` anlegen. Die neue Anwendung verwendet `Lab02_InitSteps`; die alten A-/B-/C-Schritte werden dabei nicht ausgewählt.
+5. Binden Sie `lab02_signal.h` im erhaltenen Include-Bereich der generierten CM4-`main.c` ein. Nach Boot-, HAL- und GPIO-Initialisierung im vorgesehenen USER-CODE-Bereich:
 
 ```c
-if (!Lab02_Init(LAB02_SHORT)) {
+if (!Lab02_SignalInit()) {
     Error_Handler();
+    for (;;) {}
 }
 ```
 
-Im Rumpf der **vorhandenen** `while (1)` steht:
+6. Innerhalb der **vorhandenen** `while (1)` steht im erhaltenen Benutzerbereich nur der Dispatcheraufruf:
 
 ```c
 Lab02_DispatchOnce();
 ```
 
-Keine zusätzliche Endlosschleife, kein Step-Aufruf aus einem anderen Step und kein eigener PendSV- oder SysTick-Handler. Die vollständige Vorbereitung steht im Modul-README.
+   Weder `Lab02_Init` noch `Lab02_SignalInit` zusätzlich in der Schleife aufrufen. Kein eigener SysTick-/PendSV-Handler und keine weitere Bootfolge werden ergänzt.
+7. Bauen und starten Sie beide Images vor dem Termin. Mit dem unveränderten studentischen Rumpf bleibt LD1 aus, LD2 schaltet ungefähr alle 700 Tickwerte um und `lab02_signal_checks` steigt. Prüfen Sie im Debugger, dass CM4 die studentische Funktion erreicht. Prüfen Sie einmal erneute CubeMX-Generierung, erneuten Build und den Erhalt der CMake-/USER-CODE-Einbindung. Geben Sie diesen Stand als Projektbasis aus.
 
-### Vier Läufe lesen und vergleichen · 15 Minuten
+## Bearbeitung durch die Studierenden
 
-Ändern Sie nur die Modusauswahl in `Lab02_Init`, bauen und starten Sie nach Reset neu. Die vorbereitete Basis und die Iterationszahlen bleiben gleich.
+Die Studierenden ersetzen den leeren Rumpf von `Lab02_SignalStep` durch ihre eigene Zustands-/LED-/Wartelogik und testen beide Signalvarianten. Das Arbeitsziel ist eine selbst implementierte Anwendung, kein bloßer Aufruf des vollständigen alten Demonstrators. Die Musterimplementierung steht ausschließlich im `solution`-Abschnitt des Übungsblatts.
 
-| Auswahl | Was verändert wird |
-|---|---|
-| `LAB02_SHORT` | A, B und C bleiben mit kurzer Arbeit bereit |
-| `LAB02_LONG_B` | B hat konstant mehr Iterationen |
-| `LAB02_VARIABLE_B` | B wechselt zwischen kurzer und langer Arbeit |
-| `LAB02_SLEEP_A` | A setzt nach Arbeit ein Wake-Ziel plus zehn Tickwerte und kehrt zurück |
+`Lab02_SignalPause(ms)` setzt nur die Bereitschaftsdaten des gerade laufenden Schritts. Der Schritt muss selbst zurückkehren. Der überlauffeste Zeitvergleich setzt positive Warteintervalle und unbeobachtete Verspätungen unter der halben 32-Bit-Spanne voraus. Der Zählschritt bleibt bereit; der Status-Schritt wartet nach seiner LED-Aktion. Diagnosezähler sind bei angehaltenem CM4 zu lesen und laufen modulo 2³².
 
-Die Standardzahlen 30000 beziehungsweise 120000 Iterationen sind **keine zugesicherten Millisekundenzeiten**. Diagnosefelder `lab02_diag.runs`, `result`, `idle_entries` und `failures` sind nur für einen bei angehaltenem CM4 konsistent gelesenen Zustand gedacht. Ein Debughalt gehört nicht in eine Zeitmessreihe.
+Die Papieraufgaben bleiben unabhängig vom Board lösbar. Der vollständige Aufgabenpool darf länger als der verfügbare Übungsblock sein; die Lehrperson wählt Aufgaben aus. Ein festes 15-Minuten-Demonstrationsformat gilt für dieses Blatt nicht.
 
-Bearbeiten Sie dazu:
+## Weiterführender Vergleich
 
-- Warum hat jeder ständig bereite Schritt eine Ringposition, aber keine fest zugesagte Zeitscheibe?
-- Welcher Teil des Kontrollflusses verhindert einen A-Aufruf während laufender B-Arbeit, obwohl Tickinterrupts die Zeit fortschreiben?
-- Was speichert der TCB, Task Control Block oder Verwaltungsdatensatz? Warum ist `running_idx` außerhalb eines Schrittaufrufs ungültig?
-- Warum muss A nach erfolgreichem `Lab02_SleepAfterStep(10U)` selbst zurückkehren? Weshalb sind zehn Tickwerte keine genaue physische Startperiode?
-- Warum prüft der Dispatcher höchstens drei Kandidaten? Was tut er bei drei Blocked-Einträgen? Lesen Sie dazu den Idle-Pfad mit `__WFI`, Wait For Interrupt; eine aktive Wake-Quelle ist erforderlich.
-- Warum reicht `now >= wake_at` beim Überlauf nicht? Der Modulovergleich ist nur bei Warteintervallen und unbeobachteten Verspätungen strikt unter $2^{31}$ Millisekunden gültig.
+Der bisherige vollständige Demonstrator mit `LAB02_SHORT`, `LAB02_LONG_B`, `LAB02_VARIABLE_B` und `LAB02_SLEEP_A` ist im [Code-README](../../code/lab02/README.md#bisheriger-aufrufring-als-zusatzversuch) dokumentiert. Verwenden Sie ihn in einem getrennten Projektstand; nicht beide Initialisierungen kombinieren. Seine Iterationszahlen sind keine bekannten Millisekundenzeiten und bilden die neuen Papier-Tasksets nicht nach.
 
-Eine nie zurückkehrende B-Funktion wird **auf Papier** besprochen, nicht als verpflichtender Boardversuch ausgeführt. Zum Vergleich genügt die begrenzte längere Last.
-
-
-### Technische Erläuterung des Programmvergleichs
-
-Der Ringcursor legt den Suchbeginn fest und rückt nach einer Auswahl auf den Nachfolger. Bei endlichen Schritten erhalten ständig bereite Teilnehmer wiederholt Aufrufe, aber unterschiedlich lange Schritte behalten den Kern unterschiedlich lange. Die Tickroutine aktualisiert nur die Zeit; sie tauscht im Demonstrator keine Taskkontexte. Daher kann A erst nach Rückkehr aus B und späterer Auswahl erneut laufen.
-
-Der TCB enthält Funktionszeiger, Bereitschaftsfeld und Wake-Zeit. Es gibt keinen pausierten Stack pro Schritt. `running_idx` bezeichnet nur zwischen Funktionsaufruf und Rückkehr den aktiven Eintrag; außerhalb steht `LAB02_NONE`. Die Schlafhilfe setzt Verwaltungsdaten, beendet aber nicht den aufrufenden Schritt. A tut dies selbst mit `return`. Relative Warteziele nach Arbeit, Tick-Abtastphase und Ringauswahl erzeugen keinen festen Startplan bei 0, 10, 20 ms.
-
-Die Suche hat höchstens drei Kandidaten, statt endlos nach einem bereiten Eintrag zu suchen. Im All-Blocked-Fall zählt sie Idle und wartet mit `__WFI` auf eine zugelassene Quelle. Ein gerade vorher behandelter Tick kann die nächste Prüfung erst durch den folgenden Tick ermöglichen. Im unveränderten Demonstrator bleiben B und C bereit; der vollständige Idle-Pfad ist trotzdem implementiert.
-
-Vorzeichenlose Differenzbildung modulo $2^{32}$ unterstützt den Überlauf. Bei `now = 0xFFFFFFF0` und `target = 0x00000010` ist das Ziel noch 32 Tickwerte entfernt, also nicht erreicht. Bei `now = 0x00000020` ist es um 16 Tickwerte überschritten, also erreicht. Die halbe Spanne begrenzt die eindeutige Ordnung. Ein Zielwert null ist zulässig; deshalb wird die Wartebedingung durch ein eigenes Zustandssymbol markiert. Der konkrete Code liegt offen im Modul und wird nicht als eigener präemptiver RMS-/EDF-Scheduler ausgegeben.
-
-### Protokoll und Grenzen · 5 Minuten
-
-Mit geeignetem Oszilloskop/Logikanalysator können beispielsweise 20 A-Pulse je verglichener Variante erfasst werden. Prüfen Sie den tatsächlichen Pinanschluss und gemeinsamen Massebezug. Die Pulsbreite umfasst A-Arbeit, Teile der GPIO-Aufrufe und mögliche Interruptunterbrechungen. Der Abstand steigender Flanken erfasst die Wiederaufrufe. Die ganze Dispatcherfunktion wird dadurch nicht markiert.
-
-| Konfiguration | Eigener Eintrag |
-|---|---|
-| Board / Firmwarepaket / Werkzeugversionen | |
-| Compiler und Optimierung | |
-| M4- / M7-Takt, Tickquelle und Tickfrequenz | |
-| Markerpin und Boardanschluss | |
-| Iterationszahlen / Modus / Reset | |
-| Trigger / Zeitauflösung / Anzahl | |
-
-| Variante | Anzahl | Pulsbreite min./max. | Startabstand min./max. | Startabstandsspanne | Einheit / Status |
-|---|---:|---|---|---|---|
-| Kurz konstant | | | | | |
-| B lang konstant | | | | | |
-| B wechselnd | | | | | |
-| A wartet relativ | | | | | |
-
-Die Tabelle bleibt bis zur realen Messung leer. Status beispielsweise **gemessen**, **nur Code/Diagnose betrachtet**, **fehlgeschlagen** oder **nicht durchgeführt**. Ohne Messgerät werden keine Hardwarezeiten eingesetzt. Die Zahlen aus Aufgabe 5 gehören nicht in diese Spalten.
-
-
-### Technische Erläuterung der Messauswertung
-
-Konstante zusätzliche B-Arbeit vergrößert im idealisierten Ring den A-Startabstand, ohne allein eine Schwankung innerhalb des Laufs zu erzeugen. Wechselnde B-Arbeit kann die Abstände schwanken lassen. Auf dem echten Board können auch konstante Läufe durch Interrupts oder Speicherzugriffe variieren. A-Arbeit selbst bleibt gleich, ihre verstrichene Markerbreite kann dennoch zusätzliche Unterbrechungszeit enthalten.
-
-Die Spanne ist Maximum minus Minimum der **benannten** Messgröße. Ein endliches Maximum der Markerbreite beweist keine WCET, Worst-Case Execution Time oder sichere obere eigene Ausführungszeit. Die Pflichtlast der theoretischen Sets wird im kooperativen Programm nicht nachgebildet; ihre RMS-/EDF-Tests sind dadurch nicht bestätigt. Bei fehlendem Aufbau oder Gerät bleiben die Zeitspalten leer und der tatsächlich erfolgte Prüfstatus wird angegeben.
+Ein Oszilloskop ist für Aufgabe 6 nicht erforderlich. Bei eigenen Messungen sind Pulsbreite, Startabstand, Tickphase und mögliche Präemption durch Interrupts zu unterscheiden. Ein endliches Messmaximum beweist keine WCET. Dieses Repository enthält Anwendungsbausteine und Startdateien, kein generiertes oder auf dem Board geprüftes Firmwaregesamtprojekt.

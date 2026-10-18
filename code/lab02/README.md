@@ -1,4 +1,12 @@
-# Kooperativer Aufrufring zu Vorlesung 2
+# Programmieraufgabe zu Übungsblatt 2
+
+Die aktuelle Aufgabe ist eine selbst implementierte Doppelpulsanzeige. `lab02_signal.c/.h` stellt zwei kurze Begleitschritte, LED-Zugriff und die Pausenhilfe bereit. Die Studierenden implementieren den zunächst leeren Rumpf von `Lab02_SignalStep` in `signal_step.c`. Die vollständige Musterfunktion steht im `solution`-Profil des [Übungsblatts](../../labs/lab_02_scheduling-theorie-kooperativer-scheduler.qmd).
+
+Die vorbereitete Hauptschleife initialisiert einmal mit `Lab02_SignalInit()` und ruft danach wiederholt `Lab02_DispatchOnce()` auf. `Lab02_InitSteps` bindet die drei Anwendungs-Callbacks ein; es wird nicht zusätzlich `Lab02_Init` aufgerufen. Die [Projektvorbereitung](../../labs/vertiefung/lab_02_programmierung.md) beschreibt CM4-CMake, CubeMX-Labels, beide LEDs und den prüfbaren Ausgangsstand. Der Ausgangsstand enthält noch keine Signalfolge.
+
+## Bisheriger Aufrufring als Zusatzversuch
+
+Die folgenden Angaben gelten für den bisherigen vollständigen A-/B-/C-Demonstrator in einem getrennten Projektstand, nicht für die studentische Signalaufgabe.
 
 Plattform: **NUCLEO-H755ZI-Q / STM32H755ZIT6**, Anwendung auf **Cortex-M4 ohne Betriebssystem**. Cortex-M7 behält den vorbereiteten generierten Boot-/Systemanteil. Entwicklungsweg: **STM32CubeMX und VS Code mit STM32 VS Code Extension**, zwei getrennte CMake-Ziele. `lab02_demo.c` und `lab02_demo.h` sind vollständige Anwendungsbausteine für eine generierte Basis, kein fertiges CubeMX-Projekt und kein behaupteter Hardwarelauf.
 

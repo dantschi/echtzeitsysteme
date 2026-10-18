@@ -1,6 +1,6 @@
-# Freiwillige Programmiervertiefung
+# Projektvorbereitung und Programmiervertiefung
 
-Die folgenden Anleitungen enthalten die technische Vorbereitung aus den bisherigen Übungsblättern. Sie richten sich an die Lehrperson und an Studierende, die außerhalb des Übungstermins eigene Boardpraxis wünschen. Der verbindliche Übungskern mit vollständig lösbaren Papieralternativen steht in den [Übungsblättern](../README.md).
+Die Anleitungen zu **Blatt 2 und 3** beschreiben die vorab bereitzustellende Projektbasis für die kleinen eigenen Implementierungen der Studierenden. Die übrigen Anleitungen dienen der Demonstrationsvorbereitung oder freiwilliger zusätzlicher Boardpraxis. Alle Arbeitsaufträge stehen in den [Übungsblättern](../README.md).
 
 | Blatt | Anleitung |
 |---|---|
@@ -14,4 +14,4 @@ Die folgenden Anleitungen enthalten die technische Vorbereitung aus den bisherig
 | 8 | [HSEM-Zähler und separate WWDG-Station](lab_08_programmierung.md) |
 | 9 | [Capstone-Datenkette](lab_09_programmierung.md) |
 
-Für eigene Ausführung sind STM32CubeMX, VS Code mit STM32 VS Code Extension und ein NUCLEO-H755ZI-Q / STM32H755ZIT6 vorgesehen. Die vorhandenen C-Dateien sind Anwendungsmodule. Projektgenerierung, Flashstart, Linkerlayout und Bootfolge sind zusätzliche Voraussetzungen; sie werden nicht als bereits getestet behauptet. Frühere praktische Aufbauten werden nur bei dieser freiwilligen Vertiefung weiterverwendet, nicht als Voraussetzung der Papieraufgaben.
+Für eigene Ausführung sind STM32CubeMX, VS Code mit STM32 VS Code Extension und ein NUCLEO-H755ZI-Q / STM32H755ZIT6 vorgesehen. Die vorhandenen C-Dateien sind Anwendungsmodule. Projektgenerierung, Flashstart, Linkerlayout und Bootfolge sind zusätzliche Voraussetzungen; sie werden nicht als bereits getestet behauptet. Die Papieraufgaben setzen keinen erfolgreichen praktischen Aufbau voraus. Für die Programmieraufgaben in Blatt 2 und 3 wird eine vorbereitete Projektbasis verwendet; die Studierenden implementieren die Anwendungslogik selbst.

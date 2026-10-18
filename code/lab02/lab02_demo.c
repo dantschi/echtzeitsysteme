@@ -40,16 +40,23 @@ int Lab02_TimeReached(uint32_t now, uint32_t target)
     return (uint32_t)(now - target) < LAB02_HALF_RANGE;
 }
 
-int Lab02_Init(Lab02_Mode selected)
+static int Lab02_InitWithSteps(Lab02_Mode selected,
+                              void (*const steps[LAB02_N])(void))
 {
     if (__get_IPSR() != 0U || initialized || selected < LAB02_SHORT || selected > LAB02_SLEEP_A ||
-        HAL_GetTickFreq() != HAL_TICK_FREQ_1KHZ) {
+        HAL_GetTickFreq() != HAL_TICK_FREQ_1KHZ || steps == NULL) {
         return 0;
+    }
+    for (uint8_t i = 0U; i < LAB02_N; ++i) {
+        if (steps[i] == NULL) {
+            return 0;
+        }
     }
     mode = selected;
     rr_cursor = 0U;
     running_idx = LAB02_NONE;
     for (uint8_t i = 0U; i < LAB02_N; ++i) {
+        task_list[i].step = steps[i];
         task_list[i].state = ST_READY;
         task_list[i].wake_at = 0U;
         lab02_diag.runs[i] = 0U;
@@ -60,6 +67,19 @@ int Lab02_Init(Lab02_Mode selected)
     HAL_GPIO_WritePin(LAB_MARKER_GPIO_Port, LAB_MARKER_Pin, GPIO_PIN_RESET);
     initialized = 1;
     return 1;
+}
+
+int Lab02_Init(Lab02_Mode selected)
+{
+    void (*const steps[LAB02_N])(void) = {
+        TaskA_step, TaskB_step, TaskC_step
+    };
+    return Lab02_InitWithSteps(selected, steps);
+}
+
+int Lab02_InitSteps(void (*const steps[LAB02_N])(void))
+{
+    return Lab02_InitWithSteps(LAB02_SHORT, steps);
 }
 
 int Lab02_SleepAfterStep(uint32_t ms)

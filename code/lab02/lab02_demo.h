@@ -50,6 +50,10 @@ extern volatile Lab02_Diagnostics lab02_diag;
    success, 0 for repeated/invalid setup or incompatible HAL tick frequency.
    The marker and application must have exactly one owner, CM4. */
 int Lab02_Init(Lab02_Mode selected);
+/* Alternative setup for student-written applications. Exactly LAB02_N
+   non-NULL callbacks are copied; each must return after bounded work.
+   Call once instead of Lab02_Init(), under the same setup conditions. */
+int Lab02_InitSteps(void (*const steps[LAB02_N])(void));
 /* One selection and at most one step; never call from an ISR or another step. */
 void Lab02_DispatchOnce(void);
 /* Valid only inside a step, for 0 < ms < 2^31. After success, the caller must

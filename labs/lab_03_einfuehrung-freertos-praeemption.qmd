@@ -5,148 +5,184 @@ author: "Prof. Dr.-Ing. Daniel Klünder"
 # Musterlösung: quarto render lab_03_einfuehrung-freertos-praeemption.qmd --to pdf --profile solution
 ---
 
-::: {.content-visible when-profile="solution"}
-> **Musterlösung**
-:::
+## Aufgabe 1: Zurückkehren, warten oder weiterrechnen? (6 Punkte)
 
-## Ziele und Ablauf
+Eine Sortierstation soll alle 200 ms eine neue Messung bearbeiten.
 
-Sie übertragen das Aufgabenmodell aus Vorlesung 2 auf einen präemptiven FreeRTOS-Kernel: Zustände, Zuteilung, periodische Freigaben und Speicherbedarf. RTOS bedeutet Real-Time Operating System, Echtzeitbetriebssystem. Ein Thread ist ein fortsetzbarer Ablauf, ein Job eine Aktivierung. FreeRTOS nennt einen Thread Task. CMSIS-RTOS2 ist die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard.
-
-**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
-
-| Abschnitt | Minuten | Zweck |
-|---|---:|---|
-| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
-| Transfer und Besprechung | 10 | Rechnen und begründen |
-| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
-
-Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
-
-Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
-
-Der Übungsblock ergänzt 85 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten.
-
-## Teil A: Papieraufgaben
-
-### Aufgabe 1: Vom Callback zum Thread (6 Punkte)
-
-1. Erklären Sie den Unterschied zwischen der endlichen `step()`-Funktion des Dispatchers aus Vorlesung 2 und der Eintrittsfunktion eines RTOS-Threads. Warum ist eine Endlosschleife im ersten Fall problematisch, im zweiten nicht grundsätzlich?
-2. Ein Thread ruft `osDelay(5)` auf. Beschreiben Sie die Zustandsfolge bis zur erneuten Ausführung. Bedeutet das Ablaufen der Zeit automatisch, dass er läuft?
-3. Heartbeat ruft stattdessen die übliche `HAL_Delay(...)` auf. Was verändert sich für die Prozessorzuteilung? Sind Interrupts dadurch automatisch gesperrt?
-
-Notieren Sie Ihre Begründungen, nicht nur die Zustandsnamen.
+1. Im kooperativen Programm wird `MessungStep()` aus der Hauptschleife aufgerufen. In einem RTOS-Projekt gibt es stattdessen den Thread `Messung(void *argument)`. Wo darf eine Endlosschleife stehen und wie kommt jeweils die nächste Aufgabe zum Zug? (2 Punkte)
+2. Der RTOS-Thread ruft `osDelay(7)` auf. Geben Sie seine Zustandsfolge bis zum nächsten Lauf an. Welche Einheit hat die Sieben und warum garantiert das Ablaufen der Wartezeit noch keinen sofortigen Start? (2 Punkte)
+3. Jemand ersetzt den Aufruf durch die übliche `HAL_Delay(7)`. Wird der Thread dadurch Blocked? Können höher priorisierte Threads und zugelassene Interrupts trotzdem ausgeführt werden? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Lösung und Bewertung:** Je zwei Punkte pro begründeter Teilantwort.
+**Musterlösung:** `MessungStep` muss nach endlicher Arbeit zurückkehren. Der Dispatcher ruft dann einen anderen bereiten Schritt auf. Die dauerhafte Schleife liegt im kooperativen Hauptprogramm; der Anwendungsfortschritt wird ausdrücklich gespeichert. Ein RTOS-Thread darf seine Arbeits-/Warteschritte in einer Endlosschleife wiederholen: Der Kernel sichert den Kontext mit eigenem Stack und kann höhere bereite Threads auswählen. Ohne echtes Warten kann ein hochpriorer Thread trotzdem niedrigere aushungern.
 
-1. Der Dispatcher erhält die Kontrolle erst nach Rückkehr aus `step()`; dessen Fortschritt wird ausdrücklich in Anwendungsdaten gespeichert. Ein nicht zurückkehrender Schritt verhindert weitere Callback-Aufrufe. Interrupts können trotzdem laufen. Ein RTOS-Thread besitzt dagegen einen gesicherten Fortsetzungszustand und eigenen Stack. Er kann durch einen Warteaufruf blockieren oder von einer höheren bereiten Task verdrängt werden. Eine hochpriore, dauerhaft bereite Endlosschleife bleibt trotzdem problematisch.
-2. Running $\rightarrow$ Blocked beim Warteaufruf, Blocked $\rightarrow$ Ready nach Ablauf der fünf **Kernelticks**, Ready $\rightarrow$ Running erst nach Zuteilung. Eine höhere bereite Priorität kann den Start weiter verzögern.
-3. `HAL_Delay` ist in der üblichen Hardware Abstraction Layer (HAL) aktives Warten. Heartbeat bleibt ausführungsbereit und verbraucht seine zugeteilte Zeit. Er wird dadurch nicht durch die Kernel-Warteverwaltung Blocked. Höhere Taskprioritäten können ihn weiterhin präemptieren, und erlaubte Interrupts können laufen.
+Bei `osDelay(7)` gilt Running $\to$ Blocked $\to$ Ready $\to$ Running. Sieben bezeichnet Kernelticks. Nach Ablauf muss der Scheduler erst zuteilen; höhere bereite Prioritäten können den Start verzögern.
+
+Die übliche HAL-Funktion wartet aktiv und macht den Thread nicht durch die Kernel-Warteverwaltung Blocked. Höhere bereite Threads können ihn präemptieren und nicht gesperrte Interrupts laufen. HAL-Millisekunden und Kernelticks sind getrennte Zeitbasen. Je zwei Punkte für die begründeten Antworten.
 :::
 
-### Aufgabe 2: Zustände, Präemption und Fristen (10 Punkte)
+## Aufgabe 2: Drei endliche Arbeiten auf einem Kern (10 Punkte)
 
-Didaktisches **Ein-Kern-Modell**, keine Boardmessung:
+Für eine Paketwaage gelten feste Prioritäten und Präemption. Alle API-, Interrupt- und Wechselkosten sind null. Die Tabelle enthält Freigaben und eigene CPU-Zeiten, keine Boardmessungen.
 
-| Aufgabe | Priorität | Freigaben / Verhalten | CPU-Zeit pro Aktivierung |
+| Thread | Priorität | Freigaben / Verhalten | CPU-Zeit pro Job |
 |---|---|---|---:|
-| Ereignis-Task | höchste | wartet zunächst; Ereignis bei 2 ms | 1 ms, danach erneut warten |
-| Heartbeat | mittlere | periodisch bei 0, 4, 8 ms | 1 ms, danach bis zur nächsten Freigabe warten |
-| HeavyMath | niedrigste Anwenderpriorität | immer bereit | unbegrenzte Hintergrundarbeit |
+| Ausschleusen | höchste | wartet bis 3 ms; ein Job, danach wieder warten | 2 ms |
+| Wiegen | mittlere | periodisch bei 0, 6, 12 ms; nach jedem Job bis zur nächsten Freigabe warten | 2 ms |
+| Etikettbericht | niedrigste | ein Job bei 0; nach Abschluss warten | 5 ms |
 
-CPU bedeutet Central Processing Unit, zentrale Verarbeitungseinheit. Alle Wechsel-, Interrupt- und Warteverwaltungszeiten sind hier null. Der Ereignis-Thread ist bei $t=0$ bereits wartend. Für Heartbeat gilt $D=4\,\mathrm{ms}$ als relative Deadline.
+Für Wiegen gilt die relative Deadline $D=3\,\mathrm{ms}$. Der Ausschleusethread ist bei null bereits Blocked; andere Arbeit fehlt. Leerlauf wird als Idle bezeichnet.
 
-1. Zeichnen Sie die CPU-Belegung im halboffenen Intervall $[0,10)\,\mathrm{ms}$. Kennzeichnen Sie jeden Wechsel mit seiner Ursache. (4 Punkte)
-2. Geben Sie die drei Taskzustände bei $1{,}5$ und $2{,}5\,\mathrm{ms}$ an. (2 Punkte)
-3. Berechnen Sie die insgesamt erhaltene CPU-Zeit jeder Aufgabe und die drei Heartbeat-Antwortzeiten. (2 Punkte)
-4. Zusätzlich wird die Ereignis-Task bei $4\,\mathrm{ms}$ erneut bereit. Wann startet und endet der Heartbeat-Job dieser Freigabe, und hält er seine Deadline? (2 Punkte)
+1. Zeichnen Sie die CPU-Belegung im halboffenen Intervall $[0,15)\,\mathrm{ms}$. Kennzeichnen Sie die Ursachen der Wechsel. (4 Punkte)
+2. Nennen Sie die Zustände der drei Threads bei $2{,}5$ und $3{,}5\,\mathrm{ms}$. (2 Punkte)
+3. Berechnen Sie die CPU-Zeitanteile einschließlich Idle in diesem Intervall und die Antwortzeiten aller drei Wiegejobs. (2 Punkte)
+4. Ausschleusen erhält zusätzlich einen zweiten Job bei 6 ms. Wann startet und endet der ebenfalls bei 6 ms freigegebene Wiegejob? Hält er seine Deadline? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**CPU-Belegung:**
+**Musterlösung:**
 
 | Intervall in ms | CPU | Ursache am Anfang |
 |---|---|---|
-| $[0,1)$ | Heartbeat | höchste bereite Priorität |
-| $[1,2)$ | HeavyMath | Heartbeat blockiert |
-| $[2,3)$ | Ereignis-Task | Ereignis macht höchste Priorität bereit |
-| $[3,4)$ | HeavyMath | Ereignis-Task blockiert wieder |
-| $[4,5)$ | Heartbeat | periodische Freigabe |
-| $[5,8)$ | HeavyMath | Heartbeat blockiert |
-| $[8,9)$ | Heartbeat | periodische Freigabe |
-| $[9,10)$ | HeavyMath | Heartbeat blockiert |
+| $[0,2)$ | Wiegen | höchste bereite Priorität |
+| $[2,3)$ | Etikettbericht | Wiegen wartet |
+| $[3,5)$ | Ausschleusen | Ereignis macht höchsten Thread bereit |
+| $[5,6)$ | Etikettbericht | Ausschleusen wartet wieder |
+| $[6,8)$ | Wiegen | periodische Freigabe |
+| $[8,11)$ | Etikettbericht | Wiegen wartet |
+| $[11,12)$ | Idle | Bericht fertig, alle drei warten |
+| $[12,14)$ | Wiegen | periodische Freigabe |
+| $[14,15)$ | Idle | Wiegen wartet |
 
-Bei $1{,}5\,\mathrm{ms}$: Ereignis-Task Blocked, Heartbeat Blocked, HeavyMath Running. Bei $2{,}5\,\mathrm{ms}$: Ereignis-Task Running, Heartbeat Blocked, HeavyMath Ready. Die verdrängte HeavyMath-Task wartet auf Zuteilung, nicht auf eine sachliche Wartebedingung.
+Bei 2,5 ms: Ausschleusen Blocked, Wiegen Blocked, Etikettbericht Running. Bei 3,5 ms: Ausschleusen Running, Wiegen Blocked, Etikettbericht Ready. Präemption ist kein sachliches Blockieren des Berichts.
 
-Im ursprünglichen Modell erhält Heartbeat $3\,\mathrm{ms}$, die Ereignis-Task $1\,\mathrm{ms}$ und HeavyMath $6\,\mathrm{ms}$. Die Antwortzeiten $R=f-r$ sind jeweils $1\,\mathrm{ms}$: Fertigstellung $f$ minus Freigabe $r$.
+Wiegen erhält 6 ms, Ausschleusen 2 ms, Etikettbericht 5 ms und Idle 2 ms, zusammen 15 ms. Die Zeitanteile sind entsprechend $6/15=40\,\%$, $2/15\approx13{,}33\,\%$, $5/15\approx33{,}33\,\%$ und $2/15\approx13{,}33\,\%$. Die Wiegejobs enden bei 2, 8 und 14 ms und haben jeweils $R=2\,\mathrm{ms}\leq D$.
 
-Mit der zusätzlichen Ereignisfreigabe läuft die Ereignis-Task von 4 bis 5, Heartbeat von 5 bis 6. Somit $R=6-4=2\,\mathrm{ms}\le D=4\,\mathrm{ms}$. Der Start ist verzögert, die Modellfrist trotzdem eingehalten. Bei $D=1\,\mathrm{ms}$ wäre sie verletzt. Diese Rechnung gilt nur unter den genannten Modellannahmen.
+Mit dem zusätzlichen Ereignis läuft Ausschleusen von 6 bis 8, Wiegen von 8 bis 10 ms. Für den Wiegejob gilt $R=10-6=4\,\mathrm{ms}>3\,\mathrm{ms}$; seine absolute Deadline 9 ms wird verfehlt. Bereitschaft bei 6 ms ist kein Start bei 6 ms.
 :::
 
-### Aufgabe 3: Ticks, Drift und ein verpasstes Ziel (8 Punkte)
+## Aufgabe 3: Ein Tickplan mit und ohne Drift (8 Punkte)
 
-1. Ein Kernel läuft mit $f_{\mathrm{tick}}=100\,\mathrm{Hz}$. Bestimmen Sie Tickperiode und aufgerundete Tickzahl für 5 ms und 500 ms. Warum bedeutet `osDelay(1)` nicht eine garantierte Mindestwartezeit von 10 ms? (3 Punkte)
-2. Anderes Modell: Tickgrenzen in 1-ms-Abständen, Arbeitsdauern nacheinander 2, 4 und 1 ms; der erste Start liegt bei null. Alle Arbeitsenden liegen genau auf Tickgrenzen, weitere Störungen fehlen. Berechnen Sie die nächsten drei Starts bei „Arbeit, dann `osDelay(10)`“ und bei einem absoluten 10-Tick-Sollraster. (3 Punkte)
-3. Ein Sollziel liegt bei Tick 20, die Arbeit endet erst bei Tick 23. Nennen Sie eine sinnvolle Reaktion mit Periode 10 Ticks und erklären Sie, warum nicht sofort mehrere LED-Umschaltungen nachgeholt werden sollten. (2 Punkte)
+1. Ein Kernel hat $f_{\mathrm{tick}}=250\,\mathrm{Hz}$. Berechnen Sie Tickperiode und aufgerundete Tickzahlen für 6 ms und 18 ms. Warum garantiert `osDelay(1)` keine physische Mindestwartezeit von einer ganzen Tickperiode? (3 Punkte)
+2. Für diese Teilaufgabe gilt stattdessen ein 1-kHz-Tick. Drei Arbeitsphasen benötigen nacheinander 3, 1 und 5 ms. Der erste Start ist bei null, alle Arbeitsenden liegen genau auf Tickgrenzen; weitere Störungen fehlen. Bestimmen Sie die nächsten drei Starts bei „Arbeit, dann `osDelay(12)`“ und bei einem absoluten 12-Tick-Sollraster. (3 Punkte)
+3. Eine Arbeit endet bei Tick 53; der nächste geplante Start bei Tick 48 ist bereits verpasst. Die Periode beträgt 12 Ticks. Geben Sie eine geeignete Reaktion ohne sofortige Nachholserie an. Was kann ein Zähler verpasster Warteziele aussagen, was ohne zusätzliche Deadlinedefinition nicht? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-1. $T_{\mathrm{tick}}=1/100\,\mathrm{s}=10\,\mathrm{ms}$. Für $t$ Millisekunden gilt $n=\lceil tf_{\mathrm{tick}}/1000\rceil$. Fünf Millisekunden ergeben $\lceil0{,}5\rceil=1$ Tick, 500 Millisekunden $50$ Ticks. Erfolgt `osDelay(1)` eine Millisekunde vor der nächsten Tickgrenze, wird der Thread schon nach ungefähr einer Millisekunde Ready. Die Tickphase bestimmt den Rest; höhere Last kann den anschließenden Start wieder verzögern.
-2. Relative Starts: $0+2+10=12$, $12+4+10=26$, $26+1+10=37\,\mathrm{ms}$. Absolute Starts im Modell: $10$, $20$, $30\,\mathrm{ms}$. Die Arbeit passt jeweils vor den nächsten Sollpunkt. Das absolute Raster addiert die Arbeitsdauer nicht zur Periode. Es garantiert unter Störungen nicht den tatsächlichen Start.
-3. Laborpolitik: Zielverfehlung zählen, neues Ziel $23+10=33$ setzen und bis dahin blockieren. Ein direktes mehrfaches Nachholen würde Ereignisse künstlich zusammenballen und die Last verschärfen. Alternativ kann ein spezifiziertes System veraltete Aktivierungen überspringen oder einen Fehler melden. Der Warteziel-Zähler ist ohne zusätzliche Deadlinedefinition kein allgemeiner Deadline-Miss-Zähler.
+**Musterlösung:** $T_{\mathrm{tick}}=1/250\,\mathrm{s}=4\,\mathrm{ms}$. Mit $n=\lceil tf_{\mathrm{tick}}/1000\rceil$ ergeben sich für 6 ms zwei und für 18 ms fünf Ticks. Ein Aufruf kurz vor der nächsten Tickgrenze kann bereits an dieser Grenze wieder Ready werden. Die anschließende Zuteilung kann zusätzlich verzögert sein; die Umrechnung allein garantiert keine physische Mindestwartezeit.
+
+Relative Starts: $0+3+12=15$, $15+1+12=28$ und $28+5+12=45\,\mathrm{ms}$. Absolute Starts im ungestörten Modell: 12, 24 und 36 ms. Das absolute Raster addiert die Arbeitszeit nicht auf jede Periode; es erzwingt unter Last keinen pünktlichen tatsächlichen Start.
+
+Eine zulässige Politik zählt die Zielverfehlung, richtet das nächste Ziel auf $53+12=65$ aus und blockiert bis dorthin. Alternativ kann ein spezifizierter Entwurf veraltete Aktivierungen überspringen. Eine sofortige Serie wäre für viele Ausgänge unerwünscht und erzeugte zusätzliche Last. Der Zähler zeigt verpasste Warteziele, beweist aber ohne passenden Job-/Deadlinevertrag weder Anzahl noch Ausbleiben aller Deadline-Misses.
 :::
 
-### Aufgabe 4: Speicher, Prioritäten und Ereignisse (8 Punkte)
+## Aufgabe 4: Ressourcen und falsche Abhilfen (8 Punkte)
 
-1. CMSIS-Stacks 512, 1024 und 1024 Byte; angenommener Verwaltungsblock (TCB, Task Control Block) jeweils 80 Byte. Berechnen Sie den Bedarf dieser drei Stack-/TCB-Paare. Warum reicht diese Rechnung noch nicht als Heapnachweis? Wie viele Byte sind 128 native `StackType_t`-Elemente zu je vier Byte? (3 Punkte)
-2. HeavyMath wird über Heartbeat priorisiert und bleibt dauerhaft Ready. Heartbeat ist ebenfalls Ready. Hilft `osThreadYield()` in HeavyMath? Ist das Priority Inversion? (3 Punkte)
-3. Die logische Interruptschwelle für Kernelaufrufe sei 5, mit vier implementierten Prioritätsbits und passender Gruppierung. Darf ein IRQ mit logischer Priorität 3 `osThreadFlagsSet` verwenden? Darf ein erlaubter IRQ `osThreadFlagsWait` verwenden? Zählt zweimaliges Setzen desselben Bits vor der Verarbeitung zwei Ereignisse? (2 Punkte)
+1. Drei CMSIS-Threads erhalten Stacks mit 768, 1536 und 640 Byte. Pro Thread werden zusätzlich 96 Byte Verwaltungsdaten angenommen. Berechnen Sie die Summe. Welche weiteren Anteile fehlen für eine vollständige Speicherbilanz? Wie viele Byte sind 192 native `StackType_t`-Elemente zu je vier Byte? (3 Punkte)
+2. Ein Diagnose-Thread steht über einer Ausgabesteuerung, bleibt ständig Ready und ruft in seiner Rechenschleife `osThreadYield()` auf. Die Ausgabesteuerung bleibt ebenfalls Ready. Wird sie dadurch ausgewählt? Benennen Sie das Problem und eine geeignete Änderung. Es gibt keine gemeinsam gehaltene Ressource. (3 Punkte)
+3. Die logische Interruptschwelle für Kernelaufrufe ist 6; vier Prioritätsbits und passende Gruppierung sind vorausgesetzt. Darf ein IRQ mit logischer Priorität 4 `osThreadFlagsSet` aufrufen? Darf ein hierfür zulässiger IRQ mit Priorität 7 `osThreadFlagsWait` aufrufen? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-1. $512+1024+1024+3\cdot80=2800\,\mathrm{Byte}$. Idle, optionale Timer-Task, weitere Objekte, Speicherzuschläge und Ausrichtung fehlen. Die tatsächliche TCB-Größe ist versions- und konfigurationsabhängig. Der Handlerstack und übrige Daten müssen ebenfalls in die Gesamtspeicherbilanz. Bereits im Heap enthaltene Taskblöcke werden nicht zusätzlich außerhalb dieses Heaps gezählt. $128\cdot4=512\,\mathrm{Byte}$; CMSIS `stack_size=512` ist dagegen bereits Byte.
-2. Yield fordert Auswahl an, macht HeavyMath aber nicht Blocked. Die höchste bereite Priorität bleibt HeavyMath. Heartbeat verhungert: Starvation. Es gibt keine gemeinsame Ressource und keine Warteabhängigkeit zu einem niedrigen Ressourcenbesitzer; daher keine Priority Inversion.
-3. Logische Priorität 3 ist dringlicher als 5 und darf in dieser Konfiguration keine Kernel-API verwenden. Auch ein erlaubter IRQ darf nicht mit `osThreadFlagsWait` blockieren; er darf das passende Bit mit `osThreadFlagsSet` setzen. Ein Bit bleibt bei zweimaligem Setzen vor dem Wait nur gesetzt und zählt nicht verlustfrei zwei Ereignisse.
+**Musterlösung:** $768+1536+640+3\cdot96=3232\,\mathrm{Byte}$. Idle-/Timer-Task, weitere Objekte, Allokationszuschläge und Ausrichtung fehlen. Die TCB-Größe ist hier nur angenommen. Für den Gesamt-RAM-Bedarf sind auch Handlerstack, weitere Daten und das konkrete Speicherlayout zu beachten; im Heap enthaltene Blöcke nicht nochmals außerhalb zählen. Native Elemente: $192\cdot4=768\,\mathrm{Byte}$. CMSIS `stack_size` ist bereits in Byte angegeben.
+
+Yield macht den Diagnose-Thread nicht Blocked. Er bleibt der höchste bereite Thread; die Ausgabe verhungert (Starvation). Echtes Warten auf einen nächsten Termin oder ein Ereignis kann Zuteilung ermöglichen; auch ein fachlich begründeter niedrigerer Diagnoserang ist möglich. Ohne Ressourcenabhängigkeit liegt keine Priority Inversion vor.
+
+IRQ-Priorität 4 ist dringlicher als die erlaubte Schwelle 6 und darf in dieser Konfiguration keine Kernel-API aufrufen. Priorität 7 ist für passende nichtblockierende Kernelaufrufe erlaubt. `osThreadFlagsWait` ist jedoch ein Threadaufruf und auch aus diesem IRQ unzulässig. Der IRQ darf einen Hinweis mit `osThreadFlagsSet` übergeben, nicht selbst blockierend darauf warten.
 :::
 
-## Transfer: Eine Diagnose braucht Zustände · 10 Minuten
+## Aufgabe 5: Wie viele Hinweise bleiben erhalten?
 
-Zusätzliche Klausurübung ohne weitere Punkte: Eine Heartbeat-LED steht still. Drei Erklärungen werden angeboten: fehlender GPIO-Takt, fehlgeschlagene Threadanlage und Starvation durch höhere dauerhaft bereite Arbeit.
+Ein Thread wartet auf Bit 2, also die Maske `0x04U`. Ein zulässiger anderer Thread setzt dieses Bit bei 2, 3 und 9 ms. Der Empfänger ruft `osThreadFlagsWait(0x04U, osFlagsWaitAny, osWaitForever)` bei 5 und 11 ms und direkt nach dem zweiten erfolgreichen Wait noch einmal auf. Vorher ist das Bit gelöscht, weitere Set-Aufrufe fehlen. Erfolgreiche Waits löschen das angenommene Bit automatisch.
 
-1. Nennen Sie zu jeder Erklärung einen passenden Prüfpunkt. Warum folgt aus derselben sichtbaren LED allein keine eindeutige Diagnose?
-2. Im Modell sind GPIO und Kernelstart geprüft, das Heartbeat-Handle gültig und Heartbeat Ready. Eine höhere Task bleibt Ready. Welche Erklärung passt jetzt? Kann die höhere Task durch `osThreadYield()` Platz für Heartbeat schaffen?
+1. Welche beiden Waits kehren sofort zurück und was passiert beim dritten?
+2. Wie viele Set-Aufrufe und wie viele erfolgreiche Waits gibt es? Warum sind diese Zahlen verschieden?
+3. Wie erkennen Sie einen Fehler im Rückgabewert einer Flagfunktion? Weshalb wäre ein Vergleich mit `osOK` falsch?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Transfer 3**
+**Musterlösung:** Bei 5 ms ist das Bit durch die Set-Aufrufe bei 2 und 3 ms gesetzt. Der Wait kehrt sofort zurück und löscht es. Bei 11 ms wird das bei 9 ms gesetzte Bit angenommen und gelöscht. Der dritte Wait blockiert, da kein Hinweis mehr aussteht.
 
-GPIO: tatsächliche Initialisierung, Takt und erreichter Schreibzugriff prüfen. Threadanlage: gültigen Rückgabewert und Fehlerpfad prüfen. Starvation: tatsächliche Prioritäten, Ready-Zustände und Zuteilung prüfen. Ein unveränderter Ausgang unterscheidet diese Ursachen nicht.
-
-Unter den zusätzlichen Voraussetzungen passt Starvation: Die höchste bereite Priorität bleibt höher als Heartbeat. Yield blockiert sie nicht. Echte Wartebedingungen oder eine begründete Prioritäts-/Laständerung können Heartbeat Auswahl ermöglichen. Eine geteilte Ressource wird nicht vorausgesetzt; daher ist dies keine Priority Inversion.
+Drei Set-Aufrufe ergeben zwei erfolgreiche Waits. Wiederholtes Setzen eines bereits gesetzten Bits speichert nur einen ausstehenden Hinweis, keinen Ereigniszähler. Flagfunktionen liefern Flagbits oder einen Fehlerwert mit gesetztem `osFlagsError`-Bit. Fehlerprüfung: `(flags & osFlagsError) != 0U`. `osOK` ist der Statuscode anderer APIs und kein Test für erfolgreich gelieferte Flagbits.
 :::
 
-## Teil B: Praxisfall · 15 Minuten
+## Aufgabe 6: Eine Füllstandsüberwachung selbst implementieren
 
-### Praxisfall 3: Yield oder echtes Warten?
+**Programmieren, etwa 30–40 Minuten.** Nutzen Sie die vorbereitete **NUCLEO-H755ZI-Q / STM32H755ZIT6**-Basis mit STM32CubeMX und VS Code mit STM32 VS Code Extension: FreeRTOS/CMSIS-RTOS2 auf CM4, Präemption, 32-Bit-Ticks bei 1000 Hz; CM7 mit generiertem Systemstart. Die [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) erfolgt vor dem Termin.
 
-**Papieralternative, Ein-Kern-Lehrmodell:** Ereignis-Task hat höchste, HeavyMath mittlere und Heartbeat niedrigste Anwenderpriorität. Heartbeat ist bei null Ready, arbeitet einmal 1 ms und wartet danach. Seine relative Deadline ist 5 ms. Die Ereignis-Task wartet bis zu einem Ereignis bei 5 ms, arbeitet dann 1 ms und wartet erneut. Kosten der API und Wechsel sind null.
+Schreiben Sie zwei Threadfunktionen: Ein **Mess-Thread** prüft simulierte Füllstände; ein höher priorisierter **Signal-Thread** meldet Grenzübertritte mit einem LED-Puls. `lab03_tank.c/.h` aus `code/lab03/` erzeugt beide Threads und stellt diese Hilfen bereit:
 
-HeavyMath führt wiederholt 2 ms Arbeit aus. Variante Y ruft danach `osThreadYield()` auf und bleibt Ready. Variante W ruft danach `osDelay(4)` auf. Für Variante W gelten ein 1-kHz-Tick, Aufruf genau auf Tickgrenzen und keine weiteren Verzögerungen. Der Kernel verwendet feste Prioritäten und Präemption.
+| Schnittstelle / Vorgabe | Bedeutung |
+|---|---|
+| `Lab03_TankRead()` | nächster Wert aus 25, 45, 85, 90, 55, 30 Prozent, zyklisch |
+| `Lab03_TankLed(on)` | nur vom Signal-Thread verwendete LED setzen |
+| `Lab03_TankWaitNext(&next)` | nächstes absolutes 200-Tick-Ziel abwarten; bei verpasstem Ziel auf jetzt plus 200 ausrichten |
+| `lab03_tank_alarm_handle` | gültiges Handle des Signal-Threads |
+| `LAB03_TANK_FLAG` | Hinweisbit für einen neuen Grenzübertritt |
+| `Lab03_TankFail()` | Fehlerpfad, kehrt nicht zurück |
 
-1. Zeichnen Sie die CPU-Belegung von 0 bis 6 ms für beide Varianten. Wird Heartbeat rechtzeitig fertig?
-2. Welche Zustandsänderung macht den Unterschied? Ist die Verzögerung eine Priority Inversion?
+1. Ersetzen Sie in `tank_threads.c` die anfänglichen Wartefunktionen und entfernen Sie `WaitForImplementation`. Implementieren Sie `void Lab03_TankSampler(void *argument)`: sofort eine Probe, danach alle 200 Ticks eine neue. Setzen Sie mit `osThreadFlagsSet` das Hinweisbit nur beim Übergang von **unter 80** zu **mindestens 80 Prozent**; anfangs gilt „unter der Grenze“. Initialisieren Sie `next` vor der Schleife mit `osKernelGetTickCount()` und nutzen Sie die Wartehilfe am Schleifenende.
+2. Implementieren Sie `void Lab03_TankAlarm(void *argument)`: mit `osThreadFlagsWait` blockierend auf den Hinweis warten, LED einschalten, `osDelay(80U)`, LED ausschalten; wiederholen. Prüfen Sie Flagfehler und Delay-Status.
+3. Erhöhen Sie `lab03_tank_requests` vor jedem Set und `lab03_tank_responses` nach jedem erfolgreichen Wait. Jeder Zähler hat genau einen schreibenden Thread. Bei welchen Messwerten erwarten Sie einen Puls, weshalb bei 90 Prozent keinen weiteren?
+4. Bauen, laden und prüfen Sie Ihre Implementierung: wiederkehrender kurzer Puls, fortschreitende Messfolge und passende Zählerstände. Lesen Sie die Diagnosewerte bei angehaltenem CM4; dieser Halt ist keine Zeitmessung.
+5. Erklären Sie die Zustände beider Threads zwischen den Aktionen. Weshalb darf der höher priorisierte Signal-Thread eine Endlosschleife haben, ohne den Mess-Thread auszuhungern? Was würde ein wartendes `while` auf ein Flag daran ändern?
 
-**Bei vorbereitetem Board:** Die Lehrperson zeigt den vorbereiteten Normal- und Starvation-Lauf des Moduls `lab03_rtos`. Die Papier-Varianten Y/W erklären anschließend die Abhilfe; ihre exakten Modellzeiten gehören nicht zum Boardversuch.
+**Erweiterung:** Ersetzen Sie die Wartehilfe vorübergehend durch `osDelay(200U)`. Vergleichen Sie beide Zeitpläne bei variabler Arbeitszeit auf Papier. Stellen Sie das absolute Raster wieder her.
+
+**Ergebnis:** eigene Threadfunktionen und Funktionsprüfung; ohne Boardlauf dessen Status angeben. Ein Flag meldet einen ausstehenden Hinweis, keinen verlustfreien Ereigniszähler.
+
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; Arm CMSIS-RTOS2; ST UM2408 und RM0399. Papierzeiten und Speichergrößen sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Praxisfall 3**
+**Musterlösung Mess-Thread:** Die Grenzlage ist eine lokale, über Schleifeniterationen erhaltene Information; kein vom Signal-Thread gelesenes gemeinsames Messwertobjekt ist nötig.
 
-Y: HeavyMath 0–5 ms, Ereignis-Task 5–6 ms. Yield bei 2 und 4 ms lässt HeavyMath als höchste bereite Task übrig. Heartbeat erhält bis zur Deadline bei 5 ms keine Zuteilung und verfehlt sie.
+```c
+#include "lab03_tank.h"
 
-W: HeavyMath 0–2, Heartbeat 2–3, Idle 3–5, Ereignis-Task 5–6 ms. HeavyMath ist nach dem Wait bis Tick 6 Blocked. Heartbeat endet bei 3 ms und hält die Frist. Nach 6 ms darf HeavyMath erneut ausgewählt werden. Es gibt keine Ressourcenabhängigkeit zu einem niedrigen Besitzer: Das Problem ist Starvation, keine Priority Inversion.
+void Lab03_TankSampler(void *argument)
+{
+    (void)argument;
+    uint32_t next = osKernelGetTickCount();
+    int was_high = 0;
+    for (;;) {
+        const int high = Lab03_TankRead() >= 80U;
+        if (high && !was_high) {
+            ++lab03_tank_requests;
+            const uint32_t flags = osThreadFlagsSet(
+                lab03_tank_alarm_handle, LAB03_TANK_FLAG);
+            if ((flags & osFlagsError) != 0U) {
+                Lab03_TankFail();
+            }
+        }
+        was_high = high;
+        Lab03_TankWaitNext(&next);
+    }
+}
+```
+
+**Musterlösung Signal-Thread:**
+
+```c
+void Lab03_TankAlarm(void *argument)
+{
+    (void)argument;
+    for (;;) {
+        const uint32_t flags = osThreadFlagsWait(
+            LAB03_TANK_FLAG, osFlagsWaitAny, osWaitForever);
+        if ((flags & osFlagsError) != 0U) {
+            Lab03_TankFail();
+        }
+        ++lab03_tank_responses;
+        Lab03_TankLed(1);
+        if (osDelay(80U) != osOK) {
+            Lab03_TankFail();
+        }
+        Lab03_TankLed(0);
+    }
+}
+```
+
+Bei jeder 85-Prozent-Probe wird ein neuer Grenzübertritt gemeldet; die folgende 90-Prozent-Probe bleibt bereits oberhalb der Grenze. Erst 55 setzt die lokale Grenzlage zurück. Im ungestörten Tickmodell werden die Hinweise bei 400, 1600, 2800 Ticks ab der ersten Probe angefordert. Das sind Sollwerte, keine gemessenen Boardzeiten. Die LED wird für 80 Kernelticks blockierend gehalten; Tickphase und verzögerte Zuteilung verhindern eine Garantie exakt 80 physischer Millisekunden.
+
+Der Signal-Thread ist zunächst Blocked am Flag-Wait, dann kurz Running, während des Pulses Blocked am Delay, danach kurz Running und wieder Blocked am Flag-Wait. Der Mess-Thread wartet zwischen den Proben; während einer höher priorisierten Signalaktion ist er gegebenenfalls Ready. Seine lokalen Variablen bleiben auf seinem Threadstack erhalten. Ein aktives Polling auf ein Flag im höheren Thread ließe ihn Ready und könnte den Mess-Thread aushungern.
+
+Die Zähler erfassen Anforderungsversuche und angenommene Hinweise. Unter der vorgegebenen langsamen Folge wird jeder Grenzübertritt regulär verarbeitet; beliebig schnelle zusätzliche Anforderungen könnten wegen der Bitsemantik zusammenfallen. `volatile` macht die Diagnose sichtbar, ersetzt aber keine Synchronisation für gemeinsam veränderte Daten. Es wird nur bei angehaltenem CM4 ein gemeinsamer Stand ausgewertet.
+
+**Prüfkriterien:** eigener Schleifenkörper beider Threads, nur aufsteigende Grenzübergänge melden, echtes Blockieren statt Polling, korrekte Flagfehlerprüfung, kein `HAL_Delay`, nur der Signal-Thread schreibt die LED. Kein Bedarf an Wissen über Queues, Mutexe oder ADC-Konfiguration.
 :::
-
-## Ergebnis und freiwillige Vertiefung
-
-Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
-
-Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
-
-**Quellen:** Vorlesung 3; Arm CMSIS-RTOS2-Dokumentation zu Wait, Threads und Thread Flags; FreeRTOS-Dokumentation zum Cortex-M-Port; ST UM2408, RM0399 und AN5361; Dokumentation der installierten STM32 VS Code Extension. Ihre Projektversionen haben Vorrang vor Annahmen über den aktuellen öffentlichen Entwicklungszweig.

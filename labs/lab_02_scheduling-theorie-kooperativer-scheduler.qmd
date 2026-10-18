@@ -1,264 +1,201 @@
 ---
 title: "Übungsblatt 2: Scheduling-Theorie und kooperativer Dispatcher"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-format:
-  pdf:
-    colorlinks: true
-    linkcolor: dhbwred
-    urlcolor: dhbwred
-    citecolor: dhbwred
-    include-in-header:
-      - text: |
-          \usepackage{xcolor}
-          \definecolor{dhbwred}{HTML}{E2001A}
 # Studierende: quarto render lab_02_scheduling-theorie-kooperativer-scheduler.qmd --to pdf
-# Musterlösung: gleicher Aufruf zusätzlich mit --profile solution
+# Musterlösung: quarto render lab_02_scheduling-theorie-kooperativer-scheduler.qmd --to pdf --profile solution
 ---
 
-::: {.content-visible when-profile="solution"}
-> **Musterlösung** · Die Rechenzahlen sind Lehrannahmen, keine Boardmessungen.
-:::
+## Aufgabe 1: Ein Prüfauftrag auf der Zeitachse (6 Punkte)
 
-## Ziele und Ablauf
+Ein periodischer Prüfauftrag hat $T=15\,\mathrm{ms}$ und $D=10\,\mathrm{ms}$. Der betrachtete Job wird bei $r=3\,\mathrm{ms}$ freigegeben. Er rechnet von 4 bis 6 ms, wird durch andere Arbeit verdrängt und rechnet von 9 bis 12 ms weiter. Danach ist er fertig. Er wartet weder auf Daten noch auf ein Betriebsmittel.
 
-Sie beschreiben Jobs, prüfen RMS und EDF unter benannten Annahmen und erklären den kooperativen Aufrufring. Grundlage sind Vorlesungen 1–2. RMS bedeutet Rate Monotonic Scheduling, EDF Earliest Deadline First. Für den Aufrufring wird kein Echtzeitbetriebssystem benötigt.
-
-**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
-
-| Abschnitt | Minuten | Zweck |
-|---|---:|---|
-| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
-| Transfer und Besprechung | 10 | Rechnen und begründen |
-| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
-
-Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
-
-Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
-
-Der Übungsblock ergänzt 90 Minuten Erklärung und 15 Minuten Quiz zum Termin mit 180 Minuten.
-
-## Teil A: Papieraufgaben
-
-### Gemeinsames Modell und Notation
-
-Sofern nicht anders angegeben: genau ein Prozessor, unabhängige periodische Aufgaben, vollständig präemptierbare Jobs, keine Sperren oder Selbstsuspendierung, kein Freigabejitter. Interrupt-, Auswahl- und Wechselkosten sind null. Ausführungszeiten sind vorgegebene obere Schranken. Diese **Lehrannahmen** sind keine Boardmessung und gelten nicht automatisch für den kooperativen Code in Teil B.
-
-| Größe | Bedeutung |
-|---|---|
-| $C_i$ | eigener Prozessorbedarf eines Jobs der Aufgabe $\tau_i$ |
-| $T_i$ | Abstand periodischer Freigaben |
-| $D_i$ | relative Abschlussfrist ab Freigabe |
-| $r_{i,k}$, $s_{i,k}$, $f_{i,k}$ | Freigabe, erster Start, Abschluss des Jobs $k$ |
-| $d_{i,k}=r_{i,k}+D_i$ | absolute Deadline |
-| $R_{i,k}=f_{i,k}-r_{i,k}$ | Antwortzeit des einzelnen Jobs |
-| $R_i$ | nachgewiesene maximale Antwortzeit im Modell |
-
-Task bedeutet wiederkehrende Aufgabe, Job eine einzelne Aktivierung. Zeitintervalle sind halboffen: $[a,b)$ enthält den Anfang, aber nicht den Endpunkt. Abschluss genau auf der Deadline gilt als rechtzeitig.
-
-### Aufgabe 1: Ein Job auf der Zeitachse · 8 Minuten · 6 Punkte
-
-Eine Aufgabe hat $T=10\,\mathrm{ms}$ und $D=8\,\mathrm{ms}$. Ein Job wird bei $r=0$ freigegeben. Er wartet bis $s=2$, rechnet von 2 bis 3, wird von einer anderen Aufgabe verdrängt und rechnet von 5 bis 7 weiter. Alle Zeitpunkte sind in Millisekunden.
-
-1. Zeichnen Sie die Belegung dieses Jobs in $[0,10)$. Kennzeichnen Sie Freigabe, Start, beide Rechenstücke, Abschluss, absolute Deadline und nächste Freigabe. (3 P)
-2. Berechnen Sie eigene Prozessorzeit, Startlatenz und Antwortzeit. Prüfen Sie die Frist. Warum sind beide Rechenstücke derselbe Job? (2 P)
-3. Ist die verdrängte Aufgabe von 3 bis 5 Ready oder Blocked? Begründen Sie anhand ihrer Warteursache. (1 P)
+1. Zeichnen Sie Freigabe, Rechenstücke, Fertigstellung, absolute Deadline und nächste Freigabe auf einer Zeitachse ein. (2 Punkte)
+2. Berechnen Sie eigene CPU-Zeit, gesamte Antwortzeit und Wartezeit auf Prozessorzuteilung. Wird die Deadline eingehalten? (3 Punkte)
+3. Dürfen Sie die beobachtete CPU-Zeit dieses einen Jobs als sichere WCET aller Prüfaufträge übernehmen? Begründen Sie. (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 1**
+**Musterlösung:** Freigabe bei 3, Rechenstücke $[4,6)$ und $[9,12)$, Fertigstellung bei 12, absolute Deadline $d=r+D=13$ und nächste Freigabe bei $r+T=18\,\mathrm{ms}$.
 
-| Intervall / Zeitpunkt in ms | Bedeutung für diesen Job |
-|---|---|
-| 0 | Freigabe |
-| $[0,2)$ | Ready: bereit, noch ohne Zuteilung |
-| $[2,3)$ | Running: erstes Rechenstück |
-| $[3,5)$ | Ready: durch andere Aufgabe verdrängt |
-| $[5,7)$ | Running: Fortsetzung desselben Jobs |
-| 7 | Abschluss |
-| 8 | absolute Deadline |
-| 10 | nächste periodische Freigabe |
+Die tatsächlich benötigte CPU-Zeit ist $c=2+3=5\,\mathrm{ms}$. Die Antwortzeit beträgt $R=f-r=12-3=9\,\mathrm{ms}$. Ready ohne Zuteilung ist der Job in $[3,4)$ und $[6,9)$, insgesamt $4\,\mathrm{ms}$. Damit $R=5+4=9\,\mathrm{ms}\leq D$. Die Deadline ist eingehalten. Ein verdrängter Job ist hier Ready, nicht Blocked.
 
-Eigene Prozessorzeit: $(3-2)+(7-5)=3\,\mathrm{ms}$. Startlatenz: $s-r=2\,\mathrm{ms}$. Antwortzeit: $R=f-r=7\,\mathrm{ms}$. Absolute Deadline: $d=r+D=8\,\mathrm{ms}$. Die Frist hält, weil $7\le8$; das Restbudget beträgt 1 ms. Eine Unterbrechung erzeugt keinen neuen Job: Beide Laufstücke gehören zur Freigabe bei null.
-
-Ready heißt ausführungsbereit, Blocked auf eine sachliche Bedingung oder Wartezeit wartend. Die Aufgabe könnte sofort weiterrechnen, wenn sie den Prozessor bekäme. Sie ist deshalb verdrängt und Ready, nicht Blocked. Der Abstand zwischen Freigabe und Abschluss enthält auch fremde Arbeit und ist nicht mit dem eigenen Bedarf $C$ gleichzusetzen.
+WCET bedeutet Worst-Case Execution Time. Ein beobachteter Bedarf von 5 ms beweist keine obere Bedarfsschranke $C$ für alle Eingaben und Ausführungspfade. Bewertung gemäß Teilaufgaben; Antwortzeit und eigene CPU-Zeit müssen unterschieden werden.
 :::
 
-### Aufgabe 2: RMS-Schranke richtig interpretieren · 8 Minuten · 6 Punkte
+## Aufgabe 2: Welcher feste Rang passt? (6 Punkte)
 
-Für alle drei Aufgaben gilt $D_i=T_i$:
+Für die folgenden periodischen, unabhängigen Tasks gilt $D_i=T_i$. Ein einzelner Kern arbeitet vollständig präemptiv; Blockierungen, Selbstsuspendierungen und Wechselkosten fehlen. $C_i$ ist jeweils eine gegebene sichere CPU-Bedarfsschranke.
 
-| Aufgabe | $C_i$ in ms | $T_i$ in ms |
+| Task einer Verpackungsstation | $C_i$ in ms | $T_i$ in ms |
 |---|---:|---:|
-| $\tau_1$ | 1 | 4 |
-| $\tau_2$ | 2 | 6 |
-| $\tau_3$ | 2 | 12 |
+| Versanddaten | 4 | 20 |
+| Antriebskorrektur | 3 | 8 |
+| Positionsprüfung | 1 | 5 |
 
-1. Berechnen Sie $U=\sum_i C_i/T_i$ als Bruch und Prozentwert. (2 P)
-2. Vergeben Sie Prioritäten nach RMS, Rate Monotonic Scheduling. Prüfen Sie die hinreichende Liu-und-Layland-Schranke $U\le n(2^{1/n}-1)$ für $n=3$. (2 P)
-3. Was würde ein Überschreiten dieser Schranke bei weiterhin $U\le1$ bedeuten? Darf der bestandene Test unverändert auf den kooperativen Round-Robin aus Teil B übertragen werden? Begründen Sie beide Antworten. (2 P)
+1. Ordnen Sie die RMS-Prioritäten zu. RMS steht für Rate Monotonic Scheduling. (1 Punkt)
+2. Berechnen Sie $U=\sum_i C_i/T_i$. (2 Punkte)
+3. Prüfen Sie die hinreichende Liu-Layland-Schranke $U\leq n(2^{1/n}-1)$. Welche Aussage ist damit für dieses Modell bewiesen? Was würde eine Überschreitung der Schranke bedeuten? (3 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 2**
+**Musterlösung:** Positionsprüfung $>$ Antriebskorrektur $>$ Versanddaten, da kürzere Periode einen höheren festen Rang erhält.
 
 $$
-U=\frac14+\frac26+\frac2{12}
- =\frac3{12}+\frac4{12}+\frac2{12}
- =\frac34=75\,\%.
+U=\frac15+\frac38+\frac4{20}
+ =\frac{31}{40}=0{,}775=77{,}5\,\%.
 $$
 
-RMS vergibt die höchste feste Priorität an die kürzeste Periode: $\tau_1>\tau_2>\tau_3$. Für drei Aufgaben beträgt die Schranke $3(2^{1/3}-1)\approx0{,}779763$, also etwa 77,98 %. Unser Wert liegt darunter; das Set ist unter den gemeinsamen Modellannahmen mit RMS nachgewiesen.
-
-Die Schranke ist hinreichend, nicht notwendig: Bei Überschreitung bis 100 % bleibt die Entscheidung offen. Dann kann eine genauere Antwortzeitanalyse den konkreten Satz prüfen. Dauerhafte Pflichtlast mit $U>1$ passt dagegen nicht auf einen Prozessor.
-
-Der Nachweis gilt nicht für beliebige Auswahlregeln. Der Labor-Dispatcher verwendet weder RMS-Prioritäten noch Task-Präemption. Lange zurückkehrende Schritte können andere Aufgaben verzögern. Gleiche Namen oder dieselbe Auslastung ersetzen diese fehlenden Voraussetzungen nicht.
+Für drei Tasks ist $U_{\mathrm{LL}}=3(2^{1/3}-1)\approx0{,}779763$. Damit ist das Set unter den genannten Voraussetzungen mit präemptivem RMS fristgerecht ausführbar. Der Test ist hinreichend: Eine Überschreitung würde lediglich bedeuten, dass dieser Test nicht entscheidet. Sie bewiese weder einen Deadline-Miss noch allgemeine Unmöglichkeit. Die Rechnung ist kein Nachweis für einen kooperativen Funktionsaufrufring.
 :::
 
-### Aufgabe 3: Antwortzeit trotz überschrittener Schranke · 14 Minuten · 8 Punkte
+## Aufgabe 3: Über der Schranke genauer prüfen (8 Punkte)
 
-Dieses Set entspricht dem 85-%-Beispiel der Vorlesung; es ist **ein anderes Set als in Aufgabe 2**. Wieder gilt $D_i=T_i$:
+Eine andere Station hat die folgenden Tasks. Es gelten dieselben Modellannahmen wie in Aufgabe 2, insbesondere $D_i=T_i$.
 
-| Aufgabe | $C_i$ in ms | $T_i$ in ms |
+| Task | $C_i$ in ms | $T_i$ in ms |
 |---|---:|---:|
-| $\tau_1$ | 1 | 4 |
-| $\tau_2$ | 2 | 5 |
-| $\tau_3$ | 2 | 10 |
+| Messwerterfassung | 2 | 6 |
+| Stellwertberechnung | 3 | 12 |
+| Chargenbericht | 5 | 24 |
 
-Die RTA, Response-Time Analysis oder Antwortzeitanalyse, verwendet für feste Prioritäten:
+1. Berechnen Sie Auslastung und RMS-Prioritätsfolge. Entscheidet die Liu-Layland-Schranke? (2 Punkte)
+2. Bestimmen Sie für jede Task die Worst-Case-Antwortzeit. Beginnen Sie mit $R_i^{(0)}=C_i$ und rechnen Sie bis zum Fixpunkt oder einer Fristüberschreitung: (5 Punkte)
 
 $$
-R_i^{(0)}=C_i,\qquad
-R_i^{(k+1)}=C_i+\sum_{j\in hp(i)}
-\left\lceil\frac{R_i^{(k)}}{T_j}\right\rceil C_j.
+R_i^{(k+1)}=C_i+
+ \sum_{h\in hp(i)}\left\lceil\frac{R_i^{(k)}}{T_h}\right\rceil C_h.
 $$
 
-$hp(i)$ ist die Menge höher priorisierter Aufgaben, $\lceil x\rceil$ rundet auf die nächste ganze Zahl auf. Iterieren Sie bis zu einem unveränderten Wert oder einer Überschreitung der Deadline.
+   $hp(i)$ bezeichnet die höher priorisierten Tasks.
 
-1. Bestimmen Sie $U$ und die RMS-Reihenfolge. Welche Aussage liefert allein die Liu-und-Layland-Schranke? (2 P)
-2. Berechnen Sie $R_1$, $R_2$ und alle Iterationswerte für $R_3$ mit Zwischenrechnungen. (4 P)
-3. Prüfen Sie jede Frist und erklären Sie, warum $\lceil5/5\rceil=1$ gilt. Darf aus dem Ergebnis „85 % ist unter RMS immer sicher“ folgen? (2 P)
+3. Warum wird aufgerundet und warum darf eine Iteration nicht bereits beim ersten Wert unterhalb der Deadline beendet werden? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 3**
+**Musterlösung:** Messwerterfassung $>$ Stellwertberechnung $>$ Chargenbericht.
 
-$U=1/4+2/5+2/10=0{,}85=85\,\%$, Rangfolge $\tau_1>\tau_2>\tau_3$. Die einfache Schranke von etwa 77,98 % ist überschritten und liefert keine Entscheidung.
+$$
+U=\frac26+\frac3{12}+\frac5{24}
+ =\frac{19}{24}\approx79{,}17\,\%>77{,}98\,\%.
+$$
 
-$\tau_1$ hat keinen höher priorisierten Störer: $R_1=C_1=1\,\mathrm{ms}\le4\,\mathrm{ms}$.
+Der hinreichende Test entscheidet nicht. Die Antwortzeitanalyse ergibt:
 
-Für $\tau_2$: Startwert 2, danach $2+\lceil2/4\rceil\cdot1=3$, nochmals $2+\lceil3/4\rceil\cdot1=3$. Damit $R_2=3\,\mathrm{ms}\le5\,\mathrm{ms}$.
+| Task | Iteration in ms | Fixpunkt / relative Deadline |
+|---|---|---|
+| Messwerterfassung | $2\to2$ | $2\leq6$ |
+| Stellwertberechnung | $3\to5\to5$ | $5\leq12$ |
+| Chargenbericht | $5\to10\to12\to12$ | $12\leq24$ |
 
-| Iteration für $\tau_3$ | Rechnung | Ergebnis in ms |
+Für den Bericht lauten die drei Updates:
+
+$$
+\begin{aligned}
+5+\lceil5/6\rceil\cdot2+\lceil5/12\rceil\cdot3&=10,\\
+5+\lceil10/6\rceil\cdot2+\lceil10/12\rceil\cdot3&=12,\\
+5+\lceil12/6\rceil\cdot2+\lceil12/12\rceil\cdot3&=12.
+\end{aligned}
+$$
+
+Alle Tasks halten im Modell ihre Fristen. Die Aufrundung zählt vollständige höher priorisierte Jobs, die im betrachteten Antwortzeitfenster interferieren können. Ein zunächst kleiner Wert kann das Fenster vergrößern und weitere Freigaben hineinnehmen. Erst der Fixpunkt schließt diese Rückwirkung ab. Fünf Punkte für die drei korrekten Iterationen und die Fristentscheidung; zwei für Rang, Auslastung und Schrankenentscheidung; einer für die Begründung.
+:::
+
+## Aufgabe 4: RMS und EDF entscheiden verschieden (6 Punkte)
+
+Zwei unabhängige periodische Tasks starten synchron bei null. Es gilt das präemptive Ein-Kern-Modell aus Aufgabe 2 und jeweils $D_i=T_i$.
+
+| Task | $C_i$ in ms | $T_i$ in ms |
+|---|---:|---:|
+| Ventilregelung | 3 | 6 |
+| Bildauswertung | 4 | 9 |
+
+1. Berechnen Sie die Auslastung. Was folgt unter diesen Voraussetzungen für EDF, Earliest Deadline First? (1 Punkt)
+2. Zeichnen Sie RMS von 0 bis 10 ms. Markieren Sie den ersten Fristverstoß und den Restbedarf zum Deadlinezeitpunkt. (2 Punkte)
+3. Zeichnen Sie EDF von 0 bis 18 ms und beschriften Sie die absoluten Jobdeadlines. Bei gleichen Deadlines läuft der bereits laufende Job weiter. Warum verdrängt die Freigabe bei 6 ms die laufende Task hier nicht? (3 Punkte)
+
+**Zusatz:** Zwei andere Tasks haben $(C,T,D)=(3,24,4)\,\mathrm{ms}$ und $(2,30,4)\,\mathrm{ms}$, beide mit erster Freigabe bei null. Ihre Auslastung liegt unter 20 Prozent. Können trotzdem schon die ersten Jobs unter jeder Auswahlregel scheitern? Begründen Sie über den Bedarf bis zur ersten Deadline.
+
+::: {.content-visible when-profile="solution"}
+**Musterlösung:** $U=3/6+4/9=17/18\approx94{,}44\,\%\leq100\,\%$. EDF ist im vollständig präemptiven Modell mit unabhängigen Tasks und impliziten Deadlines fristgerecht möglich.
+
+RMS priorisiert die Ventilregelung. Sie läuft 0–3, dann die Bildauswertung 3–6, dann wieder die Ventilregelung 6–9. Bei der Bilddeadline 9 ms fehlt dem ersten Bildjob noch 1 ms. Er endet erst bei 10 ms. Auch die Antwortzeititeration $4\to7\to10>9$ zeigt die Fristverletzung.
+
+| EDF-Intervall in ms | Job | absolute Deadline in ms |
 |---|---|---:|
-| 0 | $C_3$ | 2 |
-| 1 | $2+\lceil2/4\rceil\cdot1+\lceil2/5\rceil\cdot2$ | 5 |
-| 2 | $2+\lceil5/4\rceil\cdot1+\lceil5/5\rceil\cdot2$ | 6 |
-| 3 | $2+\lceil6/4\rceil\cdot1+\lceil6/5\rceil\cdot2$ | 8 |
-| 4 | $2+\lceil8/4\rceil\cdot1+\lceil8/5\rceil\cdot2$ | 8 |
+| $[0,3)$ | Ventilregelung, Job 1 | 6 |
+| $[3,7)$ | Bildauswertung, Job 1 | 9 |
+| $[7,10)$ | Ventilregelung, Job 2 | 12 |
+| $[10,14)$ | Bildauswertung, Job 2 | 18 |
+| $[14,17)$ | Ventilregelung, Job 3 | 18 |
+| $[17,18)$ | Idle | — |
 
-Fixpunkt $R_3=8\,\mathrm{ms}\le10\,\mathrm{ms}$. Alle Fristen halten im angegebenen RMS-Modell. Bei einem Fenster der Länge fünf ist ein Job mit Periode fünf relevant; die nächste Freigabe liegt genau am rechten, ausgeschlossenen Rand. Ein bereits dort abgeschlossener betrachteter Job wird von ihr nicht rückwirkend verzögert. Darum wird in diesem Iterationsschritt nicht auf zwei erhöht. Sobald das berechnete Fenster auf sechs Millisekunden wächst, liegt die Freigabe bei fünf im Inneren; die nächste Iteration zählt daher zwei Jobs von dieser Aufgabe.
+Bei 6 ms hat der neue Ventiljob die Deadline 12 ms. Der laufende Bildjob hat weiterhin die frühere Deadline 9 ms und läuft deshalb weiter. Bei 12 ms erhält der neue Ventiljob dieselbe Deadline 18 ms wie der laufende Bildjob; die vorgegebene Gleichstandsregel lässt diesen weiterlaufen. Alle bis 18 ms fälligen Jobs enden rechtzeitig. Die allgemeine EDF-Aussage folgt aus dem Test unter seinen Voraussetzungen, nicht allein aus diesem endlichen Ausschnitt.
 
-Die konkreten Perioden und Bedarfe tragen den Nachweis. Ein anderes Set mit 85 % kann eine andere Antwortzeit haben. Prozessorzeit und Antwortzeit sind auch hier verschieden: $C_3=2$, aber $R_3=8$ ms.
+**Zusatz:** $U=3/24+2/30=23/120\approx19{,}17\,\%$. Bis zur gemeinsamen Deadline bei 4 ms benötigen die beiden ersten Jobs jedoch $3+2=5\,\mathrm{ms}$ CPU-Zeit. Mindestens einer verfehlt seine Frist. Es gilt hier $D_i<T_i$; der einfache EDF-Auslastungstest aus dem Hauptteil ist nicht anwendbar.
 :::
 
-### Aufgabe 4: RMS und EDF am selben Set · 12 Minuten · 6 Punkte
+## Aufgabe 5: Aufrufreihenfolge ist keine Zeitscheibe (6 Punkte)
 
-Zwei Aufgaben starten synchron bei null:
+Ein kooperativer Dispatcher ruft ständig bereite Schritte in der Reihenfolge **Signal, Prüfen, Anzeige** auf. Der erste Signal-Schritt beginnt bei null. Signal benötigt 1 ms CPU-Zeit, Anzeige 2 ms. Alle Verwaltungs- und Interruptkosten sind im Modell null; jeder Schritt kehrt zurück. Es gibt hier keine periodischen Freigaben.
 
-| Aufgabe | $C_i$ in ms | $T_i=D_i$ in ms |
-|---|---:|---:|
-| $\tau_1$ | 2 | 5 |
-| $\tau_2$ | 4 | 7 |
-
-EDF bedeutet Earliest Deadline First: Aus den bereiten Jobs wird der mit der frühesten **absoluten** Deadline gewählt. Bei Gleichstand bleibt der laufende Job. Es gilt das gemeinsame präemptive Modell.
-
-1. Berechnen Sie $U$. Zeichnen Sie unter RMS die Belegung bis 7 ms und zeigen Sie die Fristverletzung. (2 P)
-2. Zeichnen Sie unter EDF die Belegung bis 12 ms. Beschriften Sie die Jobs und begründen Sie die Entscheidungen bei 5 und 10 ms mit den absoluten Deadlines. (3 P)
-3. Was bedeutet dieses Ergebnis für den Unterschied zwischen „unter RMS nicht einplanbar“ und „überhaupt nicht machbar“? Begründen Sie die EDF-Aussage für alle periodischen Jobs, nicht nur den gezeichneten Ausschnitt. (1 P)
+1. Prüfen benötigt stets 2 ms. Bestimmen Sie die ersten vier Signal-Starts und die CPU-Anteile der drei Schritte pro Runde. (2 Punkte)
+2. Prüfen benötigt abwechselnd 2 und 5 ms, zuerst 2 ms. Bestimmen Sie die ersten fünf Signal-Starts sowie Minimum, Maximum und Spanne der Startabstände. Ändert sich allein deshalb die eigene CPU-Zeit von Signal? (3 Punkte)
+3. Prüfen kehrt durch einen Programmfehler nicht mehr zurück. Werden Signal und Anzeige erneut aufgerufen? Kann ein zugelassener Timerinterrupt trotzdem laufen? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 4**
+**Musterlösung:** Bei konstantem Bedarf dauert eine Runde $1+2+2=5\,\mathrm{ms}$. Signal startet bei 0, 5, 10, 15 ms. Die Anteile betragen $1/5=20\,\%$, $2/5=40\,\%$, $2/5=40\,\%$. Gleiche Aufrufzahlen sind keine gleichen CPU-Zeitanteile.
 
-$U=2/5+4/7=34/35\approx97{,}14\,\%$. RMS wählt $\tau_1$ vor $\tau_2$:
+Bei wechselnder Prüfarbeit dauern die Runden abwechselnd 5 und 8 ms. Signal startet bei 0, 5, 13, 18, 26 ms. Die Startabstände haben Minimum 5, Maximum 8 und Spanne $8-5=3\,\mathrm{ms}$. Die eigene Signal-Arbeit bleibt 1 ms; ihre Wiederaufrufabstände schwanken.
 
-| RMS-Intervall in ms | Laufender Job |
+Ohne Rückkehr aus Prüfen erreicht der Kontrollfluss keine weiteren Schritte. Ein nicht gesperrter Timerinterrupt kann trotzdem laufen und die Zeit fortschreiben. Dadurch entsteht noch kein Taskwechsel.
+:::
+
+## Aufgabe 6: Eine Signalfolge selbst implementieren
+
+**Programmieren, etwa 25–35 Minuten.** Nutzen Sie die vorbereitete **NUCLEO-H755ZI-Q / STM32H755ZIT6**-Basis mit STM32CubeMX und VS Code mit STM32 VS Code Extension: CM4 ohne RTOS, generierter Dual-Core-Start. Die [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_02_programmierung.md) erfolgt vor dem Termin.
+
+Implementieren Sie eine wiederholte Doppelpulsanzeige: **120 ms ein, 180 ms aus, 120 ms ein, 780 ms aus**. Gleichzeitig müssen ein zweiter LED-Schritt und ein kurzer Zählschritt weiter ausgeführt werden.
+
+Bearbeiten Sie den leeren Rumpf von `void Lab02_SignalStep(void)` in `signal_step.c` aus `code/lab02/`. Dispatcher, Hauptschleife und Begleitschritte sind bereits eingebunden.
+
+| Bereits vorhandene Schnittstelle | Wirkung |
 |---|---|
-| $[0,2)$ | $\tau_1/J_1$ |
-| $[2,5)$ | $\tau_2/J_1$, nur 3 von 4 ms erreicht |
-| $[5,7)$ | $\tau_1/J_2$ |
+| `Lab02_SignalWrite(on)` | Signal-LED setzen: null aus, sonst ein |
+| `Lab02_SignalPause(ms)` | aktiven Schritt bis zum Wake-Ziel sperren; beendet die Funktion nicht |
 
-Bei 7 ms fehlen dem ersten Job von $\tau_2$ noch 1 ms; seine absolute Deadline sieben ist verletzt. Alternativ ergibt seine RTA $4\rightarrow6\rightarrow8>7$.
+1. Skizzieren Sie die vier Zustände der Signalfolge. Welche Information muss zwischen zwei Aufrufen erhalten bleiben?
+2. Implementieren Sie pro Aufruf eine LED-Aktion, speichern Sie die nächste Phase, setzen Sie die Pause und **kehren Sie zurück**. Kein `HAL_Delay`, keine Warteschleife oder eigene Endlosschleife im Schritt.
+3. Bauen und laden Sie das Projekt. Prüfen Sie Signalfolge, laufende Status-LED und Fortschritt von `lab02_signal_checks`: zwei Zählerstände bei angehaltenem CM4 mit einem Lauf dazwischen vergleichen.
+4. Notieren Sie die idealen ersten fünf Flankenzeitpunkte ab dem ersten Einschalten. Warum garantiert die 1200-ms-Summe keine exakte physische Periode?
+5. Erweitern Sie auf drei Pulse mit je 100 ms Ein- und Zwischen-Auszeit sowie 900 ms Schluss-Auszeit. Prüfen Sie erneut den Fortschritt der anderen Schritte.
 
-| EDF-Intervall in ms | Laufender Job | Absolute Deadline in ms |
-|---|---|---:|
-| $[0,2)$ | $\tau_1/J_1$ | 5 |
-| $[2,6)$ | $\tau_2/J_1$ | 7 |
-| $[6,8)$ | $\tau_1/J_2$ | 10 |
-| $[8,12)$ | $\tau_2/J_2$ | 14 |
+Ein Messgerät ist nicht erforderlich. Halten Sie fest, ob Ihre Funktion auf dem Board geprüft wurde.
 
-Bei 5 ms bleibt $\tau_2/J_1$ laufend: Deadline sieben ist früher als die Deadline zehn des neu freigegebenen $\tau_1/J_2$. Bei 10 ms hat der laufende $\tau_2/J_2$ Deadline vierzehn, der neue $\tau_1/J_3$ Deadline fünfzehn. Daher bleibt auch dort der laufende Job. Bei 12 ms ist er fertig und $\tau_1/J_3$ kann bis 14 ms rechnen. Bei 14 wird $\tau_2/J_3$ neu freigegeben und läuft zunächst bis 15; dort liegt kein Leerlauf. Bei 15 kommt $\tau_1/J_4$ mit Deadline 20 vor der Deadline 21 des laufenden Jobs.
-
-Das Scheitern einer Auswahlregel beweist keine Unmöglichkeit jeder Auswahlregel. Für unabhängige vollständig präemptierbare periodische Aufgaben mit $D_i=T_i$ und ohne Zusatzlast ist $U\le1$ der EDF-Nachweis. Der Test belegt im benannten Idealmodell alle periodischen Jobs; die kurze Zeichnung illustriert ihn nur. Bei kürzeren Deadlines oder zusätzlichen Kosten genügt diese Aussage nicht unverändert.
-:::
-
-### Aufgabe 5: Kooperative Runden und Jitter · 8 Minuten · 6 Punkte
-
-Hier gilt ausdrücklich ein **anderes Modell**: Drei Schritte A, B und C sind ständig bereit. Der Dispatcher ruft sie zyklisch A, B, C auf. Jeder Schritt kehrt nach seiner Arbeit zurück. Es gibt keine erzwungenen Zeitscheiben und keine periodischen Jobfreigaben. Erster A-Start ist bei null; Aufruf- und Interruptkosten sind null.
-
-A benötigt 1 ms, C ebenfalls 1 ms. Ein Marker ist während der Arbeit von A High. Definieren Sie Pulsbreite $w_k=f_k-s_k$, Startabstand $P_k=s_{k+1}-s_k$ und Peak-to-Peak-Jitter $J_P=\max(P_k)-\min(P_k)$.
-
-1. Bestimmen Sie die ersten fünf A-Starts, Pulsbreite, Startabstände und $J_P$ bei konstant 1 ms für B. Wiederholen Sie für konstant 3 ms für B. Ist die konstante Verlängerung allein schon Jitter? (2 P)
-2. B benötigt abwechselnd 1, 3, 1, 3 ms. Bestimmen Sie die ersten fünf A-Starts, die vier Startabstände, Pulsbreite und $J_P$. (2 P)
-3. B kehrt stattdessen nie zurück. Was geschieht mit weiteren A-/C-Aufrufen und mit weiterhin erlaubten Tickinterrupts? Warum ist `wake_at` setzen ohne Rückkehr kein Taskwechsel, und warum liefert eine Wake-Zeit keinen genauen Startzeitpunkt? (2 P)
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; Liu und Layland (1973); ST UM2408 und RM0399. Die Aufgabenwerte sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Aufgabe 5**
+{{< pagebreak >}}
 
-| B-Dauer | Erste fünf A-Starts in ms | Startabstände in ms | Pulsbreite | $J_P$ |
-|---|---|---|---|---|
-| konstant 1 ms | 0, 3, 6, 9, 12 | 3, 3, 3, 3 | 1 ms | 0 ms |
-| konstant 3 ms | 0, 5, 10, 15, 20 | 5, 5, 5, 5 | 1 ms | 0 ms |
-| abwechselnd 1/3 ms | 0, 3, 8, 11, 16 | 3, 5, 3, 5 | 1 ms | 2 ms |
+### Musterlösung zu Aufgabe 6
 
-Jede Runde braucht $C_A+C_B+C_C$. Konstante Mehrarbeit verlängert die Abstände konstant; erst ihre Schwankung erzeugt hier Startabstandsjitter. Die Pulsbreite von A bleibt im Modell eine Millisekunde, weil A selbst unverändert arbeitet und keine Unterbrechung angenommen ist. Auf dem Board können Interrupts die verstrichene Markerbreite verändern.
+**Musterlösung:** Die Phase muss über Funktionsrückkehr hinweg erhalten bleiben, beispielsweise als statische Variable. Es gibt keinen pausierten Stack pro kooperativem Schritt.
 
-Ohne Rückkehr aus B bleibt der Dispatcher in B. Weitere A- und C-Aufrufe bleiben aus, obwohl zulässige Interrupts die Zeitbasis weiterhin bedienen können. Eine Hilfsfunktion, die Zustand und `wake_at` ändert, beendet nicht den aufrufenden Schritt. Dieser muss selbst `return` ausführen. Nach erreichtem Wake-Ziel wird ein Schritt nur Ready; der nächste Aufruf hängt von den noch laufenden Schritten und der Ringauswahl ab. Der Laborcode besitzt keinen eigenen pausierten Stack je Schritt.
+```c
+#include "lab02_signal.h"
+
+void Lab02_SignalStep(void)
+{
+    static uint32_t phase = 0U;
+    static const uint32_t duration_ms[4] = {120U, 180U, 120U, 780U};
+    const uint32_t delay_ms = duration_ms[phase];
+
+    Lab02_SignalWrite((phase & 1U) == 0U);
+    phase = (phase + 1U) % 4U;
+    Lab02_SignalPause(delay_ms);
+    return;
+}
+```
+
+Ideale Flanken: 0 ms (ein), 120 ms (aus), 300 ms (ein), 420 ms (aus), 1200 ms (ein). Das Wake-Ziel stellt nur Bereitschaft her. Tickphase, andere Schritte und Auswahl verzögern die Ausführung; die Pause wird nach der LED-Aktion gesetzt. Ein exaktes physisches Raster oder eine sichere Mindestdauer jeder Phase folgt daraus nicht.
+
+Für drei Pulse: `duration_ms[6] = {100U, 100U, 100U, 100U, 100U, 900U}` und Modulo 6. Gerade Phasen schalten ein, die ideale Wiederholung dauert 1400 ms. Status wartet jeweils 700 Ticks, der Zählschritt kehrt nach einem Inkrement zurück. Nach der Pausenhilfe muss auch der Signal-Schritt enden, damit andere Schritte laufen können.
+
+**Prüfkriterien:** persistente Phasen, passende LED-Zustände und Pausen, begrenzte Arbeit, Fortschritt aller Schritte. Das sichtbare Muster beweist keine WCET oder Fristgarantie.
 :::
-
-## Transfer: Ein kleiner Wert genügt nicht · 10 Minuten
-
-Diese zusätzliche Klausurübung hat keine weiteren Punkte. Ein präemptives Ein-Prozessor-Modell verwendet unabhängige periodische Jobs, keine Zusatzkosten und synchrone Freigaben bei null. Zwei Aufgaben haben jeweils $C=2\,\mathrm{ms}$, $T=10\,\mathrm{ms}$ und $D=3\,\mathrm{ms}$.
-
-1. Berechnen Sie $U$. Eine Person behauptet: „Unter 100 % hält EDF jede Frist.“ Prüfen Sie die fehlende Voraussetzung und zeichnen Sie den ersten kritischen Abschnitt.
-2. Lässt sich das Problem durch einen anderen Tie-Breaker oder RMS beheben? Begründen Sie mit der benötigten Arbeit bis zur gemeinsamen absoluten Deadline.
-
-::: {.content-visible when-profile="solution"}
-**Musterlösung Transfer 2**
-
-$U=2/10+2/10=0{,}4=40\,\%$. Hier gilt $D<T$; der einfache EDF-Auslastungstest für implizite Deadlines ist nicht anwendbar. Bis $t=3\,\mathrm{ms}$ sind vier Millisekunden Arbeit nötig, aber nur drei verfügbar. Beispielsweise läuft A von 0 bis 2 und B von 2 bis 4; B verfehlt die Frist. Auch bei anderer Reihenfolge oder Präemption kann die gemeinsame Anforderung nicht erfüllt werden. Die Auslastung beschreibt Langzeitbedarf und löst diesen kurzen Engpass nicht.
-:::
-
-## Teil B: Praxisfall · 15 Minuten
-
-### Praxisfall 2: Aufgewacht heißt noch nicht aufgerufen
-
-**Papieralternative, Lehrmodell:** Der Ring durchsucht A, B und C in dieser Reihenfolge. Alle sind zunächst Ready. Ein Aufruf läuft bis zur Rückkehr. A arbeitet 1 ms, setzt am Arbeitsende ein Wake-Ziel „jetzt plus 10 ms“ und kehrt sofort zurück. B arbeitet 6 ms, C 1 ms; beide bleiben Ready. Zeit läuft auch während B weiter, wechselt aber keinen Schritt. Verwaltungs- und Interruptkosten sind null. Der erste A-Aufruf beginnt bei null.
-
-1. Verfolgen Sie die ersten sechs Aufrufe. Wann endet As erster Aufruf, wann ist sein Wake-Ziel erreicht und wann beginnt sein zweiter Aufruf?
-2. Kennzeichnen Sie A als Blocked oder Ready zwischen den Aufrufen. Warum kann A bei Erreichen seines Ziels B nicht unterbrechen?
-3. Würde ein weiterer Tickhandler oder eine nicht zurückkehrende B-Funktion das Problem lösen?
-
-**Bei vorbereitetem Board:** Die Lehrperson zeigt den Unterschied zwischen `LAB02_SHORT` und `LAB02_SLEEP_A`. Die Gruppe erklärt Verwaltungszustand, Rückkehr und Auswahl. Keine Millisekundendauer wird aus Iterationszahlen abgeleitet.
-
-::: {.content-visible when-profile="solution"}
-**Musterlösung Praxisfall 2**
-
-Aufrufe: A 0–1, B 1–7, C 7–8, B 8–14, C 14–15, A 15–16 ms. Bei 8 ms wird das noch wartende A übersprungen. Das Wake-Ziel des ersten Aufrufs liegt bei 11 ms; A ist logisch bis dahin Blocked und danach ausführungsbereit, sein gespeichertes Zustandsfeld wird erst bei der nächsten Dispatcherprüfung aktualisiert. A läuft erst bei 15 ms, vier Millisekunden nach dem Ziel.
-
-Der Tick schreibt Zeit fort und führt keinen Taskkontextwechsel aus. Der Dispatcher kann erst nach Rückkehr des aktiven Schritts auswählen. Zusätzliche Tickaufrufe erzeugen keine solche Präemption. Ein nie zurückkehrendes B hält die weiteren Aufrufe auf; erlaubte Interrupts können trotzdem laufen. Das Modell ist kein RMS-/EDF-Nachweis und keine Messung des realen Moduls.
-:::
-
-## Ergebnis und freiwillige Vertiefung
-
-Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
-
-Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_02_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
-
-Quellen: Vorlesungen 1–2; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; Liu und Layland (1973) zur RMS-Schranke; die behandelte Antwortzeitanalyse; ST UM2408, RM0399 und PM0214 sowie die Dokumentation der tatsächlich verwendeten STM32-Erweiterung. [Vollständiger Anwendungsbaustein und Integrationsanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/code/lab02/README.md).
