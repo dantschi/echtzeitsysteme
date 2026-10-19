@@ -2,5 +2,6 @@
 #include "lab01_button.h"
 void Lab01_ButtonStep(void)
 {
-    /* Implement press-edge detection and the 600-tick timeout here. */
+    /* Implement press-edge detection, lab01_presses and the
+       LAB01_LIGHT_TICKS timeout without blocking the main loop. */
 }

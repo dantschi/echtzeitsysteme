@@ -1,88 +1,129 @@
 ---
 title: "Übungsblatt 1: Zeitverträge, Polling und eine Tasteranzeige"
 author: "Prof. Dr.-Ing. Daniel Klünder"
+# Studierende: quarto render lab_01_bare-metal-polling-interrupts.qmd --to pdf
+# Musterlösung: gleicher Aufruf mit --profile solution
 ---
 
-## Aufgabe 1: Zeitvertrag einer Verpackungsprüfung (8 Punkte)
+## Aufgabe 1: Einen Zeitvertrag für eine Laborsteuerung formulieren (8 Punkte)
 
-Ein Prüfsystem muss nach einer erkannten falschen Etikettierung binnen $D=7\,\mathrm{ms}$ den richtigen Sperrauftrag am Softwareausgang ausgeben. Kein Miss ist erlaubt; die mechanische Bewegung gehört nicht zum Vertrag. Ein Kontrollfoto ist nach 60 ms wertlos, zwei ausgelassene Fotos je 500 sind zulässig. Eine verspätete Produktionsstatistik bleibt nützlich.
+Nach einem erfassten Trigger muss eine Laborsteuerung binnen $D=80\,\text{µs}$ den richtigen Startimpuls am Softwareausgang ausgeben. Jede Fristverletzung gilt als Fehler. Ein unabhängig berechneter Positionswert ist nach Ende seines 4-ms-Messfensters wertlos; höchstens ein fehlender Wert je 200 Fenster ist erlaubt. Eine verspätete Raumtemperaturanzeige bleibt nützlich.
 
-1. Formulieren Sie Anfang, Ende und Zeitbedingung des Sperrauftrags. (2 Punkte)
-2. Ordnen Sie die drei Leistungen Hard, Firm und Soft zu und begründen Sie. (3 Punkte)
-3. Freigabe bei $r=5\,\mathrm{ms}$: Bestimmen Sie die absolute Deadline und bewerten Sie richtige Ausgaben bei 12 und 12,2 ms. (2 Punkte)
-4. Ein falscher Auftrag liegt schon bei 8 ms vor. Ist der Vertrag erfüllt? (1 Punkt)
+1. Benennen Sie Anfang, Abschluss und Zeitbedingung des Startimpulses. Warum reicht „möglichst schnell“ nicht? (2 Punkte)
+2. Ordnen Sie Startimpuls, Positionswert und Temperaturanzeige Hard, Firm und Soft zu. Begründen Sie anhand des jeweiligen Vertrags. (3 Punkte)
+3. Der Trigger wird bei $r=25\,\text{µs}$ erfasst. Bestimmen Sie die absolute Deadline und bewerten Sie richtige Startimpulse bei 105 und 107 µs. (2 Punkte)
+4. Ein Impuls liegt schon bei 50 µs an, hat aber den falschen Pegel. Ist der Gesamtvertrag erfüllt? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Anfang: festgelegte Erkennung/Freigabe; Ende: richtiger Sperrauftrag am Softwareausgang; $f-r\leq7\,\mathrm{ms}$. Sperrauftrag Hard, Foto Firm, Statistik Soft. Ausschlaggebend sind Missregel und Restnutzen. $d=5+7=12\,\mathrm{ms}$: 12 erfüllt die inklusive Grenze, 12,2 verletzt sie um 0,2 ms. Die falsche Ausgabe bei 8 ms verletzt die funktionale Bedingung trotz erfüllter Zeitbedingung. Punkte entsprechend Teilaufgaben.
+**Musterlösung:** Anfang ist die festgelegte Triggererfassung, Abschluss der richtige Startimpuls am vereinbarten Softwareausgang. Zeitbedingung $f-r\leq80\,\text{µs}$. „Schnell“ definiert weder Endpunkte noch eine Grenze. Startimpuls Hard, Positionswert Firm, Temperaturanzeige Soft: Ausschlaggebend sind erlaubte Fristverletzungen und Restnutzen, nicht die Gerätebezeichnung.
+
+$d=r+D=25+80=105\,\text{µs}$. Bei 105 ist die inklusive Frist eingehalten, bei 107 um 2 µs verletzt. Der falsche Pegel bei 50 erfüllt nur die Zeitbedingung; funktionale und zeitliche Korrektheit müssen gemeinsam gelten.
 :::
 
-## Aufgabe 2: Eigene Arbeit und Antwort auseinanderhalten (8 Punkte)
+## Aufgabe 2: Antwortzeit, eigene Arbeit und Jitter trennen (8 Punkte)
 
-Ein Job wird bei 3 ms freigegeben. Er rechnet von 5 bis 8 und von 10 bis 12 ms, dazwischen wird er unterbrochen. Absolute Deadline: 14 ms. Eine periodische Ausgabe hat die Sollzeitpunkte 0, 8, 16, 24, 32 ms und die Istzeitpunkte 0, 8,3, 16,1, 24,4, 32,2 ms.
+Eine Bearbeitung wird bei 20 µs freigegeben, beginnt bei 35 µs und rechnet bis 65 µs. Von 65 bis 90 µs wird sie durch einen Interrupt unterbrochen. Danach rechnet sie bis zum Abschluss bei 110 µs. Absolute Deadline: 125 µs. Alle zusätzlich nötigen Verwaltungskosten seien bereits in diesen Zeitpunkten enthalten.
 
-1. Zeichnen Sie den Jobverlauf. Berechnen Sie eigene CPU-Zeit, Startverzug, Antwortzeit und Reserve. (4 Punkte)
-2. Berechnen Sie die vier Istperioden, Mittelwert und Periodenspanne. (2 Punkte)
-3. Berechnen Sie die Spanne der Phasenabweichungen. Weshalb ist das eine andere Größe? (1 Punkt)
-4. Beweist das größte Ergebnis einer endlichen Messreihe die WCET? (1 Punkt)
+Eine andere, periodische Ausgabe hat folgende Zeitpunkte:
+
+| Ereignisnummer $k$ | 0 | 1 | 2 | 3 | 4 |
+|---|---:|---:|---:|---:|---:|
+| Soll in ms | 0 | 6 | 12 | 18 | 24 |
+| Ist in ms | 0 | 6,4 | 12,1 | 18,3 | 24,2 |
+
+1. Zeichnen Sie die Bearbeitung auf einer Zeitachse. Berechnen Sie eigene CPU-Zeit, Startverzug, Antwortzeit und Reserve bis zur Deadline. (4 Punkte)
+2. Berechnen Sie die vier Istperioden, ihren Mittelwert und die Periodenspanne als Maximum minus Minimum. (2 Punkte)
+3. Berechnen Sie die Abweichung jedes Istzeitpunkts von seinem Sollzeitpunkt und deren Spanne. Warum ist das eine andere Größe? (1 Punkt)
+4. Beweist das größte Ergebnis einer endlichen Messreihe die WCET, die größte mögliche eigene Ausführungszeit unter festgelegten Bedingungen? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Rechnen in $[5,8)$ und $[10,12)$; eigene CPU-Zeit $3+2=5$ ms, Startverzug 2 ms, Antwortzeit $12-3=9$ ms, Reserve $14-12=2$ ms. Warten/Unterbrechung insgesamt 4 ms. Istperioden: 8,3; 7,8; 8,3; 7,8 ms; Mittelwert 8,05 ms, Spanne 0,5 ms. Phasenabweichungen: 0; 0,3; 0,1; 0,4; 0,2 ms, Spanne 0,4 ms. Phase vergleicht Ist und Soll desselben Ereignisses, Periode benachbarte Istereignisse. Ein Messmaximum deckt nicht automatisch alle zulässigen Pfade/Zustände ab und beweist keine WCET.
+**Musterlösung:** Eigene Rechenabschnitte $[35,65)$ und $[90,110)$ µs; eigene CPU-Zeit $30+20=50\,\text{µs}$. Startverzug $35-20=15\,\text{µs}$, Antwortzeit $110-20=90\,\text{µs}$, Reserve $125-110=15\,\text{µs}$. Kontrolle: Anfangswarten 15 plus Interrupt 25 plus eigene Arbeit 50 ergeben 90 µs. Die relative Deadline beträgt 105 µs, ist also eingehalten.
+
+Istperioden: 6,4; 5,7; 6,2; 5,9 ms. Mittelwert $24{,}2/4=6{,}05\,\mathrm{ms}$, Spanne $6{,}4-5{,}7=0{,}7\,\mathrm{ms}$. Phasenabweichungen: 0; 0,4; 0,1; 0,3; 0,2 ms, Spanne 0,4 ms. Phase vergleicht Ist und Soll desselben Ereignisses, Periode benachbarte Istereignisse. WCET bedeutet Worst-Case Execution Time. Ein Messmaximum deckt nicht automatisch alle zulässigen Eingaben, Pfade und Hardwarezustände ab.
 :::
 
-## Aufgabe 3: Polling unter Last (8 Punkte)
+## Aufgabe 3: Eine Hauptschleife mit Polling beurteilen (8 Punkte)
 
-Eine Runde besteht aus Eingangsprüfung mit höchstens 0,2 ms, Reaktion mit höchstens 0,3 ms und Displayarbeit mit höchstens 3,5 ms. Ein Auftrag bleibt bis zur Abfrage gespeichert. Ein Kern, keine Unterbrechungen, höchstens ein relevanter Auftrag; Erkennung am Prüfungsende. Schätzen Sie konservativ mit einer ganzen maximalen Runde bis zur Erkennung plus Reaktion ab. Relative Frist: 6 ms.
+Die Hauptschleife prüft einen gespeicherten Auftrag, reagiert gegebenenfalls und bearbeitet anschließend einen Datenblock. Obergrenzen: Prüfung 0,15 ms, Reaktion 0,25 ms, Datenblock 1,60 ms. Ein Kern, keine Interrupts, höchstens ein relevanter Auftrag; die Erkennung liegt am Ende der Prüfung. Der Auftrag bleibt bis dahin gespeichert. Relative Frist: 3 ms. Für die konservative Antwortgrenze verwenden Sie eine ganze maximale Runde bis zur Erkennung und addieren anschließend die Reaktion.
 
-1. Bestimmen Sie Runden- und Antwortgrenze. (2 Punkte)
-2. Die Displayarbeit wächst auf 9,5 ms. Rechnen Sie erneut und nennen Sie eine konkrete Ereignisphase mit Fristverletzung. (2 Punkte)
-3. Ohne Speicherung ist ein Pegel nur von 2 bis 3 ms HIGH; Abfragen erfolgen bei 0, 4 und 8 ms. Wird der Puls erkannt? Was verändert ein Ereignislatch? (2 Punkte)
-4. Zerlegen Sie die Displayarbeit in höchstens 0,5-ms-Schritte mit erneuter Eingangsprüfung nach jedem Schritt. Bestimmen Sie die neue Grenze und den benötigten Anwendungszustand. (2 Punkte)
+1. Berechnen Sie maximale Rundenzeit und Antwortgrenze. Ist die Frist im Modell nachweisbar? (2 Punkte)
+2. Der Datenblock benötigt nun 4,60 ms. Rechnen Sie erneut und beschreiben Sie eine konkrete Ankunftsphase mit Fristverletzung. (2 Punkte)
+3. Ohne Speicherung wird nur der momentane Eingangspegel gelesen: Abfragen bei 0, 2 und 4 ms, HIGH nur von 0,7 bis 1,1 ms. Wird das Ereignis verspätet erkannt oder vollständig verloren? Was verändert ein Ereignislatch? (2 Punkte)
+4. Zerlegen Sie die Datenarbeit in Schritte von höchstens 0,40 ms mit erneuter Eingangsprüfung nach jedem Schritt. Bestimmen Sie die neue Grenze. Welche Information muss die Datenbearbeitung zwischen den Runden speichern? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Runde 4,0 ms, konservativ $R\leq4,3$ ms: Frist im Modell nachgewiesen. Mit 9,5 ms Display: Runde 10,0 ms, Antwortgrenze 10,3 ms. Eine Anforderung unmittelbar nach der Abfrage vor der langen Displayphase wartet fast 9,5 ms und verletzt 6 ms tatsächlich; eine bloß zu große obere Grenze allein wäre noch kein Missbeweis. Alle drei Pegelabfragen sehen LOW. Ein Latch speichert einen Hinweis, zählt aber nicht beliebig viele Pulse. Mit Teilstücken: Runde 1,0 ms, Antwortgrenze 1,3 ms; Displayfortschritt bzw. nächster Teilabschnitt muss zwischen Runden gespeichert werden.
+**Musterlösung:** Runde $0{,}15+0{,}25+1{,}60=2{,}00\,\mathrm{ms}$, konservativ $R\leq2{,}25\,\mathrm{ms}<3\,\mathrm{ms}$. Mit langem Block: Runde 5,00 ms, Antwortgrenze 5,25 ms. Die große Grenze allein beweist noch keinen tatsächlichen Miss. Ein Auftrag unmittelbar nach seiner Prüfung vor Beginn der 4,60-ms-Datenarbeit wartet aber bereits fast 4,60 ms und verletzt 3 ms tatsächlich.
+
+Alle Pegelabfragen sehen LOW: Das Ereignis geht verloren und wird nicht später bearbeitet. Ein Latch hält einen Hinweis bis zur Abfrage fest, zählt aber nicht beliebig viele Ereignisse. Mit kurzen Schritten: Runde 0,80 ms, Antwortgrenze 1,05 ms. Die Datenbearbeitung speichert etwa den nächsten Index und ihr Zwischenergebnis. Ein kleiner Schritt beendet nicht automatisch die gesamte Datenarbeit.
 :::
 
-## Aufgabe 4: Timer und Interruptpfad (8 Punkte)
+## Aufgabe 4: Timer, Interruptpriorität und Erfassung unterscheiden (8 Punkte)
 
-1. Ein Timer hat den bestätigten Kerntakt 80 MHz, $PSC=7999$ und $ARR=2499$. Berechnen Sie mit $f_{\mathrm{UPD}}=f_{\mathrm{TIM}}/((PSC+1)(ARR+1))$ Updateabstand und vollständige Blinkfrequenz bei einem Toggle pro Update. (3 Punkte)
-2. Zwei IRQs haben denselben Präemptionsrang, aber verschiedene Subprioritäten. Kann allein die Subpriorität den laufenden Handler verdrängen? Was bewirkt ein zulässiger dringlicherer Präemptionsrang? (2 Punkte)
-3. Ein Flag ist gesetzt. Main liest es, ein zweites Ereignis setzt es erneut, danach löscht Main es. Was geht verloren und was leistet `volatile` hier nicht? (2 Punkte)
-4. Frühe Erfassung dauert 1 ms; anschließend vergehen weitere 4 ms bis zur richtigen Reaktion. Prüfen Sie eine End-to-End-Frist von 4 ms. (1 Punkt)
+1. Ein Timer hat den bestätigten Timer-Kerntakt 96 MHz, $PSC=9599$ und $ARR=1999$. Berechnen Sie mit $f_{\mathrm{UPD}}=f_{\mathrm{TIM}}/((PSC+1)(ARR+1))$ Updateabstand und vollständige Blinkfrequenz bei einem Toggle pro Update. (3 Punkte)
+2. Ein Mess-IRQ mit Präemptionsrang 2 und Subpriorität 3 läuft bereits. Ein Taster-IRQ mit Rang 2 und Subpriorität 0 wird angefordert. Kann er allein wegen der Subpriorität unterbrechen? Was ändert ein zulässiger Präemptionsrang 1? Kleinere Zahlen sind dringlicher; eine passende Gruppierung ist vorausgesetzt. (2 Punkte)
+3. Ein Hardware-Pendingbit merkt mindestens ein Ereignis. Drei gleichartige Ereignisse treffen vor seiner Bedienung ein; das Bit bleibt gesetzt. Der anschließende Callback erhöht einen `volatile`-Zähler einmal. Sind damit drei physische Ereignisse gezählt? Begründen Sie. (2 Punkte)
+4. Eine Anforderung trifft bei noch 18 µs Maskierung ein. Danach benötigen Eintritt und Reaktion disjunkt weitere 4 und 6 µs. Prüfen Sie eine Gesamtfrist von 25 µs. (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Updatefrequenz $80\cdot10^6/(8000\cdot2500)=4$ Hz, Abstand 250 ms; zwei Toggles pro Zyklus ergeben 2 Hz Blinken. Subpriorität ordnet gleichzeitig anstehende gleichrangige Anforderungen, präemptiert allein aber keinen laufenden gleichrangigen Handler. Ein dringlicherer Präemptionsrang kann das unter den Maskierungsbedingungen. Der zweite Hinweis geht beim Löschen verloren; `volatile` macht die Lese-/Löschfolge nicht unteilbar und aus einem Flag keinen Ereigniszähler. Gesamtantwort 5 ms, Verletzung um 1 ms.
+**Musterlösung:** $f_{\mathrm{UPD}}=96\cdot10^6/(9600\cdot2000)=5\,\mathrm{Hz}$. Updateabstand 200 ms, zwei Toggles pro An-Aus-Zyklus ergeben 2,5 Hz Blinken. CPU-Takt und tatsächlicher Timer-Kerntakt dürfen nicht ohne Prüfung gleichgesetzt werden.
+
+Subpriorität allein unterbricht keinen laufenden gleichrangigen Handler; sie ordnet gleichzeitig anstehende Anforderungen. Ein dringlicherer zulässiger Rang 1 kann Rang 2 unter den Maskierungsbedingungen verdrängen. Ein einzelnes Pendingbit kann mehrere Ereignisse vor dem Callback zusammenfassen. Ein einmaliger Zählerzugriff erfasst nur den bedienten Hinweis; `volatile` rekonstruiert keine zuvor verlorene Anzahl. Gesamtantwort $18+4+6=28\,\text{µs}$, Fristverletzung um 3 µs.
 :::
 
-## Aufgabe 5: Eine Prüfbehauptung beurteilen
+## Aufgabe 5: Einen unvollständigen Prüfbericht bewerten
 
-Fünf vollständig erfasste Antworten dauern 4, 5, 4, 7 und 5 ms; erlaubt sind höchstens 6 ms. Berechnen Sie Mittelwert und Maximum. Beurteilen Sie: „Das mittlere Ergebnis ist gut und die LED blinkt, also ist die harte Frist bewiesen.“
+Ein Test protokolliert mit einer gemeinsamen Modelluhr Freigaben bei 0, 20, 40 und 60 ms. Zugehörige richtige Ausgaben sind bei 6, 27 und 49 ms dokumentiert; für den vierten Auftrag fehlt der Abschluss. Erlaubt sind höchstens 8 ms Antwortzeit.
+
+1. Bestimmen Sie die drei auswertbaren Antwortzeiten und ihren Mittelwert. Gilt diese Zahl automatisch als Mittelwert aller vier Aufträge?
+2. Welche Fristverletzung ist bereits belegt? Wie bewerten Sie den vierten Auftrag ohne erfundenen Nullwert?
+3. Eine LED blinkte während des Tests gleichmäßig. Ändert das Ihre Bewertung?
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Mittelwert 5 ms, Maximum 7 ms. Ein gültiger Fall verletzt die Frist um 1 ms und widerlegt die Garantie unter diesen Bedingungen. Weitere günstige Läufe heben ihn nicht auf. Blinken belegt nur sichtbare Funktion, keine allgemeine Fristgarantie.
+**Musterlösung:** Auswertbare Antworten: 6,7,9 ms, Mittelwert $22/3\approx7{,}33\,\mathrm{ms}$ nur für diese drei. Für alle vier ist ohne weitere Daten kein Mittelwert bestimmbar. Der dritte Auftrag verletzt die Frist um 1 ms und widerlegt die behauptete Garantie unter diesen Testbedingungen. Beim vierten ist ohne Abschluss beziehungsweise weitere Beobachtung die vollständige Antwort nicht bestimmbar; er darf nicht als rechtzeitig oder als Nullzeit verbucht werden. Gleichmäßiges Blinken betrifft eine andere Beobachtung und repariert keinen belegten Miss.
 :::
 
 {{< pagebreak >}}
 
-## Aufgabe 6: Eine nachleuchtende Tasteranzeige implementieren
+## Aufgabe 6: Eine Tasteranzeige mit Zeitablauf selbst implementieren
 
-**Programmieren, etwa 25–35 Minuten.** Die CM4-Basis in `code/lab01/` enthält `lab01_button.c/.h` und `button_step.c`. Der eingebaute Taster **B1/PC13** wird bereits mit 20 ms Stabilitätszeit entprellt. **LD1/PB0** ist Ihre Anzeige; **LD2/PE1** wird unabhängig in der Hauptschleife als Statusanzeige bedient. Kein RTOS.
+**Programmieren, etwa 30–40 Minuten.** CM4-Basis: `lab01_button.c/.h` und `button_step.c`. **B1/PC13** liefert entprellte Zustände: Startzustand sofort, danach 20 ms Stabilitätszeit. **LD1/PB0** ist Ihre Anzeige; **LD2/PE1** zeigt den Fortschritt derselben Hauptschleife. Kein RTOS.
 
-1. Implementieren Sie `Lab01_ButtonStep()`: Jede neue Betätigung schaltet LD1 für 600 Tickwerte ein. Eine weitere Betätigung startet diese Nachleuchtzeit neu; dauerhaftes Halten verlängert sie nicht. Beim Start bereits gedrückter Taster zählt als erste Betätigung.
-2. Verwenden Sie `Lab01_ButtonPressed()`, `HAL_GetTick()` und `Lab01_ButtonLed(on)`. Speichern Sie den vorherigen Tasterzustand und den Beginn der letzten Nachleuchtphase. Ein HAL-Tickwert entspricht hier einer Millisekunde.
-3. Der Schritt muss sofort zurückkehren: kein `HAL_Delay`, keine Warteschleife. Die vorhandene Hauptschleife ruft ihn wiederholt auf und bedient die Statusanzeige.
-4. Prüfen Sie kurzes Drücken, Halten und zwei Betätigungen innerhalb von 600 ms. Prüfen Sie den Zeitvergleich auch auf Papier beim 32-Bit-Überlauf.
-5. Erweitern Sie um einen Betätigungszähler im Debugger. Warum ist er kein Zähler aller elektrischen Flanken?
+| Vorhandene Schnittstelle | Bedeutung |
+|---|---|
+| `Lab01_ButtonPressed()` | null losgelassen, sonst gedrückt |
+| `HAL_GetTick()` | HAL-Zeit als `uint32_t`, hier 1 Tickwert = 1 ms |
+| `Lab01_ButtonLed(on)` | LD1 setzen: null aus, sonst ein |
+| `LAB01_LIGHT_TICKS` | Anzeigedauer: 800 Tickwerte |
+| `lab01_presses` | Betätigungszähler, Ihr Schritt ist einziger Schreiber |
 
-**Vorbereitete Basis:** [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_01_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Board und USB/ST-LINK genügen. Eigene Implementierung und tatsächlichen Prüfstatus festhalten; Debuggerdiagnosen bei angehaltenem zuständigem Kern lesen.
+1. Planen Sie `Lab01_ButtonStep()` in `button_step.c`: Neue Betätigung bedeutet 800 Tickwerte Licht und ein Zählschritt. Erneutes Drücken startet die Zeit neu; Halten verlängert sie nicht. Ein beim Start gedrückter Taster zählt einmal.
+2. Implementieren Sie Zustandswechselerkennung und Zeitablauf. Welche Variablen müssen zwischen zwei Aufrufen erhalten bleiben? Nutzen Sie vorzeichenlose Zeitdifferenzen. Bei abgelaufenen 800 Tickwerten soll die Anzeige ausgeschaltet werden.
+3. Kehren Sie nach begrenzter Arbeit zurück: kein `HAL_Delay`, keine Warteschleife. Prüfen Sie kurzes Drücken, Halten über 800 Tickwerte und erneutes Drücken während der Leuchtphase. LD2 muss weiterlaufen.
+4. Ergänzen Sie die Tabelle vor dem Boardtest: bereits entprellte, idealisierte Testeingaben; Werte jeweils nach dem Aufruf, vor Tick null alles aus/null. Die Zahlen sind keine gemessenen Boardzeiten.
 
-**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS und gegebenenfalls CMSIS-RTOS2. Papierwerte sind Lehrannahmen.
+| Tickwert | Tasterzustand | LD1 nach dem Schritt | Zähler |
+|---:|---|---|---:|
+| 0 | losgelassen | | |
+| 100 | gedrückt | | |
+| 250 | weiter gedrückt | | |
+| 360 | losgelassen | | |
+| 620 | erneut gedrückt | | |
+| 700 | losgelassen | | |
+| 1419 | losgelassen | | |
+| 1420 | losgelassen | | |
+
+5. Prüfen Sie zusätzlich den Start mit gehaltenem B1 sowie den Überlauffall: Beginn `0xFFFFFF00`, jetzt `0x00000220`. Ist die Anzeigezeit abgelaufen? Wie unterscheiden sich das Zählen entprellter Betätigungen und das Zählen elektrischer Flanken?
+
+**Basis:** [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_01_programmierung.md), STM32CubeMX, VS Code mit STM32 VS Code Extension, **NUCLEO-H755ZI-Q / STM32H755ZIT6**, USB/ST-LINK. Funktion und tatsächlichen Prüfstatus festhalten; Diagnose bei angehaltenem CM4.
+
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS-Core. Papierwerte sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** {{< pagebreak >}}
+{{< pagebreak >}}
 
 ### Musterlösung zu Aufgabe 6
 
-Die Differenzbildung bleibt beim Überlauf korrekt, wenn unbeobachtete Intervalle kürzer als ein voller 32-Bit-Umlauf sind. Beispiel: Beginn `0xFFFFFF00`, jetzt `0x00000158`: Differenz 600. Die Entprellung erzeugt stabile Zustandswechsel, keinen verlustfreien Flankenzähler.
+Benötigt werden vorheriger Tasterzustand, Aktivkennzeichen und Beginn der aktuellen Leuchtphase. Nur der vorgegebene Hauptprogrammkontext verändert diese Daten. Die Variablen bleiben beispielsweise mit `static` zwischen Aufrufen erhalten.
 
 ```c
 #include "lab01_button.h"
@@ -99,12 +140,25 @@ void Lab01_ButtonStep(void)
         ++lab01_presses;
     }
     previous = pressed;
-    if (active && (uint32_t)(now - since) >= 600U) {
+    if (active && (uint32_t)(now - since) >= LAB01_LIGHT_TICKS) {
         active = 0;
     }
     Lab01_ButtonLed(active);
 }
 ```
 
-Halten erzeugt nur die erste steigende Zustandsflanke. Eine zweite Betätigung setzt `since` neu. Die reale LED-Ausschaltung erfolgt erst bei erneuter Ausführung des Schritts; eine Funktionsprüfung beweist keine exakte physische 600-ms-Dauer.
+| Tickwert | LD1 | Zähler | Begründung |
+|---:|---|---:|---|
+| 0 | aus | 0 | noch keine Betätigung |
+| 100 | ein | 1 | erste Betätigung, Beginn bei 100 |
+| 250 | ein | 1 | Halten zählt nicht erneut |
+| 360 | ein | 1 | Loslassen beendet die laufende Zeit nicht |
+| 620 | ein | 2 | erneute Betätigung, neuer Beginn bei 620 |
+| 700 | ein | 2 | Zeit läuft weiter |
+| 1419 | ein | 2 | seit letzter Betätigung 799 Ticks |
+| 1420 | aus | 2 | genau 800 Ticks abgelaufen |
+
+Ist der Taster beim Start gedrückt, ist `previous` zunächst null; daher wird sofort eine Betätigung erkannt. Bleibt er gedrückt, ist bei Starttick plus 800 die LED aus; der Zähler bleibt eins. Die Überlaufdifferenz ist `(uint32_t)(0x00000220 - 0xFFFFFF00) = 800`, also ist die Zeit abgelaufen. Die Formel setzt Beobachtungsabstände ohne unbeobachtete vollständige 32-Bit-Umläufe voraus.
+
+Die Entprellung erzeugt stabile Zustandswechsel, keinen verlustfreien Flankenzähler. Ein sehr kurzer Rohpuls kann absichtlich verschwinden. Tickphase und spätere Ausführung beeinflussen reale LED-Zeitpunkte: Nach Ablauf wird erst beim nächsten Schritt ausgeschaltet. Eine Funktionsprüfung beweist keine exakte physische Leuchtdauer oder harte Antwortgrenze.
 :::

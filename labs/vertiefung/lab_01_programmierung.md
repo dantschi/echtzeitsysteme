@@ -10,10 +10,21 @@ Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten 
 2. LD1/PB0 als `LAB01_LED`, LD2/PE1 als `LAB01_STATUS`, Ausgänge anfangs LOW, ausschließlich CM4 zugeordnet. Prüfen Sie Boardbelegung/Polarität gegen UM2408. CM7 darf diese Pins und ihre Portkonfiguration nicht verändern.
 3. Nur `lab01_button.c`, `button_step.c` und deren Headerpfad in das CM4-Ziel aufnehmen. `lab01_demo.c`, seine Timer-/LED-Aufrufe und früherer Anwendungscode werden für diesen Versuch nicht gebaut; die funktionierende HAL-Zeitbasis bleibt erhalten.
 4. Im erhaltenen Include-Bereich `lab01_button.h` einbinden. Nach Boot/HAL/GPIO einmal `Lab01_ButtonInit();`, innerhalb der vorhandenen Hauptschleife `Lab01_ButtonRunOnce();`. Keine weitere Delay-Schleife hinzufügen.
-5. Vorbereitungsprüfung: unveränderte Startdatei lässt LD1 aus und LD2 ungefähr alle 250 Tickwerte umschalten; CM4 erreicht `Lab01_ButtonStep`. Die vorbereitete 20-ms-Stabilitätsfilterung wird durch wiederholte Aufrufe bedient. Studierende ersetzen anschließend den leeren Rumpf und testen die Nachleuchtanzeige. Auch bei beim Start gehaltenem B1 zählt die erste Betätigung gemäß Aufgabenvertrag.
+5. Vorbereitungsprüfung: unveränderte Startdatei lässt LD1 aus und LD2 ungefähr alle 250 Tickwerte umschalten; CM4 erreicht `Lab01_ButtonStep`. Die Hilfe übernimmt den anfangs gelesenen Tasterzustand sofort. Spätere Wechsel benötigen 20 ms beobachtete Stabilität und werden durch wiederholte Aufrufe bedient. Studierende ersetzen anschließend den leeren Rumpf und implementieren die 800-Tick-Anzeige samt Zähler. Die ideale Testtabelle im Blatt verwendet bereits entprellte Zustände; deren Tickwerte sind keine physisch gemessenen Tasterzeiten. Ein beim Start gehaltenes B1 zählt gemäß Aufgabenvertrag als erste Betätigung.
 6. Für einen Überlauftest zunächst eine private Rechnung oder Hostsimulation verwenden, nicht unkoordiniert die Systemzeit verstellen. Zeitvergleiche setzen einen laufenden Tick und keine unbeobachteten vollständigen Umläufe voraus.
 
 Der frühere Timer-/Lastvergleich bleibt separat in `lab01_demo.c/.h` und im Code-README verfügbar; er wird nicht mit dieser Anwendung kombiniert.
+
+## Aufgabenprüfung vor der Besprechung
+
+- Kurzer Druck: ein Zählschritt, LED bleibt nach dem Loslassen bis zum Ablauf an.
+- Halten über 800 Tickwerte: genau ein Zählschritt; die LED erlischt trotz weiterhin gehaltenem Taster.
+- Loslassen und erneutes Drücken während der Leuchtphase: zweiter Zählschritt und neuer Zeitbeginn.
+- Start mit gehaltenem B1: genau eine anfängliche Betätigung gemäß Aufgabenvertrag.
+- Überlauf: private Rechnung bzw. Hosttest mit unsigned Differenz; nicht die laufende HAL-Systemzeit manipulieren.
+- LD2 muss während der gesamten Bearbeitung weiterhin Fortschritt zeigen. Ihre Hauptschleife bleibt daher frei von Warteaufrufen im studentischen Schritt.
+
+`LAB01_LIGHT_TICKS` ist im Header definiert. Den Betätigungszähler verändert nur der studentische Schritt im Hauptprogramm; der Debugger liest ihn bei angehaltenem CM4. Die Referenzfunktion steht im `solution`-Profil, nicht in der studentischen Startdatei.
 
 ## Prüfstatus und Abgrenzung
 
