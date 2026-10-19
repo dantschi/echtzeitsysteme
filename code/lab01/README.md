@@ -1,3 +1,11 @@
+# Aktuelle Implementierungsaufgabe zu Übungsblatt 1
+
+`lab01_button.c/.h` und `button_step.c`: eigene Nachleuchtanzeige mit B1 und LD1, Status auf LD2. Der Timerdemonstrator unten ist ein getrennter Zusatzversuch.
+
+[Projektvorbereitung](../../labs/vertiefung/lab_01_programmierung.md) · [Aufgaben und Musterlösung](../../labs/lab_01_bare-metal-polling-interrupts.qmd)
+
+## Technische Dokumentation der bisherigen Bausteine
+
 # Bare-Metal-Vergleich zu Vorlesung 1
 
 Plattform: **NUCLEO-H755ZI-Q** mit STM32H755ZIT6. Die Anwendung läuft auf **Cortex-M4 ohne Betriebssystem**; Cortex-M7 behält den vorbereiteten generierten Boot-/Systemanteil. Entwicklungsweg: **STM32CubeMX und VS Code mit STM32 VS Code Extension**, zwei getrennte CMake-Ziele. Diese Dateien sind vollständige Anwendungsbausteine für ein generiertes Projekt, kein fertiges CubeMX-Boardprojekt und kein ausgeführter Hardwareversuch.

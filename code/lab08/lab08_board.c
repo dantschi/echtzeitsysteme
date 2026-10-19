@@ -1,9 +1,10 @@
 #include "main.h"
 #include "lab08_wwdg.h"
-/* CubeMX labels, not assumed Nucleo LED/header pin numbers.
- * GPIO output push-pull, initial LOW. LAB_ENABLE has external pull-down,
- * isolated indicator only. LAB_REFRESH toggles at a refresh attempt,
- * LAB_EWI rises in the warning callback. No connected actuator. */
+/* Optional separate watchdog display using onboard LEDs only:
+ * LAB_ENABLE = LD1/PB0, LAB_REFRESH = LD2/PE1, LAB_EWI = LD3/PB14.
+ * Configure CM4 push-pull outputs, initially LOW; verify board revision.
+ * These LEDs do not certify an external actuator's state during reset.
+ * The current health exercise uses lab08_health.c instead. */
 #if !defined(LAB_ENABLE_Pin) || !defined(LAB_ENABLE_GPIO_Port) || \
     !defined(LAB_REFRESH_Pin) || !defined(LAB_REFRESH_GPIO_Port) || \
     !defined(LAB_EWI_Pin) || !defined(LAB_EWI_GPIO_Port)

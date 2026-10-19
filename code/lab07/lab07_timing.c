@@ -8,6 +8,9 @@
 #define DWT_LOCKED UINT32_C(2)
 #define DWT_UNLOCK_KEY UINT32_C(0xC5ACCE55)
 
+_Static_assert(LAB07_SAMPLES_PER_KIND > 0U &&
+               2U * LAB07_SAMPLES_PER_KIND <= LAB07_CAPACITY,
+               "Both groups must fit the fixed log");
 volatile Lab07_Record lab07_records[LAB07_CAPACITY];
 volatile uint32_t lab07_count;
 volatile uint32_t lab07_dropped;

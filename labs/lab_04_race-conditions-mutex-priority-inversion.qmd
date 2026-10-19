@@ -1,152 +1,104 @@
 ---
-title: "Übungsblatt 4: Gemeinsame Ressourcen, Deadlock und Prioritätsinversion"
+title: "Übungsblatt 4: Gemeinsame Daten, Mutex und Prioritätsinversion"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Studierende: quarto render lab_04_race-conditions-mutex-priority-inversion.qmd --to pdf
-# Musterlösung: quarto render lab_04_race-conditions-mutex-priority-inversion.qmd --to pdf --profile solution
 ---
 
-::: {.content-visible when-profile="solution"}
-> **Musterlösung**
-:::
+## Aufgabe 1: Eine mehrteilige Änderung schützen (8 Punkte)
 
-## Ziele und Ablauf
+Ein gemeinsamer Kontostand ist 17. Im folgenden abstrakten Maschinenmodell lädt Einzahler A den Wert und berechnet privat $17+4$. A wird unterbrochen. Entnehmer B liest 17, berechnet $17-2$ und schreibt zurück. Danach schreibt A seinen gesicherten Wert. Es gibt keine weiteren Zugriffe.
 
-Sie erkennen verlorene Updates, wählen Schutzmechanismen und erklären Deadlock sowie Priority Inversion. Grundlage sind Vorlesungen 1–4, insbesondere Ready, Running und Blocked. CMSIS-RTOS2 bezeichnet die Echtzeitkernel-Schnittstelle des Common Microcontroller Software Interface Standard.
-
-**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
-
-| Abschnitt | Minuten | Zweck |
-|---|---:|---|
-| Papierkern mit Besprechung | 50 | 32 Orientierungspunkte |
-| Transfer und Besprechung | 20 | Rechnen und begründen |
-| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
-
-Der Übungsblock umfasst **85 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
-
-Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
-
-Der Übungsblock ergänzt 75 Minuten Erklärung und 20 Minuten Quiz/Abschluss zum Termin mit 180 Minuten. Die 50 Minuten Papierkern können wie bisher in 20, 15 und 15 Minuten zwischen Erklärblöcken verteilt werden.
-
-## Teil A: Papieraufgaben
-
-### Aufgabe 1: Verlorenes Update und konsistenter Snapshot (6 Punkte)
-
-**Maschinenmodell**, kein nachgewiesenes Compilerlisting: Gemeinsamer Zähler startet bei 5. Jede Erhöhung besteht aus Laden, Addieren und Schreiben. A liest 5 und berechnet im eigenen Register 6. Danach wird A unterbrochen. B führt sein vollständiges Inkrement aus. Anschließend schreibt A seinen gesicherten Registerwert.
-
-1. Ergänzen Sie Register A, Register B und gemeinsamen Speicher für alle Schritte. Welcher Endwert entsteht statt des gewünschten Wertes? (2 Punkte)
-2. Reicht es, nur die beiden Stores einzeln zu schützen oder `volatile` hinzuzufügen? Begründen Sie den notwendigen Schutzumfang. (2 Punkte)
-3. Bei einem Sensorpaar gehören `value` und `check` zum selben Update. Der Schreiber benutzt einen Mutex, der Leser nicht. Ist der gelesene Snapshot damit sicher konsistent? Beschreiben Sie eine korrekte Leseweise. (2 Punkte)
+1. Notieren Sie Registerwerte und Speicher nach jedem Schritt. Vergleichen Sie den Endwert mit dem korrekten Gesamtergebnis. (3 Punkte)
+2. Genügt ein Schloss nur um die beiden Stores oder `volatile`? Welche Operation muss gemeinsam geschützt werden? (2 Punkte)
+3. Zum Stand gehört das Prüffeld $p=2b+1$. Ein Schreiber aktualisiert beides unter einem Mutex, der Leser ohne ihn. Geben Sie einen inkonsistenten Snapshot und eine korrekte Leseweise an. (3 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-1. A liest 5, erhöht sein Register auf 6, Speicher bleibt 5. Beim Wechsel bleibt As 6 im gesicherten Kontext. B liest 5, erhöht sein Register auf 6 und schreibt 6. A schreibt anschließend seine 6. Der Speicher endet bei 6 statt 7.
-2. Zwei einzeln geschützte Stores verhindern nicht, dass vorher beide denselben alten Wert lesen. Der gesamte zusammengehörige Lese-/Änder-/Schreibzugriff muss gegenüber dem anderen Teilnehmer unteilbar organisiert werden. `volatile` bietet diese Synchronisation nicht. Das gezeigte Maschinenmodell ist keine Empfehlung für tatsächlichen C-Mehrthreadcode mit konkurrierenden nichtatomaren Zugriffen: Ein Data Race kann dort undefiniertes Verhalten verursachen.
-3. Der Leser kann zwischen den Schreiberzuweisungen landen und neuen `value` mit altem `check` erhalten. Er muss denselben Mutex erfolgreich erwerben, beide Felder in eine private Kopie übernehmen und freigeben. Längere private Berechnung folgt danach.
+**Musterlösung:** A hält privat 21, Speicher zunächst 17. B hält 15 und schreibt 15. A überschreibt mit 21. Korrekt wäre $17+4-2=19$. Einzelne geschützte Stores verhindern die veralteten Lesegrundlagen nicht. Der vollständige Lese-/Änder-/Schreibzugriff braucht gemeinsamen Ausschluss. In tatsächlichem C kann ein ungeschütztes Data Race undefiniertes Verhalten verursachen; das Modell ist keine zulässige C-Implementierung. Beim Paar kann der Leser etwa neuen Stand 21 und altes Prüffeld 35 sehen statt 43. Leser und Schreiber müssen denselben Mutex verwenden; beide Felder unter dem Schloss privat kopieren, danach freigeben und außerhalb auswerten.
 :::
 
-### Aufgabe 2: Maskierungsbudget und Tokenzahl (8 Punkte)
+## Aufgabe 2: Maskierungsbudget und Token (8 Punkte)
 
-1. Eine betroffene Interruptanforderung entsteht bei noch $8\,\text{µs}$ verbleibender Maskierung. Der Eintritt benötigt danach angenommene $2\,\text{µs}$, die Reaktion weitere $3\,\text{µs}$. Weitere Kosten fehlen im Modell. Gilt $R\le D$ für $D=10\,\text{µs}$? Welcher maximale Maskierungsrest wäre unter denselben Annahmen zulässig? (3 Punkte)
-2. Ein Semaphor wird mit Maximum 3 und Anfangszahl 3 angelegt. A, B und C erwerben je ein Token. D versucht Acquire mit Timeout 0. Danach gibt B frei, ohne dass ein anderer Thread wartet. D versucht erneut. Geben Sie die Zählerfolge und Ds beide Ergebnisse an. Ist mit dem Zähler die freie Pufferadresse bekannt? (3 Punkte)
-3. Ein binärer Ereignissemaphor startet mit 0. Zwei Releases erfolgen, bevor jemand ein Token verbraucht. Wie viele Token sind anschließend verfügbar? Warum passt für „Ereignis noch nicht eingetreten“ der Startwert 0, für „Ressource anfangs verfügbar“ dagegen 1? (2 Punkte)
+1. Eine Anforderung trifft bei 11 µs verbleibender Interruptmaskierung ein. Eintritt kostet danach 3 µs, Reaktion 4 µs; alles disjunkt. Prüfen Sie $D=16\,\text{µs}$ und bestimmen Sie den maximal zulässigen Maskierungsrest. (3 Punkte)
+2. Ein Semaphor hat Maximum vier, anfangs aber zwei Token. A und B erwerben je eines, C versucht Acquire mit Timeout null. B gibt frei, dann versucht C erneut. Geben Sie Zähler und Ergebnisse an. Kennt man damit die Adresse einer freien Ressource? (3 Punkte)
+3. Ein zunächst leerer binärer Semaphor bekommt drei Releases ohne Acquire. Wie viele gelingen? Warum ersetzt das keinen Mutex mit Besitzerbindung und Prioritätsvererbung? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-1. $R=(8+2+3)\,\text{µs}=13\,\text{µs}>10\,\text{µs}$. Die Modellfrist wird um $3\,\text{µs}$ verfehlt. Der zulässige Maskierungsrest ist höchstens $(10-2-3)\,\text{µs}=5\,\text{µs}$. Der Maskierungsumfang muss die tatsächlich konkurrierenden Interrupts umfassen; eine Threadmaskierung hält beispielsweise DMA nicht an.
-2. Zählerfolge $3\rightarrow2\rightarrow1\rightarrow0$. Ds erster Versuch liefert einen Fehler ohne Blockieren. Bs Release erhöht auf 1; Ds **neuer** Versuch kann erwerben und reduziert auf 0. D war nach dem ersten Fehler kein registrierter Warter. Der Zähler gibt nur die Anzahl, nicht die Identität eines freien Puffers an.
-3. Ein Token ist verfügbar. Das erste Release gelingt, das zweite scheitert am Maximum 1. Null lässt den Ereignis-Worker zunächst warten; eins stellt sofort eine Ressourcenerlaubnis bereit. Der Anfangswert beschreibt Bedeutung, nicht nur eine beliebige Konfiguration.
+**Musterlösung:** $R=11+3+4=18$ µs, Verletzung um 2 µs; höchstens $16-3-4=9$ µs Maskierungsrest. Tokenfolge $2\to1\to0$, Cs erster Versuch scheitert ohne Blockieren; Release führt auf 1, der neue erfolgreiche Versuch auf 0. Die Tokenzahl enthält keine Pufferidentität. Beim binären Semaphor gelingt nur das erste Release, zwei scheitern an Vollbelegung. Er signalisiert Verfügbarkeit, enthält aber nicht automatisch die Mutex-Besitzerbindung und -Vererbung.
 :::
 
-### Aufgabe 3: Deadlock, Ordnung und Timeout (6 Punkte)
+## Aufgabe 3: Drei Schlösser, ein Zyklus (8 Punkte)
 
-T1 hält Mutex A und wartet mit unbegrenzter Warteoption auf B. T2 hält B und wartet ebenso auf A. Es gibt genau eine exklusive Instanz je Ressource und keinen weiteren Abbruchpfad.
+T1 hält A und wartet auf B, T2 hält B und wartet auf C, T3 hält C und wartet auf A. Es gibt je eine Instanz und unbegrenztes Warten.
 
-1. Zeichnen Sie den Ressourcenwartegraphen. Beschriften Sie die Bedeutung beider Pfeilrichtungen. Warum kann die betrachtete Gruppe nicht fortfahren? Müssen alle übrigen Threads und Interrupts stillstehen? (2 Punkte)
-2. Erklären Sie die Coffman-Bedingung „No preemption“. Warum widerspricht sie einem präemptiven Prozessor-Scheduler nicht? Wie verhindert „immer A vor B“ den angegebenen Zyklus? (2 Punkte)
-3. T1 bekommt beim Erwerb von B einen endlichen Timeout, hält aber schon A. Was muss sein Fehlerpfad tun? Warum garantieren Timeout und sofortiger Neuversuch allein keinen Fortschritt? (2 Punkte)
+1. Zeichnen und beschriften Sie den Ressourcenwartegraphen. Welche Threads können nicht fortfahren? (3 Punkte)
+2. Erklären Sie „No preemption“ als Deadlockbedingung und unterscheiden Sie es von Prozessorpräemption. (2 Punkte)
+3. Zeigen Sie, wie eine globale Erwerbsordnung A vor B vor C den Zyklus verhindert. (1 Punkt)
+4. T2 bekommt beim Erwerb von C einen Timeout. Was muss sein Fehlerpfad mit B und begonnenen Änderungen tun? Warum beweist sofortiges Wiederholen keinen Fortschritt? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-1. Mutex A $\rightarrow$ T1 $\rightarrow$ Mutex B $\rightarrow$ T2 $\rightarrow$ Mutex A. Ressource zum Thread bedeutet Besitz; Thread zur Ressource bedeutet Warten. Beide benötigen die vom jeweils anderen gehaltene Freigabe und bleiben Blocked. Andere Threads und Interrupts können trotzdem arbeiten.
-2. „No preemption“ meint keinen zwangsweisen **Ressourcenentzug**, nicht fehlende Prozessorpräemption. Mit Ordnung A vor B darf T2 B nicht bereits halten, während es zuerst A fordert. Es wartet auf A ohne B; T1 kann B nehmen und beide freigeben.
-3. Nach fehlgeschlagenem B-Erwerb nicht auf B zugreifen, gehaltenes A passend freigeben und teilweise Datenänderungen konsistent behandeln. Eine Wiederholungsregel muss festgelegt sein. Symmetrische sofortige Wiederholung kann fortgesetzte Konflikte ohne Nutzfortschritt erzeugen, einen Livelock. Prioritätsvererbung beseitigt den Ressourcenzyklus nicht.
+**Musterlösung:** Zyklus $A\to T1\to B\to T2\to C\to T3\to A$; Ressource zum Thread heißt Besitz, Thread zur Ressource Warten. Alle drei bleiben ohne Abbruch blockiert, andere Systemteile können weiterlaufen. No preemption betrifft den fehlenden zwangsweisen Ressourcenentzug. Ein präemptiver CPU-Scheduler löst den Zyklus nicht. Nach globaler Ordnung darf T3 nicht bereits C halten und anschließend A verlangen. Nach Timeout C nicht benutzen, B passend freigeben und Teiländerungen konsistent zurücknehmen/abschließen. Symmetrische wiederholte Konflikte können Livelock verursachen; Prioritätsvererbung entfernt den Zyklus nicht.
 :::
 
-### Aufgabe 4: Derselbe Inversionsfall ohne und mit Vererbung (12 Punkte)
+## Aufgabe 4: Prioritätsinversion mit neuen Jobs (8 Punkte)
 
-Ein Kern, feste Prioritäten $H>M>L$, einmalige Jobs, Wechsel- und API-Kosten null. API bedeutet Programmierschnittstelle.
+Ein Kern, feste Ränge Alarm $>$ Auswertung $>$ Archiv; einmalige Jobs, API- und Wechselkosten null. Archiv startet bei 0, hält einen Lock und braucht insgesamt 6 ms CPU-Zeit bis zur Freigabe. Alarm wird bei 2 ms frei, braucht denselben Lock und danach 2 ms eigene Arbeit. Auswertung wird bei 3 ms frei, benötigt 9 ms und keinen Lock. Für Alarm gilt $D=9\,\mathrm{ms}$.
 
-| Job | Freigabe | Prozessorbedarf |
-|---|---:|---:|
-| L | 0 ms | nimmt Lock und benötigt insgesamt 5 ms bis zur Freigabe |
-| H | 1 ms | fordert denselben Lock, danach 1 ms eigene Arbeit |
-| M | 2 ms | 20 ms Arbeit, greift nicht auf den Lock zu |
-
-Die relative Deadline von H ist $D_H=10\,\mathrm{ms}$. Der Anforderungsversuch von H hat im Modell keine eigene Dauer.
-
-1. Zeichnen Sie die CPU-Belegung bis 26 ms **ohne** Vererbung. Bestimmen Sie Ls verbleibende Arbeit bei 1 und bei 2 ms. (3 Punkte)
-2. Berechnen Sie Hs Lockwartezeit, Antwortzeit $R_H$ und absolute Deadline. Ist die Frist eingehalten? (3 Punkte)
-3. Zeichnen Sie dieselben Jobs **mit einem vererbenden Mutex**. Wann beginnt und endet Ls Anhebung? Bestimmen Sie Hs Warte- und Antwortzeit. (3 Punkte)
-4. Vergleichen Sie die gesamte Prozessorarbeit. Welche Verzögerung wurde entfernt, welche nicht? Warum ist das kein Deadlock, und warum ist die endliche M-Arbeit von dauerhaftem Ready-Verhalten zu unterscheiden? (3 Punkte)
+1. Zeichnen Sie ohne Vererbung bis 17 ms und berechnen Sie Alarm-Warte- und Antwortzeit. (3 Punkte)
+2. Wiederholen Sie mit vererbendem Mutex. Markieren Sie die effektive Prioritätsanhebung. (3 Punkte)
+3. Prüfen Sie beide Fristen. Welche Verzögerung verschwindet, welche Restarbeit bleibt? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Ohne Vererbung:**
-
-| Intervall in ms | CPU |
-|---|---|
-| $[0,2)$ | L, Hs dauerloser erfolgloser Versuch bei 1 |
-| $[2,22)$ | M |
-| $[22,25)$ | L |
-| $[25,26)$ | H |
-
-Bei 1 ms bleiben vier, bei 2 ms drei Millisekunden L-Arbeit. H wartet $25-1=24\,\mathrm{ms}$ und hat $R_H=26-1=25\,\mathrm{ms}$. Seine absolute Deadline ist $d_H=1+10=11\,\mathrm{ms}$. Fertigstellung 26 ms liegt 15 ms danach.
-
-**Mit Vererbung:** L arbeitet von 0 bis 5. Von 1 bis 5 hat es die hohe effektive Priorität, weil H am gehaltenen Mutex wartet. H läuft von 5 bis 6, M von 6 bis 26. H wartet $5-1=4\,\mathrm{ms}$ und hat $R_H=6-1=5\,\mathrm{ms}\le D_H$. Die Modellfrist wird gehalten.
-
-In beiden Fällen beträgt die Gesamtarbeit $5+1+20=26\,\mathrm{ms}$. Entfernt wurde M als zusätzliche Verdrängung des L-Halters vor H. Ls vier Millisekunden Restarbeit bleiben. L könnte bei Zuteilung fortfahren; es gibt keinen geschlossenen Ressourcenzyklus. Ein einmaliger M-Job endet nach 20 ms, ein dauerhaft bereites M könnte ohne Vererbung L unbegrenzt ausschließen. Bei mehreren Mutexen oder Gerätewartezeiten gilt dieses einfache Ein-Mutex-Ergebnis nicht pauschal.
+**Musterlösung:** Ohne Vererbung: Archiv 0–3 (Alarms erfolgloser Versuch bei 2 dauert null), Auswertung 3–12, Archiv 12–15, Alarm 15–17. Alarm wartet $15-2=13$ ms, Antwort $17-2=15$ ms; absolute Deadline 11 ms, Miss um 6 ms. Mit Vererbung: Archiv 0–6, ab 2 bis 6 auf Alarmrang; Alarm 6–8, Auswertung 8–17. Lockwarten 4 ms, Antwort 6 ms, Deadline eingehalten. Archiv-Restarbeit von 4 ms bei Anforderung bleibt; Auswertung als zusätzliche Verdrängung entfällt. Gesamt-CPU-Arbeit jeweils 17 ms. Kein Ressourcenzyklus, also hier kein Deadlock.
 :::
 
-## Transfer: Nachrichtenschutz und asynchroner Abschluss · 20 Minuten
+## Aufgabe 5: Freigeben heißt nicht fertig
 
-Bearbeiten Sie zehn Minuten und besprechen Sie zehn Minuten. Keine zusätzlichen Punkte. IT bedeutet interruptgesteuerte Übertragung, DMA Direct Memory Access, direkten Hardware-Speicherzugriff.
-
-Ein UART sendet 100 Nutzbytes bei 115200 Baud im Format 8N1. UART ist die asynchrone serielle Schnittstelle, 8N1 bedeutet acht Datenbits, kein Paritätsbit, ein Stoppbit; ein Startbit kommt hinzu.
-
-1. Berechnen Sie die minimale reine Leitungszeit unter diesen Annahmen.
-2. Zwei Threads sollen ganze Zeilen ausgeben. Warum werden privater Puffer und gemeinsamer UART-Mutex benötigt, und weshalb ist `printf` nicht automatisch durch diesen Mutex insgesamt threadsicher?
-3. Bei IT-/DMA-Übertragung kehrt die Startfunktion vor dem tatsächlichen Abschluss zurück. Wann darf der Puffer wiederverwendet werden und wer gibt den CMSIS-Mutex frei? Macht Prioritätsvererbung die Leitung schneller?
+Ein Thread startet einen asynchronen Transfer mit einem Zeiger auf seinen Ausgabepuffer, gibt den Mutex frei und befüllt denselben Puffer sofort neu. Ein anderer Thread nimmt den Mutex korrekt. Ist der Transferinhalt dadurch geschützt? Formulieren Sie eine Besitzregel bis zum tatsächlichen Abschluss.
 
 ::: {.content-visible when-profile="solution"}
-$100\cdot10/115200\,\mathrm{s}\approx8{,}68\,\mathrm{ms}$ reine Leitungszeit. Privater Puffer erhält die eigene Nachricht, der gemeinsame Vertrag serialisiert das Gerät. Bibliothekszustände und tatsächliches Retargeting der formatierten Ausgabe sind separat zu prüfen. Ein sichtbares Mischbild wird nicht als universelles Soll behauptet.
-
-IT ist die interruptgesteuerte Übertragung, DMA direkter Hardware-Speicherzugriff. Der Puffer bleibt bis zu bestätigtem Abschluss oder sicherem Abbruch gültig und unverändert. Der Callback darf zulässig signalisieren; der Besitzerthread gibt den Mutex frei. Ein Timeout allein bestätigt noch keine ruhende Hardware. Vererbung verändert die Taskzuteilung, nicht die Leitungsrate.
+**Musterlösung:** Der Mutex schützt nur teilnehmende Softwarezugriffe, nicht die fortlaufenden Hardwarelesezugriffe. Der Puffer darf bis zum bestätigten Transferabschluss weder ungültig werden noch überschrieben werden. Geeignet ist ein eigener Ausgabebesitzer mit eindeutigem Puffertransfer oder ein entsprechend langer Besitzvertrag; bloß längeres C-Objektleben genügt nicht.
 :::
 
-## Teil B: Praxisfall · 15 Minuten
+{{< pagebreak >}}
 
-### Praxisfall 4: Ablauf und Marker lesen
+## Aufgabe 6: Einen konsistenten Ressourcenstand implementieren
 
-**Papieralternative, synthetische Reihenfolgen:** Drei Threads haben $H>M>L$ und verwenden genau eine Ressource. L hält sie vor Hs Anforderung. H blockiert am belegten Schutzobjekt; M ist dann Ready und greift nicht auf die Ressource zu. L hält keine weiteren Locks und wartet nicht auf Geräte.
+**Programmieren, etwa 30–40 Minuten.** `lab04_account.c/.h` und `account_student.c` laufen auf CM4 mit CMSIS-RTOS2. Zwei vorbereitete Threads ändern einen anfangs 1000 großen Stand je 100-mal: einer um $+3$, einer um $-2$. Zum Stand gehört $check=2\cdot balance+1$. Ein dritter Thread prüft Snapshots und bedient **LD1/PB0** (Paar konsistent), **LD3/PB14** (Fehler) und **LD2/PE1** (Status).
 
-| Ohne Vererbung | Mit Vererbung |
-|---|---|
-| L erwirbt, H fordert, M arbeitet, L gibt frei, H erwirbt und endet | L erwirbt, H fordert, L gibt frei, H erwirbt und endet, M arbeitet |
+1. Implementieren Sie `Lab04_Adjust(delta)`: Mutex erwerben, Stand und Prüffeld gemeinsam aktualisieren, freigeben. Verwenden Sie `lab04_account_mutex`, `lab04_account` und `Lab04_Check(status)` zur Fehlerprüfung. Das Feld `done` bleibt dabei unverändert.
+2. Implementieren Sie `Lab04_Snapshot()`: unter demselben Mutex das gesamte `Lab04_Account` in eine lokale Kopie übernehmen, freigeben, Kopie zurückgeben. LED-Zugriffe und Warteaufrufe gehören nicht in diesen kritischen Abschnitt.
+3. Berechnen Sie den Endstand nach beiden abgeschlossenen Arbeitsfolgen. Prüfen Sie `lab04_account.done == 2`, den Endstand und beide LED-Aussagen. Der Ausgangsstand der Startdatei liefert noch keine gültigen Snapshots.
+4. Begründen Sie, weshalb ein erfolgreicher Schreiber-Mutex ohne passenden Leserschutz nicht genügt. Führen Sie keine absichtlich ungeschützten C-Datenrennen auf dem Board aus.
 
-1. Erklären Sie die Reihenfolge und die verbleibende H-Warteursache. Welche Eigenschaft des Mutex ist erforderlich?
-2. In einem zusätzlichen **synthetischen 1-kHz-Ticklog** liegen H-Anfrage und H-Erwerb beide bei 100, H-Ende bei 101. Beweist dies eine Lockwartezeit von exakt null? Ist der Unterschied zwischen Anfrage und Ende eigene CPU-Zeit?
-3. L schreibt seinen Ende-Marker erst nach Rückkehr aus dem Release-Aufruf. Warum ist dieser Marker keine verlässliche genaue Ressourcenfreigabezeit?
+**Vorbereitete Basis:** [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_04_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Board und USB/ST-LINK genügen. Eigene Implementierung und tatsächlichen Prüfstatus festhalten; Debuggerdiagnosen bei angehaltenem zuständigem Kern lesen.
 
-**Bei vorbereitetem Board:** Die Lehrperson zeigt je einen fertigen Semaphor- und Mutexlauf des `lab04_resources`-Moduls. Die Gruppe erklärt die Auswahlreihenfolge. Neuaufbau und Laufzeitmessung mit zusätzlichen GPIOs sind freiwillig.
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS und gegebenenfalls CMSIS-RTOS2. Papierwerte sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Praxisfall 4**
+**Musterlösung:** {{< pagebreak >}}
 
-Ohne Vererbung verdrängt M den niedrigen Halter L, während H auf Ls Freigabe wartet. Mit Prioritätsvererbung erhält L vorübergehend Hs effektive Priorität und kann vor M freigeben. H wartet weiter auf Ls verbleibende geschützte Arbeit; diese verschwindet nicht.
+### Musterlösung zu Aufgabe 6
 
-Gleiche Tickwerte geben keine Auflösung unter einem Tick und beweisen keine physische Nullwartezeit. Anfrage bis Ende enthält Warten und Arbeit, gegebenenfalls weitere Kosten, keine isolierte H-CPU-Zeit. Nach dem Release kann H oder M vor Ls Rückkehr laufen. Ls späterer Ende-Marker liegt dann nach der tatsächlichen Freigabe. Die Tabelle belegt nur das genannte einfache Modell, keine allgemeine Deadlinegarantie.
+Endstand $1000+100\cdot3-100\cdot2=1100$, Prüffeld 2201. Alle Teilnehmer am Paar benutzen denselben Mutex. `done` wird von der Basis ebenfalls unter diesem Mutex aktualisiert.
+
+```c
+#include "lab04_account.h"
+
+void Lab04_Adjust(int32_t delta)
+{
+    Lab04_Check(osMutexAcquire(lab04_account_mutex, osWaitForever));
+    lab04_account.balance += delta;
+    lab04_account.check = 2 * lab04_account.balance + 1;
+    Lab04_Check(osMutexRelease(lab04_account_mutex));
+}
+
+Lab04_Account Lab04_Snapshot(void)
+{
+    Lab04_Check(osMutexAcquire(lab04_account_mutex, osWaitForever));
+    const Lab04_Account copy = lab04_account;
+    Lab04_Check(osMutexRelease(lab04_account_mutex));
+    return copy;
+}
+```
+
+Die endlichen Änderungen bleiben im `int32_t`-Wertebereich. Die LED prüft funktionale Invarianten und den Endstand dieses Laufs; daraus entsteht kein Zeit- oder allgemeiner Race-Freiheitsnachweis.
 :::
-
-## Ergebnis und freiwillige Vertiefung
-
-Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
-
-Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_04_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
-
-Quellen: Vorlesung 4, Arm CMSIS-RTOS2 zu Mutex und Semaphore, die **lokale** `cmsis_os2.c` und FreeRTOS-Konfiguration, ST UM2408/RM0399/AN5361 und Dokumentation der eingesetzten STM32 VS Code Extension. Der öffentliche Adapterstand ist keine automatisch bestätigte Firmwareversion Ihres Boards.

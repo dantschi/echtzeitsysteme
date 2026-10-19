@@ -1,17 +1,17 @@
-# Projektvorbereitung und Programmiervertiefung
+# Projektvorbereitung für die Implementierungsaufgaben
 
-Die Anleitungen zu **Blatt 2 und 3** beschreiben die vorab bereitzustellende Projektbasis für die kleinen eigenen Implementierungen der Studierenden. Die übrigen Anleitungen dienen der Demonstrationsvorbereitung oder freiwilliger zusätzlicher Boardpraxis. Alle Arbeitsaufträge stehen in den [Übungsblättern](../README.md).
+Die folgenden Anleitungen beschreiben die vor dem Termin bereitzustellenden Projektbasen. Die Studierenden implementieren die im jeweiligen Übungsblatt angegebenen Funktionen selbst; eine vorbereitete Demonstration ist nicht das Arbeitsziel. Die Basis verwendet nur NUCLEO-H755ZI-Q, eingebaute LEDs/B1 und USB/ST-LINK. Alle Arbeitsaufträge stehen in den [Übungsblättern](../README.md).
 
 | Blatt | Anleitung |
 |---|---|
-| 1 | [Polling und Timer](lab_01_programmierung.md) |
-| 2 | [Kooperativer Dispatcher](lab_02_programmierung.md) |
-| 3 | [FreeRTOS und Präemption](lab_03_programmierung.md) |
-| 4 | [Semaphor und Mutex](lab_04_programmierung.md) |
-| 5 | [Wertqueue und Button-Worker](lab_05_programmierung.md) |
-| 6 | [Shared Memory und Cache](lab_06_programmierung.md) |
-| 7 | [Lokaler Zähler und optionaler Trace](lab_07_programmierung.md) |
-| 8 | [HSEM-Zähler und separate WWDG-Station](lab_08_programmierung.md) |
-| 9 | [Capstone-Datenkette](lab_09_programmierung.md) |
+| 1 | [Taster-Nachleuchtanzeige ohne blockierendes Warten](lab_01_programmierung.md) |
+| 2 | [Doppel-/Dreifachpuls als kooperativer Automat](lab_02_programmierung.md) |
+| 3 | [simulierte Füllstandsüberwachung mit zwei Threads](lab_03_programmierung.md) |
+| 4 | [Mutex-Änderung und konsistenter Snapshot](lab_04_programmierung.md) |
+| 5 | [Taster-IRQ mit Wertqueue und LED-Worker](lab_05_programmierung.md) |
+| 6 | [eigene geordnete M4-Antwort auf neue M7-Anfragen](lab_06_programmierung.md) |
+| 7 | [robuste Gruppenauswertung mit 64-Bit-Summe](lab_07_programmierung.md) |
+| 8 | [Frischeprüfung eines Supervisors mit Fehlerprovokation über B1](lab_08_programmierung.md) |
+| 9 | [Hysterese- und Publikationslückenanzeige im Capstone](lab_09_programmierung.md) |
 
-Für eigene Ausführung sind STM32CubeMX, VS Code mit STM32 VS Code Extension und ein NUCLEO-H755ZI-Q / STM32H755ZIT6 vorgesehen. Die vorhandenen C-Dateien sind Anwendungsmodule. Projektgenerierung, Flashstart, Linkerlayout und Bootfolge sind zusätzliche Voraussetzungen; sie werden nicht als bereits getestet behauptet. Die Papieraufgaben setzen keinen erfolgreichen praktischen Aufbau voraus. Für die Programmieraufgaben in Blatt 2 und 3 wird eine vorbereitete Projektbasis verwendet; die Studierenden implementieren die Anwendungslogik selbst.
+STM32CubeMX und VS Code mit STM32 VS Code Extension müssen vorab eingerichtet sein. Projektgenerierung, Kernzuordnung, Flashstart, Linkerlayout und Bootfolge sind zu prüfen; die vorhandenen C-Dateien sind keine generierten Boardprojekte. Die Papieraufgaben bleiben ohne Hardware lösbar. Die vollständigen Musterfunktionen stehen nur im `solution`-Profil der Übungsblätter.

@@ -1,148 +1,110 @@
 ---
-title: "Übungsblatt 1: Zeitvertrag, Polling und Interrupts"
+title: "Übungsblatt 1: Zeitverträge, Polling und eine Tasteranzeige"
 author: "Prof. Dr.-Ing. Daniel Klünder"
-# Studierende: quarto render lab_01_bare-metal-polling-interrupts.qmd --to pdf
-# Musterlösung: gleicher Aufruf zusätzlich mit --profile solution
 ---
 
-::: {.content-visible when-profile="solution"}
-> **Musterlösung** · Rechenwerte sind Lehrannahmen, keine Hardwaremessungen.
-:::
+## Aufgabe 1: Zeitvertrag einer Verpackungsprüfung (8 Punkte)
 
-## Ziele und Ablauf
+Ein Prüfsystem muss nach einer erkannten falschen Etikettierung binnen $D=7\,\mathrm{ms}$ den richtigen Sperrauftrag am Softwareausgang ausgeben. Kein Miss ist erlaubt; die mechanische Bewegung gehört nicht zum Vertrag. Ein Kontrollfoto ist nach 60 ms wertlos, zwei ausgelassene Fotos je 500 sind zulässig. Eine verspätete Produktionsstatistik bleibt nützlich.
 
-Sie formulieren Zeitverträge, berechnen Latenz und Jitter und vergleichen Polling mit Interrupts. Voraussetzung ist Vorlesung 1; RTOS-Kenntnisse werden nicht benötigt.
-
-**Verbindlicher Übungskern ist die Klausurvorbereitung auf Papier.** Die angegebenen Punkte dienen zur Selbsteinschätzung; die Modulnote entsteht durch die Papierklausur. Alle Rechen- und Analyseaufgaben sind mit den angegebenen Daten ohne Hardware oder erfolgreiche frühere Programmieraufgaben lösbar. Begründen Sie Entscheidungen und nennen Sie Modellannahmen.
-
-| Abschnitt | Minuten | Zweck |
-|---|---:|---|
-| Vier Papieraufgaben | 40 | 32 Orientierungspunkte |
-| Transfer und Besprechung | 20 | Rechnen und begründen |
-| Praxisfall: vorbereitete Demonstration oder Papieralternative | 15 | Vorhersagen, erklären, Grenzen nennen |
-
-Der Übungsblock umfasst **75 Minuten**. Die Praxisphase umfasst etwa fünf Minuten Vorhersage, höchstens fünf Minuten Demonstration und fünf Minuten Erklärung. Ohne funktionierenden Aufbau bearbeiten Sie in denselben 15 Minuten den vollständig vorgegebenen Papierfall. **Nach spätestens drei Minuten technischer Fehlersuche wird zum Papierfall gewechselt.** Dadurch bleibt der Übungsblock auch bei Setup-Problemen nutzbar.
-
-Für eine Demonstration verwendet die Lehrperson **STM32CubeMX**, **VS Code mit STM32 VS Code Extension** und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Sie bereitet die geprüften Projektvarianten vor dem Termin vor. Installation, Projektgenerierung, Integration, Regenerierungsprüfung, Build und Flash sind keine Pflichtaufgaben im Übungstermin. Eine eigene Implementierung ist freiwillige Vertiefung. Alle Zahlen dieses Blatts sind Lehrannahmen, soweit sie nicht ausdrücklich als eigene Messwerte gekennzeichnet sind.
-
-Der Übungsblock ergänzt 90 Minuten Erklärung und 15 Minuten Quiz zum Termin mit 180 Minuten.
-
-## Papieraufgabe 1: Vertrag und Echtzeitklasse
-
-Ein Sensor meldet ein Werkstück. Der richtige Stellauftrag muss innerhalb von $10\,\mathrm{ms}$ am Ausgang anliegen. Die mechanische Klappenbewegung gehört **nicht** zu diesem Softwarevertrag. Für den Stellauftrag ist kein Miss zulässig. Ein Prüfbild desselben Geräts ist nach seiner Frist wertlos; ein fehlendes Bild je Block von 100 Bildern ist zulässig. Eine Statusanzeige besitzt auch bei verspäteter Aktualisierung noch Restnutzen.
-
-1. Benennen Sie Beginn, Abschluss und relative Frist des Stellauftrags. Warum reicht „die Software soll schnell sein“ nicht? (2 P.)
-2. Ordnen Sie die drei Aufgaben Hard, Firm und Soft zu. Begründen Sie jede Zuordnung aus dem Vertrag. (3 P.)
-3. Das Sensorereignis gibt den Auftrag bei $r=2\,\mathrm{ms}$ frei. Berechnen Sie die absolute Deadline $d$. Beurteilen Sie einen richtigen Auftrag bei $f=12\,\mathrm{ms}$ und bei $f=12{,}1\,\mathrm{ms}$. (2 P.)
-4. Ein fachlich falscher Stellauftrag liegt schon bei $f=8\,\mathrm{ms}$ vor. Ist der Vertrag erfüllt? Begründen Sie. (1 P.)
-
-Ihre Lösung: Zeitpunkte, Klassen und kurze Begründungen auf einem separaten Blatt.
+1. Formulieren Sie Anfang, Ende und Zeitbedingung des Sperrauftrags. (2 Punkte)
+2. Ordnen Sie die drei Leistungen Hard, Firm und Soft zu und begründen Sie. (3 Punkte)
+3. Freigabe bei $r=5\,\mathrm{ms}$: Bestimmen Sie die absolute Deadline und bewerten Sie richtige Ausgaben bei 12 und 12,2 ms. (2 Punkte)
+4. Ein falscher Auftrag liegt schon bei 8 ms vor. Ist der Vertrag erfüllt? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung Papieraufgabe 1
-
-1. Beginn ist die Freigabe durch das erfasste Sensorereignis, Abschluss der **richtige** Stellauftrag am Ausgang, relative Frist $D=10\,\mathrm{ms}$. „Schnell“ legt weder Endpunkte noch einen zulässigen Maximalwert fest. Je 1 P. für den vollständigen Vertrag und die Begründung.
-2. Stellauftrag **Hard**: kein deadline miss, also keine Fristverletzung, erlaubt. Prüfbild **Firm**: verspätetes Einzelergebnis wertlos, zugleich eine benannte Auslassung zulässig. Anzeige **Soft**: verspäteter Stand hat Restnutzen. Je 1 P. mit Begründung. Gerätetyp oder Branche ersetzen die Zuordnung nicht.
-3. $d=r+D=2+10=12\,\mathrm{ms}$. Bei $f=12$ liegt der richtige Auftrag genau auf der Frist und ist nach der gewählten Konvention zulässig. Bei $f=12{,}1$ ist er $0{,}1\,\mathrm{ms}$ verspätet. Je 1 P. für Rechnung und beide Bewertungen.
-4. Nein: Die Zeitbedingung ist erfüllt, die funktionale Bedingung verletzt. Ein pünktlich falscher Wert erfüllt den Gesamtvertrag nicht. 1 P.
+**Musterlösung:** Anfang: festgelegte Erkennung/Freigabe; Ende: richtiger Sperrauftrag am Softwareausgang; $f-r\leq7\,\mathrm{ms}$. Sperrauftrag Hard, Foto Firm, Statistik Soft. Ausschlaggebend sind Missregel und Restnutzen. $d=5+7=12\,\mathrm{ms}$: 12 erfüllt die inklusive Grenze, 12,2 verletzt sie um 0,2 ms. Die falsche Ausgabe bei 8 ms verletzt die funktionale Bedingung trotz erfüllter Zeitbedingung. Punkte entsprechend Teilaufgaben.
 :::
 
-## Papieraufgabe 2: Zeitachse, Jitter und Nachweis
+## Aufgabe 2: Eigene Arbeit und Antwort auseinanderhalten (8 Punkte)
 
-Ein Auftrag wird bei $r=2\,\mathrm{ms}$ freigegeben und startet erstmals bei $s=4\,\mathrm{ms}$. Er rechnet von 4 bis 6, wird von 6 bis 8 unterbrochen und rechnet von 8 bis 9 weiter. Die absolute Deadline liegt bei $d=12\,\mathrm{ms}$. Verwaltungsaufwand ist im Modell nicht zusätzlich angesetzt.
+Ein Job wird bei 3 ms freigegeben. Er rechnet von 5 bis 8 und von 10 bis 12 ms, dazwischen wird er unterbrochen. Absolute Deadline: 14 ms. Eine periodische Ausgabe hat die Sollzeitpunkte 0, 8, 16, 24, 32 ms und die Istzeitpunkte 0, 8,3, 16,1, 24,4, 32,2 ms.
 
-1. Skizzieren Sie die Abschnitte. Berechnen Sie eigenen Rechenbedarf $C$, Startverzug, Antwortzeit $R$, relative Deadline $D$ und Reserve. Prüfen Sie die Frist. (3 P.)
-2. Eine Ausgabe hat bei Sollperiode $T=10\,\mathrm{ms}$ die Lehrzeitpunkte 0; 9,8; 20; 29,8; 40 ms. Berechnen Sie die vier Istperioden, deren Mittelwert und Peak-to-Peak-Periodenspanne. (2 P.)
-3. Berechnen Sie die Abweichungen gegenüber den Sollzeitpunkten 0; 10; 20; 30; 40 ms und deren Spanne. Weshalb ist sie nicht der Periodenjitter aus Teil 2? (1 P.)
-4. Eine andere Funktion zeigt in 100 untersuchten Läufen höchstens $80\,\text{µs}$ eigene Ausführungszeit. Darf man deshalb WCET $=80\,\text{µs}$ garantieren? Beweisen konstante Latenzen von je $5\,\mathrm{ms}$ eine Frist von $3\,\mathrm{ms}$? Begründen Sie beides. (2 P.)
-
-WCET steht für Worst-Case Execution Time. Peak-to-Peak bezeichnet Maximum minus Minimum.
+1. Zeichnen Sie den Jobverlauf. Berechnen Sie eigene CPU-Zeit, Startverzug, Antwortzeit und Reserve. (4 Punkte)
+2. Berechnen Sie die vier Istperioden, Mittelwert und Periodenspanne. (2 Punkte)
+3. Berechnen Sie die Spanne der Phasenabweichungen. Weshalb ist das eine andere Größe? (1 Punkt)
+4. Beweist das größte Ergebnis einer endlichen Messreihe die WCET? (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung Papieraufgabe 2
-
-1. Die Skizze muss Warten 2–4, Rechnen 4–6, Unterbrechung 6–8 und Rechnen 8–9 zeigen. $C=(6-4)+(9-8)=3\,\mathrm{ms}$, Startverzug $s-r=2\,\mathrm{ms}$, $R=f-r=9-2=7\,\mathrm{ms}$, $D=d-r=12-2=10\,\mathrm{ms}$, Reserve $d-f=3\,\mathrm{ms}$. $R\leq D$: der Modelllauf ist rechtzeitig. Je 1 P. für Skizze mit Rechenbedarf, weitere Größen und Fristbewertung.
-2. Istperioden: 9,8; 10,2; 9,8; 10,2 ms. Mittelwert $=(9{,}8+10{,}2+9{,}8+10{,}2)/4=10\,\mathrm{ms}$. Spanne $=10{,}2-9{,}8=0{,}4\,\mathrm{ms}$. Je 1 P. für Perioden und Auswertung.
-3. Phasenabweichungen: 0; −0,2; 0; −0,2; 0 ms. Spanne $=0-(-0{,}2)=0{,}2\,\mathrm{ms}$. Die Phase vergleicht Ist mit Soll desselben Ereignisses, die Periode dagegen benachbarte Istereignisse. 1 P. mit dieser Unterscheidung.
-4. Nein: 80 µs ist das größte beobachtete Ergebnis; ungesehene Eingaben oder andere zugelassene Zustände können länger dauern. Eine sichere Schranke braucht eine begründete Abdeckung beziehungsweise Analyse. Auch 5 ms bei jedem Lauf verletzen $D=3\,\mathrm{ms}$, obwohl die beobachtete Latenzspanne null ist. Je 1 P. Eine Reserve auf das Messmaximum allein beweist ebenfalls keine Schranke.
+**Musterlösung:** Rechnen in $[5,8)$ und $[10,12)$; eigene CPU-Zeit $3+2=5$ ms, Startverzug 2 ms, Antwortzeit $12-3=9$ ms, Reserve $14-12=2$ ms. Warten/Unterbrechung insgesamt 4 ms. Istperioden: 8,3; 7,8; 8,3; 7,8 ms; Mittelwert 8,05 ms, Spanne 0,5 ms. Phasenabweichungen: 0; 0,3; 0,1; 0,4; 0,2 ms, Spanne 0,4 ms. Phase vergleicht Ist und Soll desselben Ereignisses, Periode benachbarte Istereignisse. Ein Messmaximum deckt nicht automatisch alle zulässigen Pfade/Zustände ab und beweist keine WCET.
 :::
 
-## Papieraufgabe 3: Polling und gespeicherte Ereignisse
+## Aufgabe 3: Polling unter Last (8 Punkte)
 
-Eine Super-Loop prüft pro Runde einmal einen Eingang (höchstens 0,1 ms), reagiert bei Auftrag (höchstens 0,2 ms) und bearbeitet die Anzeige (höchstens 5,0 ms). Ein Auftrag bleibt bis zur Abfrage gespeichert und wird im Modell jeweils am Ende der Eingangsprüfung erkannt. Es gibt höchstens einen relevanten Auftrag und keine Unterbrechungen. Für eine konservative Abschätzung begrenzen Sie das Warten bis zur Erkennung durch eine maximale ganze Runde und addieren anschließend die Reaktion. Die Frist ist $D=10\,\mathrm{ms}$.
+Eine Runde besteht aus Eingangsprüfung mit höchstens 0,2 ms, Reaktion mit höchstens 0,3 ms und Displayarbeit mit höchstens 3,5 ms. Ein Auftrag bleibt bis zur Abfrage gespeichert. Ein Kern, keine Unterbrechungen, höchstens ein relevanter Auftrag; Erkennung am Prüfungsende. Schätzen Sie konservativ mit einer ganzen maximalen Runde bis zur Erkennung plus Reaktion ab. Relative Frist: 6 ms.
 
-1. Berechnen Sie maximale Rundenzeit und konservative Antwortgrenze. Ist die Modellfrist nachweisbar? (2 P.)
-2. Die Anzeigenarbeit benötigt nun 50 ms. Rechnen Sie erneut und beschreiben Sie eine Ereignisphase, in der tatsächlich eine Fristverletzung möglich ist. (2 P.)
-3. Statt des gespeicherten Auftrags wird nur der momentane Eingangspegel gelesen. Die Abfragen erfolgen bei 0, 5 und 10 ms; der Eingang ist nur von 1 bis 2 ms HIGH. Wird das Ereignis erkannt? Erklären Sie den Unterschied zwischen Verlust und Verspätung sowie die Funktion eines Latch. (2 P.)
-4. Die Anzeige wird in Schritte von höchstens 1 ms zerlegt, mit einer Eingangsprüfung nach jedem Schritt. Berechnen Sie die neue Runden- und Antwortgrenze. Welche zusätzliche Zustandsinformation braucht die Anzeige? (2 P.)
+1. Bestimmen Sie Runden- und Antwortgrenze. (2 Punkte)
+2. Die Displayarbeit wächst auf 9,5 ms. Rechnen Sie erneut und nennen Sie eine konkrete Ereignisphase mit Fristverletzung. (2 Punkte)
+3. Ohne Speicherung ist ein Pegel nur von 2 bis 3 ms HIGH; Abfragen erfolgen bei 0, 4 und 8 ms. Wird der Puls erkannt? Was verändert ein Ereignislatch? (2 Punkte)
+4. Zerlegen Sie die Displayarbeit in höchstens 0,5-ms-Schritte mit erneuter Eingangsprüfung nach jedem Schritt. Bestimmen Sie die neue Grenze und den benötigten Anwendungszustand. (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung Papieraufgabe 3
-
-1. Runde $=0{,}1+0{,}2+5{,}0=5{,}3\,\mathrm{ms}$, konservativ $R\leq5{,}3+0{,}2=5{,}5\,\mathrm{ms}$. Unter den gegebenen Annahmen gilt $R\leq D=10\,\mathrm{ms}$. Je 1 P. für die Grenzen und die bedingte Fristbewertung. Die Abschätzung muss nicht die engstmögliche sein.
-2. Runde $=50{,}3\,\mathrm{ms}$ und konservative Antwortgrenze $50{,}5\,\mathrm{ms}$. Eine Grenze oberhalb der Frist allein ist noch kein Beweis eines Miss. Ein Auftrag unmittelbar nach seiner Prüfung beziehungsweise vor Beginn der 50-ms-Anzeigenarbeit wartet aber im angegebenen Ablauf schon annähernd 50 ms und verletzt damit 10 ms tatsächlich. Je 1 P. für Rechnung und konkrete Phase.
-3. Alle drei Abfragen sehen LOW, daher wird der Puls nicht erkannt. Ein Verlust erzeugt keinen später bearbeiteten Auftrag; ein gespeicherter Auftrag kann dagegen erst verspätet bearbeitet werden. Ein Latch hält das Ereignismerkmal bis zur Abfrage fest, hat aber nicht automatisch Platz für beliebig viele Ereignisse. Je 1 P. für Erkennung und Begriffstrennung.
-4. Runde $=0{,}1+0{,}2+1{,}0=1{,}3\,\mathrm{ms}$, konservativ $R\leq1{,}5\,\mathrm{ms}$. Die Anzeige speichert ihren Fortschritt beziehungsweise den nächsten zu bearbeitenden Schritt zwischen Runden; die Gesamtanzeige braucht weiterhin mehrere Schritte. Je 1 P. für Rechnung und Zustand.
+**Musterlösung:** Runde 4,0 ms, konservativ $R\leq4,3$ ms: Frist im Modell nachgewiesen. Mit 9,5 ms Display: Runde 10,0 ms, Antwortgrenze 10,3 ms. Eine Anforderung unmittelbar nach der Abfrage vor der langen Displayphase wartet fast 9,5 ms und verletzt 6 ms tatsächlich; eine bloß zu große obere Grenze allein wäre noch kein Missbeweis. Alle drei Pegelabfragen sehen LOW. Ein Latch speichert einen Hinweis, zählt aber nicht beliebig viele Pulse. Mit Teilstücken: Runde 1,0 ms, Antwortgrenze 1,3 ms; Displayfortschritt bzw. nächster Teilabschnitt muss zwischen Runden gespeichert werden.
 :::
 
-## Papieraufgabe 4: Interrupts und Timer
+## Aufgabe 4: Timer und Interruptpfad (8 Punkte)
 
-1. Zwei Handler haben denselben Präemptionsrang 2, aber Subpriority 0 und 1. Kann der mit Subpriority 0 den laufenden anderen Handler allein deshalb unterbrechen? Was ändert eine zulässige Präemptionspriorität 1? Kleinere Zahlen sind dringender; die Gruppierung stellt die verwendeten Subpriority-Bits bereit. (2 P.)
-2. Main liest ein gesetztes Flag, dann setzt ein zweites Interrupt-Ereignis es erneut, danach löscht Main das Flag. Was geht verloren? Warum lösen `volatile` und ein einzelnes Flag die vollständige Ereigniszählung nicht? (2 P.)
-3. Nur für den gegebenen tatsächlichen Timer-Kerntakt $f_{\mathrm{TIM}}=100\,\mathrm{MHz}$ seien $PSC=9999$, $ARR=4999$. Berechnen Sie Updatefrequenz, Updateabstand und vollständige LED-Blinkfrequenz bei einem Toggle pro Update. (2 P.)
-4. Ein Handler erfasst früh, die Hauptbearbeitung startet aber erst 3 ms nach Freigabe und benötigt 1 ms. Prüfen Sie $D=3\,\mathrm{ms}$. Ist Pin-Flanke bis HAL-Callback-Marker dasselbe wie reine Ausnahme-Eintrittszeit? (2 P.)
-
-Verwenden Sie $f_{\mathrm{UPD}}=f_{\mathrm{TIM}}/((PSC+1)(ARR+1))$. PSC ist der Vorteilerregisterwert, ARR der Zählende-Registerwert. LED bedeutet Light-Emitting Diode, Leuchtdiode; HAL bedeutet Hardware Abstraction Layer, Hardware-Abstraktionsschicht.
+1. Ein Timer hat den bestätigten Kerntakt 80 MHz, $PSC=7999$ und $ARR=2499$. Berechnen Sie mit $f_{\mathrm{UPD}}=f_{\mathrm{TIM}}/((PSC+1)(ARR+1))$ Updateabstand und vollständige Blinkfrequenz bei einem Toggle pro Update. (3 Punkte)
+2. Zwei IRQs haben denselben Präemptionsrang, aber verschiedene Subprioritäten. Kann allein die Subpriorität den laufenden Handler verdrängen? Was bewirkt ein zulässiger dringlicherer Präemptionsrang? (2 Punkte)
+3. Ein Flag ist gesetzt. Main liest es, ein zweites Ereignis setzt es erneut, danach löscht Main es. Was geht verloren und was leistet `volatile` hier nicht? (2 Punkte)
+4. Frühe Erfassung dauert 1 ms; anschließend vergehen weitere 4 ms bis zur richtigen Reaktion. Prüfen Sie eine End-to-End-Frist von 4 ms. (1 Punkt)
 
 ::: {.content-visible when-profile="solution"}
-### Musterlösung Papieraufgabe 4
-
-1. Nein. Subpriority ordnet gleichzeitig anstehende zulässige Anforderungen gleichen Präemptionsrangs; sie bewirkt keine Unterbrechung eines laufenden Handlers. Ein zulässiger Rang 1 kann Rang 2 unterbrechen. Je 1 P.
-2. Nach dem Löschen bleibt keine Information über das zweite Ereignis. `volatile` erhält erforderliche Zugriffe, macht Lesen und Löschen aber nicht zu einem unteilbaren Austausch. Auch ein geschützter Austausch zählt mit einem einzigen Flag nicht automatisch mehrere Ereignisse. Für jede einzeln benötigte Information braucht man geeignete Zählung oder Pufferung mit Kapazitätsregeln. Je 1 P. für Verlust und Begründung.
-3. $f_{\mathrm{UPD}}=100\cdot10^6/(10000\cdot5000)=2\,\mathrm{Hz}$. Updateabstand $1/2\,\mathrm{s}=500\,\mathrm{ms}$. Zwei Toggles ergeben einen kompletten An-Aus-Zyklus von 1 s, also 1 Hz Blinkfrequenz. Je 1 P. für Update und Blinkzyklus. Die Frequenz gilt nur bei tatsächlich geprüftem Timer-Takt, nicht automatisch beim gleichen CPU-Takt.
-4. $R=3+1=4\,\mathrm{ms}>D$: Verletzung um 1 ms, obwohl die frühe Erfassung kurz ist. Pin bis Callback enthält zusätzlich unter anderem Erkennung, Weiterleitung, Maskierung und Softwareaufrufe; es ist nicht reine Eintrittszeit. Je 1 P.
+**Musterlösung:** Updatefrequenz $80\cdot10^6/(8000\cdot2500)=4$ Hz, Abstand 250 ms; zwei Toggles pro Zyklus ergeben 2 Hz Blinken. Subpriorität ordnet gleichzeitig anstehende gleichrangige Anforderungen, präemptiert allein aber keinen laufenden gleichrangigen Handler. Ein dringlicherer Präemptionsrang kann das unter den Maskierungsbedingungen. Der zweite Hinweis geht beim Löschen verloren; `volatile` macht die Lese-/Löschfolge nicht unteilbar und aus einem Flag keinen Ereigniszähler. Gesamtantwort 5 ms, Verletzung um 1 ms.
 :::
 
-## Transfer: Eine Prüfbehauptung beurteilen · 20 Minuten
+## Aufgabe 5: Eine Prüfbehauptung beurteilen
 
-Bearbeiten Sie den Fall zunächst zehn Minuten einzeln und vergleichen Sie anschließend zehn Minuten Ihre Begründungen. Die Transferaufgaben dienen der Klausurvorbereitung und haben keine zusätzlichen Punkte.
-
-Eine Auftragsbearbeitung wurde unter den genannten Testbedingungen fünfmal untersucht. Ihre Antwortzeiten sind 6, 7, 6, 8 und 7 ms. Der Vertrag erlaubt höchstens 7 ms. Die Leitung behauptet: „Der Mittelwert ist klein und das Programm blinkt stabil; damit ist die harte Frist bewiesen.“
-
-1. Berechnen Sie Mittelwert und beobachtetes Maximum. Welche Aussage über die fünf Läufe ist möglich?
-2. Kann eine größere Stichprobe die bereits beobachtete Verletzung aufheben? Welche zusätzliche Aussage fehlt auch dann, wenn alle neuen Läufe rechtzeitig sind?
-3. Ein Umbau erfasst den Auftrag im Interrupt und bearbeitet ihn später in Main. Formulieren Sie Anfang und Ende des weiterhin zu prüfenden Zeitvertrags. Reicht die kurze Interruptdauer als Nachweis?
+Fünf vollständig erfasste Antworten dauern 4, 5, 4, 7 und 5 ms; erlaubt sind höchstens 6 ms. Berechnen Sie Mittelwert und Maximum. Beurteilen Sie: „Das mittlere Ergebnis ist gut und die LED blinkt, also ist die harte Frist bewiesen.“
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Transfer 1**
-
-Mittelwert $34/5=6{,}8\,\mathrm{ms}$, Maximum $8\,\mathrm{ms}$. Vier Läufe erfüllen die Frist einschließlich des Abschlusses bei genau 7 ms; einer verletzt sie um 1 ms. Bei einem Vertrag ohne erlaubten Miss genügt dieser gültige Gegenfall, um die Garantie für diese Bedingungen zu widerlegen. Weitere günstige Läufe entfernen ihn nicht. Auch ausschließlich rechtzeitige neue Läufe beweisen noch keine obere Grenze für alle zulässigen Eingaben und Zustände.
-
-Der Vertrag beginnt beim festgelegten erfassten Auftragsereignis und endet beim richtigen geforderten Ausgangswert. Frühe Erfassung allein begrenzt weder spätere Main-Wartezeit noch Bearbeitung. Der gesamte definierte Pfad muss betrachtet werden.
+**Musterlösung:** Mittelwert 5 ms, Maximum 7 ms. Ein gültiger Fall verletzt die Frist um 1 ms und widerlegt die Garantie unter diesen Bedingungen. Weitere günstige Läufe heben ihn nicht auf. Blinken belegt nur sichtbare Funktion, keine allgemeine Fristgarantie.
 :::
 
-## Praxisfall · 15 Minuten
+{{< pagebreak >}}
 
-### Praxisfall 1: Zusatzarbeit in Main oder Timer
+## Aufgabe 6: Eine nachleuchtende Tasteranzeige implementieren
 
-**Papieralternative, vollständig vorgegebenes Lehrmodell:** Die erste Umschaltung liegt bei null. In Main folgen jeweils Arbeit und eine ideale Wartezeit von 500 ms, dann die nächste Umschaltung. Die ersten drei Arbeitsdauern sind 20, 60 und 20 ms. Umschalt- und Aufrufkosten sind null.
+**Programmieren, etwa 25–35 Minuten.** Die CM4-Basis in `code/lab01/` enthält `lab01_button.c/.h` und `button_step.c`. Der eingebaute Taster **B1/PC13** wird bereits mit 20 ms Stabilitätszeit entprellt. **LD1/PB0** ist Ihre Anzeige; **LD2/PE1** wird unabhängig in der Hauptschleife als Statusanzeige bedient. Kein RTOS.
 
-1. Berechnen Sie die nächsten drei Umschaltzeitpunkte, Abstände und deren Spanne.
-2. Ein idealer Timer fordert stattdessen alle 500 ms die Umschaltung an; sein zugelassener Handler kann Main unterbrechen, weitere Verzögerungen sind null. Welche Zeitpunkte entstehen im Modell?
-3. Welche Kosten müssen für die Übertragung auf das reale Board zusätzlich betrachtet werden? Beweist ein ruhiges Blinken die harte Frist?
+1. Implementieren Sie `Lab01_ButtonStep()`: Jede neue Betätigung schaltet LD1 für 600 Tickwerte ein. Eine weitere Betätigung startet diese Nachleuchtzeit neu; dauerhaftes Halten verlängert sie nicht. Beim Start bereits gedrückter Taster zählt als erste Betätigung.
+2. Verwenden Sie `Lab01_ButtonPressed()`, `HAL_GetTick()` und `Lab01_ButtonLed(on)`. Speichern Sie den vorherigen Tasterzustand und den Beginn der letzten Nachleuchtphase. Ein HAL-Tickwert entspricht hier einer Millisekunde.
+3. Der Schritt muss sofort zurückkehren: kein `HAL_Delay`, keine Warteschleife. Die vorhandene Hauptschleife ruft ihn wiederholt auf und bedient die Statusanzeige.
+4. Prüfen Sie kurzes Drücken, Halten und zwei Betätigungen innerhalb von 600 ms. Prüfen Sie den Zeitvergleich auch auf Papier beim 32-Bit-Überlauf.
+5. Erweitern Sie um einen Betätigungszähler im Debugger. Warum ist er kein Zähler aller elektrischen Flanken?
 
-**Bei vorbereitetem Board:** Die Lehrperson zeigt nur `LAB01_POLL_VARIABLE` und `LAB01_TIMER` auf CM4. Studierende sagen den Unterschied vorher voraus und erklären ihn danach. Die Erklärung funktioniert auch allein mit dem Lehrmodell. Eine Messreihe mit vier Builds ist freiwillige Vertiefung.
+**Vorbereitete Basis:** [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_01_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Board und USB/ST-LINK genügen. Eigene Implementierung und tatsächlichen Prüfstatus festhalten; Debuggerdiagnosen bei angehaltenem zuständigem Kern lesen.
+
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS und gegebenenfalls CMSIS-RTOS2. Papierwerte sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Praxisfall 1**
+**Musterlösung:** {{< pagebreak >}}
 
-Main: $s_1=520$, $s_2=1080$, $s_3=1600\,\mathrm{ms}$; Abstände 520, 560, 520 ms, Spanne 40 ms. Das Timer-Modell schaltet bei 500, 1000 und 1500 ms um. Die ideale Unabhängigkeit von Main setzt hier zulässige Interruptbedienung voraus. Auf dem Board bleiben unter anderem Tickphase, Maskierung, dringendere Handler, Aufruf- und Speicherzugriffskosten. LED-Beobachtung liefert keine allgemeine Zeitgarantie. Die Modellzeiten sind keine Messwerte des C-Moduls.
+### Musterlösung zu Aufgabe 6
+
+Die Differenzbildung bleibt beim Überlauf korrekt, wenn unbeobachtete Intervalle kürzer als ein voller 32-Bit-Umlauf sind. Beispiel: Beginn `0xFFFFFF00`, jetzt `0x00000158`: Differenz 600. Die Entprellung erzeugt stabile Zustandswechsel, keinen verlustfreien Flankenzähler.
+
+```c
+#include "lab01_button.h"
+
+void Lab01_ButtonStep(void)
+{
+    static int previous, active;
+    static uint32_t since;
+    const int pressed = Lab01_ButtonPressed();
+    const uint32_t now = HAL_GetTick();
+    if (pressed && !previous) {
+        since = now;
+        active = 1;
+        ++lab01_presses;
+    }
+    previous = pressed;
+    if (active && (uint32_t)(now - since) >= 600U) {
+        active = 0;
+    }
+    Lab01_ButtonLed(active);
+}
+```
+
+Halten erzeugt nur die erste steigende Zustandsflanke. Eine zweite Betätigung setzt `since` neu. Die reale LED-Ausschaltung erfolgt erst bei erneuter Ausführung des Schritts; eine Funktionsprüfung beweist keine exakte physische 600-ms-Dauer.
 :::
-
-## Ergebnis und freiwillige Vertiefung
-
-Halten Sie die begründeten Papierlösungen (32 Orientierungspunkte), Ihre Transferantworten und die Erklärung des Praxisfalls fest. Projektdateien, Versionslisten, Flashnachweise und Messprotokolle sind keine Pflichtabgabe dieses Übungsblocks. Für das Verständnis des nächsten Blatts ist keine erfolgreiche Firmwareintegration erforderlich.
-
-Die [freiwillige Programmiervertiefung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_01_programmierung.md) enthält die bisherige technische Vorbereitung und Integration. Sie richtet sich an die Lehrperson sowie an Studierende, die außerhalb des Termins mehr Praxis wünschen. Ein fehlender Boardlauf beeinträchtigt die Bearbeitbarkeit der Papieraufgaben nicht. In eigenen Protokollen bleiben ungemessene Zeitfelder leer; beobachtete Stichprobenmaxima sind keine allgemeine Worst-Case-Garantie.
-
-Quellen: Vorlesung 1; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; die in der Vorlesung und der freiwilligen Integrationsanleitung genannten Herstellerdokumente.

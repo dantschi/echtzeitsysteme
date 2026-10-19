@@ -5,6 +5,9 @@
  * Change attributes ONLY at joint restart; never during communication. */
 #include "main.h"
 #include "lab06_ipc.h"
+#ifdef LAB06_STUDENT_EXERCISE
+#include "lab06_student.h"
+#endif
 
 #if !defined(CORE_CM7) || defined(CORE_CM4)
 #error "lab06_cm7.c is only for the CM7 target"
@@ -70,7 +73,11 @@ void Lab06_CM7_InitShared(void)
      * D-cache OFF: even the fault build has initial bytes in SRAM. */
     ipc.magic = 0u;
     ipc.state = TURN_M7;
+#ifdef LAB06_STUDENT_EXERCISE
+    ipc.payload = Lab06_ExerciseRequest(0U);
+#else
     ipc.payload = 0u;
+#endif
     __DMB();
     ipc.magic = IPC_MAGIC;
     __DMB();
@@ -106,12 +113,20 @@ void Lab06_CM7_Run(void)
         }
         __DMB(); /* State observed before reading the associated payload. */
         uint32_t reply = ipc.payload;
+#ifdef LAB06_STUDENT_EXERCISE
+        if (reply != 3U * Lab06_ExerciseRequest(round) + 2U) {
+#else
         if (reply != 2u * round + 1u) {
+#endif
             Fail(LAB06_ERROR_PAYLOAD);
         }
         lab06_cm7_reply[round] = reply;
         if (round + 1u < LAB06_ROUNDS) {
+#ifdef LAB06_STUDENT_EXERCISE
+            ipc.payload = Lab06_ExerciseRequest(round + 1U);
+#else
             ipc.payload = reply + 1u;
+#endif
             __DMB();
             ipc.state = REQUEST_M4;
             __DMB();

@@ -1,0 +1,7 @@
+# Implementierungsaufgabe zu Übungsblatt 6
+
+`respond_student.c` enthält die eigene Phasen-/Datenantwort des M4. In beiden Images `LAB06_STUDENT_EXERCISE` definieren; Anfragen 4,11,23, erwartete Antworten 14,35,71. Ohne Definition bleibt der bisherige Basislauf unverändert.
+
+[Projektvorbereitung](../../labs/vertiefung/lab_06_programmierung.md) · [Aufgaben und Musterlösung](../../labs/lab_06_multicore-shared-memory-cache-kohaerenz.qmd)
+
+Die studentischen Startdateien enthalten bewusst noch keine Lösung. Vollständige Musterfunktionen stehen im Quarto-Profil `solution`. Benötigt werden NUCLEO-H755ZI-Q, STM32CubeMX und VS Code mit STM32 VS Code Extension; zusätzliche Elektronik oder Messgeräte sind nicht erforderlich. Die Dateien ergänzen ein vorbereitetes generiertes Projekt, sie ersetzen weder dessen Startup-/Linker-/Kernelkonfiguration noch einen tatsächlichen Boardtest.

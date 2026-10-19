@@ -1,56 +1,19 @@
-# Freiwillige Programmiervertiefung zu Übungsblatt 9
+# Projektvorbereitung zu Übungsblatt 9
 
-Diese Anleitung ist für die **Vorbereitung durch die Lehrperson** oder eine **freiwillige Vertiefung außerhalb des Übungstermins** gedacht. Sie gehört nicht zum verbindlichen Papierkern. Die Zeitangaben der folgenden Abschnitte gelten allenfalls für einen bereits vollständig vorbereiteten, funktionierenden Projektstand; sie sind keine Zusage für Erstintegration und Fehlersuche.
+Verwenden Sie STM32CubeMX, VS Code mit STM32 VS Code Extension und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die installierte Kombination muss die gewählten CM7-/CM4-CMake-Ziele unterstützen. Erhalten Sie die generierte Dual-Core-Boot-/HSEM-Startfolge und laden Sie zusammengehörige Images. C11 oder neuer; fremde Laborlast und doppelte Callbacks/Threadanlagen entfernen. Eigene Quellen und Benutzerbereiche müssen eine erneute CubeMX-Generierung mit anschließendem Build überstehen.
 
-Verwenden Sie STM32CubeMX und VS Code mit STM32 VS Code Extension für das NUCLEO-H755ZI-Q / STM32H755ZIT6. Die Quellen in `code/lab09/` sind Anwendungsbausteine; ein vollständig erzeugtes, auf dem Board geprüftes Firmwareprojekt wird hier nicht bereitgestellt. Versionen, Startfolge und tatsächliche Integration müssen vor der Demonstration geprüft werden.
+Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten Sie Installation, Boot, GPIO und gegebenenfalls Kernel, Linker und MPU vor dem Termin vor. Alle Versuche verwenden ausschließlich eingebaute LEDs, B1 und ST-LINK. Kein Sensor, Steckbrett, externer Widerstand, UART-Aufbau, Oszilloskop oder zusätzlicher Traceadapter ist erforderlich. Die Papieraufgaben sind unabhängig vom Aufbau lösbar; die Lehrperson kann aus dem Aufgabenpool auswählen.
 
-Im Übungstermin wird höchstens eine kurze vorbereitete Demonstration gezeigt. Bei einem technischen Problem wechseln Sie spätestens nach drei Minuten zum vollständig angegebenen Papierfall im [Übungsblatt](../lab_09_capstone-timing-verifikation.qmd). Studierende müssen frühere Programmiervertiefungen nicht erfolgreich abgeschlossen haben, um dem nächsten Übungsblatt folgen zu können.
+## Vorbereitete Datenkette, eigener Ausgabeadapter
 
-Wer freiwillig selbst integriert, dokumentiert nur den tatsächlich erreichten Stand. Modellwerte werden nicht als Boardmesswerte eingetragen. Die folgenden technischen Erläuterungen sind offen lesbar und unterstützen die Vorbereitung; die klausurnahen Musterlösungen bleiben im Profil `solution` des Übungsblatts.
+1. Die bestehende Basis in `code/lab09/README.md` beschreibt Boot, Shared-Layout, HSEM und M4-Timer-/Queuekette. Verwenden Sie diese vorher geprüfte Konfiguration: genau ein `lab09_box` pro Image an derselben SRAM4-Adresse, passendes nicht cachebares M7-MPU-Fenster vor D-Cache/Bootfreigabe, keine Startup-Überlappung, ein M4-Worker, gültige Heap-/IRQ-/Timerkonfiguration. Der Datenkern benötigt keine externe Quelle: TIM2 erzeugt Softwarecodes 10 bis 200.
+2. Der HSEM für Daten muss vom Boot-HSEM getrennt reserviert sein. Der normale Timer-IRQ darf erst nach Queueanlage aktiv werden und braucht eine für die verwendete FreeRTOS-Portschwelle erlaubte Priorität. Halten Sie alle beschriebenen End-/Timeoutpfade des Datenkerns bei. Die vorbereitete Basis wird vor dem Termin vollständig geprüft, nicht von Studierenden neu entworfen.
+3. In CM7 **statt** `lab09_output.c` die studentische `led_output.c` einbinden. Die beiden Dateien definieren denselben Adapter und dürfen nicht zugleich im Ziel stehen. Kein `LAB09_UART_HANDLE` definieren, kein UART-Aufbau.
+4. LD1/PB0 als `LAB09_LOW`, LD2/PE1 als `LAB09_GAP`, LD3/PB14 als `LAB09_HIGH`, Ausgänge LOW, ausschließlich CM7. Boardbelegung/aktive Polarität gegen UM2408 prüfen. M4 darf dieselben Portregister nicht konfigurieren.
+5. Der bestehende CM7-Aufruf `Lab09_CM7_Run(1U);` verwendet den Normalfall. Ein separater gemeinsamer Neustart mit `Lab09_CM7_Run(25U);` verlangsamt die Kopien bewusst, ohne den Schüleradapter zu blockieren. Die Reihenfolge Run/Init und Moduswahl aus der Basis erhalten. Das studentische Testbeispiel mit 30,95,80,55 ist ein privater Adaptertest; es wird nicht als tatsächliche Datenkernfolge ausgegeben.
+6. Mit dem unveränderten Adapter läuft die Datenkette und speichert Resultate, die LEDs bleiben ohne Anwendungslogik. Nach Implementierung Resultate, steigende Publikationsnummern, Hysterese und verriegelte Lückenanzeige prüfen. Die tatsächlich kopierte Folge hängt von Planung und Timing ab; keine feste Zahl gelber Ereignisse versprechen.
+7. Ausgangsfunktion läuft nach HSEM-Freigabe. Ausgaben sind ausschließlich LED-Schreibzugriffe; kein Delay, kein erneuter HSEM-Erwerb, keine Hardware-UART. RAM-Ergebnisse ergänzen schnelle LED-Übergänge. Bilanzen nur an konsistentem Abschluss prüfen, beide Kerne dafür anhalten; unterschiedliche Kernzeitquellen nicht unkorreliert subtrahieren.
 
-## Labor · Zwei endliche Läufe · 25 Minuten
+## Prüfstatus und Abgrenzung
 
-Verwenden Sie **STM32CubeMX und VS Code mit STM32 VS Code Extension für das NUCLEO-H755ZI-Q**. Grundlage ist ein vorbereitetes gemeinsam startendes Dual-Core-CMake-Projekt. Die vollständigen Anwendungsdateien und die Integration stehen in [code/lab09/README.md](../../code/lab09/README.md). Der Datenkern startet **keinen Watchdog**; C7 bleibt hier Entwurfs-/Rechenprüfung. Eine WWDG-Station aus Vorlesung 8 ist ein separater Versuch.
-
-1. Beide Ziele: `lab09_capstone.h`, `lab09_shared.c`; M7 zusätzlich `lab09_cm7.c` und `lab09_output.c`; M4 zusätzlich `lab09_cm4.c` und `lab09_timer.h/.c`. Pro Ziel genau `CORE_CM7` oder `CORE_CM4`. Entfernen Sie vorherige Laborobjekte, die denselben Shared-Bereich nutzen.
-2. Der neue Block hat 44 Byte Nutzstruktur und 64 Byte Section bei 32-Byte-Ausrichtung. In beiden echten Linkerskripten SRAM4 ab `0x38000000`, 64 KiB, exklusiv reservieren und `shared-section.ld` integrieren. Private Daten und Stacks bleiben außerhalb. Prüfen Sie beide ELF-/Map-Dateien und Starttabellen.
-3. M7: bei ausgeschaltetem Datencache eine tatsächlich freie MPU-Region mit passenden nicht cachebaren Attributen konfigurieren, `Lab09_CM7_InitShared(LAB09_NORMAL)` ausführen, während M4 noch im vorhandenen Boot-Stop wartet. Danach Cache an, bestehende Bootfreigabe, einmal `Lab09_CM7_Run(1u)`. Kein Live-Initialisieren bei laufendem Partner.
-4. M4: TIM2 und `htim2` vor dem Worker für **100 Hz** initialisieren, noch nicht starten. Verifizieren Sie den wirksamen Timertakt, Vorteiler und Periodenregister sowie die erlaubte NVIC-Priorität. Ergänzen Sie einmal `Lab09_CM4_TimerCallback(htim)` im vorhandenen HAL-Timercallback und erhalten Sie die Behandlung der HAL-Zeitbasis anderer Timer. Der einzige 1-kHz-CMSIS-RTOS2-Worker ruft `Lab09_CM4_Run(argument)` auf. Er erzeugt die Queue vor der Quellenfreigabe und beendet nach 20 Softwareeingaben die Quelle und Verarbeitung.
-5. Beide Images bauen und programmieren, gemeinsam neu starten. Erst nach **beiden** `lab09_complete=1` und Fehlercodes null halten Sie beide Kerne an. Lesen Sie M4-Statistik, gemeinsame Mailbox und M7-Filterergebnisse. Berücksichtigen Sie die Debug-/Cachesicht privater M7-Daten gemäß Integrationsanleitung. Ein Timeout ist keine erfolgreiche Abnahme.
-6. Sättigung: M7-Initialisierung auf `LAB09_SATURATION` ändern, beide Images neu bauen/programmieren und gemeinsam starten. Der M4 erzeugt zehn Puts aus der Task vor Get, ohne Timerstart. Prüfen Sie acht Annahmen und zwei Drops sowie die Mailboxbilanz. Das ist kein Test physischer Interruptlatenzen.
-7. Falls vorbereitet: normaler Lauf mit `Lab09_CM7_Run(25u)` oder aktivierter begrenzter UART-Ausgabe. Erwarten Sie mögliche zusätzliche Ersetzungen, keinen festen Snapshot-Sollwert. Der Filter berechnet auf der tatsächlich kopierten Folge. Ausgabe bleibt außerhalb des HSEM.
-
-| Konfiguration | Ihre Angabe |
-|---|---|
-| Boardrevision, CubeMX, HAL, Extension, Kerneladapter | |
-| Kern-/Bustakte, TIM2-Takt, PSC/ARR, Kerneltick | |
-| Boot-/Nutz-HSEM, MPU-Region, Shared-Adressen und Section | |
-| beide CMake-Ziele, Starttabellen, Heap/Stack geprüft | |
-
-| Lauf | $I,A,D_q,E_{put}$ | $Q,F,P,D_{task}$ | $S,O,U$ | Fehler / Erklärung |
-|---|---|---|---|---|
-| normal | | | | |
-| Sättigung | | | | |
-| langsam / UART optional | | | | |
-
-
-**Technische Erläuterung Labor**
-
-Normallauf: I=20. Ohne andere Abweisungen oder Verwürfe gilt A=P=20, aber S kann kleiner sein; O erklärt die übrigen Publikationen. Finale U=0, weil M7 den letzten Stand kopiert. Sättigung: I=10, A=8, Dq=2, Eput=0, ohne Taskverwurf P=8. Finale Q=F=U=0, also P=S+O. Die genaue Snapshotzahl hängt vom tatsächlichen Ablauf ab. Filterergebnisse müssen zur aufgezeichneten kopierten Folge passen, nicht zu erfundenen ausgelassenen Werten. Keine Beobachtungszelle wird ohne Lauf ausgefüllt.
-
-## Abnahmeblatt und Aussagegrenzen
-
-Für jedes Kriterium werden Bedingungen, Beleg und Status getrennt notiert. Zeitziele brauchen eine geeignete Aufnahme und gemeinsame beziehungsweise lokal passende Zeitbasis. `event_tick` ist der lokale M4-HAL-Millisekundenwert der Ereignisroutine; er wird nicht von einer unkorrelierten M7-Uhr subtrahiert und löst 50 µs nicht auf. Kopierte neue Stände tragen dieselbe Ereignis- und Publikationskennung wie die zugehörige M4-Publikation. Eine Aufnahme muss auch Auslassungen und fehlende Paare nennen.
-
-| Kriterium | Ziel / Umfang | Beleg und Status |
-|---|---|---|
-| C1 | Last und Takte: normal 20 Eingaben, nominal 100 Hz | |
-| C2 | kontrolliert 8 Annahmen, 2 Queue-Drops | |
-| C3 | normale Publikationsantwort höchstens 1 ms | |
-| C4 | neu kopierter Stand höchstens 50 ms alt | |
-| C5 | Besitz, Layout, Start, Sichtbarkeit | |
-| C6 | lokale Haltezeit je Seite höchstens 50 µs | |
-| C7 | Watchdogrechnung und Fortschrittsentwurf | |
-| C8 | Eingang-/Worker- und Mailboxbilanzen | |
-
-Zulässige Statuswerte: **nicht geprüft**, **bestanden unter genannten Bedingungen**, **verletzt**, **Messung ungültig**. Ohne gemeinsame Aufnahme bleibt C4 nicht geprüft. Ein Quellreview oder Hosttest ist kein Boardlauf. Ein beobachtetes Maximum beweist keine allgemeine obere Antwortzeit oder WCET, Worst-Case Execution Time. Abgabe: vier Papierlösungen, Konfigurationsblatt, echte Beobachtungswerte, Bilanzprüfung und Kriterienstatus.
+Geben Sie einen vor dem Termin auf der tatsächlichen Hardware gebauten und gestarteten Basisstand aus. Die studentische Startdatei enthält bewusst noch keine Aufgabenlösung. Aufgaben und vollständige Musterfunktionen stehen im zugehörigen Übungsblatt, Lösungen nur im Quarto-Profil `solution`. Ein Source-/PDF-Build ist kein erfolgreicher Firmware- oder Boardtest. Die Cloudprüfung kann Anwendungslogik am Host prüfen, jedoch keine STM32-Takte, GPIO-/IRQ-Zuordnung, Speicherattribute oder reale Zeitgrenzen bestätigen. Ungemessene Zeiten bleiben offen.

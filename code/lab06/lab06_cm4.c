@@ -4,6 +4,9 @@
 #include "main.h"
 #include "cmsis_os2.h"
 #include "lab06_ipc.h"
+#ifdef LAB06_STUDENT_EXERCISE
+#include "lab06_student.h"
+#endif
 
 #if !defined(CORE_CM4) || defined(CORE_CM7)
 #error "lab06_cm4.c is only for the CM4 target"
@@ -53,13 +56,22 @@ void Lab06_CM4_Run(void *argument)
         }
         __DMB();
         uint32_t request = ipc.payload;
+        #ifdef LAB06_STUDENT_EXERCISE
+        if (request != Lab06_ExerciseRequest(round)) {
+#else
         if (request != 2u * round) {
+#endif
             Fail(LAB06_ERROR_PAYLOAD);
         }
+#ifdef LAB06_STUDENT_EXERCISE
+        Lab06_Respond();
+        if (ipc.state != RESPONSE_M7) { Fail(LAB06_ERROR_STATE); }
+#else
         ipc.payload = request + 1u;
         __DMB();
         ipc.state = RESPONSE_M7;
         __DMB();
+#endif
         lab06_cm4_responses = round + 1u;
     }
     lab06_cm4_done = 1u;

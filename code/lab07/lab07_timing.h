@@ -8,9 +8,15 @@
 #endif
 
 #define LAB07_CAPACITY 16u
+#ifndef LAB07_SAMPLES_PER_KIND
 #define LAB07_SAMPLES_PER_KIND 7u
+#endif
+#ifndef LAB07_WORK_STEPS
 #define LAB07_WORK_STEPS UINT32_C(10000)
+#endif
+#ifndef LAB07_WORK_SEED
 #define LAB07_WORK_SEED UINT32_C(7)
+#endif
 
 typedef enum {
     LAB07_EMPTY = 1,
@@ -53,7 +59,7 @@ Lab07_Status Lab07_Init(uint32_t core_hz);
 /* One bounded record attempt, no overwrite and no output/heap/kernel calls.
  * Do not call from an ISR or a second thread. */
 Lab07_Status Lab07_RecordOne(Lab07_Kind kind);
-/* Exactly once: seven empty windows, then seven synthetic work windows. */
+/* Exactly once: configured empty windows, then synthetic work windows. */
 Lab07_Status Lab07_Run(void);
 
 #endif

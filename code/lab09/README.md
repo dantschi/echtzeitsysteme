@@ -1,3 +1,11 @@
+# Aktuelle Implementierungsaufgabe zu Übungsblatt 9
+
+`led_output.c` ersetzt im CM7-Ziel `lab09_output.c`. Die Studierenden implementieren Hysterese und Publikationslückenanzeige mit LD1/LD2/LD3 selbst; der Datenkern darunter bleibt vorbereitet.
+
+[Projektvorbereitung](../../labs/vertiefung/lab_09_programmierung.md) · [Aufgaben und Musterlösung](../../labs/lab_09_capstone-timing-verifikation.qmd)
+
+## Technische Dokumentation der bisherigen Bausteine
+
 # Endlicher Capstone zu Vorlesung 9
 
 Plattform: **NUCLEO-H755ZI-Q**, M7 ohne Kernel, M4 mit FreeRTOS über CMSIS-RTOS2. Entwicklungsweg: **STM32CubeMX und VS Code mit STM32 VS Code Extension**, zwei getrennte CMake-Ziele. Die vollständigen Anwendungsbausteine ergänzen ein bereits funktionierendes generiertes Dual-Core-Projekt. Sie sind kein fertiges Boardprojekt und keine behauptete Hardwaremessung.

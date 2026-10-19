@@ -1,57 +1,22 @@
-# Freiwillige Programmiervertiefung zu Übungsblatt 8
+# Projektvorbereitung zu Übungsblatt 8
 
-Diese Anleitung ist für die **Vorbereitung durch die Lehrperson** oder eine **freiwillige Vertiefung außerhalb des Übungstermins** gedacht. Sie gehört nicht zum verbindlichen Papierkern. Die Zeitangaben der folgenden Abschnitte gelten allenfalls für einen bereits vollständig vorbereiteten, funktionierenden Projektstand; sie sind keine Zusage für Erstintegration und Fehlersuche.
+Verwenden Sie STM32CubeMX, VS Code mit STM32 VS Code Extension und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die installierte Kombination muss die gewählten CM7-/CM4-CMake-Ziele unterstützen. Erhalten Sie die generierte Dual-Core-Boot-/HSEM-Startfolge und laden Sie zusammengehörige Images. C11 oder neuer; fremde Laborlast und doppelte Callbacks/Threadanlagen entfernen. Eigene Quellen und Benutzerbereiche müssen eine erneute CubeMX-Generierung mit anschließendem Build überstehen.
 
-Verwenden Sie STM32CubeMX und VS Code mit STM32 VS Code Extension für das NUCLEO-H755ZI-Q / STM32H755ZIT6. Die Quellen in `code/lab08/` sind Anwendungsbausteine; ein vollständig erzeugtes, auf dem Board geprüftes Firmwareprojekt wird hier nicht bereitgestellt. Versionen, Startfolge und tatsächliche Integration müssen vor der Demonstration geprüft werden.
+Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten Sie Installation, Boot, GPIO und gegebenenfalls Kernel, Linker und MPU vor dem Termin vor. Alle Versuche verwenden ausschließlich eingebaute LEDs, B1 und ST-LINK. Kein Sensor, Steckbrett, externer Widerstand, UART-Aufbau, Oszilloskop oder zusätzlicher Traceadapter ist erforderlich. Die Papieraufgaben sind unabhängig vom Aufbau lösbar; die Lehrperson kann aus dem Aufgabenpool auswählen.
 
-Im Übungstermin wird höchstens eine kurze vorbereitete Demonstration gezeigt. Bei einem technischen Problem wechseln Sie spätestens nach drei Minuten zum vollständig angegebenen Papierfall im [Übungsblatt](../lab_08_hsem-wwdg-safe-shutdown.qmd). Studierende müssen frühere Programmiervertiefungen nicht erfolgreich abgeschlossen haben, um dem nächsten Übungsblatt folgen zu können.
+## Fortschrittsmonitor auf CM4
 
-Wer freiwillig selbst integriert, dokumentiert nur den tatsächlich erreichten Stand. Modellwerte werden nicht als Boardmesswerte eingetragen. Die folgenden technischen Erläuterungen sind offen lesbar und unterstützen die Vorbereitung; die klausurnahen Musterlösungen bleiben im Profil `solution` des Übungsblatts.
+FreeRTOS ausschließlich auf CM4, CMSIS_V2, Präemption, 32-Bit-Kernelticks und 1000 Hz. Verwenden Sie SysTick für den Kernel und einen freien TIM6 für die HAL-Zeitbasis; erhalten Sie die generierten Handlerketten. Heap und tatsächliche Stacks müssen auch Idle, optionale Timer-Task und Verwaltungsanteile abdecken; 1024 Byte je hier angelegtem Thread sind Ausgangsgrößen, keine bewiesenen Minima. Rufen Sie den angegebenen Starthelfer genau einmal nach dem vorhandenen `osKernelInitialize()` im Zustand `osKernelReady` und vor dem vorhandenen `osKernelStart()` auf. Legen Sie seine Threads nicht nochmals in CubeMX an. Entfernen/deaktivieren Sie nicht benötigte Default-Threads und frühere Anwendungsmodule. CM7 bleibt beim generierten Systemstart und einer ruhigen Hauptschleife.
 
-## Labor A · Der endliche Zähler · 25 Minuten
+1. Ausschließlich `lab08_health.c`, `health_student.c` und `lab08_health.h` ins CM4-Ziel aufnehmen. HSEM-Zähler, WWDG-Station und frühere Versuchsquellen gehören nicht in dieses Image. **Keinen Hardware-Watchdog starten.** Damit ist die programmierte Gesundheitsbedingung ohne Reset-/Fensterfehler untersuchbar.
+2. LD1/PB0 `LAB08_GOOD`, LD2/PE1 `LAB08_STATUS`, LD3/PB14 `LAB08_BAD` als Ausgänge LOW für CM4; B1/PC13 `LAB08_BUTTON` als aktiver-HIGH-Eingang laut geprüftem Boardplan, kein EXTI. Die Boardbeschaltung genügt. M7 greift auf diese Ports nicht zu.
+3. `lab08_health.h` einbinden und an der beschriebenen RTOS-Stelle `Lab08_HealthStart();` aufrufen. Der Helper erzeugt einen vererbenden Mutex, zwei Normal-Worker und einen AboveNormal-Supervisor. Workerzeiten 60/100, Supervisorpause 20 Ticks. Die Status-LED toggelt nur jede zehnte Kontrollrunde, damit die Aktivität sichtbar bleibt.
+4. Alle Workerzeitstempel, Gültigkeitsbits und das Pause-B-Kennzeichen werden unter demselben Mutex geschrieben/gelesen. Der Supervisor übergibt Ihrer Funktion eine private Kopie mit auf derselben Kernuhr erfasstem Jetzt. LEDs und Pausen liegen außerhalb des Mutex.
+5. Mit dem unveränderten studentischen Rumpf bleibt die Gesundheitsanzeige ungültig/rot, die Status-LED läuft. Nach Implementierung grün nach den ersten Nachweisen, rot bei länger gehaltenem B1, wieder grün nach neuem B-Nachweis. Kurzes Kontaktprellen ist kein entprellter Zählvertrag; für den Versuch wird der Taster länger als 140 ms gehalten.
+6. Eine Fehlerverriegelung ist eine studentische Erweiterung; die Basis erholt sich ausdrücklich. Kurzzeitige Startanzeige vor dem ersten Nachweis ist noch kein gelatchter Workerfehler. Debughalt ist keine normale Betriebsbedingung. Die LED-Freigabe ersetzt weder Hardware-Watchdog noch sicheren Resetpegel eines Aktors.
 
-Verwenden Sie **STM32CubeMX und VS Code mit STM32 VS Code Extension für ein NUCLEO-H755ZI-Q**. M7 bleibt ohne Kernel, M4 verwendet FreeRTOS über CMSIS-RTOS2. Ein bereits gemeinsam startendes Projekt und die Speicherbasis aus Vorlesung 6 müssen vorbereitet sein. Die vollständige Integration steht in [code/lab08/README.md](../../code/lab08/README.md).
+HSEM- und WWDG-Originalbausteine bleiben als getrennte Zusatzversuche im [Code-README](../../code/lab08/README.md). Auch die dortige Fensteranzeige wird ausschließlich auf die drei Board-LEDs gelegt; sie weist keinen externen Freigabepegel während Reset nach.
 
-1. Übernehmen Sie `lab08_counter.h`, `lab08_counter.c`, `lab08_shared.c` in beide tatsächlichen CMake-Ziele. Definieren Sie pro Ziel genau `CORE_CM7` oder `CORE_CM4`. Entfernen Sie vorherige Labor-Anwendungsobjekte. Reservieren Sie HSEM 1 ausschließlich für je einen Worker pro Kern.
-2. Der neue Shared-Block **ersetzt** den Vorlesung-6-Block: 28 Byte Nutzstruktur, 32 Byte Section, SRAM4 ab `0x38000000`. Übernehmen Sie `shared-section.ld` in beide tatsächlich verwendeten Linkerskripte, ohne Speicheralias. Prüfen Sie die beiden ELF-/Map-Dateien und dass Startcode/Debugger die Section nicht nachträglich nullen.
-3. M7 konfiguriert bei ausgeschaltetem Datencache eine tatsächlich freie MPU-Region als Normal, nicht cachebar und führt `Lab08_CM7_InitShared(LAB08_PROTECTED)` aus, während M4 noch im vorhandenen Boot-Stop wartet. Anschließend darf der Cache an, dann folgt die **bestehende** Bootfreigabe. M7 ruft danach einmal `Lab08_CM7_Run()` auf. Der einzige M4-Worker ruft `Lab08_CM4_Run(argument)` auf.
-4. Bauen und programmieren Sie **beide Images**, starten Sie gemeinsam und lassen Sie den endlichen Versuch frei laufen. Erst bei M7-`lab08_complete=1` halten Sie beide Kerne an. Notieren Sie Treffer, Fehlschläge, Fehlercode, Endwert und Erfolgssumme. Bei Timeout kein Ergebnis als abgeschlossenen Lauf bewerten.
-5. Für den Vergleich ändern Sie nur die einmalige M7-Initialisierung auf `LAB08_UNPROTECTED`. Beide Images neu bauen/programmieren, gemeinsam neu starten, dieselben Werte notieren. Der Shared-Modus wird von beiden gelesen. Interpretieren Sie auch den möglichen zufällig passenden Endwert. Nie den Zähler bei laufendem Partner neu initialisieren.
+## Prüfstatus und Abgrenzung
 
-| Projektbedingung | Ihre Angabe |
-|---|---|
-| Boardrevision, CubeMX / HAL / Extension-Version | |
-| beide Kern- und Bustakte, M4-Kerneltick | |
-| Boot-HSEM / Zähler-HSEM / freie MPU-Region | |
-| Shared-Adressen, Größe, Starttabellen geprüft | |
-
-| Lauf | Treffer M7 / M4 | Fehlschläge | Endwert / Sollsumme | Fehler / Erklärung |
-|---|---|---|---|---|
-| geschützt | | | | |
-| ungeschützt | | | | |
-
-
-**Technische Erläuterung Labor A**
-
-Geschützt gilt bei beiden veröffentlichten Abschlüssen $c=h_7+h_4$. Bei je 100 Erfolgen sind es 200, bei fehlgeschlagenen Takes entsprechend weniger. Die Treffer- und Fehlersummen eines Workers ergeben 100 Versuche. Ungeschützt sind alle 100 Schritte pro Kern als ausgeführt gezählt, aber deren Speicherwirkung kann überlappen. Ein Ergebnis 200 ist möglich und kein Race-Freiheitsbeweis. Es wurden hier keine Boardwerte vorgegeben. Prüfen Sie den privaten Fehlercode pro Image. `HAL_Delay(1)` und `osDelay(1)` gehören zu verschiedenen Zeitbasen; kein garantierter Fairness- oder Timingnachweis folgt aus diesen Pausen.
-
-## Vorbereitete Zusatzstation · WWDG2 und isolierter Ausgang
-
-Diese Station ergänzt den Zählerversuch, wenn ein zweites fertig vorbereitetes Projekt und ein Logikanalysator verfügbar sind. Sie benötigt keine neue Pflicht-Toolchain. Bei engem Zeitbudget zeigt die Lehrperson die drei Fälle. WWDG2 läuft auf M4 in einer **separaten Projektkopie**, ohne Zählerworker und ohne fremdes Füttern. Kein Aktor wird angeschlossen.
-
-- Nutzen Sie `lab08_wwdg.h`, `lab08_wwdg.c`, `lab08_board.c` nur im M4-Ziel. Das Modul startet WWDG2 erst im laufenden Task. Entfernen Sie einen vorherigen generierten `MX_WWDG2_Init()`-Aufruf. APB1-PCLK 100 MHz, Kerneltick 1 kHz, Teiler 8, Fenster 80, Reload 127, EWI an. Andere Watchdogs und deren Startoptionen sind aus.
-- Wählen Sie anhand Boardplan drei freie GPIOs mit CubeMX-Labels `LAB_ENABLE`, `LAB_REFRESH`, `LAB_EWI`. Ausgangsstart Low, Takte an, nur isolierte Anzeige/Messpunkte. ENABLE ist aktiv High und benötigt einen externen Pull-down für die Resetphase. Die Anleitung enthält vollständige GPIO-Funktionen und verlangt bewusst keine angenommene Boardpinzahl.
-- Die generierte `WWDG_IRQHandler` ruft genau einmal `Lab08_WWDG_IRQHandler()` auf. EWI gehört laut H755-Header zu `WWDG_IRQn`, nicht zu `WWDG_RST_IRQn`. Die Projektpriorität wird in einer statischen `Lab08_WWDG_Config` angegeben. Der Callback benutzt keine Kernel-API, kein Delay und keinen Refresh.
-- Testen Sie je Neustart genau einen Modus: `LAB08_WWDG_EARLY` (5 Ticks), `LAB08_WWDG_VALID` (zehn absolute 18-Tick-Ziele, dann bewusst nicht weiterfüttern), `LAB08_WWDG_LATE` (25 Ticks ohne Refresh). Das Modul prüft im gültigen Fall zusätzlich den Zähler vor dem Schreiben. Die kurze Interruptmaskierung hält nicht den Hardwarezähler an und ist kein Timingbeweis.
-- Beobachten Sie Marker direkt am Vorgang. EWI kann bei frühem Reset fehlen. Ergänzen Sie `lab08_reset.h/.c` nur im M7-Ziel und rufen Sie `Lab08_CM7_CaptureReset()` früh vor HAL-/Cacheinitialisierung auf. M7 sichert und löscht als einziger die gemeinsame Resetursache; M4 löscht sie nicht. Dokumentieren Sie Debug-Freeze, tatsächlichen freien Lauf und Pinpegel während Reset/Boot. Keine langen Haltepunkte im laufenden Fenster. Diagnosewörter sind nach Reset kein automatisch erhaltenes Log.
-
-| Fall | Modell | Resetursache / Markerzeit / Pegel beobachtet |
-|---|---|---|
-| früh | Refresh außerhalb Fenster, EWI nicht erforderlich | |
-| gültig | zehn akzeptierte Refreshversuche, danach geplanter Reset | |
-| spät | EWI falls bedient, anschließend Reset vor 25 Ticks | |
-
-
-**Technische Erläuterung Zusatzstation**
-
-Die 18-Tick-Ziele sind eine Versuchsplanung, keine Zusage. Mit dem angenommenen 1-kHz-Tick und 100-MHz-PCLK liegt der Zielabstand im Modell im Fenster. Der erste Schritt kann phasenverschoben sein; Aufwach- und Handlerverzug müssen geprüft werden. Der Referenztreiber startet bei Init und prüft bei Refresh nicht selbst das Fenster. Im gültigen Modul wird $65\le T\le80$ verlangt, um die Warnkante 64 auszuschließen. EWI setzt die isolierte Freigabe aus und füttert nicht. Ein externer Pull-down und ein gesperrter Startpfad tragen den Ausgang auch bei fehlendem Callback. Alle Beobachtungszellen bleiben ohne tatsächlichen Lauf leer.
+Geben Sie einen vor dem Termin auf der tatsächlichen Hardware gebauten und gestarteten Basisstand aus. Die studentische Startdatei enthält bewusst noch keine Aufgabenlösung. Aufgaben und vollständige Musterfunktionen stehen im zugehörigen Übungsblatt, Lösungen nur im Quarto-Profil `solution`. Ein Source-/PDF-Build ist kein erfolgreicher Firmware- oder Boardtest. Die Cloudprüfung kann Anwendungslogik am Host prüfen, jedoch keine STM32-Takte, GPIO-/IRQ-Zuordnung, Speicherattribute oder reale Zeitgrenzen bestätigen. Ungemessene Zeiten bleiben offen.
