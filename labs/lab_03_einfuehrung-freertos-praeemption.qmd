@@ -102,87 +102,108 @@ Ein Thread wartet auf Bit 2, also die Maske `0x04U`. Ein zulässiger anderer Thr
 Drei Set-Aufrufe ergeben zwei erfolgreiche Waits. Wiederholtes Setzen eines bereits gesetzten Bits speichert nur einen ausstehenden Hinweis, keinen Ereigniszähler. Flagfunktionen liefern Flagbits oder einen Fehlerwert mit gesetztem `osFlagsError`-Bit. Fehlerprüfung: `(flags & osFlagsError) != 0U`. `osOK` ist der Statuscode anderer APIs und kein Test für erfolgreich gelieferte Flagbits.
 :::
 
-## Aufgabe 6: Eine Füllstandsüberwachung selbst implementieren
+{{< pagebreak >}}
 
-**Programmieren, etwa 30–40 Minuten.** Nutzen Sie die vorbereitete **NUCLEO-H755ZI-Q / STM32H755ZIT6**-Basis mit STM32CubeMX und VS Code mit STM32 VS Code Extension: FreeRTOS/CMSIS-RTOS2 auf CM4, Präemption, 32-Bit-Ticks bei 1000 Hz; CM7 mit generiertem Systemstart. Die [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) erfolgt vor dem Termin.
+## Aufgabe 6: HeavyMath, Heartbeat und Tasterreaktion mit FreeRTOS
 
-Schreiben Sie zwei Threadfunktionen: Ein **Mess-Thread** prüft simulierte Füllstände; ein höher priorisierter **Signal-Thread** meldet Grenzübertritte mit einem LED-Puls. `lab03_tank.c/.h` aus `code/lab03/` erzeugt beide Threads und stellt diese Hilfen bereit:
+**Programmieren, etwa 35–50 Minuten.** Implementieren Sie das Beispiel aus Vorlesung 3 auf dem **NUCLEO-H755ZI-Q / STM32H755ZIT6** mit STM32CubeMX und VS Code mit STM32 VS Code Extension. Es läuft ausschließlich der **M4-Kern**, auch für Systemstart und Taktkonfiguration; M7 bleibt deaktiviert. Die [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) erfolgt vor dem Termin. Benötigt werden nur die eingebauten LEDs und B1.
 
-| Schnittstelle / Vorgabe | Bedeutung |
+| Threadfunktion | CMSIS-Priorität | Gefordertes Verhalten |
+|---|---|---|
+| `Lab03_Event` | `osPriorityHigh` | auf Tasterhinweis warten, LD1/PB0 umschalten |
+| `Lab03_Heartbeat` | `osPriorityNormal` | LD2/PE1 sofort, dann alle 500 Kernelticks umschalten |
+| `Lab03_HeavyMath` | `osPriorityBelowNormal` | ununterbrochen rechnen, ständig Ready bleiben |
+
+Die vorbereitete Basis nutzt **FreeRTOS, CMSIS-RTOS2, Präemption und 32-Bit-Ticks mit 1000 Hz**. `lab03_rtos.c/.h` erzeugt die drei Threads und stellt GPIO-, IRQ- und Wartehilfen bereit. Implementieren Sie die drei Funktionsrümpfe in `code/lab03/threads_student.c` selbst; entfernen Sie anschließend `WaitForImplementation`.
+
+1. **Heartbeat:** Initialisieren Sie ein lokales `next` mit `osKernelGetTickCount()`. Rufen Sie in einer Endlosschleife `Lab03_ToggleHeartbeat()` und danach `Lab03_WaitHeartbeat(&next)` auf. Die Wartehilfe blockiert bis zum nächsten absoluten 500-Tick-Ziel und richtet sich bei einer Zielverfehlung neu aus. Welche vollständige Blinkperiode ergibt sich im ungestörten Modell? Warum darf hier kein `HAL_Delay` stehen?
+2. **HeavyMath:** Aktualisieren Sie in einer Endlosschleife den vorbereiteten `volatile uint32_t lab03_accumulator` mit `lab03_accumulator * 1664525U + 1013904223U`. Verwenden Sie weder Delay noch Yield oder Interruptsperre. Die einfache Rechnung dient als dauerhafte CPU-Last; ihr Ergebnis wird fachlich nicht benötigt. Warum können Heartbeat und Tasterreaktion trotzdem ausgeführt werden?
+3. **Tasterreaktion:** Rufen Sie einmal `Lab03_EnableButtonIRQ()` auf. Warten Sie anschließend in einer Endlosschleife mit `osThreadFlagsWait(LAB03_BUTTON_FLAG, osFlagsWaitAny, osWaitForever)`. Prüfen Sie das Fehlerbit `osFlagsError`; im Fehlerfall `Lab03_Fail()`. Erhöhen Sie nach jedem erfolgreichen Wait `lab03_event_responses` und schalten Sie mit `Lab03_ToggleEvent()` LD1 um. Zwischen Hinweisen soll der Thread Blocked sein.
+4. **IRQ-Weg erklären:** B1/PC13 löst über die vorbereitete HAL-Callbackkette `Lab03_ButtonIRQ()` aus; diese setzt das Thread-Flag. Beschreiben Sie den Weg vom Tastendruck bis zur LED-Aktion. Warum setzt die ISR nur einen Hinweis und warum wird der IRQ erst nach dem Kernelstart im Ereignis-Thread freigegeben?
+
+{{< pagebreak >}}
+
+5. **Prüfen:** Bauen und laden Sie nur das CM4-Ziel. Prüfen Sie die folgenden Fälle und protokollieren Sie Erwartung und Beobachtung. Lesen Sie Diagnosewerte gemeinsam nur bei angehaltenem M4; ein Debughalt ist keine Zeitmessung.
+
+| Versuch | Zu prüfende Beobachtung |
 |---|---|
-| `Lab03_TankRead()` | nächster Wert aus 25, 45, 85, 90, 55, 30 Prozent, zyklisch |
-| `Lab03_TankLed(on)` | nur vom Signal-Thread verwendete LED setzen |
-| `Lab03_TankWaitNext(&next)` | nächstes absolutes 200-Tick-Ziel abwarten; bei verpasstem Ziel auf jetzt plus 200 ausrichten |
-| `lab03_tank_alarm_handle` | gültiges Handle des Signal-Threads |
-| `LAB03_TANK_FLAG` | Hinweisbit für einen neuen Grenzübertritt |
-| `Lab03_TankFail()` | Fehlerpfad, kehrt nicht zurück |
+| Grundzustand ohne B1 | LD2 blinkt; `lab03_accumulator` verändert sich trotz Heartbeat weiter |
+| B1 während HeavyMath | LD1 reagiert; `lab03_event_responses` steigt; LD2 blinkt weiter; `lab03_irq_errors` bleibt null |
+| HeavyMath höher priorisieren | Vorhersage aus Teilaufgabe 6 mit dem Board vergleichen |
 
-1. Ersetzen Sie in `tank_threads.c` die anfänglichen Wartefunktionen und entfernen Sie `WaitForImplementation`. Implementieren Sie `void Lab03_TankSampler(void *argument)`: sofort eine Probe, danach alle 200 Ticks eine neue. Setzen Sie mit `osThreadFlagsSet` das Hinweisbit nur beim Übergang von **unter 80** zu **mindestens 80 Prozent**; anfangs gilt „unter der Grenze“. Initialisieren Sie `next` vor der Schleife mit `osKernelGetTickCount()` und nutzen Sie die Wartehilfe am Schleifenende.
-2. Implementieren Sie `void Lab03_TankAlarm(void *argument)`: mit `osThreadFlagsWait` blockierend auf den Hinweis warten, LED einschalten, `osDelay(80U)`, LED ausschalten; wiederholen. Prüfen Sie Flagfehler und Delay-Status.
-3. Erhöhen Sie `lab03_tank_requests` vor jedem Set und `lab03_tank_responses` nach jedem erfolgreichen Wait. Jeder Zähler hat genau einen schreibenden Thread. Bei welchen Messwerten erwarten Sie einen Puls, weshalb bei 90 Prozent keinen weiteren?
-4. Bauen, laden und prüfen Sie Ihre Implementierung: wiederkehrender kurzer Puls, fortschreitende Messfolge und passende Zählerstände. Lesen Sie die Diagnosewerte bei angehaltenem CM4; dieser Halt ist keine Zeitmessung.
-5. Erklären Sie die Zustände beider Threads zwischen den Aktionen. Weshalb darf der höher priorisierte Signal-Thread eine Endlosschleife haben, ohne den Mess-Thread auszuhungern? Was würde ein wartendes `while` auf ein Flag daran ändern?
+6. **Starvation selbst erzeugen:** Ändern Sie ausschließlich die HeavyMath-Priorität in `Lab03_Start()` von `osPriorityBelowNormal` auf `osPriorityAboveNormal`. Ereignis-Thread bleibt `osPriorityHigh`. Sagen Sie vor dem Neustart voraus, was mit beiden LEDs passiert. Begründen Sie, weshalb auch ein `osThreadYield()` in HeavyMath den Heartbeat nicht zuverlässig zum Zug bringt. Stellen Sie danach die ursprüngliche Priorität wieder her.
 
-**Erweiterung:** Ersetzen Sie die Wartehilfe vorübergehend durch `osDelay(200U)`. Vergleichen Sie beide Zeitpläne bei variabler Arbeitszeit auf Papier. Stellen Sie das absolute Raster wieder her.
+**Ergebnis:** drei eigene Threadfunktionen, Prüfprotokoll und Erklärung der Präemption. Tasterprellen kann mehrere Flanken erzeugen; ein Thread-Flag speichert nur einen ausstehenden Hinweis. Ein Tastendruck ist daher weder eine garantierte einzelne Umschaltung noch ein verlustfrei gezähltes Ereignis. Eine Entprellung ist hier kein Pflichtteil. Ohne Boardlauf dessen Status angeben.
 
-**Ergebnis:** eigene Threadfunktionen und Funktionsprüfung; ohne Boardlauf dessen Status angeben. Ein Flag meldet einen ausstehenden Hinweis, keinen verlustfreien Ereigniszähler.
-
-**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; Arm CMSIS-RTOS2; ST UM2408 und RM0399. Papierzeiten und Speichergrößen sind Lehrannahmen.
+**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; Arm CMSIS-RTOS2; ST UM2408, RM0399 und STM32CubeH7, Template *BootCM4_CM7Gated* (hier ohne Freigabe von CM7). Papierzeiten und Speichergrößen sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung Mess-Thread:** Die Grenzlage ist eine lokale, über Schleifeniterationen erhaltene Information; kein vom Signal-Thread gelesenes gemeinsames Messwertobjekt ist nötig.
+{{< pagebreak >}}
+
+**Musterlösung Heartbeat:**
 
 ```c
-#include "lab03_tank.h"
+#include "lab03_rtos.h"
 
-void Lab03_TankSampler(void *argument)
+void Lab03_Heartbeat(void *argument)
 {
     (void)argument;
     uint32_t next = osKernelGetTickCount();
-    int was_high = 0;
     for (;;) {
-        const int high = Lab03_TankRead() >= 80U;
-        if (high && !was_high) {
-            ++lab03_tank_requests;
-            const uint32_t flags = osThreadFlagsSet(
-                lab03_tank_alarm_handle, LAB03_TANK_FLAG);
-            if ((flags & osFlagsError) != 0U) {
-                Lab03_TankFail();
-            }
-        }
-        was_high = high;
-        Lab03_TankWaitNext(&next);
+        Lab03_ToggleHeartbeat();
+        Lab03_WaitHeartbeat(&next);
     }
 }
 ```
 
-**Musterlösung Signal-Thread:**
+Bei 1000 Hz entsprechen 500 Ticks nominell 500 ms. Umschalten alle 500 Ticks ergibt eine vollständige Hell-Dunkel-Periode von 1000 Ticks, also nominell einer Sekunde. Die erste Umschaltung erfolgt beim ersten tatsächlichen Lauf des Threads. Das absolute Raster vermeidet das fortlaufende Aufaddieren der Arbeitszeit, garantiert aber keine verzögerungsfreie Zuteilung. `HAL_Delay` würde den Thread aktiv warten lassen und HeavyMath Rechenzeit nehmen.
+
+**Musterlösung HeavyMath:**
 
 ```c
-void Lab03_TankAlarm(void *argument)
+void Lab03_HeavyMath(void *argument)
 {
     (void)argument;
     for (;;) {
-        const uint32_t flags = osThreadFlagsWait(
-            LAB03_TANK_FLAG, osFlagsWaitAny, osWaitForever);
-        if ((flags & osFlagsError) != 0U) {
-            Lab03_TankFail();
-        }
-        ++lab03_tank_responses;
-        Lab03_TankLed(1);
-        if (osDelay(80U) != osOK) {
-            Lab03_TankFail();
-        }
-        Lab03_TankLed(0);
+        lab03_accumulator = lab03_accumulator * 1664525U
+                            + 1013904223U;
     }
 }
 ```
 
-Bei jeder 85-Prozent-Probe wird ein neuer Grenzübertritt gemeldet; die folgende 90-Prozent-Probe bleibt bereits oberhalb der Grenze. Erst 55 setzt die lokale Grenzlage zurück. Im ungestörten Tickmodell werden die Hinweise bei 400, 1600, 2800 Ticks ab der ersten Probe angefordert. Das sind Sollwerte, keine gemessenen Boardzeiten. Die LED wird für 80 Kernelticks blockierend gehalten; Tickphase und verzögerte Zuteilung verhindern eine Garantie exakt 80 physischer Millisekunden.
+Die Rechnung erfolgt vorzeichenlos modulo $2^{32}$. `volatile` sorgt für beobachtbare Speicherzugriffe, ist jedoch keine Datensynchronisation. Nur HeavyMath schreibt den Akkumulator. Dieser Thread blockiert nie; der präemptive Scheduler kann ihm trotzdem die CPU entziehen, sobald ein höher priorisierter Thread bereit ist. Dass der Idle-Thread bei dauerbereiter Rechenlast nicht läuft, ist in diesem Versuch beabsichtigt.
 
-Der Signal-Thread ist zunächst Blocked am Flag-Wait, dann kurz Running, während des Pulses Blocked am Delay, danach kurz Running und wieder Blocked am Flag-Wait. Der Mess-Thread wartet zwischen den Proben; während einer höher priorisierten Signalaktion ist er gegebenenfalls Ready. Seine lokalen Variablen bleiben auf seinem Threadstack erhalten. Ein aktives Polling auf ein Flag im höheren Thread ließe ihn Ready und könnte den Mess-Thread aushungern.
+**Musterlösung Tasterreaktion:**
 
-Die Zähler erfassen Anforderungsversuche und angenommene Hinweise. Unter der vorgegebenen langsamen Folge wird jeder Grenzübertritt regulär verarbeitet; beliebig schnelle zusätzliche Anforderungen könnten wegen der Bitsemantik zusammenfallen. `volatile` macht die Diagnose sichtbar, ersetzt aber keine Synchronisation für gemeinsam veränderte Daten. Es wird nur bei angehaltenem CM4 ein gemeinsamer Stand ausgewertet.
+```c
+void Lab03_Event(void *argument)
+{
+    (void)argument;
+    Lab03_EnableButtonIRQ();
+    for (;;) {
+        const uint32_t flags = osThreadFlagsWait(
+            LAB03_BUTTON_FLAG, osFlagsWaitAny, osWaitForever);
+        if ((flags & osFlagsError) != 0U) {
+            Lab03_Fail();
+        }
+        ++lab03_event_responses;
+        Lab03_ToggleEvent();
+    }
+}
+```
 
-**Prüfkriterien:** eigener Schleifenkörper beider Threads, nur aufsteigende Grenzübergänge melden, echtes Blockieren statt Polling, korrekte Flagfehlerprüfung, kein `HAL_Delay`, nur der Signal-Thread schreibt die LED. Kein Bedarf an Wissen über Queues, Mutexe oder ADC-Konfiguration.
+Die vorbereitete Kette lautet: PC13-Flanke, CM4-Handler `EXTI15_10_IRQHandler`, `HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13)`, `HAL_GPIO_EXTI_Callback`, `Lab03_ButtonIRQ`, `osThreadFlagsSet`. Die ISR blockiert nicht und übernimmt keine Rechen- oder Blinkschleife. Sie kann einen wartenden Ereignis-Thread Ready machen. Der CMSIS-/FreeRTOS-Adapter fordert den nötigen Kontextwechsel an; nach dem ISR-Ende darf der nun höchstpriorisierte Thread HeavyMath verdrängen. Ein bereits gesetztes Flag wird beim Wait ohne erneutes Warten angenommen und dabei automatisch gelöscht.
+
+Alle drei Handles sind vor `osKernelStart()` angelegt und geprüft. Der IRQ bleibt zunächst gesperrt. Erst der laufende Ereignis-Thread verwirft alte EXTI-/NVIC-Anforderungen und aktiviert ihn. Danach wird kein Hinweisbit blind gelöscht; eine neue Flanke zwischen Aktivierung und erstem Wait bleibt als Hinweis erhalten. Die gewählte Startpolitik ignoriert bewusst Flanken vor dieser Freigabe.
+
+| Zustand | Heartbeat | Tasterreaktion | HeavyMath |
+|---|---|---|---|
+| Grundkonfiguration | kurz Running, dann Blocked bis zum Sollziel | Blocked am Flag; bei Hinweis kurz Running | Running, solange kein höherer Thread bereit ist; sonst Ready |
+| HeavyMath auf AboveNormal | bleibt nach Freigabe Ready, kann aber nicht laufen | verdrängt weiterhin HeavyMath; wartet danach wieder | erhält alle übrige Threadrechenzeit |
+
+Im zweiten Versuch kann LD2 schon vor der ersten Umschaltung stehen bleiben, weil HeavyMath von Beginn an über dem Heartbeat liegt. LD1 reagiert weiterhin auf angenommene Hinweise. Auch `osThreadYield()` macht HeavyMath nicht Blocked; der höchstpriorisierte bereite Thread bleibt HeavyMath. Abhilfe schaffen das Wiederherstellen der niedrigeren Priorität oder fachlich passende blockierende Arbeitspausen. Es liegt Starvation vor, keine Priority Inversion durch eine Ressource.
+
+`lab03_heartbeat_edges` zählt Umschaltungen, `lab03_event_responses` erfolgreiche Flagannahmen und `lab03_target_misses` erkannte verpasste Warteziele. Ein verhungernder Heartbeat führt seine Wartehilfe nicht aus: Ein unveränderter Zielzähler beweist deshalb keine eingehaltenen Fristen. Ein LED-Test belegt Funktion, keine numerisch garantierte Antwortzeit. Ein Flag zählt Prellflanken nicht verlustfrei; für die Prüfung wird keine Eins-zu-eins-Zuordnung zwischen Tastendruck und LED-Wechsel gefordert.
+
+**Prüfkriterien:** eigene Schleifen aller drei Threads, echtes Blockieren in Heartbeat und Ereignis-Thread, dauerbereite HeavyMath-Schleife, richtige Prioritäten und Flagfehlerprüfung, keine Interruptsperre und kein aktives Warten in den beiden höher priorisierten Threads. CM7 bleibt auch beim Start und während des Debuggens deaktiviert.
 :::
