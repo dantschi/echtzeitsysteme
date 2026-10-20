@@ -1,6 +1,8 @@
 # Projektvorbereitung zu Übungsblatt 3
 
-Aufgabe 6 beschränkt sich auf **zwei Anwendungsthreads: Heartbeat und HeavyMath**, mit je einer eingebauten LED. **Ausschließlich CM4 läuft**, einschließlich Systemstart und Taktkonfiguration. Benötigt werden NUCLEO-H755ZI-Q / STM32H755ZIT6, STM32CubeMX, VS Code mit STM32 VS Code Extension und USB/ST-LINK. Die Studierenden schreiben die beiden Schleifen selbst. Taster, EXTI und zusätzliche Peripherietimer gehören nicht zur Aufgabe.
+Aufgabe 6 verwendet **zwei in CubeMX angelegte Anwendungsthreads auf M4**: Heartbeat schaltet LD2/PE1 und wartet mit `osDelay(500)`; HeavyMath rechnet und schaltet nach jedem Block LD1/PB0. Die Studierenden schreiben direkt in die generierten Threadfunktionen. Die benötigten Anwendungsbausteine, konkreten CubeMX-Einstellungen und Rechenschleifen stehen im [Übungsblatt, Aufgabe 6](../lab_03_einfuehrung-freertos-praeemption.qmd#aufgabe-6-zwei-freertos-threads-mit-leds). Zusätzliche Hilfsdateien aus dem Repository werden nicht eingebunden.
+
+Diese Anleitung ergänzt die Aufgabe um den **vor dem Termin zu prüfenden eigenständigen M4-Start und die gemeinsame SysTick-Zeitbasis**. Verwendet werden NUCLEO-H755ZI-Q / STM32H755ZIT6, STM32CubeMX, VS Code mit STM32 VS Code Extension und USB/ST-LINK. CM7 bleibt deaktiviert. Taster, EXTI und zusätzliche Peripherietimer sind nicht erforderlich.
 
 ## CM4 ohne laufenden M7 vorbereiten
 
@@ -9,34 +11,64 @@ Aufgabe 6 beschränkt sich auf **zwei Anwendungsthreads: Heartbeat und HeavyMath
 3. CM4 übernimmt `HAL_Init()`, die zur Boardversorgung passende Spannungs-/Taktinitialisierung und danach GPIO, HAL-Zeitbasis und RTOS-Initialisierung. Als ST-Referenz dient [STM32CubeH7, BootCM4_CM7Gated](https://github.com/STMicroelectronics/STM32CubeH7/tree/8ec3113d4039d30ba9dc2bf0cb6eefc756b48d06/Projects/NUCLEO-H745ZI-Q/Templates/BootCM4_CM7Gated). Dort initialisiert CM4 bereits Systemtakt und Spannung, gibt anschließend jedoch CM7 frei. **Diese Freigabe `HAL_RCCEx_EnableBootCore(RCC_BOOT_C1)` entfällt hier vollständig.** Die Referenz ist auf STM32H745 ausgerichtet; MCU-, Versorgungs- und Taktparameter müssen zum H755-Projekt passen. ST nennt die NUCLEO-H745ZI-Q-Projekte im [H755-Kompatibilitätshinweis](https://github.com/STMicroelectronics/STM32CubeH7/blob/8ec3113d4039d30ba9dc2bf0cb6eefc756b48d06/Projects/NUCLEO-H755ZI-Q/readme.txt) als kompatibel. Das ersetzt die Boardprüfung nicht.
 4. Prüfen Sie einen Kaltstart nach aus- und wieder eingeschalteter Versorgung, auch ohne Debugger: CM4 erreicht `main()` und den Kernel, während CM7 gesperrt bleibt. Ein nur durch den Debugger gesetzter Programmeinstieg ist kein Nachweis der Bootkonfiguration. Für diese Aufgabe sind weder ein CM7-Bootloader noch ein zweites Image nötig.
 
-## GPIO, Kernel und Einbindung
+## CubeMX-Konfiguration für die zwei Threads
 
-1. Konfigurieren Sie **FreeRTOS auf CM4**, **CMSIS_V2**, Präemption, 32-Bit-Kernelticks und **1000 Hz**. Verwenden Sie `configUSE_TICKLESS_IDLE = 0`. Prüfen Sie die Cortex-M4-Portauswahl und die CMSIS-Prioritätsabbildung. Es werden keine Softwaretimer angelegt. Der Kernel erzeugt intern weiterhin seinen Idle-Thread; „zwei Threads“ bezeichnet die beiden Anwendungsthreads.
-2. Konfigurieren Sie **LD2/PE1** und **LD1/PB0** als CM4-Ausgänge, anfangs LOW. Pinbelegung, aktive Polarität und Boardrevision gegen UM2408 prüfen. Nur Heartbeat schreibt PE1, nur HeavyMath PB0. B1/PC13 bleibt unbenutzt; frühere Taster-EXTI-Konfiguration, Callbackweiterleitungen und NVIC-Freigaben entfallen.
-3. Stellen Sie die **HAL-Zeitbasis auf SysTick mit 1000 Hz**, ohne TIM6 oder anderen Zeitbasis-Timer. HAL und FreeRTOS nutzen gemeinsam den einen SysTick; zeitgesteuertes Warten und Präemption benötigen weiterhin Kernelinterrupts. Die Studierenden implementieren dafür keinen Handler. Die vorbereitete Datei **`lab03_systick.c`** bedient den HAL-Tick auch vor dem Schedulerstart und ruft danach zusätzlich den FreeRTOS-Port-Tick auf. Prüfen Sie für diese Basis:
-   - Am **gesamten CM4-CMake-Ziel** ist `USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION=1` als Compilerdefinition gesetzt. Der verwendete ST-CMSIS-RTOS2-Adapter muss diesen Schalter unterstützen; er unterdrückt dessen eigene `SysTick_Handler`-Definition.
-   - Es gibt genau eine C-Definition von `SysTick_Handler`: die aus `lab03_systick.c`. Eine weitere generierte C-Definition wird entfernt. Der Vektoreintrag bleibt erhalten. Entfernen Sie auch eine etwaige Makroabbildung `xPortSysTickHandler` auf `SysTick_Handler`, damit der gemeinsame Handler den tatsächlichen Port-Handler aufruft.
-   - Die generierte SVC-/PendSV-Anbindung bleibt erhalten. `INCLUDE_xTaskGetSchedulerState` ist aktiviert. Tickless Idle bleibt ausgeschaltet; die HAL-Tickfrequenz bleibt bei 1 kHz. Es wird kein generiertes `stm32h7xx_hal_timebase_tim.c` eingebunden und kein Zeitbasis-Timer gestartet.
-   - Vor dem Kernelstart läuft `HAL_GetTick()` weiter, danach laufen sowohl HAL-Millisekunden als auch Kernelticks mit 1 kHz. Eine erneute CubeMX-Generierung darf weder einen zusätzlichen Handler noch die alte Timerzeitbasis aktivieren.
-4. Nehmen Sie **`lab03_rtos.c`**, **`lab03_systick.c`**, **`threads_student.c`** und den Headerpfad aus `code/lab03/` in das **CM4-CMake-Ziel** auf; C11 oder neuer verwenden. Der Header weist CM7-Builds zurück. Entfernen Sie unbenutzte generierte Default-Threads und deren Anlage. Die zwei Anwendungsthreads werden bereits in `Lab03_Start()` angelegt; erzeugen Sie keine weiteren Kopien in CubeMX. Die früheren Füllstandsdateien `lab03_tank.c/.h` und `tank_threads.c` gehören nicht zu dieser Variante.
-5. Binden Sie `lab03_rtos.h` in einem erhaltenen Benutzerbereich ein. Rufen Sie nach dem einen vorhandenen `osKernelInitialize()`, im Zustand `osKernelReady`, und **vor** dem einen vorhandenen `osKernelStart()` genau einmal auf:
+1. Öffnen Sie die `.ioc`-Datei im **CM4-Kontext**. Ordnen Sie **PE1 / LD2** und **PB0 / LD1** dem CM4 zu und wählen Sie `GPIO_Output`. Unter **System Core > GPIO**: Output Push Pull, No pull-up and no pull-down, Low speed, Ausgangspegel Low. Prüfen Sie Pinbelegung und aktive Polarität gegen UM2408 sowie den Aufruf der passenden `MX_GPIO_Init()` im CM4-Start.
+2. Unter **Middleware and Software Packs > FREERTOS**: Interface **CMSIS_V2**. Unter **Config parameters / Configuration**: Präemption an, Tickrate **1000 Hz**, Ticktyp **32 Bit**, Tickless Idle aus, dynamische Allokation mit `heap_4` und zunächst **16384 Byte** Heap. Prüfen Sie die tatsächliche `FreeRTOSConfig.h`, die CMSIS-Prioritätsabbildung und den Cortex-M4-Port. Der Heapwert ist ein Ausgangswert, kein Mindestnachweis für beliebige Projekte.
+3. Unter **Tasks and Queues** den Default-Thread entfernen und genau zwei Anwendungsthreads erzeugen:
 
-```c
-Lab03_Start();
+| Task Name | Entry Function | CMSIS-Priorität | Dialog bei Words | CMSIS `.stack_size` |
+|---|---|---|---:|---:|
+| `Heartbeat` | `StartHeartbeatTask` | `osPriorityNormal` | 128 | 512 Byte |
+| `HeavyMath` | `StartHeavyMathTask` | `osPriorityBelowNormal` | 256 | 1024 Byte |
+
+   Wenn der Dialog Byte erwartet, direkt 512 bzw. 1024 eintragen. CMSIS `stack_size` ist immer in Byte; der Generator kann z. B. `128 * 4` ausgeben. Dynamische Allokation und Argument `NULL` wählen. Die beiden Stackgrößen müssen am Ziel geprüft werden. Kernelobjekte, Idle und Handlerstack gehören zusätzlich in die RAM-Bilanz.
+4. Unter **Project Manager > Project** CMake als Toolchain wählen und unter **Code Generator** *Keep User Code when re-generating* aktivieren. Nur das CM4-Ziel bauen und debuggen. Die tatsächlichen Menübezeichnungen können mit der Werkzeugversion variieren; die erzeugten Werte sind die Kontrolle.
+
+## Gemeinsamen SysTick im vorhandenen Projekt erhalten
+
+Unter **System Core > SYS > Timebase Source** wird **SysTick** gewählt; die HAL-Zeitbasis bleibt bei 1 kHz. Es wird keine generierte Timerzeitbasis eingebunden und kein TIM6 gestartet. Auch der Kernel verwendet 1 kHz, bei ausgeschaltetem Tickless Idle. Ein funktionierendes FreeRTOS benötigt weiterhin seine Kernelinterrupts; die Anwendung selbst programmiert keine Interruptlogik.
+
+Die gemeinsame Zeitbasis wird **in den bestehenden Projektdateien** eingerichtet. Es gibt keine zusätzliche `lab03_*.c`-Datei. Für den ST-CMSIS-RTOS2-Adapter mit dem Schalter `USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION`:
+
+1. Setzen Sie den Schalter für alle CM4-Quellen einschließlich des CMSIS-Adapters. Beispielsweise in der **CM4-`CMakeLists.txt` vor dem Einbinden der generierten Unterverzeichnisse**:
+
+```cmake
+add_compile_definitions(USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION=1)
 ```
 
-   Bewahren Sie den Aufruf ebenfalls in einem erhaltenen Benutzerbereich bzw. einer von dort aufgerufenen eigenen Initialisierung auf. Doppeln Sie Kernelinitialisierung und -start nicht. Eine unerwartete Rückkehr aus `osKernelStart()` gehört in den Fehlerpfad. Das Modul prüft Tickfrequenz und beide `osThreadNew`-Ergebnisse.
-6. Die CMSIS-Attribute sind **Heartbeat: Normal / 512 Byte** und **HeavyMath: BelowNormal / 1024 Byte**. Diese Stackgrößen sind Ausgangswerte, keine nachgewiesenen Minima. Berücksichtigen Sie zusätzlich Idle, gegebenenfalls intern benötigte Kernelobjekte, Verwaltungsdaten und Handlerstack in der RAM-Bilanz.
-7. Bauen und laden Sie nur das CM4-Image. Im unveränderten studentischen Ausgangsstand warten beide Threads, beide LEDs bleiben aus. Prüfen Sie, dass die zwei Eintrittsfunktionen erreicht werden und blockieren. Erst nach eigener Implementierung blinken die LEDs. Prüfen Sie erneute CubeMX-Generierung, Build und Kaltstart auf den Erhalt der Einbindung. Geben Sie diesen Stand vor dem Termin aus.
+   Der Schalter unterdrückt die adaptereigene Definition von `SysTick_Handler`. Prüfen Sie, dass der verwendete Adapter diesen Schalter unterstützt. Die CM4-Konfiguration muss `INCLUDE_xTaskGetSchedulerState = 1` enthalten.
+2. Es darf keine Makroabbildung `xPortSysTickHandler` auf `SysTick_Handler` bestehen. Die generierte SVC-/PendSV-Anbindung und der SysTick-Vektoreintrag bleiben erhalten. Es gibt **genau eine C-Definition** von `SysTick_Handler`.
+3. Ergänzen bzw. ersetzen Sie diese Definition in der vorhandenen CM4-Interruptdatei, üblicherweise `stm32h7xx_it.c`. Platzieren Sie Includes und die Definition möglichst in erhaltenen Benutzerbereichen. Der folgende Baustein steht vollständig hier in der Anleitung:
 
-## Bearbeitung und Auswertung
+```c
+#include "main.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-Die Studierenden ersetzen beide Funktionsrümpfe in `threads_student.c` und entfernen danach `WaitForImplementation`. Heartbeat schaltet LD2 um und blockiert mit `osDelay(500)`. HeavyMath aktualisiert den vorbereiteten Akkumulator in Rechenblöcken und schaltet nach jedem Block LD1 um; es wartet nie. Threadanlage, GPIO-Hilfen, Kernelstart und gemeinsame Zeitbasis sind vorbereitet. Die vollständigen Musterfunktionen stehen ausschließlich im `solution`-Profil des Übungsblatts.
+extern void xPortSysTickHandler(void);
 
-Ein Rechenblock umfasst zunächst `LAB03_MATH_ITERATIONS = 10000000` Aktualisierungen. Prüfen Sie die Sichtbarkeit von LD1 mit der ausgegebenen Takt-/Buildkonfiguration vor dem Termin und passen Sie die Blocklänge bei Bedarf an. Das HeavyMath-Blinktempo hängt von der Rechenzeit ab und hat keinen festen Periodenvertrag. Der Heartbeat verwendet bewusst einfaches relatives Warten; die Wartehilfe für absolute Sollziele entfällt.
+void SysTick_Handler(void)
+{
+    (void)SysTick->CTRL;
+    HAL_IncTick();
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        xPortSysTickHandler();
+    }
+}
+```
 
-Der Prioritätsversuch ist **optional**: Nur `.priority` in `math_attr` innerhalb `Lab03_Start()` auf `osPriorityAboveNormal` ändern. Nach Build, Flash und Neustart läuft HeavyMath weiterhin, während Heartbeat verhungert. Anschließend die ursprüngliche Priorität wiederherstellen. Ein Yield macht HeavyMath nicht Blocked und sichert dem niedrigeren Heartbeat keine Zuteilung.
+   Der HAL-Tick läuft bereits während der Initialisierung. Nach dem Schedulerstart wird zusätzlich der Kernel-Tick bedient. Die Abfrage und das Lesen von `SysTick->CTRL` entsprechen dem ST-Adapter; die gemeinsame Variante ergänzt `HAL_IncTick`. Zusätzliche vorhandene Tickaufrufe dürfen nicht doppelt erhalten bleiben.
+4. Prüfen Sie vor dem Kernelstart den Fortschritt von `HAL_GetTick()` und danach den von HAL-Millisekunden und Kernelticks. Eine erneute CubeMX-Generierung muss die gemeinsame Zeitbasis erhalten; andernfalls die dokumentierten Änderungen wiederherstellen. Weder ein zweiter Handler noch die alte Timerzeitbasis darf aktiviert werden.
 
-`lab03_heartbeat_edges` zählt Heartbeat-Umschaltungen; `lab03_accumulator` macht die Rechenlast beobachtbar. Die beiden Diagnosefelder haben jeweils nur einen schreibenden Thread und werden gemeinsam nur bei angehaltenem CM4 gelesen. `volatile` ersetzt keine Synchronisation. Die Abnahme erfolgt anhand der LEDs und der Erklärung der Threadzustände; weder Debugger noch LED-Blinken liefern hier einen numerischen Zeitnachweis.
+## Generierte Threadfunktionen und Startfolge
 
-Die Dateien sind Anwendungsbausteine und studentische Startdateien, kein generiertes Firmwaregesamtprojekt. Ein Hosttest ersetzt weder den ARM-Build noch den tatsächlichen Kaltstart und Boardlauf. Ohne funktionierende Hardware bleiben die Papieraufgaben lösbar; ein nicht ausgeführter Boardtest wird benannt.
+Suchen Sie im CM4-Quellbereich nach `StartHeartbeatTask` und `StartHeavyMathTask`, je nach Generator in `freertos.c`, `app_freertos.c` oder `main.c`. Die beiden Schleifen werden direkt in den zugehörigen `USER CODE`-Bereichen geschrieben. Die vollständigen Musterfunktionen stehen ausschließlich im `solution`-Profil des Übungsblatts. Es gibt keine gesonderte studentische Quelldatei und keinen Aufruf eines Labor-Starthelfers.
+
+Der Generator legt mit `osThreadNew` beide Threads an. Prüfen Sie deren tatsächlich generierte Handles direkt danach und vor `osKernelStart()` auf `NULL`, mit `Error_Handler()` im Fehlerfall. Bei den vorgeschlagenen Tasknamen heißen sie üblicherweise `HeartbeatHandle` und `HeavyMathHandle`; der Prüfbaustein steht im Blatt. Lassen Sie genau eine Kernelinitialisierung, die zwei Threadanlagen und genau einen Kernelstart bestehen. Eine unerwartete Rückkehr aus dem Kernelstart gehört in den Fehlerpfad.
+
+Vor dem Termin: Projekt erzeugen, CM4-Build und Kaltstart prüfen, beide Eintrittsfunktionen erreichen. Nach eigener Implementierung soll LD2 regelmäßig und LD1 abhängig von der Rechenblockdauer umschalten. Die anfänglichen 10 Millionen Iterationen können für die ausgegebene Takt-/Buildkonfiguration angepasst werden, wenn LD1 schlecht sichtbar ist. Es gibt für HeavyMath keinen festen Periodenvertrag.
+
+Der optionale Prioritätsversuch wird in **CubeMX > FREERTOS > Tasks and Queues** durchgeführt: HeavyMath auf AboveNormal, erneut erzeugen, erhaltene Benutzerbereiche prüfen, bauen und starten. Danach BelowNormal wiederherstellen. Es laufen weiterhin genau zwei Anwendungsthreads. Der Kernel besitzt zusätzlich seinen internen Idle-Thread und gegebenenfalls weitere konfigurierte Kernel-Tasks.
+
+Das Repository enthält kein generiertes Firmwaregesamtprojekt. Ein Hosttest der gedruckten Codebausteine ersetzt weder den ARM-Build noch den tatsächlichen Kaltstart und Boardlauf. Ohne funktionierende Hardware bleiben die Papieraufgaben lösbar; ein nicht ausgeführter Boardtest wird benannt.

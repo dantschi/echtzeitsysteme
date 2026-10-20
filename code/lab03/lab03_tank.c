@@ -1,5 +1,5 @@
-/* Prepared support for lab 3. Student code supplies both thread bodies.
-   This module is independent of the earlier lab03_rtos demonstration.
+/* Archived tank variant, not used in the current lab 3 task 6.
+   Student code for this older variant supplies both thread bodies.
    CubeMX/board project supplies startup, kernel, HAL timebase and GPIO. */
 #include "lab03_tank.h"
 #include "main.h"

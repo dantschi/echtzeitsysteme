@@ -106,55 +106,112 @@ Drei Set-Aufrufe ergeben zwei erfolgreiche Waits. Wiederholtes Setzen eines bere
 
 ## Aufgabe 6: Zwei FreeRTOS-Threads mit LEDs
 
-**Programmieren, etwa 20–30 Minuten.** Nutzen Sie die vorbereitete **NUCLEO-H755ZI-Q / STM32H755ZIT6**-Basis mit STM32CubeMX und VS Code mit STM32 VS Code Extension. Ausschließlich **M4** läuft, M7 bleibt deaktiviert. Die [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) erfolgt vor dem Termin.
+**Programmieren, etwa 30–40 Minuten.** Richten Sie mit **STM32CubeMX** zwei Threads auf dem **NUCLEO-H755ZI-Q / STM32H755ZIT6** ein und bearbeiten Sie das erzeugte Projekt in **VS Code mit STM32 VS Code Extension**. Ausschließlich **M4** läuft; M7 bleibt deaktiviert. Der eigenständige M4-Start und die gemeinsame SysTick-Zeitbasis werden vor dem Termin nach der [Projektvorbereitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_03_programmierung.md) geprüft. Alle Bausteine für die Anwendungslogik stehen hier auf dem Blatt.
 
-Die Basis verwendet **FreeRTOS / CMSIS-RTOS2**, Präemption und 1000 Kernelticks pro Sekunde. `Lab03_Start()` legt genau diese zwei Anwendungsthreads an:
+### a) Pins und FreeRTOS in CubeMX einstellen
 
-| Thread | Priorität | LED und Verhalten |
-|---|---|---|
-| `Lab03_Heartbeat` | `osPriorityNormal` | LD2/PE1 umschalten, 500 Ticks blockierend warten |
-| `Lab03_HeavyMath` | `osPriorityBelowNormal` | rechnen, nach jedem Rechenblock LD1/PB0 umschalten |
+1. Öffnen Sie die `.ioc`-Datei der M4-Projektbasis. Kontrollieren Sie im Board-/MCU-Eintrag **NUCLEO-H755ZI-Q / STM32H755ZIT6** und wählen Sie den Konfigurationskontext **Cortex-M4 / CM4**. Die folgenden Ressourcen und FreeRTOS gehören zu diesem Kern.
+2. Wählen Sie in **Pinout & Configuration** die Pins **PE1** und **PB0** jeweils als `GPIO_Output`. Ordnen Sie beide Pins über die Kontext-/Ressourcenzuordnung dem **CM4** zu. Unter **System Core > GPIO**: *Output Push Pull*, *No pull-up and no pull-down*, *Low speed*, Ausgangspegel *Low*. PE1 ist **LD2** für Heartbeat, PB0 **LD1** für HeavyMath. B1/PC13 wird nicht konfiguriert.
+3. Öffnen Sie **Middleware and Software Packs > FREERTOS** (je nach Version *Middleware > FREERTOS*) im CM4-Kontext. Wählen Sie als **Interface `CMSIS_V2`**. Stellen Sie unter **Config parameters / Configuration** ein:
 
-Ersetzen Sie die beiden Funktionsrümpfe in `code/lab03/threads_student.c` und entfernen Sie danach `WaitForImplementation`.
+| Einstellung | Wert / Kontrolle im erzeugten Projekt |
+|---|---|
+| `USE_PREEMPTION` | Enabled, also `configUSE_PREEMPTION = 1` |
+| `TICK_RATE_HZ` | **1000**; ein Kerneltick entspricht nominell 1 ms |
+| Tickbreite | **32 Bit**; `USE_16_BIT_TICKS` Disabled bzw. entsprechende Tick-Typ-Auswahl |
+| `USE_TICKLESS_IDLE` | Disabled, also 0 |
+| Speicherverwaltung | dynamische Threadanlage, `heap_4`; Heap zunächst **16384 Byte** |
+| HAL-Zeitbasis | **System Core > SYS > Timebase Source: SysTick**; gemeinsame Zeitbasis laut Projektvorbereitung |
 
-1. **Heartbeat:** Rufen Sie in einer Endlosschleife `Lab03_ToggleHeartbeat()` und danach `osDelay(LAB03_HEARTBEAT_TICKS)` auf. Die Konstante ist 500. Prüfen Sie den Delay-Status; bei einem Fehler rufen Sie `Lab03_Fail()` auf. Welche vollständige Hell-Dunkel-Periode erwarten Sie ungefähr?
-2. **HeavyMath:** Führen Sie in einer Endlosschleife immer wieder einen Rechenblock aus: Aktualisieren Sie `lab03_accumulator` in einer inneren Schleife `LAB03_MATH_ITERATIONS`-mal mit `lab03_accumulator * 1664525U + 1013904223U`. Die Konstante ist 10 Millionen. Rufen Sie nach jedem Block `Lab03_ToggleMath()` auf. Dieser Thread soll weder Delay noch Yield oder Interruptsperren verwenden. Die LED macht den Rechenfortschritt sichtbar; ihr Blinktempo ist nicht vorgegeben.
-3. **Starten und prüfen:** Bauen und laden Sie nur das CM4-Ziel. Prüfen Sie, dass LD2 regelmäßig blinkt und LD1 nach Rechenblöcken umschaltet. Erklären Sie, warum Heartbeat trotz der dauerhaften Rechenschleife ausgeführt wird und wann HeavyMath zum Zug kommt. Geben Sie die Zustände beider Threads während der Heartbeat-Wartezeit an.
+Die Bezeichnungen variieren mit CubeMX-/Firmwareversion. Kontrollieren Sie anschließend die Werte in der erzeugten `FreeRTOSConfig.h`. Zusätzliche Timer und eigene Interruptbehandlung sind für die Anwendung nicht erforderlich.
 
-**Optionaler Prioritätsversuch:** Ändern Sie in `Lab03_Start()` nur die HeavyMath-Priorität auf `osPriorityAboveNormal`. Sagen Sie die Wirkung auf beide LEDs voraus und prüfen Sie sie nach einem Neustart. Stellen Sie anschließend `osPriorityBelowNormal` wieder her.
+4. Öffnen Sie **FREERTOS > Tasks and Queues**. Entfernen Sie den automatisch angelegten `defaultTask` und fügen Sie genau zwei Anwendungsthreads hinzu. Wählen Sie dynamische Allokation und kein Argument:
 
-**Ergebnis:** zwei eigene Threadfunktionen und eine kurze Funktionsbeobachtung. Es werden ausschließlich die eingebauten LEDs verwendet. Taster, EXTI, eigene Interrupt-Handler und zusätzliche Timer entfallen. Der vorbereitete FreeRTOS-Systemtick bleibt für `osDelay` erforderlich; die HAL verwendet denselben SysTick. Ohne Boardlauf dessen Status angeben.
+| Task Name | Entry Function | Priority | Stack in Byte |
+|---|---|---|---:|
+| `Heartbeat` | `StartHeartbeatTask` | `osPriorityNormal` | 512 |
+| `HeavyMath` | `StartHeavyMathTask` | `osPriorityBelowNormal` | 1024 |
+
+**Stackeinheit prüfen:** Zeigt der Dialog *Words* an, tragen Sie **128** bzw. **256** ein; ein Stackwort hat hier vier Byte. Zeigt er *Bytes* an, verwenden Sie **512** bzw. **1024**. Im erzeugten CMSIS-Attribut `.stack_size` müssen 512 bzw. 1024 Byte entstehen, etwa als `128 * 4` bzw. `256 * 4`. Die Größen sind Ausgangswerte, keine nachgewiesenen Minima. Der interne Idle-Thread zählt nicht zu den zwei Anwendungsthreads.
+
+### b) Projekt erzeugen und Threadfunktionen bearbeiten
+
+Wählen Sie unter **Project Manager > Project** als **Toolchain / IDE: CMake**. Aktivieren Sie unter **Code Generator** den Erhalt der Benutzerbereiche (*Keep User Code when re-generating*) und erzeugen Sie den Code. Öffnen Sie das Projekt in VS Code und wählen Sie das **CM4-CMake-Ziel**. Kontrollieren Sie, dass `MX_GPIO_Init()` mit PE1/PB0 im CM4-Start aufgerufen wird. Erhalten Sie die geprüften M4-Start- und SysTick-Anpassungen der Projektbasis.
+
+Suchen Sie im CM4-Quellbereich nach den **Definitionen** von `StartHeartbeatTask` und `StartHeavyMathTask`, je nach Generator in `freertos.c`, `app_freertos.c` oder `main.c`. Ersetzen Sie die vorhandene Warteschleife jeweils im zugehörigen `USER CODE BEGIN ...` / `USER CODE END ...`-Bereich. Die umschließende Funktion bleibt bestehen; legen Sie keine zweite Definition an. Benötigt werden die Projekt-/HAL-Deklarationen aus `main.h`, `cmsis_os2.h` und `stdint.h`.
+
+1. **Heartbeat:** Schreiben Sie eine Endlosschleife, die immer wieder diesen Durchlauf ausführt:
+
+```c
+HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+if (osDelay(500) != osOK) {
+    Error_Handler();
+}
+```
+
+`HAL_GPIO_TogglePin` schaltet LD2 um. `osDelay(500)` macht den Thread für 500 Kernelticks Blocked. Welche vollständige Hell-Dunkel-Periode erwarten Sie ungefähr?
+
+2. **HeavyMath:** Legen Sie vor Ihrer Endlosschleife die lokale Variable `volatile uint32_t accumulator = 0U;` an. Wiederholen Sie in der Endlosschleife diesen konkreten Rechenblock:
+
+```c
+for (uint32_t i = 0U; i < 10000000U; ++i) {
+    accumulator = accumulator * 1664525U + 1013904223U;
+}
+HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+```
+
+HeavyMath soll weder Delay noch Yield oder Interruptsperren verwenden. Die Rechnung erzeugt dauerhafte CPU-Last; LD1 zeigt abgeschlossene Rechenblöcke an. `volatile` erhält die Speicherzugriffe und verhindert, dass die unbenutzte Rechnung wegoptimiert wird. Es ersetzt keine Synchronisation. Das LD1-Blinktempo ist nicht vorgegeben.
+
+3. **Anlage kontrollieren:** CubeMX erzeugt die beiden `osThreadNew`-Aufrufe und die Kernelstartfolge. Ergänzen Sie unmittelbar nach der Threadanlage, noch vor `osKernelStart()`, im erhaltenen Benutzerbereich eine Prüfung auf `NULL`. Bei den oben gewählten Tasknamen heißen die Handles üblicherweise `HeartbeatHandle` und `HeavyMathHandle`; verwenden Sie die tatsächlich erzeugten Namen:
+
+```c
+if (HeartbeatHandle == NULL || HeavyMathHandle == NULL) {
+    Error_Handler();
+}
+```
+
+Erhalten Sie genau eine Folge aus Kernelinitialisierung, Anlage der beiden Threads und Kernelstart. Es werden keine zusätzlichen Dateien oder Hilfsfunktionen aus `code/lab03/` eingebunden.
+
+### c) Starten und erklären
+
+Bauen und laden Sie nur das CM4-Ziel. Prüfen Sie, dass LD2 regelmäßig blinkt und LD1 nach Rechenblöcken umschaltet. Erklären Sie, warum Heartbeat trotz der dauerhaften Rechenschleife ausgeführt wird und wann HeavyMath zum Zug kommt. Welche Zustände haben beide Threads während der Heartbeat-Wartezeit?
+
+**Optional:** Stellen Sie unter **Tasks and Queues** HeavyMath auf `osPriorityAboveNormal`, erzeugen und bauen Sie erneut. Sagen Sie die Wirkung auf beide LEDs vor dem Neustart voraus und prüfen Sie sie. Stellen Sie anschließend `osPriorityBelowNormal` wieder her.
+
+**Ergebnis:** zwei selbst bearbeitete, von CubeMX angelegte Threads und eine kurze LED-Beobachtung. Der Kernel nutzt weiterhin SysTick; Taster, EXTI und zusätzliche Peripherietimer entfallen. Ohne Boardlauf dessen Status angeben.
 
 **Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; Arm CMSIS-RTOS2; ST UM2408 und RM0399. Papierzeiten und Speichergrößen sind Lehrannahmen.
 
 ::: {.content-visible when-profile="solution"}
 {{< pagebreak >}}
 
-**Musterlösung:**
+**Musterlösung der beiden generierten Eintrittsfunktionen:**
 
 ```c
-#include "lab03_rtos.h"
+#include "main.h"
+#include "cmsis_os2.h"
+#include <stdint.h>
 
-void Lab03_Heartbeat(void *argument)
+void StartHeartbeatTask(void *argument)
 {
     (void)argument;
     for (;;) {
-        Lab03_ToggleHeartbeat();
-        if (osDelay(LAB03_HEARTBEAT_TICKS) != osOK) {
-            Lab03_Fail();
+        HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+        if (osDelay(500) != osOK) {
+            Error_Handler();
         }
     }
 }
 
-void Lab03_HeavyMath(void *argument)
+void StartHeavyMathTask(void *argument)
 {
     (void)argument;
+    volatile uint32_t accumulator = 0U;
     for (;;) {
-        for (uint32_t i = 0U; i < LAB03_MATH_ITERATIONS; ++i) {
-            lab03_accumulator = lab03_accumulator * 1664525U
-                                + 1013904223U;
+        for (uint32_t i = 0U; i < 10000000U; ++i) {
+            accumulator = accumulator * 1664525U + 1013904223U;
         }
-        Lab03_ToggleMath();
+        HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
     }
 }
 ```
@@ -163,9 +220,9 @@ Heartbeat schaltet beim ersten Lauf um und blockiert danach 500 Kernelticks. Bei
 
 Während Heartbeat Blocked ist, läuft HeavyMath. Nach Ablauf der Wartezeit wird Heartbeat Ready und präemptiert wegen seiner höheren Priorität HeavyMath. Dieser ist dann Ready, bis Heartbeat wieder wartet. `HAL_Delay` würde im Heartbeat aktiv warten und HeavyMath diese Rechenzeit nehmen. Idle erhält bei dauerhaft bereiter Rechenlast regulär keine CPU-Zeit.
 
-Die Rechnung ist vorzeichenlos modulo $2^{32}$. Der vorbereitete `volatile uint32_t lab03_accumulator` sorgt für beobachtbare Speicherzugriffe; nur HeavyMath schreibt ihn. `volatile` ersetzt keine Synchronisation. Das LD1-Blinktempo hängt von Takt, Übersetzung und den Unterbrechungen durch Heartbeat ab. Ist es schlecht sichtbar, kann die Blocklänge vor dem Termin angepasst werden; sie ist kein Zeitvertrag.
+Die Rechnung ist vorzeichenlos modulo $2^{32}$. Nur HeavyMath bearbeitet den lokalen Akkumulator; sein Wert bleibt über Schleifeniterationen erhalten. Das LD1-Blinktempo hängt von Takt, Übersetzung und den Unterbrechungen durch Heartbeat ab. Ist es schlecht sichtbar, kann die Zahl der Iterationen angepasst werden; sie ist kein Zeitvertrag.
 
 Beim optionalen Versuch bleibt HeavyMath mit AboveNormal ständig über dem Heartbeat. LD1 schaltet weiter um, LD2 kann schon vor der ersten Umschaltung aus bleiben. Heartbeat verhungert als Ready-Thread. Yield würde HeavyMath nicht Blocked machen und dem niedrigeren Heartbeat keine Zuteilung sichern. Die ursprüngliche Priorität wiederherstellen.
 
-**Prüfkriterien:** zwei eigene Threadschleifen, blockierender Heartbeat, dauerbereite Rechenlast und je eine LED pro Thread; CM7 bleibt deaktiviert. SysTick und Kernelstart sind vorbereitet. Die LED-Beobachtung belegt Funktion, keine garantierte WCET oder Antwortzeit.
+**Prüfkriterien:** richtige CM4-/GPIO-Zuordnung, CMSIS_V2 und 1-kHz-Tick, genau zwei erfolgreich angelegte Anwendungsthreads, korrekte Stackeinheiten und zwei eigene Threadschleifen. Heartbeat blockiert, HeavyMath bleibt Ready; je ein LED-Ausgang pro Thread. CM7 bleibt deaktiviert. Die LED-Beobachtung belegt Funktion, keine garantierte WCET oder Antwortzeit.
 :::
