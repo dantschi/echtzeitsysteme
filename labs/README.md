@@ -8,7 +8,7 @@ Die Modulnote entsteht durch die Papierklausur. Jedes Blatt enthält 32 Orientie
 |---|---|---|---:|
 | [1](lab_01_bare-metal-polling-interrupts.qmd) | Zeitvertrag, Antwort, Jitter, Polling, Timer | Taster-Nachleuchtanzeige ohne blockierendes Warten | 25–35 |
 | [2](lab_02_scheduling-theorie-kooperativer-scheduler.qmd) | Jobmodell, RMS, Antwortzeitanalyse, EDF, kooperative Runden | Doppel-/Dreifachpuls als kooperativer Automat | 25–35 |
-| [3](lab_03_einfuehrung-freertos-praeemption.qmd) | Threadzustände, Präemption, Ticks, Drift, Speicher, Flags | HeavyMath, Heartbeat und Tasterreaktion mit FreeRTOS nur auf M4 | 35–50 |
+| [3](lab_03_einfuehrung-freertos-praeemption.qmd) | Threadzustände, Präemption, Ticks, Drift, Speicher, Flags | zwei FreeRTOS-Threads mit LEDs: Heartbeat und HeavyMath nur auf M4 | 20–30 |
 | [4](lab_04_race-conditions-mutex-priority-inversion.qmd) | Lost Update, Schutzumfang, Semaphor, Deadlock, Inversion | Mutex-Änderung und konsistenter Snapshot | 30–40 |
 | [5](lab_05_deferred-interrupt-processing.qmd) | FIFO-Zustände, Überlauf, Besitz, IRQ-Übergabe | Taster-IRQ mit Wertqueue und LED-Worker | 35–45 |
 | [6](lab_06_multicore-shared-memory-cache-kohaerenz.qmd) | AMP, Shared-Layout, Phasenbesitz, Cache, MPU | eigene geordnete M4-Antwort auf neue M7-Anfragen | 25–35 |

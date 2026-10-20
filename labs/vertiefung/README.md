@@ -6,7 +6,7 @@ Die folgenden Anleitungen beschreiben die vor dem Termin bereitzustellenden Proj
 |---|---|
 | 1 | [Taster-Nachleuchtanzeige ohne blockierendes Warten](lab_01_programmierung.md) |
 | 2 | [Doppel-/Dreifachpuls als kooperativer Automat](lab_02_programmierung.md) |
-| 3 | [HeavyMath, Heartbeat und Tasterreaktion mit FreeRTOS nur auf M4](lab_03_programmierung.md) |
+| 3 | [zwei FreeRTOS-Threads mit LEDs: Heartbeat und HeavyMath nur auf M4](lab_03_programmierung.md) |
 | 4 | [Mutex-Änderung und konsistenter Snapshot](lab_04_programmierung.md) |
 | 5 | [Taster-IRQ mit Wertqueue und LED-Worker](lab_05_programmierung.md) |
 | 6 | [eigene geordnete M4-Antwort auf neue M7-Anfragen](lab_06_programmierung.md) |

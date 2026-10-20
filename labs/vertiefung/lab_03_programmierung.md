@@ -1,6 +1,6 @@
 # Projektvorbereitung zu Übungsblatt 3
 
-Aufgabe 6 lässt die Studierenden das Vorlesungsbeispiel **HeavyMath, Heartbeat und Tasterreaktion** selbst implementieren. **Ausschließlich CM4 läuft**: FreeRTOS, Anwendung, Systemstart und Taktkonfiguration liegen auf M4. Verwendet werden NUCLEO-H755ZI-Q / STM32H755ZIT6, STM32CubeMX und VS Code mit STM32 VS Code Extension; die eingebauten LEDs LD1/LD2, B1 und USB/ST-LINK genügen.
+Aufgabe 6 beschränkt sich auf **zwei Anwendungsthreads: Heartbeat und HeavyMath**, mit je einer eingebauten LED. **Ausschließlich CM4 läuft**, einschließlich Systemstart und Taktkonfiguration. Benötigt werden NUCLEO-H755ZI-Q / STM32H755ZIT6, STM32CubeMX, VS Code mit STM32 VS Code Extension und USB/ST-LINK. Die Studierenden schreiben die beiden Schleifen selbst. Taster, EXTI und zusätzliche Peripherietimer gehören nicht zur Aufgabe.
 
 ## CM4 ohne laufenden M7 vorbereiten
 
@@ -11,44 +11,32 @@ Aufgabe 6 lässt die Studierenden das Vorlesungsbeispiel **HeavyMath, Heartbeat 
 
 ## GPIO, Kernel und Einbindung
 
-1. Konfigurieren Sie **FreeRTOS ausschließlich auf CM4**, **CMSIS_V2**, Präemption, 32-Bit-Kernelticks und **1000 Hz**. Prüfen Sie die erzeugte `FreeRTOSConfig.h`, die CMSIS-Prioritätsabbildung und die Cortex-M4-Portauswahl. SysTick gehört dem Kernel; für die HAL-Zeitbasis wird in dieser Projektvariante ein freier **TIM6** verwendet. Prüfen Sie beide Handlerketten und die aus der tatsächlichen CM4-Taktkonfiguration abgeleiteten Zeitbasen.
-2. Konfigurieren Sie **LD2/PE1** und **LD1/PB0** als CM4-Ausgänge, anfangs LOW, sowie **B1/PC13** als EXTI-Eingang mit der Flanke beim Drücken. Pinbelegung, aktive Polarität und Boardrevision sind gegen UM2408 zu prüfen. Nur der Heartbeat schreibt PE1, nur der Ereignis-Thread PB0. Keine weitere Quelle verwendet in dieser Basis `EXTI15_10_IRQn`.
-3. Konfigurieren Sie EXTI15_10 mit einer für nichtblockierende FreeRTOS-Aufrufe zulässigen logischen NVIC-Priorität. Beispiel: Bei vier implementierten Prioritätsbits, passender Gruppierung und `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY = 5` ist der unverschobene Wert **5** zulässig, 0 bis 4 sind es nicht. Entscheidend ist die konkrete `FreeRTOSConfig.h`; die numerischen CMSIS-Threadprioritäten sind eine andere Skala. **Die NVIC-Freigabe bleibt während der gesamten Initialisierung aus.** Entfernen Sie ein automatisch erzeugtes vorzeitiges Enable aus der wirksamen Startfolge, auch nach erneuter Generierung.
-4. Erhalten Sie im CM4-IRQ-Handler die Kette zu `HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13)`. Ergänzen Sie genau eine Weiterleitung im bestehenden Callback; erzeugen Sie keine zweite Definition. Include in einem erhaltenen Benutzerbereich:
-
-```c
-#include "lab03_rtos.h"
-```
-
-   Callback-Inhalt für die vorbereitete Basis:
-
-```c
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    Lab03_ButtonIRQ(GPIO_Pin);
-}
-```
-
-   Die Hilfe ignoriert andere Pins, prüft Kernelzustand und Handle, setzt `LAB03_BUTTON_FLAG` und zählt API-Fehler in `lab03_irq_errors`. Sie wartet nicht und schaltet keine LED. `Lab03_EnableButtonIRQ()` verwirft später im laufenden Ereignis-Thread alte PC13-/NVIC-Anforderungen und gibt den IRQ frei. Danach wird kein Thread-Flag blind gelöscht. Flanken vor dieser Freigabe werden absichtlich verworfen.
-5. Nehmen Sie **`lab03_rtos.c`**, **`threads_student.c`** und den Headerpfad aus `code/lab03/` in das **CM4-CMake-Ziel** auf; C11 oder neuer verwenden. Der Header weist CM7-Builds zurück. Entfernen Sie unbenutzte generierte Default-Threads und deren Anlage. Keine zusätzlichen Kopien der drei Threads oder frühere Testlast dürfen mitlaufen. Die früheren Füllstandsdateien `lab03_tank.c/.h` und `tank_threads.c` gehören nicht zu dieser Variante.
-6. Rufen Sie nach dem einen vorhandenen `osKernelInitialize()`, im Zustand `osKernelReady`, und **vor** dem einen vorhandenen `osKernelStart()` genau einmal auf:
+1. Konfigurieren Sie **FreeRTOS auf CM4**, **CMSIS_V2**, Präemption, 32-Bit-Kernelticks und **1000 Hz**. Verwenden Sie `configUSE_TICKLESS_IDLE = 0`. Prüfen Sie die Cortex-M4-Portauswahl und die CMSIS-Prioritätsabbildung. Es werden keine Softwaretimer angelegt. Der Kernel erzeugt intern weiterhin seinen Idle-Thread; „zwei Threads“ bezeichnet die beiden Anwendungsthreads.
+2. Konfigurieren Sie **LD2/PE1** und **LD1/PB0** als CM4-Ausgänge, anfangs LOW. Pinbelegung, aktive Polarität und Boardrevision gegen UM2408 prüfen. Nur Heartbeat schreibt PE1, nur HeavyMath PB0. B1/PC13 bleibt unbenutzt; frühere Taster-EXTI-Konfiguration, Callbackweiterleitungen und NVIC-Freigaben entfallen.
+3. Stellen Sie die **HAL-Zeitbasis auf SysTick mit 1000 Hz**, ohne TIM6 oder anderen Zeitbasis-Timer. HAL und FreeRTOS nutzen gemeinsam den einen SysTick; zeitgesteuertes Warten und Präemption benötigen weiterhin Kernelinterrupts. Die Studierenden implementieren dafür keinen Handler. Die vorbereitete Datei **`lab03_systick.c`** bedient den HAL-Tick auch vor dem Schedulerstart und ruft danach zusätzlich den FreeRTOS-Port-Tick auf. Prüfen Sie für diese Basis:
+   - Am **gesamten CM4-CMake-Ziel** ist `USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION=1` als Compilerdefinition gesetzt. Der verwendete ST-CMSIS-RTOS2-Adapter muss diesen Schalter unterstützen; er unterdrückt dessen eigene `SysTick_Handler`-Definition.
+   - Es gibt genau eine C-Definition von `SysTick_Handler`: die aus `lab03_systick.c`. Eine weitere generierte C-Definition wird entfernt. Der Vektoreintrag bleibt erhalten. Entfernen Sie auch eine etwaige Makroabbildung `xPortSysTickHandler` auf `SysTick_Handler`, damit der gemeinsame Handler den tatsächlichen Port-Handler aufruft.
+   - Die generierte SVC-/PendSV-Anbindung bleibt erhalten. `INCLUDE_xTaskGetSchedulerState` ist aktiviert. Tickless Idle bleibt ausgeschaltet; die HAL-Tickfrequenz bleibt bei 1 kHz. Es wird kein generiertes `stm32h7xx_hal_timebase_tim.c` eingebunden und kein Zeitbasis-Timer gestartet.
+   - Vor dem Kernelstart läuft `HAL_GetTick()` weiter, danach laufen sowohl HAL-Millisekunden als auch Kernelticks mit 1 kHz. Eine erneute CubeMX-Generierung darf weder einen zusätzlichen Handler noch die alte Timerzeitbasis aktivieren.
+4. Nehmen Sie **`lab03_rtos.c`**, **`lab03_systick.c`**, **`threads_student.c`** und den Headerpfad aus `code/lab03/` in das **CM4-CMake-Ziel** auf; C11 oder neuer verwenden. Der Header weist CM7-Builds zurück. Entfernen Sie unbenutzte generierte Default-Threads und deren Anlage. Die zwei Anwendungsthreads werden bereits in `Lab03_Start()` angelegt; erzeugen Sie keine weiteren Kopien in CubeMX. Die früheren Füllstandsdateien `lab03_tank.c/.h` und `tank_threads.c` gehören nicht zu dieser Variante.
+5. Binden Sie `lab03_rtos.h` in einem erhaltenen Benutzerbereich ein. Rufen Sie nach dem einen vorhandenen `osKernelInitialize()`, im Zustand `osKernelReady`, und **vor** dem einen vorhandenen `osKernelStart()` genau einmal auf:
 
 ```c
 Lab03_Start();
 ```
 
-   Bewahren Sie Include und Aufruf in erhaltenen Benutzerbereichen bzw. einer von dort aufgerufenen eigenen Initialisierung auf. Doppeln Sie Kernelinitialisierung und -start nicht. Eine unerwartete Rückkehr aus `osKernelStart()` gehört in den Fehlerpfad. Das Modul prüft Tickfrequenz und alle drei `osThreadNew`-Ergebnisse vor dem Kernelstart.
-7. Die vorgegebenen CMSIS-Attribute sind Event **High / 1024 Byte**, Heartbeat **Normal / 512 Byte** und HeavyMath **BelowNormal / 1024 Byte**. Diese Stackgrößen sind Ausgangswerte, keine nachgewiesenen Minima. Heap/RAM müssen zusätzlich Idle, gegebenenfalls Timer-Task, Verwaltungsdaten und Handlerstack berücksichtigen. Die Handles werden vor dem Kernelstart angelegt; das intern gespeicherte Ereignishandle bleibt danach unverändert.
-8. Bauen und laden Sie nur das CM4-Image. In den unveränderten studentischen Rümpfen warten alle drei Threads: beide LEDs bleiben aus, der Taster-IRQ bleibt gesperrt. Prüfen Sie, dass die drei Eintrittsfunktionen erreicht werden und anschließend blockieren. Dieser Stand prüft die Basis, noch nicht die Anwendung. Prüfen Sie erneute CubeMX-Generierung, Build und Kaltstart auf den Erhalt **aller** CM4-Anpassungen. Geben Sie diesen Stand vor dem Termin aus.
+   Bewahren Sie den Aufruf ebenfalls in einem erhaltenen Benutzerbereich bzw. einer von dort aufgerufenen eigenen Initialisierung auf. Doppeln Sie Kernelinitialisierung und -start nicht. Eine unerwartete Rückkehr aus `osKernelStart()` gehört in den Fehlerpfad. Das Modul prüft Tickfrequenz und beide `osThreadNew`-Ergebnisse.
+6. Die CMSIS-Attribute sind **Heartbeat: Normal / 512 Byte** und **HeavyMath: BelowNormal / 1024 Byte**. Diese Stackgrößen sind Ausgangswerte, keine nachgewiesenen Minima. Berücksichtigen Sie zusätzlich Idle, gegebenenfalls intern benötigte Kernelobjekte, Verwaltungsdaten und Handlerstack in der RAM-Bilanz.
+7. Bauen und laden Sie nur das CM4-Image. Im unveränderten studentischen Ausgangsstand warten beide Threads, beide LEDs bleiben aus. Prüfen Sie, dass die zwei Eintrittsfunktionen erreicht werden und blockieren. Erst nach eigener Implementierung blinken die LEDs. Prüfen Sie erneute CubeMX-Generierung, Build und Kaltstart auf den Erhalt der Einbindung. Geben Sie diesen Stand vor dem Termin aus.
 
 ## Bearbeitung und Auswertung
 
-Die Studierenden ersetzen die drei Funktionsrümpfe in `threads_student.c` und entfernen danach `WaitForImplementation`. Sie implementieren Heartbeat-Schleife, dauerhafte Rechenschleife und blockierenden Flagempfang. Die vollständigen Musterfunktionen stehen ausschließlich im `solution`-Profil des Übungsblatts; sie werden bei Bedarf anstelle der studentischen Definitionen gebaut. Threadanlage und sichere IRQ-Freigabe sind bereits vorbereitet.
+Die Studierenden ersetzen beide Funktionsrümpfe in `threads_student.c` und entfernen danach `WaitForImplementation`. Heartbeat schaltet LD2 um und blockiert mit `osDelay(500)`. HeavyMath aktualisiert den vorbereiteten Akkumulator in Rechenblöcken und schaltet nach jedem Block LD1 um; es wartet nie. Threadanlage, GPIO-Hilfen, Kernelstart und gemeinsame Zeitbasis sind vorbereitet. Die vollständigen Musterfunktionen stehen ausschließlich im `solution`-Profil des Übungsblatts.
 
-`Lab03_WaitHeartbeat` erhöht das vorherige absolute Sollziel um 500 Ticks. Bei verpasstem Ziel zählt es eine Zielverfehlung und richtet auf jetzt plus 500 neu aus. Läuft das Ziel im API-Übergang ab, wird einmal mit einem neuen Ziel versucht; weitere Fehler führen zu `Lab03_Fail`. Eine sofortige Nachholserie wird vermieden. Die Moduloauswertung setzt unbeobachtete Zeitabstände unter der halben 32-Bit-Spanne voraus. Der Zähler ist ohne weiteren Zeitvertrag kein allgemeiner Deadline-Miss-Zähler und kann insbesondere keine Fehler erfassen, während der Heartbeat gar nicht läuft.
+Ein Rechenblock umfasst zunächst `LAB03_MATH_ITERATIONS = 10000000` Aktualisierungen. Prüfen Sie die Sichtbarkeit von LD1 mit der ausgegebenen Takt-/Buildkonfiguration vor dem Termin und passen Sie die Blocklänge bei Bedarf an. Das HeavyMath-Blinktempo hängt von der Rechenzeit ab und hat keinen festen Periodenvertrag. Der Heartbeat verwendet bewusst einfaches relatives Warten; die Wartehilfe für absolute Sollziele entfällt.
 
-Für den Starvation-Versuch wird nur `.priority` in `math_attr` innerhalb `Lab03_Start()` auf `osPriorityAboveNormal` geändert. Nach Build, Flash und Neustart verhungert der Heartbeat, während Event weiterhin über HeavyMath liegt. Anschließend die ursprüngliche Priorität wiederherstellen. Ein Yield macht HeavyMath nicht Blocked und gibt dem niedrigeren Heartbeat keine verlässliche Ausführungsmöglichkeit.
+Der Prioritätsversuch ist **optional**: Nur `.priority` in `math_attr` innerhalb `Lab03_Start()` auf `osPriorityAboveNormal` ändern. Nach Build, Flash und Neustart läuft HeavyMath weiterhin, während Heartbeat verhungert. Anschließend die ursprüngliche Priorität wiederherstellen. Ein Yield macht HeavyMath nicht Blocked und sichert dem niedrigeren Heartbeat keine Zuteilung.
 
-Die Diagnosefelder haben jeweils nur einen schreibenden Kontext und werden gemeinsam nur bei angehaltenem CM4 gelesen. `volatile` macht Zugriffe beobachtbar und ersetzt keine Synchronisation. Tasterprellen und das Zusammenfallen mehrerer Flag-Setzungen verhindern eine garantierte Eins-zu-eins-Zählung von Tastendrücken. Die Aufgabe verlangt keinen Entprellalgorithmus und keinen numerischen Reaktionszeitnachweis.
+`lab03_heartbeat_edges` zählt Heartbeat-Umschaltungen; `lab03_accumulator` macht die Rechenlast beobachtbar. Die beiden Diagnosefelder haben jeweils nur einen schreibenden Thread und werden gemeinsam nur bei angehaltenem CM4 gelesen. `volatile` ersetzt keine Synchronisation. Die Abnahme erfolgt anhand der LEDs und der Erklärung der Threadzustände; weder Debugger noch LED-Blinken liefern hier einen numerischen Zeitnachweis.
 
 Die Dateien sind Anwendungsbausteine und studentische Startdateien, kein generiertes Firmwaregesamtprojekt. Ein Hosttest ersetzt weder den ARM-Build noch den tatsächlichen Kaltstart und Boardlauf. Ohne funktionierende Hardware bleiben die Papieraufgaben lösbar; ein nicht ausgeführter Boardtest wird benannt.
