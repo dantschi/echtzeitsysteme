@@ -335,33 +335,14 @@ Ein vorzeichenloser 32-Bit-Zykluszähler läuft kontinuierlich bei 400 MHz. Das 
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 17: HSEM und lokale Teilnehmer · 1 Punkt
+### Frage 17: Pollingserver und ungenutztes Budget · 1 Punkt
 
-Zwei M4-Tasks benutzen dieselbe HSEM-Nummer und beide FastTake. Die andere Kernseite verwendet dieselbe globale Besitzregel. Welche Aussagen treffen zu?
+Ein Pollingserver prüft bei 0, 10, 20 ms und so weiter eine aperiodische Warteschlange. An jedem Prüfzeitpunkt erhält er höchstens 2 ms CPU-Budget. Ist die Schlange dann leer, verfällt dieses Budget bis zum nächsten Prüfzeitpunkt. Bei 0 ms ist sie leer. Bei 1 ms kommt genau ein Auftrag mit 1 ms eigener CPU-Arbeit an. Die CPU ist sonst frei, Zusatzkosten sind null. Welche Aussagen treffen zu?
 
-- A) HSEM-Besitz wird durch Kernkennung und ProcessID beschrieben.
-- B) FastTake erzeugt für jeden M4-Task automatisch eine andere ProcessID.
-- C) Ein lokaler Mutex kann die beiden M4-Tasks vor dem HSEM-Erwerb serialisieren.
-- D) Eine Freigabebenachrichtigung allein ersetzt keinen erfolgreichen erneuten Take.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 18: Watchdog und Fortschrittsnachweis · 1 Punkt
-
-IWDG wird ohne Fenster betrieben. WWDG und ein Supervisor beobachten das System. Welche Aussagen treffen zu?
-
-- A) Ein IWDG ohne Fenster erkennt jeden zu frühen Refresh.
-- B) Ein WWDG-Refresh im Fenster beweist die korrekte Ausführung aller Validierungsroutinen.
-- C) Regelmäßige Ausführung der Idle-Task beweist den Fortschritt aller erforderlichen Worker.
-- D) Ein zu früher WWDG-Refresh kann einen Reset auslösen, ohne dass zuvor ein EWI bedient wird.
+- A) Der Auftrag startet wegen der freien CPU sofort bei 1 ms.
+- B) Der Auftrag kann bei 10 ms starten und bei 11 ms enden.
+- C) Seine Antwortzeit beträgt unter diesen Annahmen 1 ms.
+- D) Das bei 0 ms verfallene Budget wird nicht zu einem zusätzlichen Vorrat bei 10 ms.
 
 ```{=latex}
 \end{minipage}\par
@@ -373,14 +354,14 @@ IWDG wird ohne Fenster betrieben. WWDG und ein Supervisor beobachten das System.
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 19: Architektur und Entscheidungsregeln · 1 Punkt
+### Frage 18: CPU-Budget und Antwortzeit · 1 Punkt
 
-Ein Edge-Steuergerät besitzt einen lokalen Wirkungspfad, Telemetrie und eine AUTOSAR-Classic-Komponentenbeschreibung. Welche Aussagen treffen zu?
+Ein Server besitzt 2 ms CPU-Budget ohne Erneuerung im betrachteten Abschnitt. Ein Auftrag wird bei 3 ms freigegeben und läuft nur von 5 bis 6 ms sowie von 8 bis 8,5 ms; dort endet er. Nur seine eigene Ausführung verbraucht das genannte Budget, kein anderer Auftrag nutzt es. Welche Aussagen treffen zu?
 
-- A) Die drei Vergleichswerte 10,0, 10,1 und 40,0 besitzen eine exakte Zweier-Gleichheitsmehrheit.
-- B) MCAL und Complex Driver gehören im Classic-Bild zur Basissoftware unterhalb der RTE.
-- C) Drei Runnables einer Softwarekomponente müssen drei getrennten Betriebssystemtasks entsprechen.
-- D) Der lokale Wirkungspfad muss seine eigene Frist auch bei ausfallender Telemetrie erfüllen.
+- A) Nach dem Abschluss bleiben 0,5 ms Budget übrig.
+- B) Die Antwortzeit des Auftrags beträgt 1,5 ms.
+- C) Alle Wartezeiten ab der Freigabe verbrauchen ebenfalls dieses CPU-Budget.
+- D) Die Budgetgrenze allein garantiert keine Abschlussfrist ab Freigabe.
 
 ```{=latex}
 \end{minipage}\par
@@ -392,14 +373,33 @@ Ein Edge-Steuergerät besitzt einen lokalen Wirkungspfad, Telemetrie und eine AU
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 20: Capstone: Datenvertrag und Timing · 1 Punkt
+### Frage 19: Grundidee des Sporadic-Servers · 1 Punkt
 
-Eine FIFO-Queue führt zu einem Publisher und einer Latest-Value-Mailbox. M7 kopiert neue Stände und filtert sie. Welche Aussagen treffen zu?
+Ein Sporadic-Server bedient aperiodische Aufträge mit begrenztem CPU-Budget und einer vereinbarten Serverperiode. Betrachten Sie die Grundidee ohne zusätzliche Hintergrundausführung: Verbrauchte Budgetanteile werden verbrauchsbezogen nach der Serverperiode erneuert. Höher priorisierte Arbeit darf den Server verdrängen. Welche Aussagen treffen zu?
 
-- A) Ein erfolgreicher Queue-Put belegt Annahme, noch nicht Verarbeitung oder Publikation.
-- B) Das wiederholte Lesen derselben Publikationsnummer ist keine neue verschieden kopierte Publikation.
-- C) Der Filter verwendet die tatsächlich kopierte Folge, einschließlich ihrer möglichen Auslassungen.
-- D) Passende finale Datenbilanzen beweisen zugleich die Einhaltung aller Zeitfristen.
+- A) Die Erneuerung ist an den vorausgegangenen Budgetverbrauch gekoppelt.
+- B) Jede neu eintreffende Anfrage füllt das Budget sofort vollständig auf.
+- C) Ohne Restbudget darf der Server bis zu einer Erneuerung keine weitere budgetierte CPU-Arbeit ausführen.
+- D) Eine Budgeterneuerung garantiert zugleich den sofortigen Abschluss aller wartenden Aufträge.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 20: Fortschritt sowie Daten- und Zeitvertrag · 1 Punkt
+
+Ein System hat zwei erforderliche Worker und einen Monitor. Jeder Worker erhöht seine Fortschrittsnummer erst nach dem vereinbarten vollständig abgeschlossenen Verarbeitungsschritt. Der Monitor soll ausbleibenden frischen Fortschritt erkennen. Eine getrennte Datenbilanz zählt angenommene und abgeschlossene Aufträge. Welche Aussagen treffen zu?
+
+- A) Wiederholtes Lesen derselben Fortschrittsnummer belegt keinen neuen abgeschlossenen Schritt.
+- B) Regelmäßige Ausführung der Idle-Task belegt den frischen Fortschritt beider Worker.
+- C) Eine Abschlussfrist benötigt passende Zeitmarken derselben Anforderung und einen verlässlichen Zeitbezug.
+- D) Eine korrekte finale Datenbilanz beweist zugleich die Einhaltung sämtlicher Abschlussfristen.
 
 ```{=latex}
 \end{minipage}\par
@@ -422,10 +422,10 @@ Ein Punkt wird ausschließlich für die vollständige richtige Kombination verge
 | 04 | B, C | 14 | A, D |
 | 05 | A, B, C, D | 15 | A, B, C, D |
 | 06 | A, C | 16 | A, B, C |
-| 07 | B | 17 | A, C, D |
-| 08 | B, C | 18 | D |
-| 09 | A, B, C | 19 | B, D |
-| 10 | A, D | 20 | A, B, C |
+| 07 | B | 17 | B, D |
+| 08 | B, C | 18 | A, D |
+| 09 | A, B, C | 19 | A, C |
+| 10 | A, D | 20 | A, C |
 
 ### Begründungen zu allen Optionen
 
@@ -541,33 +541,33 @@ Ein Punkt wird ausschließlich für die vollständige richtige Kombination verge
 - C) Richtig: Der Zähler misst das lokale verstrichene Fenster, nicht ausschließlich eigene Funktionsarbeit.
 - D) Falsch: Ein beobachtetes Fenster ist kein allgemeiner Worst-Case-Nachweis.
 
-**Frage 17 · Vorlesung 8 · richtig: A, C, D**
+**Frage 17 · Vorlesung 8 · richtig: B, D**
 
-- A) Richtig: Die HSEM-Nummer wählt die Ressource; Core-ID und ProcessID beschreiben den Besitzer.
-- B) Falsch: FastTake benutzt ProcessID null, keine automatische Threadkennung.
-- C) Richtig: Die lokale Serialisierung ergänzt den globalen Vertrag; Sperrordnung beachten.
-- D) Richtig: Die Meldung ist ein Aufweckhinweis, keine Besitzübertragung.
+- A) Falsch: Nach einer leeren Prüfung verfällt das Budget; der Server prüft erst bei 10 ms erneut.
+- B) Richtig: Bei 10 ms ist der Auftrag vorhanden; 1 ms Arbeit passt in das neue Budget von 2 ms und endet bei 11 ms.
+- C) Falsch: Die Antwortzeit reicht von Freigabe bis Abschluss: $11-1=10\,\mathrm{ms}$. Eine Millisekunde ist hier die eigene CPU-Arbeit.
+- D) Richtig: Ungenutztes Budget wird im angegebenen Pollingmodell nicht angespart.
 
-**Frage 18 · Vorlesung 8 · richtig: D**
+**Frage 18 · Vorlesung 8 · richtig: A, D**
 
-- A) Falsch: Ohne Fenster wird zu früher Refresh nicht durch eine untere Zeitgrenze geprüft.
-- B) Falsch: Die Hardware prüft den Zeitpunkt, nicht die funktionale Korrektheit der Arbeit.
-- C) Falsch: Lokaler Idle-Fortschritt ist kein frischer vollständiger Worker-Nachweis.
-- D) Richtig: EWI ist kein garantierter Pfad für alle Resetursachen.
+- A) Richtig: Die eigene Ausführung verbraucht $(6-5)+(8{,}5-8)=1{,}5\,\mathrm{ms}$; von 2 ms bleiben 0,5 ms übrig.
+- B) Falsch: $R=8{,}5-3=5{,}5\,\mathrm{ms}$ einschließlich Anfangswarten und Verdrängung.
+- C) Falsch: Nach dem angegebenen Vertrag wird eigene CPU-Ausführung belastet; Warten verbraucht dieses Budget nicht.
+- D) Richtig: Verfügbares Ausführungsbudget begrenzt die CPU-Arbeit, nicht automatisch die gesamte Verzögerung ab Freigabe.
 
-**Frage 19 · Vorlesung 9 · richtig: B, D**
+**Frage 19 · Vorlesung 8 · richtig: A, C**
 
-- A) Falsch: Alle drei Werte sind verschieden; eine Toleranz- oder Medianregel wäre ein anderer Vertrag.
-- B) Richtig: MCAL und Complex Driver liegen innerhalb der Basic Software, nicht als SWC oberhalb der RTE.
-- C) Falsch: Die Konfiguration kann mehrere Runnables derselben Task zuordnen.
-- D) Richtig: Der zeitlich schwankende Netzpfad darf die unabhängige lokale Anforderung nicht ersetzen.
+- A) Richtig: Die verbrauchsbezogene Erneuerung ist die hier betrachtete Grundidee des Sporadic-Servers.
+- B) Falsch: Eine Ankunft ist keine Budgeterneuerung; sonst wäre die zugesagte Begrenzung nicht gewahrt.
+- C) Richtig: Ohne Restbudget muss der budgetierte Serveranteil auf eine zulässige Erneuerung warten.
+- D) Falsch: Erneuertes Budget erlaubt Ausführung; höher priorisierte Arbeit und die verbleibende Auftragsarbeit können den Abschluss weiterhin verzögern.
 
-**Frage 20 · Vorlesung 9 · richtig: A, B, C**
+**Frage 20 · Vorlesung 9 · richtig: A, C**
 
-- A) Richtig: Eingang, Worker und Mailbox haben getrennte Übergänge und Bilanzen.
-- B) Richtig: Eine neue Kopie erfordert einen neuen Stand; Mehrfachlesen erhöht diese Zahl nicht.
-- C) Richtig: Ungelesen ersetzte Stände sind keine nachträglich bekannten Filtereingaben.
-- D) Falsch: Für die Zeitziele braucht es eigene definierte und gültige Zeitnachweise.
+- A) Richtig: Der unveränderte Stand ist keine neue Ausführung des vereinbarten abgeschlossenen Schritts.
+- B) Falsch: Idle-Aktivität betrifft einen anderen Pfad und belegt keinen neuen Abschluss eines erforderlichen Workers.
+- C) Richtig: Freigabe und geforderter Abschluss derselben Anforderung müssen mit einem passenden gemeinsamen oder bestätigten Zeitbezug erfasst werden.
+- D) Falsch: Eine Datenbilanz beschreibt die gezählten Übergänge. Ihre zeitlichen Abstände und die Einhaltung von Fristen brauchen eigene Nachweise.
 
 :::
 
@@ -716,11 +716,17 @@ B3.3: Nein. HSEM regelt Besitz und DMB die Ordnung; sie reinigen die Dirty-Zeile
 
 ### B4: Timing und Fehlerreaktion · 10 Punkte · etwa 10 Minuten
 
-**B4.1 (4 Punkte):** Eine gemeinsame Modelluhr liefert: Ereignis bei 0 µs, ISR-Eintritt bei 2 µs, Worker Ready bei 5 µs, ISR-Ende bei 7 µs, Workerstart bei 10 µs, geforderter Abschluss bei 14 µs. Die relative Deadline beträgt 12 µs. Berechnen Sie ISR-Dauer, Ready-bis-Running-Wartezeit und Gesamtantwortzeit und prüfen Sie die Frist. Warum dürfen Sie die vollständige ISR-Dauer und das Ready-Warten nicht zusätzlich zueinander auf die übrigen Zeitanteile aufsummieren?
+**B4.1 (4 Punkte):** Eine gemeinsame Modelluhr liefert: Ereignis bei 0 µs, ISR-Eintritt bei 2 µs, Worker Ready bei 5 µs, ISR-Ende bei 7 µs, Workerstart bei 10 µs, tatsächlicher Abschluss bei 14 µs. Die relative Deadline beträgt 12 µs. Berechnen Sie ISR-Dauer, Ready-bis-Running-Wartezeit und Gesamtantwortzeit und prüfen Sie die Frist. Warum dürfen Sie die vollständige ISR-Dauer und das Ready-Warten nicht zusätzlich zueinander auf die übrigen Zeitanteile aufsummieren?
 
-**B4.2 (4 Punkte):** WWDG-Lehrmodell: $f_{\mathrm{PCLK}}=100\,\mathrm{MHz}$, Vorteiler $P=8$, Reload $R=127$, Fenster $W=80$. Erlaubt ist $63<T\le80$; Reset erfolgt beim Schritt auf 63. Der erste Abwärtsschritt folgt ideal einen vollen Tick nach Start. Berechnen Sie mit $\Delta t=4096P/f_{\mathrm{PCLK}}$ Tickdauer, Fensteröffnungs- und Resetzeitpunkt. Bewerten Sie einen Refresh nach idealen 18 ms. Runden Sie Zeiten auf drei Nachkommastellen; benutzen Sie ungerundete Werte für Zwischenrechnungen.
+**B4.2 (4 Punkte):** Frische- und Fehlerreaktionsmodell: Unmittelbar nach dem letzten vollständig bestätigten Fortschritt bei $t_0=0$ ms bleibt ein erforderlicher Worker stehen. Eine Fortschrittsnummer ändert sich danach nicht mehr. Der Monitor beurteilt bei jeder Freigabe einen konsistenten Stand auf derselben durchlaufenden Modelluhr. Ab Alter $\Theta=20$ ms gilt der Nachweis als veraltet. Monitorfreigaben liegen periodisch im Abstand $T_M=5$ ms; ihre Phase relativ zu $t_0$ ist beliebig. Nach einer Freigabe mit veraltetem Stand liegt die Fehlerentscheidung spätestens nach $R_M=2$ ms vor. Darin sind bereits alle Warte- und Ausführungsanteile des Monitors enthalten. Die anschließende Fehleraktion benötigt zusätzlich höchstens $T_A=3$ ms bis zum geforderten inaktiven Ausgang. Monitor, Uhr und Fehleraktion bleiben trotz des Workerfehlers funktionsfähig. Es gibt keinen Reset-/Bootumweg und keine weiteren Zeitanteile.
 
-**B4.3 (2 Punkte):** Ein Supervisor füttert allein aufgrund einer laufenden Idle-Task. Warum genügt dies nicht als Fortschrittsnachweis der erforderlichen Worker? Ein aktiver High-Ausgang soll auch bei Reset und Boot inaktiv bleiben. Nennen Sie eine geeignete Beschaltungs- und Startregel für einen isolierten Lehrmarker, falls der GPIO beim Reset hochohmig wird.
+Verwenden Sie die konservative obere Schranke
+
+$$L_{\max}=\Theta+T_M+R_M+T_A.$$
+
+$L_{\max}$ ist die Fehlerreaktionsdauer ab $t_0$. Begründen Sie den Beitrag $T_M$ (1 Punkt), berechnen Sie $L_{\max}$ (1 Punkt), prüfen Sie eine geforderte obere Grenze von 28 ms (1 Punkt) und bestimmen Sie das größte zulässige $\Theta$ bei unveränderten übrigen Werten (1 Punkt).
+
+**B4.3 (2 Punkte):** Ein Supervisor bedient den Hardware-Watchdog allein deshalb weiter, weil die Idle-Task regelmäßig läuft; die Fortschrittsnummer eines erforderlichen Workers bleibt unverändert. Warum genügt der Idle-Lauf nicht als Nachweis (1 Punkt)? Formulieren Sie eine verbesserte Freigaberegel, die frischen vollständigen Fortschritt aller erforderlichen Worker berücksichtigt und bei dessen Ausbleiben die vereinbarte Fehlerreaktion auslöst (1 Punkt).
 
 ```{=latex}
 \end{minipage}\par
@@ -732,14 +738,20 @@ B3.3: Nein. HSEM regelt Besitz und DMB die Ordnung; sie reinigen die Dirty-Zeile
 
 B4.1: ISR-Dauer $7-2=5\,\text{µs}$ (1 P); Ready-Warten $10-5=5\,\text{µs}$ (1 P). $R=14-0=14\,\text{µs}>12\,\text{µs}$, um 2 µs verletzt (1 P). Die Intervalle überlappen von 5 bis 7 µs. Eine disjunkte Zerlegung lautet $2+5+3+4=14\,\text{µs}$ für Eintritt, ISR, danach Warten und Workerarbeit (1 P für die Überlappungsbegründung; gleichwertige richtige Zerlegungen gelten).
 
-B4.2:
+B4.2: Die Frischegrenze kann unmittelbar nach einer Monitorfreigabe erreicht werden. Bis zur nächsten Freigabe vergehen deshalb im ungünstigsten Phasenfall bis zu $T_M=5$ ms. Der Betrag ist die zusätzliche Abtastwartezeit, keine weitere eigene Monitorarbeit (1 P).
 
-$$\Delta t=\frac{4096\cdot8}{100\cdot10^6}\,\mathrm{s}
-=0{,}32768\,\mathrm{ms}\approx0{,}328\,\mathrm{ms}.$$
+$$L_{\max}=20+5+2+3=30\,\mathrm{ms}.$$
 
-Tick mit Einheit (1 P). Öffnung: $127-80=47$ Schritte, $47\cdot0{,}32768=15{,}40096\,\mathrm{ms}\approx15{,}401\,\mathrm{ms}$ (1 P). Reset: $127-63=64$ Schritte, $64\cdot0{,}32768=20{,}97152\,\mathrm{ms}\approx20{,}972\,\mathrm{ms}$ (1 P). Bei 18 ms sind 54 Schritte erfolgt; $T=127-54=73$ liegt im erlaubten Fenster, Refresh ist im Idealmodell zulässig (1 P). Auf dem Board wären Vorteilerphase, Aufwachverzug und Reserve zusätzlich zu prüfen.
+Ansatz und obere Dauer mit Einheit (1 P). Die geforderte obere Grenze von 28 ms wird durch diese Schranke nicht nachgewiesen; sie liegt 2 ms darunter. Ein ungünstiger, nach dem Modell zulässiger Verlauf kann die Forderung verletzen. Die Schranke behauptet nicht, dass jede Fehlerreaktion genau 30 ms dauert (1 P).
 
-B4.3: Idle-Lauf belegt nur diesen lokalen Pfad; nötig sind frische vollständige Fortschrittsnachweise der erforderlichen Worker, nicht bloße Eingangs- oder Idle-Aktivität (1 P). Für den isolierten aktiven High-Marker einen passend ausgelegten externen Pull-down vorsehen, Boot initialisiert inaktiv und gibt erst nach den vereinbarten Prüfungen frei (1 P für Beschaltung plus Startregel). EWI-Low allein wäre kein garantierter Reset-/Bootpegel.
+Für einen Nachweis mit unveränderten übrigen Werten muss gelten
+
+$$\Theta+5+2+3\le28\,\mathrm{ms},\qquad\Theta\le18\,\mathrm{ms}.$$
+
+Das größte zulässige Alter ist damit $\Theta=18$ ms (1 P). Eine reduzierte Frischegrenze muss im realen Entwurf außerdem mit dem zulässigen gesunden Workerfortschritt vereinbar sein; dieser ist hier nicht weiter vorgegeben.
+
+B4.3: Regelmäßige Idle-Ausführung belegt nur diesen Pfad. Ein erforderlicher Worker kann trotzdem feststehen; wiederholtes Lesen seiner unveränderten Nummer ist kein frischer Fortschritt (1 P). Der Supervisor prüft für jeden erforderlichen Worker einen innerhalb der vereinbarten Frischegrenze vollständig abgeschlossenen Verarbeitungsschritt. Nur bei erfülltem Gesamtvertrag darf er den Watchdog regulär weiter bedienen. Bei fehlendem oder veraltetem Nachweis löst er die vereinbarte Fehlerreaktion aus; ein bloßer Leerlauf- oder Eingangsaktivitätsnachweis genügt nicht (1 P).
+
 :::
 
 ::: {.content-visible when-profile="solution"}
@@ -755,8 +767,8 @@ B4.3: Idle-Lauf belegt nur diesen lokalen Pfad; nötig sind frische vollständig
 | 5 · Queues, Pufferbesitz, ISR-Übergabe | 10–11 | B3.1: FIFO-Ablauf |
 | 6 · AMP, Cache, MPU | 12–14 | B3.3: geordnete sichtbare Übergabe |
 | 7 · Trace und Zykluszählung | 15–16 | B4.1: disjunkte Zeitanteile |
-| 8 · HSEM, Watchdog, Fortschritt | 17–18 | B4.2–B4.3: Fenster und Ausgangsschutz |
-| 9 · Architektur und Capstone | 19–20 | B3.2: drei Verlustbilanzen |
+| 8 · Pollingserver, CPU-Budget, Sporadic-Server | 17–19 | Auswahlfragen: Budgetverbrauch und Erneuerungsregel |
+| 9 · Daten-/Zeitvertrag und Fortschrittsüberwachung | 20 | B3.2: Datenbilanzen; B4.2–B4.3: Frische und Fehlerreaktion |
 
 Teil A: höchstens 20 Punkte; Teil B: $4\cdot10=40$ Punkte; insgesamt 60 Punkte. Die Richtzeiten ergeben 60 Minuten, als Planungswert etwa einen Punkt je Bearbeitungsminute. Individuelle Bearbeitungszeiten können abweichen. Für eine tatsächliche Prüfung Hilfsmittel und organisatorische Regeln separat festlegen.
 
