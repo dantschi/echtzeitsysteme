@@ -2,6 +2,8 @@
 
 Verwenden Sie STM32CubeMX, VS Code mit STM32 VS Code Extension und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die installierte Kombination muss die gewählten CM7-/CM4-CMake-Ziele unterstützen. Erhalten Sie die generierte Dual-Core-Boot-/HSEM-Startfolge und laden Sie zusammengehörige Images. C11 oder neuer; fremde Laborlast und doppelte Callbacks/Threadanlagen entfernen. Eigene Quellen und Benutzerbereiche müssen eine erneute CubeMX-Generierung mit anschließendem Build überstehen.
 
+Die Lehrperson stellt diese Startbasis vorbereitet bereit. Die Anwendung der Studierenden läuft auf CM4; CM7 übernimmt nur den Grundstart. Die eigenständige M4-Konfiguration aus Übungsblatt 3 wird dafür nicht unverändert übernommen.
+
 Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten Sie Installation, Boot, GPIO und gegebenenfalls Kernel, Linker und MPU vor dem Termin vor. Alle Versuche verwenden ausschließlich eingebaute LEDs, B1 und ST-LINK. Kein Sensor, Steckbrett, externer Widerstand, UART-Aufbau, Oszilloskop oder zusätzlicher Traceadapter ist erforderlich. Die Papieraufgaben sind unabhängig vom Aufbau lösbar; die Lehrperson kann aus dem Aufgabenpool auswählen.
 
 ## B1-Queue auf CM4
@@ -16,6 +18,12 @@ FreeRTOS ausschließlich auf CM4, CMSIS_V2, Präemption, 32-Bit-Kernelticks und 
 6. In den **einen bestehenden** `HAL_GPIO_EXTI_Callback(uint16_t pin)` `Lab05_ButtonIRQ(pin);` ergänzen. Die erzeugte Kette EXTI15_10_IRQHandler → HAL_GPIO_EXTI_IRQHandler bleibt einmalig erhalten. Kein zweiter IRQ-Handler, keine zweite Quittung, keine zusätzliche generierte Workerfunktion.
 7. Vor der Aufgabenbearbeitung Build/Start und Eintritt in den wartenden Worker prüfen. Der unveränderte Rumpf zählt und signalisiert noch nichts. Nach Implementierung einzelne/rasche Betätigungen und Diagnosefehler prüfen. Prellen ist bewusst ein möglicher zusätzlicher Angebotspfad.
 8. Eine Zählerbilanz nur mit gesperrter Quelle und abgearbeiteter Queue bzw. korrekt erfasstem In-Flight-Stand auswerten. ISR und Worker schreiben ihre jeweils eigenen Zähler. 40-Tick-Vergleiche gelten für kurze Läufe ohne unerkannte vollständige Tickumläufe.
+
+Der eigene Worker wertet den ersten empfangenen Datensatz als Betätigung. Danach ignoriert er erfasste Ereignisse mit weniger als 40 Ticks Abstand zum zuletzt gewerteten Ereignis. Ein gewertetes Ereignis startet einen LED-Puls: 60 Ticks an, danach 100 Ticks aus. Die Entprellregel vergleicht die im IRQ gespeicherten Zeitmarken, nicht den späteren Bearbeitungszeitpunkt. Prellen kann die Dreierqueue bereits vor dieser Prüfung füllen; die Regel garantiert weder einen Puls je physischem Tastendruck noch eine unbegrenzte Aufnahmerate.
+
+## Getrennter Zusatzversuch
+
+`lab05_messages.c/.h` beschreibt den älteren Wertqueue-Demonstrator mit Producer und Consumer. Er gehört nicht zu Aufgabe 6 und wird nur in einer getrennten Projektkopie als Zusatzversuch verwendet. Seine Funktionen, vier Queueplätze und 50-Tick-Buttonpause sind keine Konfiguration der aktuellen Dreierqueue mit LED-Worker.
 
 ## Prüfstatus und Abgrenzung
 
