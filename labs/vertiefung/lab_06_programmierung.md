@@ -1,10 +1,10 @@
-# Projektvorbereitung zu Übungsblatt 8
+# Projektvorbereitung zu Übungsblatt 6
 
-Aufgabe 6 ist eine **selbst implementierte Polling-Server-Simulation** mit zwei gewöhnlichen FreeRTOS-Threads auf **CM4**. Es wird kein Scheduling-Server in den FreeRTOS-Kernel eingebaut. Die vollständigen Datenstrukturen, Regeln und Musterfunktionen stehen im [Übungsblatt](../lab_08_server-verfahren.qmd); zusätzliche Laborquelldateien sind nicht erforderlich.
+Aufgabe 6 ist eine **selbst implementierte Polling-Server-Simulation** mit zwei gewöhnlichen FreeRTOS-Threads auf **CM4**. Es wird kein Scheduling-Server in den FreeRTOS-Kernel eingebaut. Die vollständigen Datenstrukturen, Regeln und Musterfunktionen stehen im [Übungsblatt](../lab_06_server-verfahren.qmd); zusätzliche Laborquelldateien sind nicht erforderlich.
 
 ## Projektbasis und CubeMX
 
-Verwenden Sie **NUCLEO-H755ZI-Q / STM32H755ZIT6**, **STM32CubeMX** und **VS Code mit STM32 VS Code Extension**. Die [M4-only-Projektbasis aus Übung 3](lab_03_programmierung.md) liefert den geprüften eigenständigen Start, die Taktinitialisierung und den gemeinsamen SysTick für HAL und Kernel. CM7 bleibt boot-deaktiviert. Ein neuer Dual-Core-Kanal, Hardware-Semaphoren, MPU-Anpassungen oder Hardware-Watchdogs gehören nicht zu diesem Versuch.
+Verwenden Sie **NUCLEO-H755ZI-Q / STM32H755ZIT6**, **STM32CubeMX** und **VS Code mit STM32 VS Code Extension**. Die [M4-only-Projektbasis aus Übung 3](lab_03_programmierung.md) liefert den geprüften eigenständigen Start, die Taktinitialisierung und den gemeinsamen SysTick für HAL und Kernel. Beide Anwendungsthreads laufen im lokalen FreeRTOS-Kernel auf CM4; CM7 bleibt boot-deaktiviert.
 
 1. Öffnen Sie die `.ioc`-Datei im CM4-Kontext. **PE1 / LD2** und **PB0 / LD1** als `GPIO_Output` dem CM4 zuordnen. Unter **System Core > GPIO**: Output Push Pull, No pull-up and no pull-down, Low speed, Ausgangspegel Low. Pinbelegung und aktive Polarität gegen UM2408 prüfen. B1/PC13 bleibt unbenutzt.
 2. **Middleware and Software Packs > FREERTOS**: Interface **CMSIS_V2**, Präemption an, **1000 Hz**, **32-Bit-Ticks**, Tickless Idle aus. Die HAL verwendet den vorbereiteten gemeinsamen SysTick. Keinen zusätzlichen Zeitbasis-Timer starten. Kontrollieren Sie die tatsächlich erzeugte `FreeRTOSConfig.h`; Menünamen können versionsabhängig abweichen.
@@ -32,4 +32,4 @@ Vor dem Termin müssen CM4-Build, Kaltstart und die beiden Eintrittsfunktionen a
 
 Die Simulation reserviert keine echte CPU-Zeit. Insbesondere ist `osDelay(100)` keine Budgetabrechnung; es ist nur die Anzeigepause. Ein vollständiger Sporadic Server würde zusätzlich korrekte Aktivierungs-/Auffüllregeln, tatsächliche CPU-Verbrauchserfassung und die Einbindung in die Schedulingentscheidung benötigen. Der Praxisteil vertieft deshalb die Modellbegriffe, während die Klausuraufgaben die Serveranalyse prüfen.
 
-Die früheren HSEM-/WWDG-/Supervisorquellen unter `code/lab08/` bleiben getrennte Archivbeispiele und werden hier nicht eingebunden. Board und USB/ST-LINK genügen; zusätzliche Elektronik oder Tracegeräte sind nicht erforderlich. Ein nicht durchgeführter Boardlauf wird als solcher dokumentiert.
+Board und USB/ST-LINK genügen; zusätzliche Elektronik oder Tracegeräte sind nicht erforderlich. Ein nicht durchgeführter Boardlauf wird als solcher dokumentiert.

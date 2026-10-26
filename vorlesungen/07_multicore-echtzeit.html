@@ -11,7 +11,7 @@
   <meta name="generator" content="quarto-1.10.19">
 
   <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
-  <title>Echtzeitsysteme – 06 · Multicore-Echtzeit und Shared Memory</title>
+  <title>Echtzeitsysteme – 07 · Multicore-Echtzeit und Shared Memory</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
@@ -103,7 +103,7 @@
     code span.wa { color: #5e5e5e; font-style: italic; } /* Warning */
   </style>
   <link rel="stylesheet" href="../site_libs/revealjs/dist/theme/quarto-f355cf95444bdbe7a358cd689c441e6f.css">
-  <link rel="stylesheet" href="../assets/styles/lecture06.css">
+  <link rel="stylesheet" href="../assets/styles/lecture07.css">
   <link href="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="../site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
   <link href="../site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
@@ -208,15 +208,15 @@
 
 
 <section id="zwei-kerne-ein-verlässlicher-datenvertrag" class="slide level2">
-<h2>06 · Zwei Kerne, ein verlässlicher Datenvertrag</h2>
+<h2>07 · Zwei Kerne, ein verlässlicher Datenvertrag</h2>
 <ul>
-<li>Multicore-Echtzeit auf dem STM32H755</li>
+<li>Das Ein-Kern-Modell auf zwei Kerne erweitern</li>
 <li>Vom lokalen Kernel zum Austausch zwischen Firmwares</li>
 <li>Zuständigkeit, Speicherbesitz und Sichtbarkeit</li>
 <li>Übung: Papiermodelle und gemeinsamer Speicher</li>
 </ul>
 <aside class="notes">
-<p>Dieser Termin erweitert das bisherige Ein-Kern-Bild. Multicore bedeutet mehrere Prozessorkerne in einem System. Auf dem STM32H755 des Boards NUCLEO-H755ZI-Q betrachten wir den Cortex-M7 und den Cortex-M4. Bislang haben Threads desselben FreeRTOS-Kernels Ressourcen geschützt und Nachrichten ausgetauscht. Jetzt kommunizieren zwei getrennte Firmwareprogramme. Firmware ist das für den Mikrocontroller übersetzte und geladene Programm.</p>
+<p>Vorlesung 6 hat zusätzliche Ereignisarbeit auf einem Kern durch Serverbudgets begrenzt. Dieser Termin erweitert nun das Ein-Kern-Bild: Was ändert sich, wenn zwei Kerne eigene Programme ausführen und trotzdem Hardware teilen? Multicore bedeutet mehrere Prozessorkerne in einem System. Auf dem STM32H755 des Boards NUCLEO-H755ZI-Q betrachten wir den Cortex-M7 und den Cortex-M4. Bislang haben Threads desselben FreeRTOS-Kernels Ressourcen geschützt, Nachrichten ausgetauscht und um begrenzte Prozessorzeit konkurriert. Jetzt kommunizieren zwei getrennte Firmwareprogramme. Firmware ist das für den Mikrocontroller übersetzte und geladene Programm.</p>
 <p>Das gemeinsame Datenobjekt liegt im Arbeitsspeicher. Damit sind die bisherigen Fragen nach Kapazität, Lebensdauer und Schreibrecht weiterhin relevant. Hinzu kommt, ob ein Zugriff wirklich den gemeinsamen Speicher erreicht oder nur eine lokale Cachekopie. Ein Cache ist ein schneller Zwischenspeicher eines Kerns. Wir bauen diese Begriffe Schritt für Schritt auf und verwenden ein kleines Ping-Pong als durchgängiges Beispiel. Der Cortex-M4 verwendet weiterhin FreeRTOS, ein Echtzeitbetriebssystem; der Cortex-M7 arbeitet Bare Metal, also ohne diesen Kernel. Das Beispiel liefert einen überprüfbaren Datenvertrag, aber noch keinen allgemeinen Nachweis jeder Multicore-Deadline.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
@@ -230,8 +230,8 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="vorlesung-15-liefern-die-voraussetzungen" class="slide level2">
-<h2>Vorlesung 1–5 liefern die Voraussetzungen</h2>
+<section id="vorlesungen-16-liefern-die-voraussetzungen" class="slide level2">
+<h2>Vorlesungen 1–6 liefern die Voraussetzungen</h2>
 <table class="caption-top">
 <thead>
 <tr class="header">
@@ -256,11 +256,15 @@
 <td>Queue und Pufferbesitz</td>
 <td>Übergabe zwischen zwei Images</td>
 </tr>
+<tr class="odd">
+<td>Serverbudget und Überlast</td>
+<td>Kapazität je Kern und gemeinsame Störung</td>
+</tr>
 </tbody>
 </table>
 <aside class="notes">
 <p>Eine Deadline ist die Abschlussfrist einer geforderten Reaktion. Die Antwortzeit reicht von der Freigabe bis zur Fertigstellung. Interferenz bedeutet zusätzliche Verzögerung durch konkurrierende Arbeit. Ready heißt ausführungsbereit, Blocked auf eine Bedingung oder Zeit wartend. Ein Mutex ist eine Ressourcensperre mit Besitzer, ein Semaphor ein begrenzter Zähler von Berechtigungen oder Arbeitshinweisen. Eine Queue ist eine begrenzte Nachrichtenwarteschlange.</p>
-<p>Vorlesung 5 hat gezeigt, dass eine erfolgreiche Kopie nicht automatisch eine abgeschlossene Verarbeitung und ein gespeicherter Pointer nicht automatisch einen verfügbaren Puffer bedeutet. Heute kommt eine weitere Grenze hinzu: Die Kernelverwaltung gehört zu einer bestimmten Firmware. Image bezeichnet deren übersetztes Programm mit eigenem Speicherlayout. Ein M4-Queue-Handle wird durch Ablegen in gemeinsamem Speicher nicht zum Objekt des M7. Kenntnisse über C-Funktionen, Strukturen und die bisherige Cube-Projektbasis genügen für den Einstieg. Neue Hardwarebegriffe werden im jeweiligen Zusammenhang eingeführt; ein Betriebssystem für mehrere Kerne wird nicht als bereits bekannt vorausgesetzt.</p>
+<p>Vorlesung 5 hat gezeigt, dass eine erfolgreiche Kopie nicht automatisch eine abgeschlossene Verarbeitung und ein gespeicherter Pointer nicht automatisch einen verfügbaren Puffer bedeutet. Vorlesung 6 hat Queueinhalt, eigene Prozessorzeit und zeitliche Bedienung getrennt. Ein Serverbudget gilt dabei für das analysierte Ausführungsmodell; ein zweiter Kern erweitert es nicht automatisch um seine freie Kapazität. Heute kommt eine weitere Grenze hinzu: Die Kernelverwaltung gehört zu einer bestimmten Firmware. Image bezeichnet deren übersetztes Programm mit eigenem Speicherlayout. Ein M4-Queue-Handle wird durch Ablegen in gemeinsamem Speicher nicht zum Objekt des M7. Kenntnisse über C-Funktionen, Strukturen und die bisherige Cube-Projektbasis genügen für den Einstieg. Neue Hardwarebegriffe werden im jeweiligen Zusammenhang eingeführt; ein Betriebssystem für mehrere Kerne wird nicht als bereits bekannt vorausgesetzt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -277,14 +281,14 @@
 <h2>Was Sie am Ende begründen können</h2>
 <ol type="1">
 <li>SMP und AMP samt gemeinsamen Störquellen unterscheiden</li>
-<li>Dasselbe Datenobjekt in zwei Linkerlayouts identifizieren</li>
+<li>Adresse, Schreibrecht und Sichtbarkeit getrennt prüfen</li>
 <li>Das Schreibrecht eines Ping-Pong-Protokolls erklären</li>
 <li>Barriere, Cachewartung und MPU auseinanderhalten</li>
-<li>Einen kontrollierten Basisversuch konfigurieren</li>
+<li>Einen vorbereiteten Basislauf begründet auswerten</li>
 </ol>
 <aside class="notes">
 <p>SMP bedeutet Symmetric Multiprocessing, symmetrische Mehrkernverarbeitung mit einer gemeinsamen Betriebssystemverwaltung. AMP bedeutet Asymmetric Multiprocessing, asymmetrische Mehrkernverarbeitung mit getrennten Softwarekontexten. Ein Linker verbindet übersetzte Programmteile und legt ihre Speicheradressen fest. Das Linkerlayout bestimmt deshalb, ob beide Firmwareprogramme tatsächlich denselben physischen Speicher benutzen.</p>
-<p>Das Schreibrecht beantworten wir über einen Protokollzustand, also eine vereinbarte Phase des Datenaustauschs. Eine Barriere ordnet Speicherzugriffe. Cachewartung behandelt lokale Zwischenspeicherkopien. Die MPU, Memory Protection Unit oder Speicherschutzeinheit, legt Rechte und Attribute für Regionen eines Kerns fest. Diese drei Mittel lösen unterschiedliche Probleme und dürfen nicht als austauschbare Befehle verstanden werden. Der Basisversuch nutzt absichtlich eine nicht cachebare gemeinsame Region und genau einen Teilnehmer pro Kern. Erst danach wird in einem gesonderten Build ein Cachefehler untersucht. Die Lernziele werden mit Papieraufgaben und nachvollziehbaren Prüfstellen überprüft, nicht allein durch die Beobachtung eines erfolgreichen Builds.</p>
+<p>Das Schreibrecht beantworten wir über einen Protokollzustand, also eine vereinbarte Phase des Datenaustauschs. Eine Barriere ordnet Speicherzugriffe. Cachewartung behandelt lokale Zwischenspeicherkopien. Die MPU, Memory Protection Unit oder Speicherschutzeinheit, legt Rechte und Attribute für Regionen eines Kerns fest. Diese drei Mittel lösen unterschiedliche Probleme und dürfen nicht als austauschbare Befehle verstanden werden. Der Basisversuch nutzt absichtlich eine nicht cachebare gemeinsame Region und genau einen Teilnehmer pro Kern. Die Lehrperson bereitet Boot, Linker und Speicherattribute vor. Sie prüfen den daraus folgenden Vertrag und implementieren einen kleinen Antwortschritt selbst. Ein gesonderter Cachefehlerbuild ist eine optionale Vertiefung. Die Lernziele werden mit Papieraufgaben und nachvollziehbaren Prüfstellen überprüft, nicht allein durch die Beobachtung eines erfolgreichen Builds.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -316,11 +320,11 @@
 <td>25 Erklärung + 15 Papier 1 + 5 Projektbasis</td>
 </tr>
 <tr class="even">
-<td>2 · Speicher und Protokoll</td>
+<td>2 · Datenvertrag und Protokoll</td>
 <td>30 Erklärung + 15 Papier 2</td>
 </tr>
 <tr class="odd">
-<td>3 · Cache und MPU</td>
+<td>3 · Sichtbarkeit und Grenzen</td>
 <td>20 Erklärung + 20 Papier 3–4 + 5 Integration</td>
 </tr>
 <tr class="even">
@@ -331,7 +335,7 @@
 </table>
 <aside class="notes">
 <p>Vier Schulstunden entsprechen hier 180 Minuten Unterricht, ohne zusätzliche Pausen. Die Tabelle umfasst 75 Minuten Erklärung, 50 Minuten Papierarbeit, 35 Minuten Projektprüfung und Versuch sowie 20 Minuten Quiz und Abschluss. Die etwa 50 Folien sind Arbeitsstationen. Eine Rechen- oder Integrationsfolie bleibt deutlich länger sichtbar als eine kurze Orientierung.</p>
-<p>Der Programmierteil setzt zwei bereits lauffähige Images der Projektbasis voraus. Image bedeutet das übersetzte Programm für einen Kern. Die Lehrperson prüft vorab Boot, Linkerdateien, Zeitbasen und Debugstart und stellt die Anwendungsdateien bereit. Eine erstmalige Installation, die Reparatur des Dual-Core-Starts und die Suche nach einem falsch geflashten Ziel passen nicht zusätzlich in die 35 Minuten. Ohne passende Hardware können die Papieraufgaben vollständig bearbeitet und der Code gemeinsam erklärt werden. Fehlende Boardmessungen bleiben offen. Der Aufbau vermeidet außerdem Aufgaben, die noch nicht eingeführte Cache- oder MPU-Kenntnisse voraussetzen: Die entsprechenden Papierfragen liegen nach der Erklärung dieser Begriffe.</p>
+<p>Die Erklärung konzentriert sich auf Architektur, Schreibrecht, Sichtbarkeit und Interferenz. Vorgegebene Adressen, Größen und Attribute werden auf Papier geprüft; die vollständige Einrichtung der Plattform steht in der Implementierungshilfe. Der Programmierteil setzt zwei bereits lauffähige Images der Projektbasis voraus. Image bedeutet das übersetzte Programm für einen Kern. Die Lehrperson prüft vorab Boot, Linkerdateien, Zeitbasen und Debugstart und stellt die Anwendungsdateien bereit. Eine erstmalige Installation, die Reparatur des Dual-Core-Starts und die Suche nach einem falsch geflashten Ziel passen nicht zusätzlich in die 35 Minuten. Ohne passende Hardware können die Papieraufgaben vollständig bearbeitet und der Code gemeinsam erklärt werden. Fehlende Boardmessungen bleiben offen. Der Aufbau vermeidet außerdem Aufgaben, die noch nicht eingeführte Cache- oder MPU-Kenntnisse voraussetzen: Die entsprechenden Papierfragen liegen nach der Erklärung dieser Begriffe.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -693,7 +697,7 @@ flowchart TD
 </section>
 <section id="boot-stop-reset-und-laufendes-programm-unterscheiden" class="slide level2">
 <h2>Boot: Stop, Reset und laufendes Programm unterscheiden</h2>
-<p>Typisches Cube-Muster, am eigenen Projekt bestätigen:</p>
+<p>Vorbereitete Basis: Startfolge am eigenen Projekt bestätigen:</p>
 <ol type="1">
 <li>M4 richtet HSEM-Benachrichtigung ein und geht in Stop.</li>
 <li>M7 wartet darauf und initialisiert gemeinsame Takte.</li>
@@ -703,7 +707,7 @@ flowchart TD
 <p>Option Bytes können die Startvoraussetzungen verändern.</p>
 <aside class="notes">
 <p>Boot bezeichnet den Startablauf nach dem Rücksetzen. HSEM bedeutet Hardware Semaphore, Hardwaresemaphor. Er kann eine Freigabe beziehungsweise Benachrichtigung zwischen den Kernen unterstützen. Im typischen Cube-Muster läuft auf dem M4 bereits Startcode, bevor er in Stop geht. Stop ist ein Energiespar-Wartezustand und nicht gleichbedeutend mit gehaltenem Reset. Nach der vereinbarten Benachrichtigung setzt der M4 seinen Start fort.</p>
-<p>Option Bytes sind nichtflüchtige Konfigurationswerte, die unter anderem die Startvoraussetzungen beeinflussen. Sie werden am konkreten Projekt und Gerät geprüft. Der M7 wartet mit dem Muster des erzeugten Codes auf den M4-Zustand, richtet Takte und unseren Block ein und gibt erst danach frei. Seine frühe Schleifengrenze ist nicht automatisch eine gemessene Millisekundenfrist. HSEM-Identität, Taktfreigabe und Benachrichtigung müssen auf beiden Seiten zusammenpassen. Wir behalten den funktionierenden erzeugten Handshake, also den abgestimmten Startvertrag. Eine aus Erinnerung ergänzte, im installierten Header nicht vorhandene Wake-Funktion wäre kein verlässlicher Ersatz.</p>
+<p>Option Bytes sind nichtflüchtige Konfigurationswerte, die unter anderem die Startvoraussetzungen beeinflussen. Sie werden am konkreten Projekt und Gerät geprüft. Der M7 wartet mit dem Muster des erzeugten Codes auf den M4-Zustand, richtet Takte und unseren Block ein und gibt erst danach frei. Seine frühe Schleifengrenze ist nicht automatisch eine gemessene Millisekundenfrist. HSEM-Identität, Taktfreigabe und Benachrichtigung müssen auf beiden Seiten zusammenpassen. Wir behalten den funktionierenden erzeugten Handshake, also den abgestimmten Startvertrag. Die konkrete Einrichtung ist Teil der Projektvorbereitung; für die Aufgabe begründen Sie vor allem, warum der Datenblock vor seiner Nutzung gültig sein muss. Eine aus Erinnerung ergänzte, im installierten Header nicht vorhandene Wake-Funktion wäre kein verlässlicher Ersatz.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -757,15 +761,15 @@ sequenceDiagram
 <section id="zwei-images-haben-zwei-speicherlayouts" class="slide level2">
 <h2>Zwei Images haben zwei Speicherlayouts</h2>
 <ul>
-<li>CubeMX erzeugt beziehungsweise beschreibt zwei Kernziele</li>
-<li>VS Code mit STM32 VS Code Extension baut die CMake-Ziele</li>
-<li>Je Image: Startup, Vektortabelle, Linkerdatei und Map</li>
-<li>Gemeinsamer Header definiert den Datenvertrag</li>
-<li>Startadressen und Flashbelegung am Projekt prüfen</li>
+<li>Jedes Kernprogramm hat sein eigenes Speicherlayout.</li>
+<li>Ein gemeinsamer Header vereinbart Typ und Bedeutung.</li>
+<li>Beide Maps müssen dieselben physischen Shared-Bytes zeigen.</li>
+<li>Private Daten dürfen die gemeinsame Reserve nicht belegen.</li>
 </ul>
+<p>Boot- und Buildkonfiguration gehören zur vorbereiteten Basis.</p>
 <aside class="notes">
-<p>Image bezeichnet das übersetzte Programm eines Kerns. ELF bedeutet Executable and Linkable Format, das Programmformat mit Code, Daten und Adressinformationen. Startup ist der frühe Startcode. Die Vektortabelle enthält die Behandlereinstiege dieses Kerns. Die Linkerdatei legt die Speicherplatzierung fest; die Map protokolliert sie.</p>
-<p>STM32CubeMX konfiguriert und generiert die Projektbasis. Visual Studio Code, VS Code, mit der STM32 VS Code Extension arbeitet mit den dazugehörigen CMake-Zielen. CMake beschreibt Übersetzung und Verknüpfung. Es gibt zwei Images, nicht einen automatisch gemeinsamen C-Linkvorgang über beide Kerne. Ein Header ist eine gemeinsam benutzte Deklarationsdatei und kann beide Programme auf gleiche Typen und Konstanten festlegen. Gleiche Namen allein erzeugen trotzdem keine gleiche Adresse. Flashstart, Bootoptionen und geladenes Debugimage müssen zum gewählten Projekt passen. Wir nennen keine universellen Serverports oder Importmenüs, sondern prüfen die tatsächlich installierte Werkzeugversion und die beiden ausgewählten Ziele.</p>
+<p>Image bezeichnet das übersetzte Programm eines Kerns. Eine Linkerdatei legt seine Speicherplatzierung fest; die Map ist das daraus erzeugte Platzierungsprotokoll. Ein Header ist eine gemeinsam verwendete Deklarationsdatei. Zwei Programme können denselben Typ und Symbolnamen benutzen und trotzdem unterschiedliche physische Adressen ansprechen. Gemeinsamer Datenzugriff entsteht deshalb nicht allein durch denselben C-Header.</p>
+<p>Jedes Image hat außerdem einen eigenen Startup, also frühen Startcode, und eine eigene Vektortabelle mit Behandlereinstiegen. ELF bedeutet Executable and Linkable Format, das Programmformat mit Code, Daten und Adressinformationen. Diese Dateien und Startadressen werden vor dem Versuch geprüft. STM32CubeMX erzeugt die Projektbasis; Visual Studio Code mit STM32 VS Code Extension baut ihre CMake-Ziele. CMake beschreibt Übersetzung und Verknüpfung. Die konkreten Integrationsschritte stehen in der Implementierungshilfe. Hier ist die überprüfbare Kernaussage entscheidend: Die tatsächlich geladenen beiden Programme müssen dieselben Shared-Bytes reservieren, und kein privater Heap oder Stack darf diesen Bereich zusätzlich benutzen. Heap ist dynamisch verwalteter Speicher, Stack der Stapelspeicher für Aufrufe und lokale Daten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -866,19 +870,38 @@ sequenceDiagram
           display:block!important;
       }</style></aside>
 </section>
-<section id="der-linker-reserviert-den-vereinbarten-anfang" class="slide level2">
-<h2>Der Linker reserviert den vereinbarten Anfang</h2>
-<p>Integrationsausschnitt für beide tatsächlichen Linkerdateien:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource ld number-lines code-with-copy"><code class="sourceCode"><span id="cb1-1"><a aria-label="1"></a>.shared ORIGIN(RAM_SHARED) (NOLOAD) :</span>
-<span id="cb1-2"><a aria-label="2"></a>{</span>
-<span id="cb1-3"><a aria-label="3"></a>  . = ALIGN(32);</span>
-<span id="cb1-4"><a aria-label="4"></a>  KEEP(*(.shared .shared.*))</span>
-<span id="cb1-5"><a aria-label="5"></a>  . = ALIGN(32);</span>
-<span id="cb1-6"><a aria-label="6"></a>} &gt; RAM_SHARED</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>RAM_SHARED</code>: SRAM4 einmal reservieren, private Bereiche außerhalb.</p>
+<section id="die-reservierung-ist-teil-des-datenvertrags" class="slide level2">
+<h2>Die Reservierung ist Teil des Datenvertrags</h2>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Prüfpunkt</th>
+<th>Muss für beide Images gelten</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Shared-Beginn</td>
+<td>dieselbe physische Adresse</td>
+</tr>
+<tr class="even">
+<td>Reserve</td>
+<td>Objekt, Ausrichtung und Polster passen</td>
+</tr>
+<tr class="odd">
+<td>Private Daten</td>
+<td>kein überlappender Heap oder Stack</td>
+</tr>
+<tr class="even">
+<td>Startcode</td>
+<td>kein späteres Löschen gemeinsamer Daten</td>
+</tr>
+</tbody>
+</table>
+<p>Die Linkereinrichtung steht in der Implementierungshilfe.</p>
 <aside class="notes">
-<p>Der gezeigte Text ist ein Linker-Integrationsausschnitt, keine vollständige Firmware-Linkerdatei. RAM_SHARED ist unser gewählter Regionsname für SRAM4. In MEMORY, dem Speicherverzeichnis des Linkers, wird die vorhandene SRAM4-Zuordnung einmal passend reserviert. Ein zweiter überlappender Alias darf nicht zusätzliche private Belegung erlauben.</p>
-<p>Die Ausgabesektion .shared beginnt am Ursprung dieser Region. NOLOAD legt sie ohne normale Initialisierungsdaten im Image an. ALIGN richtet den Positionszeiger auf 32 Byte aus, KEEP bewahrt die erfassten Eingabesektionen bei der Entfernung unbenutzter Bereiche. Das letzte ALIGN polstert die zwölf Typbytes auf 32 reservierte Byte. Die vollständigen Assertions, also Linkerprüfungen für Adresse, zwölf Byte Objektinhalt und 32 Byte Reserve, stehen im bereitgestellten Fragment shared-section.ld. Damit werden auch zusätzliche Objekte innerhalb der Reserve zurückgewiesen. Das Fragment wird in die tatsächlich vom CMake-Ziel ausgewählte Linkerdatei integriert. CMake beschreibt den Build. Nur eine beliebige ähnlich benannte Datei im Projekt zu ändern, liefert keinen Nachweis. Die resultierenden Maps und die Startup-Tabellen werden zusätzlich gelesen.</p>
+<p>Ein Linker verbindet übersetzte Programmteile und legt ihre Adressen fest. Ein Image ist das übersetzte Kernprogramm. Shared bezeichnet den gemeinsam benutzten Speicher. Die Tabelle ist die Prüfliste für die vorbereitete Plattform: gleicher Beginn, ausreichende gemeinsame Reserve, kein überlappender privater Speicher und eine dazu passende Initialisierung. Heap ist dynamischer Speicher, Stack der Aufruf- und lokale Datenspeicher. Ein korrekter Zahlenlauf allein belegt diese Bedingungen nicht.</p>
+<p>Für unseren Basisblock stehen zwölf Byte Typinhalt in einer auf 32 Byte ausgerichteten und gepolsterten Sektion. Der gewählte Ursprung bleibt 0x38000000. Der vollständige Linker-Integrationsausschnitt steht in der Projektanleitung und im Fragment shared-section.ld. Seine Prüfungen sichern Adresse, Objektinhalt und Reserve ab. Eine Map protokolliert das Ergebnis des tatsächlich verwendeten Linkerskripts. Zusätzlich werden die Startup-Tabellen gelesen, also die Kopier- und Nulltabellen des frühen Starts. Reservierung bedeutet hier eine Abmachung beider Programme über dieselben physischen Bytes, keine zweite Hardwarekopie und noch keinen gegenseitigen Ausschluss. Die folgende Typdefinition beschreibt danach, welche Informationen diese Bytes enthalten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -893,17 +916,17 @@ sequenceDiagram
 </section>
 <section id="drei-wörter-und-ein-gemeinsamer-header" class="slide level2">
 <h2>Drei Wörter und ein gemeinsamer Header</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
-<span id="cb2-2"><a aria-label="2"></a>  <span class="dt">uint32_t</span> magic<span class="op">;</span></span>
-<span id="cb2-3"><a aria-label="3"></a>  <span class="dt">uint32_t</span> state<span class="op">;</span></span>
-<span id="cb2-4"><a aria-label="4"></a>  <span class="dt">uint32_t</span> payload<span class="op">;</span></span>
-<span id="cb2-5"><a aria-label="5"></a><span class="op">}</span> ipc_block_t<span class="op">;</span></span>
-<span id="cb2-6"><a aria-label="6"></a><span class="kw">extern</span> <span class="dt">volatile</span> ipc_block_t ipc<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb1-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb1-2"><a aria-label="2"></a>  <span class="dt">uint32_t</span> magic<span class="op">;</span></span>
+<span id="cb1-3"><a aria-label="3"></a>  <span class="dt">uint32_t</span> state<span class="op">;</span></span>
+<span id="cb1-4"><a aria-label="4"></a>  <span class="dt">uint32_t</span> payload<span class="op">;</span></span>
+<span id="cb1-5"><a aria-label="5"></a><span class="op">}</span> ipc_block_t<span class="op">;</span></span>
+<span id="cb1-6"><a aria-label="6"></a><span class="kw">extern</span> <span class="dt">volatile</span> ipc_block_t ipc<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Offsets: 0, 4, 8 · Typ: 12 Byte · Objekt: auf 32 Byte ausgerichtet.</p>
 <p>Genau eine Definition je Image, keine Definition im Header.</p>
 <aside class="notes">
 <p>Der C-Code ist der Typ- und Deklarationsausschnitt des vollständigen Moduls. uint32_t ist ein vorzeichenloser 32-Bit-Typ, hier vier Byte. magic enthält die vereinbarte Protokollkennung, state die Phase und payload den Nutzwert. ipc_block_t ist der Typname, ipc das konkrete Objekt. extern deklariert das Objekt, reserviert es aber nicht erneut in jeder einbindenden Datei. volatile fordert die vom Compiler definierten sichtbaren Zugriffe; es ist noch kein Cachevertrag.</p>
-<p>Die vollständige Referenz prüft Größe und Feldoffsets mit statischen C-Assertions. Die Definition in lab06_shared.c wird genau einmal pro Image übersetzt. Ein GCC-Attribut legt das Objekt in .shared und richtet es auf 32 Byte aus. GCC bedeutet GNU Compiler Collection, die Compilerfamilie. Die natürliche Typgröße bleibt zwölf Byte. Ausrichtung des Objekts, gepolsterte Sektionsgröße und Größe der MPU-Region sind drei Ebenen. MPU steht für Memory Protection Unit, Speicherschutzeinheit. Der gemeinsame Header enthält außerdem Konstanten und Funktionsdeklarationen, damit beide Firmwareprogramme denselben Datenvertrag verwenden.</p>
+<p>Die vollständige Referenz prüft Größe und Feldoffsets mit statischen C-Assertions. Die Definition in lab07_shared.c wird genau einmal pro Image übersetzt. Ein GCC-Attribut legt das Objekt in .shared und richtet es auf 32 Byte aus. GCC bedeutet GNU Compiler Collection, die Compilerfamilie. Die natürliche Typgröße bleibt zwölf Byte. Ausrichtung des Objekts, gepolsterte Sektionsgröße und Größe der MPU-Region sind drei Ebenen. MPU steht für Memory Protection Unit, Speicherschutzeinheit. Der gemeinsame Header enthält außerdem Konstanten und Funktionsdeklarationen, damit beide Firmwareprogramme denselben Datenvertrag verwenden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1087,9 +1110,9 @@ stateDiagram-v2
 <section id="veröffentlichen-erst-nutzdaten-dann-zustand" class="slide level2">
 <h2>Veröffentlichen: erst Nutzdaten, dann Zustand</h2>
 <p>Protokollausschnitt im berechtigten M7:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a>ipc<span class="op">.</span>payload <span class="op">=</span> next_value<span class="op">;</span></span>
-<span id="cb3-2"><a aria-label="2"></a>__DMB<span class="op">();</span></span>
-<span id="cb3-3"><a aria-label="3"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb2-1"><a aria-label="1"></a>ipc<span class="op">.</span>payload <span class="op">=</span> next_value<span class="op">;</span></span>
+<span id="cb2-2"><a aria-label="2"></a>__DMB<span class="op">();</span></span>
+<span id="cb2-3"><a aria-label="3"></a>ipc<span class="op">.</span>state <span class="op">=</span> REQUEST_M4<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Die Gegenstelle darf das veröffentlichte Signal erst für die fertigen Daten sehen.</p>
 <p>Voraussetzungen: passender Besitz und vereinbarte Speicherattribute.</p>
 <aside class="notes">
@@ -1110,11 +1133,11 @@ stateDiagram-v2
 <section id="konsumieren-zustand-prüfen-dann-daten-lesen" class="slide level2">
 <h2>Konsumieren: Zustand prüfen, dann Daten lesen</h2>
 <p>Protokollausschnitt im M7 nach gültiger Kennung:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb4-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>state <span class="op">==</span> RESPONSE_M7<span class="op">)</span> <span class="op">{</span></span>
-<span id="cb4-2"><a aria-label="2"></a>  __DMB<span class="op">();</span></span>
-<span id="cb4-3"><a aria-label="3"></a>  <span class="dt">uint32_t</span> reply <span class="op">=</span> ipc<span class="op">.</span>payload<span class="op">;</span></span>
-<span id="cb4-4"><a aria-label="4"></a>  <span class="co">/* reply gehört zu dieser Antwortphase. */</span></span>
-<span id="cb4-5"><a aria-label="5"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb3-1"><a aria-label="1"></a><span class="cf">if</span> <span class="op">(</span>ipc<span class="op">.</span>state <span class="op">==</span> RESPONSE_M7<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-2"><a aria-label="2"></a>  __DMB<span class="op">();</span></span>
+<span id="cb3-3"><a aria-label="3"></a>  <span class="dt">uint32_t</span> reply <span class="op">=</span> ipc<span class="op">.</span>payload<span class="op">;</span></span>
+<span id="cb3-4"><a aria-label="4"></a>  <span class="co">/* reply gehört zu dieser Antwortphase. */</span></span>
+<span id="cb3-5"><a aria-label="5"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Bei falschem Zustand wird die Payload nicht als neue Antwort verarbeitet.</p>
 <aside class="notes">
 <p>Der C-Ausschnitt zeigt das Lesen einer Antwort. ipc ist das gemeinsame Objekt, RESPONSE_M7 der erwartete Antwortzustand, payload der Nutzwert und reply eine private Kopie im Cortex-M7. uint32_t ist ein vorzeichenloser 32-Bit-Typ. Der vollständige Code hat zuvor die Kennung magic geprüft und behandelt falsche Zustände oder Zeitablauf gesondert.</p>
@@ -1471,33 +1494,33 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 <table class="caption-top">
 <thead>
 <tr class="header">
-<th>Attribut</th>
-<th>Basis</th>
+<th>Eigenschaft</th>
+<th>Gewählte Basis</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Typ</td>
-<td>Normal, TEX = 1</td>
+<td>Datenzugriff</td>
+<td>Shared-Region nicht cachebar</td>
 </tr>
 <tr class="even">
-<td>C / B / S</td>
-<td>0 / 0 / 1</td>
+<td>Rechte</td>
+<td>Lesen/Schreiben, keine Ausführung</td>
 </tr>
 <tr class="odd">
-<td>Rechte</td>
-<td>Lesen/Schreiben, Execute Never</td>
+<td>Geltung</td>
+<td>Zugriffe des M7</td>
 </tr>
 <tr class="even">
-<td>Konfiguration</td>
-<td>vor D-Cache und gemeinsamer Nutzung</td>
+<td>Einrichtung</td>
+<td>vor Cache und gemeinsamer Nutzung</td>
 </tr>
 </tbody>
 </table>
 <p>Andere M7-Regionen können weiter den Cache nutzen.</p>
 <aside class="notes">
-<p>MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Sie beschreibt Regionen des M7 mit Zugriffsrechten und Speicherattributen. KiB bedeutet Kibibyte mit 1024 Byte. Die Basisregion umfasst SRAM4 ab 0x38000000 mit 64 KiB. Normal ist der dafür gewählte Speichertyp. TEX bedeutet Type Extension, Attributerweiterung; C steht für cacheable, B für bufferable und S für shareable. Die Basis setzt TEX eins, C null, B null und S eins.</p>
-<p>Execute Never verbietet das Ausführen von Instruktionen aus dieser Datenregion. Lesen und Schreiben bleiben für die vorgesehenen Zugriffe erlaubt. Shareable erzeugt hier keinen automatischen M7/M4-Cacheabgleich. Der nicht cachebare Typ vermeidet die private D-Cachekopie des M7 für unseren Kanal. Andere Regionen können weiter vom Cache profitieren. Konfiguration erfolgt am gemeinsamen Neustart vor D-Cache-Aktivierung und Kommunikation, nicht während beide schreiben. Der bereitgestellte Helfer benutzt die tatsächlichen HAL-Konstanten; HAL ist die Hardware Abstraction Layer, Hardwareabstraktion. Seine Rechtepolitik muss zur vorhandenen Projekt-MPU passen und ihre effektive Region wird geprüft.</p>
+<p>MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Sie beschreibt Regionen des Cortex-M7 mit Zugriffsrechten und Speicherattributen. KiB bedeutet Kibibyte mit 1024 Byte; die Basis umfasst SRAM4 ab 0x38000000 mit 64 KiB. Nicht cachebar verhindert für diese Zugriffe die private Daten-Cachekopie des M7. Der gewählte normale Speichertyp erlaubt die vorgesehenen Datenzugriffe. Das Ausführen von Instruktionen aus dieser Datenregion ist gesperrt; die entsprechende Eigenschaft heißt Execute Never.</p>
+<p>Die konkrete Registerkodierung und der vollständige Konfigurationshelfer stehen in der Implementierungshilfe. Dort ist TEX die Type Extension, Attributerweiterung, C bedeutet cacheable, B bufferable und S shareable. Für die Basis lauten die Werte TEX eins, C null, B null und S eins. Shareable erzeugt auf diesem System keinen automatischen M7/M4-Cacheabgleich. Die Einrichtung erfolgt beim gemeinsamen Neustart vor Daten-Cache-Aktivierung und Kommunikation. Andere Regionen können weiterhin vom Cache profitieren. Der bereitgestellte Helfer verwendet HAL-Konstanten; HAL ist die Hardware Abstraction Layer, Hardwareabstraktion. Für die Beurteilung bleibt wesentlich, welche effektiven Rechte und Attribute der reale Zugriff hat, auch wenn mehrere konfigurierte Regionen überlappen.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1575,8 +1598,8 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
           display:block!important;
       }</style></aside>
 </section>
-<section id="die-cachebare-fehlervariante-ist-ein-eigener-neustart" class="slide level2">
-<h2>Die cachebare Fehlervariante ist ein eigener Neustart</h2>
+<section id="optionale-fehlervariante-eigener-neustart" class="slide level2">
+<h2>Optionale Fehlervariante: eigener Neustart</h2>
 <table class="caption-top">
 <thead>
 <tr class="header">
@@ -1587,9 +1610,9 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>TEX / C / B / S</td>
-<td>1 / 0 / 0 / 1</td>
-<td>1 / 1 / 1 / 0</td>
+<td>M7-Zugriff</td>
+<td>nicht cachebar</td>
+<td>cachebar, Write Back</td>
 </tr>
 <tr class="even">
 <td>Region</td>
@@ -1676,17 +1699,17 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 </section>
 <section id="laborbasis-zwei-ziele-ein-gemeinsamer-header" class="slide level2">
 <h2>Laborbasis: zwei Ziele, ein gemeinsamer Header</h2>
-<p>Anwendungsdateien unter <code>code/lab06/</code>:</p>
+<p>Anwendungsdateien unter <code>code/lab07/</code>:</p>
 <ul>
-<li><code>lab06_ipc.h</code> und <code>lab06_shared.c</code> in beiden Images</li>
-<li><code>lab06_cm7.c</code> nur auf CM7</li>
-<li><code>lab06_cm4.c</code> nur auf CM4</li>
+<li><code>lab07_ipc.h</code> und <code>lab07_shared.c</code> in beiden Images</li>
+<li><code>lab07_cm7.c</code> nur auf CM7</li>
+<li><code>lab07_cm4.c</code> nur auf CM4</li>
 <li><code>shared-section.ld</code> als Linker-Integrationsfragment</li>
 </ul>
 <p>CubeMX und VS Code mit STM32 VS Code Extension.</p>
 <aside class="notes">
 <p>CM7 und CM4 sind die beiden Kernziele für Cortex-M7 und Cortex-M4. Ein Image ist das übersetzte Programm eines Kerns. STM32CubeMX erzeugt die Projektbasis, Visual Studio Code mit STM32 VS Code Extension baut und untersucht die CMake-Ziele. CMake beschreibt den Build. Die genannten Dateien existieren als vollständige Anwendungsreferenz im Kursrepository; sie sind kein fertig generiertes Firmwareprojekt.</p>
-<p>lab06_ipc.h enthält Layout, Konstanten und Deklarationen. lab06_shared.c definiert das gemeinsame Objekt und wird genau einmal in jedes Ziel aufgenommen. Die beiden Kernmodule gehören jeweils nur in ihr Ziel. Die vorhandenen Buildkennungen CORE_CM7 beziehungsweise CORE_CM4 müssen stimmen. shared-section.ld ist bewusst nur ein Integrationsfragment: Es ersetzt nicht blind die vollständige erzeugte Linkerdatei. Private globale Diagnosevariablen bleiben in den privaten Sektionen der Images. Das vorbereitet laufende Projekt aus Vorlesung 3 bis 5 liefert den Dual-Core-Boot und den M4-Kernel. Seine bisherigen Anwendungslasten und Callbackexperimente werden für diesen isolierten Versuch deaktiviert.</p>
+<p>lab07_ipc.h enthält Layout, Konstanten und Deklarationen. lab07_shared.c definiert das gemeinsame Objekt und wird genau einmal in jedes Ziel aufgenommen. Die beiden Kernmodule gehören jeweils nur in ihr Ziel. Die vorhandenen Buildkennungen CORE_CM7 beziehungsweise CORE_CM4 müssen stimmen. shared-section.ld ist bewusst nur ein Integrationsfragment: Es ersetzt nicht blind die vollständige erzeugte Linkerdatei. Private globale Diagnosevariablen bleiben in den privaten Sektionen der Images. Die Lehrperson stellt für diesen Versuch eine geprüft lauffähige Projektbasis mit Dual-Core-Boot und M4-Kernel bereit. Seine bisherigen Anwendungslasten und Callbackexperimente werden für diesen isolierten Versuch deaktiviert.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1705,14 +1728,14 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 <ol type="1">
 <li>Projekt-MPU und freie Shared-Region konfigurieren</li>
 <li>M4-Stop sowie HAL- und Taktstart wie vereinbart</li>
-<li><code>Lab06_CM7_InitShared()</code> bei D-Cache aus</li>
+<li><code>Lab07_CM7_InitShared()</code> bei D-Cache aus</li>
 <li>D-Cache einschalten, Boot-HSEM freigeben</li>
-<li><code>Lab06_CM7_Run()</code> einmal ausführen</li>
+<li><code>Lab07_CM7_Run()</code> einmal ausführen</li>
 </ol>
 <p>Frühe Cachehelper und spätere MPUhelper auf Doppelkonfiguration prüfen.</p>
 <aside class="notes">
 <p>MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. HAL ist Hardware Abstraction Layer, Hardwareabstraktion. HSEM ist der Hardware Semaphore, hier das Bootsignal. D-Cache bezeichnet den Daten-Cache. Viele Vorlagen aktivieren in einem frühen CPU_CACHE_Enable-Helfer sowohl Instruktions- als auch Daten-Cache. Für unser kontrolliertes Labor wird die D-Cache-Aktivierung einmal nach die Shared-Initialisierung gelegt. Die Instruktions-Cache-Entscheidung kann getrennt bleiben.</p>
-<p>Die Referenzfunktion Lab06_CM7_InitShared verlangt den ausgeschalteten Daten-Cache und die bereits konfigurierte Region. Sie wird vor dem vorhandenen HSEM-Release eingefügt, nachdem die benötigten Takte bereitstehen. Wird der Cache unbemerkt vorher aktiviert oder die Region nachträglich überschrieben, stoppt der Helfer beziehungsweise die effektive Attributprüfung deckt den Integrationsfehler auf. Das erzeugte Boot-Warten bleibt erhalten. Der M4 initialisiert den Shared-Block nach der Freigabe nicht erneut. Die konkrete Stelle ist am lokalen Code zu prüfen, weil ein allgemeiner USER-CODE-Block nach allen Peripherieinitialisierungen bereits zu spät sein kann. Die Reihenfolge verbindet Bootvertrag und Cacheexperiment ohne laufende Attributumschaltung.</p>
+<p>Die Referenzfunktion Lab07_CM7_InitShared verlangt den ausgeschalteten Daten-Cache und die bereits konfigurierte Region. Sie wird vor dem vorhandenen HSEM-Release eingefügt, nachdem die benötigten Takte bereitstehen. Wird der Cache unbemerkt vorher aktiviert oder die Region nachträglich überschrieben, stoppt der Helfer beziehungsweise die effektive Attributprüfung deckt den Integrationsfehler auf. Das erzeugte Boot-Warten bleibt erhalten. Der M4 initialisiert den Shared-Block nach der Freigabe nicht erneut. Die konkrete Stelle ist am lokalen Code zu prüfen, weil ein allgemeiner USER-CODE-Block nach allen Peripherieinitialisierungen bereits zu spät sein kann. Die Reihenfolge verbindet Bootvertrag und Cacheexperiment ohne laufende Attributumschaltung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1730,14 +1753,14 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 <ul>
 <li>CMSIS_V2 / FreeRTOS auf CM4</li>
 <li>Ein Worker mit zunächst 1024 Byte Stack</li>
-<li>Aufruf: <code>Lab06_CM4_Run(argument)</code></li>
+<li>Aufruf: <code>Lab07_CM4_Run(argument)</code></li>
 <li>Nur erwartete Phase erlaubt das Lesen und Ändern</li>
 <li>Nach drei Antworten beendet sich der Thread</li>
 </ul>
 <p>Vorhandenen Kernelstart und Bootpfad einmal behalten.</p>
 <aside class="notes">
 <p>CMSIS_V2 ist die Cube-Auswahl der zweiten Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. FreeRTOS ist der M4-Kernel. Ein Worker ist ein verarbeitender Thread. Der vorgeschlagene Stack mit 1024 Byte ist ein zu prüfender Startwert, keine nachgewiesene größte Speicherbelegung.</p>
-<p>Die erzeugte Worker-Einstiegsfunktion ruft Lab06_CM4_Run mit ihrem vorhandenen Argument auf. Es wird keine zweite gleichnamige Eintrittsfunktion angelegt. Kernelinitialisierung, Threadanlage und Kernelstart existieren bereits in der Basis. Das gültige Threadhandle wird geprüft. Während RESPONSE_M7 wartet der Worker bei Bedarf mit osDelay einen Tick. Bei REQUEST_M4 prüft er nach der Barriere die erwartete Anfragezahl, erhöht sie und veröffentlicht die Antwort. Nach der dritten Antwort markiert er seine private Diagnose und beendet sich über osThreadExit, den CMSIS-Threadbeendigungsaufruf. Eine später automatisch wiederholte Aktivierung gehört nicht zum endlichen Versuch. Frühaufruf, falsche Kennung, unzulässige Phase und technische Wartefehler sind eigene Fehlerpfade und keine gewöhnlichen Antworten.</p>
+<p>Die erzeugte Worker-Einstiegsfunktion ruft Lab07_CM4_Run mit ihrem vorhandenen Argument auf. Es wird keine zweite gleichnamige Eintrittsfunktion angelegt. Kernelinitialisierung, Threadanlage und Kernelstart existieren bereits in der Basis. Das gültige Threadhandle wird geprüft. Während RESPONSE_M7 wartet der Worker bei Bedarf mit osDelay einen Tick. Bei REQUEST_M4 prüft er nach der Barriere die erwartete Anfragezahl, erhöht sie und veröffentlicht die Antwort. Nach der dritten Antwort markiert er seine private Diagnose und beendet sich über osThreadExit, den CMSIS-Threadbeendigungsaufruf. Eine später automatisch wiederholte Aktivierung gehört nicht zum endlichen Versuch. Frühaufruf, falsche Kennung, unzulässige Phase und technische Wartefehler sind eigene Fehlerpfade und keine gewöhnlichen Antworten.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1798,18 +1821,18 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
           display:block!important;
       }</style></aside>
 </section>
-<section id="fehlerbuild-gezielt-beobachten-und-anschließend-basis-herstellen" class="slide level2">
-<h2>Fehlerbuild: gezielt beobachten und anschließend Basis herstellen</h2>
-<p>Nur den M7-Modus auf <code>LAB06_CACHED_FAULT</code> ändern.</p>
+<section id="optionaler-fehlerbuild-beobachten-und-basis-herstellen" class="slide level2">
+<h2>Optionaler Fehlerbuild: beobachten und Basis herstellen</h2>
+<p>Nur den M7-Modus auf <code>LAB07_CACHED_FAULT</code> ändern.</p>
 <ul>
 <li>gleicher Block, gleiche Phasenfolge, gemeinsamer Reset</li>
 <li>D-Cache und effektive WB-Attribute kontrollieren</li>
 <li>Datenfolge oder Timeout tatsächlich notieren</li>
 <li>keine spontane Cachewartung am gemischten Block</li>
-<li>anschließend <code>LAB06_NONCACHED</code> wiederherstellen</li>
+<li>anschließend <code>LAB07_NONCACHED</code> wiederherstellen</li>
 </ul>
 <aside class="notes">
-<p>LAB06_CACHED_FAULT ist der absichtliche Fehler-Modus der Referenz, LAB06_NONCACHED die gültige nicht cachebare Basis. WB bedeutet Write Back, verzögerte Rückschreibung geänderter Cachekopien. D-Cache ist der Daten-Cache. Der M7-Modus wird beim gemeinsamen Neustart geändert, nicht in einem laufenden Debugdialog.</p>
+<p>LAB07_CACHED_FAULT ist der absichtliche Fehler-Modus der Referenz, LAB07_NONCACHED die gültige nicht cachebare Basis. WB bedeutet Write Back, verzögerte Rückschreibung geänderter Cachekopien. D-Cache ist der Daten-Cache. Der M7-Modus wird beim gemeinsamen Neustart geändert, nicht in einem laufenden Debugdialog.</p>
 <p>Unverändert bleiben Layout, Phasenfolge und M4-Code. So kann ein beobachteter Unterschied sinnvoll mit der veränderten M7-Sicht in Beziehung gesetzt werden. Zunächst werden tatsächliche Cacheaktivierung, MPU-Attribute und Überlappung geprüft; MPU bedeutet Memory Protection Unit, Speicherschutzeinheit. Ein Timeout oder ein alter Wert kann auftreten. Ein erfolgreicher Lauf durch Verdrängung oder spezielle Startreihenfolge beweist dagegen keinen sicheren Write-Back-Kanal. Die Reaktion auf den Fehler ist Diagnose und Rückkehr zur geprüften Basis. Ein pauschales Clean oder Invalidate des gemeinsam von beiden beschriebenen Blocks wäre gerade der ungeprüfte Reparaturversuch, vor dem das Zeilenbeispiel warnt. Die praktische Beobachtung wird dokumentiert und nicht durch erwartete Zahlen ersetzt.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
@@ -1856,10 +1879,10 @@ e=\left\lceil\frac{a+L}{32}\right\rceil\cdot32\]</span></p>
 <li>MPU-Attribute wirken lokal und nach Regionspriorität</li>
 <li>Zehn Anwendungsfragen statt reiner Begriffsabfrage</li>
 </ul>
-<p>Vorlesung 7: Messungen bewerten · Vorlesung 8: Ereignislast begrenzen.</p>
+<p>Vorlesung 8: Messungen bewerten · Vorlesung 9: Verträge zusammenführen.</p>
 <aside class="notes">
 <p>AMP ist Asymmetric Multiprocessing, getrennte Mehrkernsoftware. Die Architektur erleichtert Zuständigkeiten, erzeugt aber keine vollständige Hardwareisolation. Die gleiche Datenadresse ist eine notwendige Kanalvoraussetzung. Besitz sagt, wer schreiben darf; Sichtbarkeit sagt, welche Bytes ein Zugriff tatsächlich liefert. Eine Barriere ordnet relevante Zugriffe, Cachewartung behandelt lokale Kopien. MPU ist die Memory Protection Unit, Speicherschutzeinheit, deren effektive Region und lokale Reichweite geprüft werden.</p>
-<p>Das Quiz mit zehn Fragen prüft diese Unterscheidungen an Fällen aus der Vorlesung. Begründen Sie beispielsweise, warum ein M4-Mutex den M7 nicht automatisch schützt oder warum zwölf Bytes typisierte Nutzstruktur und 32 reservierte Bytes kein Widerspruch sind. Die nächste Vorlesung betrachtet die Beobachtung selbst: Ein protokollierter Kernzugriff ist nicht automatisch der aktuelle SRAM-Wert einer Gegenstelle. Vorlesung 8 untersucht danach, wie CPU-Budgets ereignisgetriebene Arbeit begrenzen. Die weiterführenden HSEM-Laufzeitversuche bleiben als optionale Beispiele unter code/lab08 verfügbar und sind keine Voraussetzung dieser Server-Verfahren.</p>
+<p>Das Quiz mit zehn Fragen prüft diese Unterscheidungen an Fällen aus der Vorlesung. Begründen Sie beispielsweise, warum ein M4-Mutex den M7 nicht automatisch schützt oder warum zwölf Bytes typisierte Nutzstruktur und 32 reservierte Bytes kein Widerspruch sind. Die nächste Vorlesung betrachtet die Beobachtung selbst: Ein protokollierter Kernzugriff ist nicht automatisch der aktuelle SRAM-Wert einer Gegenstelle. Vorlesung 6 hat bereits gezeigt, wie Budgets für eigene Prozessorzeit die Ereignisarbeit begrenzen. Die Fallstudie in Vorlesung 9 verbindet diese Zeitregeln mit Datenbesitz und Fortschrittsüberwachung. Die weiterführenden HSEM-Laufzeitversuche bleiben als optionale Vertiefung unter code/archiv/multicore-safety verfügbar.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
