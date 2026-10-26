@@ -1,22 +1,35 @@
 # Projektvorbereitung zu Übungsblatt 8
 
-Verwenden Sie STM32CubeMX, VS Code mit STM32 VS Code Extension und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die installierte Kombination muss die gewählten CM7-/CM4-CMake-Ziele unterstützen. Erhalten Sie die generierte Dual-Core-Boot-/HSEM-Startfolge und laden Sie zusammengehörige Images. C11 oder neuer; fremde Laborlast und doppelte Callbacks/Threadanlagen entfernen. Eigene Quellen und Benutzerbereiche müssen eine erneute CubeMX-Generierung mit anschließendem Build überstehen.
+Aufgabe 6 ist eine **selbst implementierte Polling-Server-Simulation** mit zwei gewöhnlichen FreeRTOS-Threads auf **CM4**. Es wird kein Scheduling-Server in den FreeRTOS-Kernel eingebaut. Die vollständigen Datenstrukturen, Regeln und Musterfunktionen stehen im [Übungsblatt](../lab_08_server-verfahren.qmd); zusätzliche Laborquelldateien sind nicht erforderlich.
 
-Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten Sie Installation, Boot, GPIO und gegebenenfalls Kernel, Linker und MPU vor dem Termin vor. Alle Versuche verwenden ausschließlich eingebaute LEDs, B1 und ST-LINK. Kein Sensor, Steckbrett, externer Widerstand, UART-Aufbau, Oszilloskop oder zusätzlicher Traceadapter ist erforderlich. Die Papieraufgaben sind unabhängig vom Aufbau lösbar; die Lehrperson kann aus dem Aufgabenpool auswählen.
+## Projektbasis und CubeMX
 
-## Fortschrittsmonitor auf CM4
+Verwenden Sie **NUCLEO-H755ZI-Q / STM32H755ZIT6**, **STM32CubeMX** und **VS Code mit STM32 VS Code Extension**. Die [M4-only-Projektbasis aus Übung 3](lab_03_programmierung.md) liefert den geprüften eigenständigen Start, die Taktinitialisierung und den gemeinsamen SysTick für HAL und Kernel. CM7 bleibt boot-deaktiviert. Ein neuer Dual-Core-Kanal, Hardware-Semaphoren, MPU-Anpassungen oder Hardware-Watchdogs gehören nicht zu diesem Versuch.
 
-FreeRTOS ausschließlich auf CM4, CMSIS_V2, Präemption, 32-Bit-Kernelticks und 1000 Hz. Verwenden Sie SysTick für den Kernel und einen freien TIM6 für die HAL-Zeitbasis; erhalten Sie die generierten Handlerketten. Heap und tatsächliche Stacks müssen auch Idle, optionale Timer-Task und Verwaltungsanteile abdecken; 1024 Byte je hier angelegtem Thread sind Ausgangsgrößen, keine bewiesenen Minima. Rufen Sie den angegebenen Starthelfer genau einmal nach dem vorhandenen `osKernelInitialize()` im Zustand `osKernelReady` und vor dem vorhandenen `osKernelStart()` auf. Legen Sie seine Threads nicht nochmals in CubeMX an. Entfernen/deaktivieren Sie nicht benötigte Default-Threads und frühere Anwendungsmodule. CM7 bleibt beim generierten Systemstart und einer ruhigen Hauptschleife.
+1. Öffnen Sie die `.ioc`-Datei im CM4-Kontext. **PE1 / LD2** und **PB0 / LD1** als `GPIO_Output` dem CM4 zuordnen. Unter **System Core > GPIO**: Output Push Pull, No pull-up and no pull-down, Low speed, Ausgangspegel Low. Pinbelegung und aktive Polarität gegen UM2408 prüfen. B1/PC13 bleibt unbenutzt.
+2. **Middleware and Software Packs > FREERTOS**: Interface **CMSIS_V2**, Präemption an, **1000 Hz**, **32-Bit-Ticks**, Tickless Idle aus. Die HAL verwendet den vorbereiteten gemeinsamen SysTick. Keinen zusätzlichen Zeitbasis-Timer starten. Kontrollieren Sie die tatsächlich erzeugte `FreeRTOSConfig.h`; Menünamen können versionsabhängig abweichen.
+3. Unter **Tasks and Queues** Default-Thread entfernen und genau zwei Anwendungsthreads dynamisch anlegen:
 
-1. Ausschließlich `lab08_health.c`, `health_student.c` und `lab08_health.h` ins CM4-Ziel aufnehmen. HSEM-Zähler, WWDG-Station und frühere Versuchsquellen gehören nicht in dieses Image. **Keinen Hardware-Watchdog starten.** Damit ist die programmierte Gesundheitsbedingung ohne Reset-/Fensterfehler untersuchbar.
-2. LD1/PB0 `LAB08_GOOD`, LD2/PE1 `LAB08_STATUS`, LD3/PB14 `LAB08_BAD` als Ausgänge LOW für CM4; B1/PC13 `LAB08_BUTTON` als aktiver-HIGH-Eingang laut geprüftem Boardplan, kein EXTI. Die Boardbeschaltung genügt. M7 greift auf diese Ports nicht zu.
-3. `lab08_health.h` einbinden und an der beschriebenen RTOS-Stelle `Lab08_HealthStart();` aufrufen. Der Helper erzeugt einen vererbenden Mutex, zwei Normal-Worker und einen AboveNormal-Supervisor. Workerzeiten 60/100, Supervisorpause 20 Ticks. Die Status-LED toggelt nur jede zehnte Kontrollrunde, damit die Aktivität sichtbar bleibt.
-4. Alle Workerzeitstempel, Gültigkeitsbits und das Pause-B-Kennzeichen werden unter demselben Mutex geschrieben/gelesen. Der Supervisor übergibt Ihrer Funktion eine private Kopie mit auf derselben Kernuhr erfasstem Jetzt. LEDs und Pausen liegen außerhalb des Mutex.
-5. Mit dem unveränderten studentischen Rumpf bleibt die Gesundheitsanzeige ungültig/rot, die Status-LED läuft. Nach Implementierung grün nach den ersten Nachweisen, rot bei länger gehaltenem B1, wieder grün nach neuem B-Nachweis. Kurzes Kontaktprellen ist kein entprellter Zählvertrag; für den Versuch wird der Taster länger als 140 ms gehalten.
-6. Eine Fehlerverriegelung ist eine studentische Erweiterung; die Basis erholt sich ausdrücklich. Kurzzeitige Startanzeige vor dem ersten Nachweis ist noch kein gelatchter Workerfehler. Debughalt ist keine normale Betriebsbedingung. Die LED-Freigabe ersetzt weder Hardware-Watchdog noch sicheren Resetpegel eines Aktors.
+| Task | Entry Function | Priorität | Stack in Byte |
+|---|---|---|---:|
+| Heartbeat | `StartHeartbeatTask` | `osPriorityNormal` | 512 |
+| Simulation | `StartSimulationTask` | `osPriorityBelowNormal` | 1024 |
 
-HSEM- und WWDG-Originalbausteine bleiben als getrennte Zusatzversuche im [Code-README](../../code/lab08/README.md). Auch die dortige Fensteranzeige wird ausschließlich auf die drei Board-LEDs gelegt; sie weist keinen externen Freigabepegel während Reset nach.
+   Bei einer Dialogeinheit von 32-Bit-Wörtern entsprechen die Werte **128** bzw. **256** Wörtern. Kontrollieren Sie die CMSIS-Attribute `.stack_size` in Byte. Die Größen sind Ausgangswerte; Heap/RAM müssen auch Idle, Verwaltungsdaten und Handlerstack berücksichtigen.
+4. Unter **Project Manager > Project** CMake wählen, unter **Code Generator** *Keep User Code when re-generating* aktivieren. Nur das CM4-Ziel bauen und laden. Prüfen Sie den Aufruf der GPIO-Initialisierung und den Erhalt der M4-/SysTick-Anpassungen nach erneuter Generierung.
 
-## Prüfstatus und Abgrenzung
+## Was die Studierenden schreiben
 
-Geben Sie einen vor dem Termin auf der tatsächlichen Hardware gebauten und gestarteten Basisstand aus. Die studentische Startdatei enthält bewusst noch keine Aufgabenlösung. Aufgaben und vollständige Musterfunktionen stehen im zugehörigen Übungsblatt, Lösungen nur im Quarto-Profil `solution`. Ein Source-/PDF-Build ist kein erfolgreicher Firmware- oder Boardtest. Die Cloudprüfung kann Anwendungslogik am Host prüfen, jedoch keine STM32-Takte, GPIO-/IRQ-Zuordnung, Speicherattribute oder reale Zeitgrenzen bestätigen. Ungemessene Zeiten bleiben offen.
+Der Typ `Modell` und die selbst geschriebene Funktion `ModellSchritt` stehen im erhaltenen gemeinsamen Benutzerbereich der erzeugten CM4-Anwendungsdatei. Falls Threadfunktionen in einer anderen Datei liegen, werden Typ und Funktionsdeklaration in einem eigenen erhaltenen Deklarationsbereich gemeinsam bekannt gemacht. Es werden keine zweiten Definitionen der vom Generator erzeugten Threadfunktionen hinzugefügt.
+
+Die zwei Schleifen stehen jeweils in ihren `USER CODE`-Bereichen. Heartbeat besitzt ausschließlich LD2. Simulation besitzt ausschließlich LD1 und ihr lokales Modell. Benötigt werden `main.h`, `cmsis_os2.h` und `stdint.h`. Die vom Generator angelegten Handles werden unmittelbar nach beiden `osThreadNew`-Aufrufen und vor `osKernelStart()` geprüft. Es bleiben genau eine Kernelinitialisierung und ein Kernelstart bestehen. Delay-Fehler führen zu `Error_Handler()`.
+
+Jeder Modellschritt bedeutet **eine virtuelle Millisekunde**. Die Pause von 100 realen Kernelticks verlangsamt die Anzeige. Die Ankünfte bei 1, 3, 7 und 8, das Budget zwei und die Modellperiode sechs sind reine Lehrdaten. Bei den Schritten **6, 7, 12 und 13** soll LD1 an sein. Nach Schritt 17 sind alle vier Aufträge verarbeitet, anschließend beginnt das nächste endliche Modell von vorn. Die Vorgabefolge ist absichtlich von den Papierbeispielen verschieden.
+
+## Abnahme und Grenzen
+
+Vor dem Termin müssen CM4-Build, Kaltstart und die beiden Eintrittsfunktionen auf der tatsächlichen Hardware geprüft sein. Erst nach studentischer Implementierung wird das erwartete Modellmuster verlangt. Der Heartbeat soll dabei weiterhin blinken. Ein Hosttest kann die diskrete Modellfolge prüfen, aber weder reale LED-Zeiten noch eine Kernelreservation nachweisen.
+
+Die Simulation reserviert keine echte CPU-Zeit. Insbesondere ist `osDelay(100)` keine Budgetabrechnung; es ist nur die Anzeigepause. Ein vollständiger Sporadic Server würde zusätzlich korrekte Aktivierungs-/Auffüllregeln, tatsächliche CPU-Verbrauchserfassung und die Einbindung in die Schedulingentscheidung benötigen. Der Praxisteil vertieft deshalb die Modellbegriffe, während die Klausuraufgaben die Serveranalyse prüfen.
+
+Die früheren HSEM-/WWDG-/Supervisorquellen unter `code/lab08/` bleiben getrennte Archivbeispiele und werden hier nicht eingebunden. Board und USB/ST-LINK genügen; zusätzliche Elektronik oder Tracegeräte sind nicht erforderlich. Ein nicht durchgeführter Boardlauf wird als solcher dokumentiert.

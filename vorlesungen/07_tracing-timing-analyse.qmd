@@ -1,6 +1,6 @@
 ---
 title: "07 · Tracing und Timing-Analyse"
-subtitle: "Messvertrag, lokale Zähler, CoreSight und Datenqualität · EZS · DHBW Stuttgart"
+subtitle: "Messvertrag, eigene CPU-Zeit, Antwortzeit und Datenqualität · EZS · DHBW Stuttgart"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 format:
   revealjs:
@@ -20,7 +20,7 @@ center: false
 ::: notes
 Dieser Termin untersucht das Verhalten des Systems aus Vorlesung 6. Tracing bedeutet eine geordnete Aufzeichnung ausgewählter Ereignisse. Timing-Analyse untersucht, welche Zeiten zwischen definierten Ereignissen liegen und ob sie die Anforderungen erfüllen. Beide beginnen mit einer Frage, nicht mit einem Gerätefenster. Auf dem NUCLEO-H755ZI-Q betrachten wir weiterhin den Cortex-M7 mit Bare-Metal-Programm, also ohne Kernel, und den Cortex-M4 mit FreeRTOS, dem Echtzeitbetriebssystem.
 
-Ein Messwert beantwortet nur die Frage, für die Anfang, Ende und Zeitquelle festgelegt wurden. Ein erfolgreicher Datenaustausch ist beispielsweise noch kein Nachweis seiner Abschlussfrist. Die Vorlesung führt deshalb zuerst einen Messvertrag und die bekannten Jobgrößen ein. Anschließend betrachten wir den lokalen Zykluszähler und die Hardwarequellen für längere Ereignishistorien. Die Pflichtübung benötigt keine BlueBox. BlueBox ist eine Familie externer Debug- und Tracegeräte; ihre Analyseumgebung winIDEA wird als zusätzlicher Weg eingeordnet. Modellzahlen bleiben von tatsächlichen Boardbeobachtungen getrennt.
+Ein Messwert beantwortet nur die Frage, für die Anfang, Ende und Zeitquelle festgelegt wurden. Ein erfolgreicher Datenaustausch ist beispielsweise noch kein Nachweis seiner Abschlussfrist. Die Vorlesung führt deshalb zuerst einen Messvertrag und die bekannten Jobgrößen ein. Anschließend betrachten wir den lokalen Zykluszähler, begrenzte Ereignislogs und die Qualität ihrer Daten. Externe Tracegeräte sind eine Ergänzung; ihre Bedienung gehört nicht zur Pflichtübung. Die eigene kleine Implementierung wertet vorhandene Datensätze aus und zeigt ihren Erfolg über eine Board-LED, eine Light Emitting Diode oder Leuchtdiode. Modellzahlen bleiben von tatsächlichen Boardbeobachtungen getrennt.
 :::
 
 ## Vorlesungen 1–6 sind die gemeinsame Grundlage
@@ -43,28 +43,30 @@ Diese Kenntnisse genügen für den Einstieg. Neu sind die Messdefinition, der Zy
 1. Anfang, Ende, Einheit und Bedingungen festlegen
 2. Eigene Rechenzeit, Antwortzeit und Latenzen unterscheiden
 3. Lokale Zähler mit Takt und Umlaufgrenze verwenden
-4. ITM, DWT, ETM und Debugzugriff unterscheiden
-5. Gültige Traceabschnitte und ihre Grenzen erkennen
+4. Stichproben und gültige Ereignishistorien auswerten
+5. Beobachtetes Maximum und begründete WCET unterscheiden
 
 ::: notes
 Eine Messung braucht zuerst ihre beiden Ereignisgrenzen und die Zeitbasis, also die Quelle und Skalierung ihrer Zeitwerte. Eigene Rechenzeit beschreibt die tatsächlich dem Job zugeordnete Prozessorarbeit. Antwortzeit umfasst auch Wartephasen. Latenz bezeichnet eine Verzögerung zwischen jeweils ausdrücklich benannten Ereignissen. Ein lokaler Zähler gehört zu einem Kern und ist keine automatisch gemeinsame Uhr.
 
-ITM bedeutet Instrumentation Trace Macrocell und nimmt unter anderem Softwaremarkierungen entgegen. DWT bedeutet Data Watchpoint and Trace und liefert konfigurierte Kernereignisse sowie den lokalen Zykluszähler. ETM bedeutet Embedded Trace Macrocell und unterstützt die Rekonstruktion des Kontrollflusses. Diese Namen werden später mit ihren jeweiligen Grenzen erklärt. Ein Debugzugriff liest dagegen eine momentane Sicht, nicht automatisch eine Ereignishistorie. Das Ziel ist eine begründete Auswahl: Für ein kurzes lokales Arbeitsintervall genügt häufig ein Zähler. Für Taskzustände braucht man zusätzliche Kernelinformationen. Für einen Inter-Core-Abstand braucht man bestätigte Zeitkorrelation. Die Übung überprüft diese Entscheidungen an Rechenfällen und einem vollständigen Anwendungsmodul.
+Ein Ereignislog ist eine begrenzte Liste ausgewählter Zeitmarken. Eine Ereignishistorie, auch Trace genannt, ist nur für die tatsächlich erfassten Ereignisse aussagekräftig. WCET bedeutet Worst-Case Execution Time: eine begründete obere Schranke der eigenen Ausführungszeit unter benannten zulässigen Bedingungen. Das größte Ergebnis einiger Versuche ist dagegen zunächst nur das beobachtete Maximum dieser Versuche.
+
+Das Lernziel ist eine begründete Aussage: Was wurde erfasst, welche Größe wurde daraus berechnet und wie weit gilt das Ergebnis? Für ein kurzes lokales Arbeitsintervall genügt häufig ein Zähler. Für eigene Taskarbeit braucht man zusätzlich die Ausführungszuordnung. Für eine Ende-zu-Ende-Reaktion braucht man Freigabe und geforderten Abschluss derselben Anfrage. Die Übung überprüft diese Entscheidungen mit Papierfällen und einer selbst geschriebenen kleinen Auswertung.
 :::
 
 ## Vier Schulstunden: rechnen, messen, auswerten
 
 | Block | Minuten |
 |---|---|
-| 1 · Messfrage und Zeitgrößen | 30 Erklärung + 15 Papier 1–2 |
+| 1 · Messfrage und Zeitgrößen | 25 Erklärung + 20 Papier 1–2 |
 | 2 · Zähler und Beobachter | 25 Erklärung + 20 Papier 3 |
-| 3 · Trace und Datenqualität | 25 Erklärung + 15 Papier 4 + 5 Projektprüfung |
-| 4 · Versuch und Rückblick | 25 Versuch + 15 Quiz + 5 Abschluss |
+| 3 · Evidenz und Datenqualität | 25 Erklärung + 20 Papier 4 |
+| 4 · Eigene Auswertung und Rückblick | 30 Implementierung + 10 Quiz + 5 Abschluss |
 
 ::: notes
-Vier Schulstunden entsprechen hier 180 Unterrichtsminuten. Die Tabelle umfasst achtzig Minuten Erklärung, fünfzig Minuten Papierarbeit, dreißig Minuten Projektprüfung und Versuch sowie zwanzig Minuten Quiz und Abschluss. Die fünfzig Folien sind unterschiedlich lange Arbeitsstationen. Eine Rechenfolie oder ein Diagramm bleibt länger sichtbar als eine kurze Orientierung.
+Vier Schulstunden entsprechen 180 Unterrichtsminuten. Die Tabelle umfasst fünfundsiebzig Minuten Erklärung, sechzig Minuten Papierarbeit, dreißig Minuten Implementierung sowie fünfzehn Minuten Quiz und Abschluss. Die achtundvierzig Folien sind unterschiedlich lange Arbeitsstationen. Ein Rechenbeispiel oder eine Arbeitsfolie bleibt länger sichtbar als eine kurze Orientierung. Die Papieraufgaben werden passend zu den drei ersten Blöcken unterbrochen und ausgewertet.
 
-Die Lehrperson stellt die erprobte Dual-Core-Projektbasis aus den vorherigen Terminen bereit. Dual Core bezeichnet zwei Prozessorkerne. Installation, erstmaliger Flashstart und Reparatur der Takt- oder Linkerdateien sind Vorbereitung, nicht zusätzliche Inhalte der dreißig Minuten. CubeMX konfiguriert die Firmware; VS Code mit der STM32 VS Code Extension baut und untersucht die beiden Ziele. Der lokale Zählerversuch läuft auf dem M7 und setzt keine besondere Traceprobe voraus. Papieraufgaben bleiben ohne Hardware vollständig lösbar. Die zusätzliche Auswertung mit BlueBox und winIDEA, also externem Recorder und Analyseumgebung, wird nur mit bestätigtem Gerät und Aufnahmepfad durchgeführt.
+Die Lehrperson stellt die erprobte Dual-Core-Projektbasis aus den vorherigen Terminen bereit. Dual Core bedeutet zwei Prozessorkerne. Installation, erster Flashstart und Reparatur der Takt- oder Linkerdateien sind Vorbereitung. CubeMX konfiguriert die Firmware; VS Code mit der STM32 VS Code Extension baut und untersucht die beiden Ziele. Der lokale Zählerversuch läuft auf dem Cortex-M7. Die eigene Auswertung nutzt allein eine Board-LED, Light Emitting Diode oder Leuchtdiode, und gespeicherte Daten. Papieraufgaben und Musterlösungen bleiben ohne Hardware vollständig nachvollziehbar. Ein noch nicht funktionierendes Projekt wird außerhalb dieses Zeitplans eingerichtet; daraus werden keine erfundenen Messwerte abgeleitet.
 :::
 
 ## Der Messvertrag kommt vor dem Werkzeug
@@ -97,20 +99,20 @@ Ein Beobachtereffekt ist eine Veränderung des Systems durch das Verfahren, mit 
 Ein zusätzlicher Funktionsaufruf kann einen knappen Job verlängern. Eine Ausgabe kann einen Mutex erwerben oder auf Pufferplatz warten und dadurch die Reihenfolge konkurrierender Tasks ändern. Veränderte Codeadressen können andere Cachezeilen benutzen. Ein angehaltener Kern lässt unter Umständen die Gegenstelle weiterlaufen. Ein verlustbehafteter Trace lässt wiederum einen Teil der tatsächlichen Ereignisse unsichtbar werden. Diese Fälle haben verschiedene Ursachen. Man reduziert den Einfluss durch kurze definierte Marken, begrenzte Puffer und Ausgabe nach dem Messfenster, prüft ihn aber weiterhin. Eine Beobachtung ohne zusätzliche Anwendungsbefehle kann ein Vorteil sein; sie beseitigt nicht die Anforderungen an Datenqualität und Zeitquelle.
 :::
 
-## „Hallo“: Leitungszeit vollständig nachrechnen
+## „Status“: Leitungszeit vollständig nachrechnen
 
-Lehrannahme: fünf ASCII-Bytes, kein Zeilenumbruch, UART 8N1.
+Lehrannahme: sechs ASCII-Bytes, kein Zeilenumbruch, UART 8N1.
 
-$$N_{Bit}=5\cdot(1+8+1)=50$$
+$$N_{Bit}=6\cdot(1+8+1)=60$$
 
-$$t_{Leitung}=\frac{50}{115200}\,\mathrm{s}\approx434\,\text{µs}$$
+$$t_{Leitung}=\frac{60}{115200}\,\mathrm{s}\approx521\,\text{µs}$$
 
 Das ist die Leitungsdauer, noch keine CPU-Zeit von `printf`.
 
 ::: notes
-UART bedeutet Universal Asynchronous Receiver/Transmitter, asynchrone serielle Sende- und Empfangsschnittstelle. ASCII ist eine Zeichenkodierung; die fünf Zeichen von Hallo sind hier fünf Bytes. 8N1 bedeutet acht Datenbits, keine Parität und ein Stopbit. Zusammen mit dem Startbit ergeben sich zehn Leitungsbits je Byte. Der Nullterminator einer C-Zeichenkette wird in diesem Lehrfall nicht übertragen, ebenso kein Zeilenumbruch.
+UART bedeutet Universal Asynchronous Receiver/Transmitter, asynchrone serielle Sende- und Empfangsschnittstelle. ASCII ist eine Zeichenkodierung; die sechs Zeichen von Status sind hier sechs Bytes. 8N1 bedeutet acht Datenbits, keine Parität und ein Stopbit. Zusammen mit dem Startbit ergeben sich zehn Leitungsbits je Byte. Der Nullterminator einer C-Zeichenkette wird in diesem Lehrfall nicht übertragen, ebenso kein Zeilenumbruch.
 
-N Bit bezeichnet die Bitzahl, t Leitung die reine Übertragungsdauer. Fünf mal zehn sind fünfzig Bits. Geteilt durch 115200 Bits je Sekunde sind das 0,0004340278 Sekunden oder etwa 434 Mikrosekunden. µs bedeutet Mikrosekunden. CPU, Central Processing Unit oder Prozessor, bezeichnet eine andere Ressource. printf ist die formatierende C-Ausgabefunktion. Wie lange sie den Prozessor bindet oder blockiert, hängt von Formatierung, Treiber, Sperren und Ausgabeweg ab. Die Rechnung ist eine didaktische Leitungsannahme, keine Boardmessung und kein allgemeiner Worst Case jeder Ausgabe. Die nächste Folie trennt die möglichen Prozessorbelegungen.
+N Bit bezeichnet die Bitzahl, t Leitung die reine Übertragungsdauer. Sechs mal zehn sind sechzig Bits. Geteilt durch 115200 Bits je Sekunde sind das 0,0005208333 Sekunden oder etwa 521 Mikrosekunden. µs bedeutet Mikrosekunden. CPU, Central Processing Unit oder Prozessor, bezeichnet eine andere Ressource. printf ist die formatierende C-Ausgabefunktion. Wie lange sie den Prozessor bindet oder blockiert, hängt von Formatierung, Treiber, Sperren und Ausgabeweg ab. Die Rechnung ist eine didaktische Leitungsannahme, keine Boardmessung und kein allgemeiner Worst Case jeder Ausgabe. Die nächste Folie trennt die möglichen Prozessorbelegungen.
 :::
 
 ## Gleiche UART-Leitung, verschiedene CPU-Belegung
@@ -121,14 +123,14 @@ N Bit bezeichnet die Bitzahl, t Leitung die reine Übertragungsdauer. Fünf mal 
 | Interrupt | Treiberarbeit bei Sendeereignissen |
 | DMA | Start und Abschluss, Hardware überträgt |
 
-Lehrfall: 10 µs Arbeit + 434 µs blockierende Ausgabe ≈ 444 µs.
+Lehrfall: 10 µs Arbeit + 521 µs blockierende Ausgabe ≈ 531 µs.
 
 Eine Deadline von 50 µs wird in diesem Modell verletzt.
 
 ::: notes
 UART ist die Universal Asynchronous Receiver/Transmitter-Schnittstelle, eine serielle Leitung. CPU bedeutet Central Processing Unit, Prozessor. DMA bedeutet Direct Memory Access, direkten Hardware-Speicherzugriff. Polling ist wiederholtes Prüfen einer Bedingung durch das Programm. Eine Interruptausgabe nutzt Behandler für Sendeereignisse; eine DMA-Ausgabe lässt Hardware den vorbereiteten Puffer übertragen.
 
-Alle drei Wege können dieselbe Leitungszeit haben, während ihre Prozessorbelegung verschieden ist. DMA macht Formatierung, Pufferlebensdauer und Abschlussbehandlung nicht kostenlos. Auch ein interruptgesteuerter Treiber kann die aufrufende Task auf freien Platz warten lassen. Im ausdrücklich vereinfachten Lehrfall blockiert die Ausgabe den kritischen Ablauf für die volle Leitungsdauer. Zehn Mikrosekunden Arbeit plus etwa 434 Mikrosekunden Ausgabe ergeben etwa 444 Mikrosekunden. Gegen eine angenommene Deadline von fünfzig Mikrosekunden ist das zu spät. Eine Fristverletzung ist ein verpasster Abschluss, kein zwangsläufiger Absturz. Die Ausgabe gehört daher nach das zeitkritische Messfenster oder braucht einen passenden begrenzten Vertrag.
+Alle drei Wege können dieselbe Leitungszeit haben, während ihre Prozessorbelegung verschieden ist. DMA macht Formatierung, Pufferlebensdauer und Abschlussbehandlung nicht kostenlos. Auch ein interruptgesteuerter Treiber kann die aufrufende Task auf freien Platz warten lassen. Im ausdrücklich vereinfachten Lehrfall blockiert die Ausgabe den kritischen Ablauf für die volle Leitungsdauer. Zehn Mikrosekunden Arbeit plus gerundet 521 Mikrosekunden Ausgabe ergeben gerundet 531 Mikrosekunden. Gegen eine angenommene Deadline von fünfzig Mikrosekunden ist das zu spät. Eine Fristverletzung ist ein verpasster Abschluss, kein zwangsläufiger Absturz. Die Ausgabe gehört daher nach das zeitkritische Messfenster oder braucht einen passenden begrenzten Vertrag.
 :::
 
 ## Ein Breakpoint hält einen Kern an
@@ -192,7 +194,7 @@ Das Programm setzt vor der Arbeit einen ausgewählten Pin und setzt ihn danach z
 ::: notes
 GPIO bedeutet General-Purpose Input/Output, allgemeiner Ein- und Ausgang. CYCCNT ist der lokale Cycle Count, Zykluszählstand. ITM bedeutet Instrumentation Trace Macrocell und nimmt unter anderem Softwareereignisse auf. ETM bedeutet Embedded Trace Macrocell und unterstützt die Rekonstruktion des Kontrollflusses. Ein Kernel verwaltet die Tasks und ihre Zustände.
 
-Die Tabelle ordnet Verfahren nach der gewünschten Aussage. Ein GPIO-Puls eignet sich für ein physisches Intervall. Ein Zykluszähler erfasst ein lokales Zeitfenster in Kerntakten. Ein Softwarelog oder ITM-Marker liefert ausgewählte Ereignisse, aber keine beliebige Vergangenheit. Die Darstellung einer Task benötigt Informationen über Kernelobjekte und Ausführungskontexte. ETM betrachtet wiederum den Maschinenkontrollfluss eines Kerns. Keine dieser Quellen ist automatisch die beste für jede Frage. Auch innerhalb derselben Quelle entscheidet die Grenze: Funktionsbeginn bis Rückkehr ist etwas anderes als Jobfreigabe bis Fertigstellung. Bevor wir die Tracearchitektur betrachten, rechnen wir deshalb die bereits bekannten Jobgrößen mit vollständigen Ereignissen nach.
+Die Tabelle ordnet Verfahren nach der gewünschten Aussage. Ein GPIO-Puls eignet sich für ein physisches Intervall. Ein Zykluszähler erfasst ein lokales Zeitfenster in Kerntakten. Ein Softwarelog oder ITM-Marker liefert ausgewählte Ereignisse, aber keine beliebige Vergangenheit. Die Darstellung einer Task benötigt Informationen über Kernelobjekte und Ausführungskontexte. ETM betrachtet wiederum den Maschinenkontrollfluss eines Kerns. Keine dieser Quellen ist automatisch die beste für jede Frage. Auch innerhalb derselben Quelle entscheidet die Grenze: Funktionsbeginn bis Rückkehr ist etwas anderes als Jobfreigabe bis Fertigstellung. Bevor wir die Qualität einer Ereignishistorie betrachten, rechnen wir deshalb die bereits bekannten Jobgrößen mit vollständigen Ereignissen nach.
 :::
 
 ## Ein Job hat vier getrennte Zeitmarken
@@ -247,55 +249,57 @@ concise "CPU" as C
 @0
 A is "–"
 C is "B"
-@1
-A is "Ready"
 @2
+A is "Ready"
+@3
 A is "Run"
 C is "A"
-@4
+@5
 A is "Ready"
 C is "B"
-@6
+@7
 A is "Run"
 C is "A"
-@7
+@10
 A is "Ende"
 C is "B"
-@8
+@11
 A is "Ende"
-highlight 1 to 7 #F5F5F7 : Antwortintervall
+highlight 2 to 10 #F5F5F7 : Antwortintervall
 
 @enduml
 ```
 
 ::: notes
-Die Abbildung ist ein synthetisches Schedulingmodell, keine Traceaufnahme. Scheduling bedeutet die Auswahl der laufenden Aufgabe. CPU ist die Central Processing Unit, der Prozessor. Ready bedeutet ausführungsbereit, Running laufend. Die obere Spur zeigt die Phase des Jobs A, die untere die Prozessorzuordnung. Run ist Running, also laufend; B bezeichnet hier fremde Arbeit und der Strich den noch nicht freigegebenen Job. Die waagerechte Achse zählt Millisekunden. Der hervorgehobene Bereich reicht von Freigabe eins bis Abschluss sieben; die Deadline liegt bei acht.
+Die Abbildung ist ein synthetisches Schedulingmodell, keine Traceaufnahme. Scheduling bedeutet die Auswahl der laufenden Aufgabe. CPU ist die Central Processing Unit, der Prozessor. Ready bedeutet ausführungsbereit, Running laufend. Die obere Spur zeigt den Zustand des Jobs A, die untere die Prozessorzuordnung. Run steht für Running; B bezeichnet hier fremde Arbeit, der Strich den noch nicht freigegebenen Job. Die waagerechte Achse zählt Millisekunden. Der hervorgehobene Bereich reicht von Freigabe zwei bis Abschluss zehn; die absolute Deadline liegt bei elf.
 
-A wird bei einer Millisekunde bereit und startet bei zwei. Von zwei bis vier läuft A für zwei Millisekunden. Von vier bis sechs erledigt der Prozessor fremde Arbeit; A bleibt bereit und wird verdrängt. Von sechs bis sieben arbeitet A noch eine Millisekunde und ist anschließend fertig. Ende bezeichnet den Abschluss dieses Jobs, nicht das Löschen seiner Task. Kontextwechselkosten sind hier ausdrücklich null gesetzt. Das reale System hätte zusätzliche Kosten oder bereits darin enthaltene Intervalle. Die Darstellung ermöglicht deshalb eine genaue Modellrechnung, behauptet aber keine gemessene Umschaltzeit des STM32. Auf der nächsten Folie werden dieselben Kanten zu drei verschiedenen Größen zusammengesetzt.
+A wird bei zwei Millisekunden bereit und beginnt bei drei. Von drei bis fünf arbeitet A zwei Millisekunden. Von fünf bis sieben erledigt der Prozessor fremde Arbeit; A bleibt bereit und wird verdrängt. Von sieben bis zehn arbeitet A weitere drei Millisekunden und ist danach fertig. Ende bezeichnet den Abschluss dieses Jobs, nicht das Löschen seiner Task. Kontextwechselkosten sind hier null gesetzt. Das reale System hätte zusätzliche Kosten oder bereits darin enthaltene Intervalle. Der Zustand Ready allein ist keine eigene Prozessorarbeit. Auf der nächsten Folie werden dieselben Kanten zu drei verschiedenen Größen zusammengesetzt.
 :::
 
 ## Drei Größen aus derselben Spur
 
-Lehrspur: $r=1$, $s=2$, $f=7$, $d=8$ ms.
+Lehrspur: $r=2$, $s=3$, $f=10$, $d=11$ ms.
 
-$$C_{eigene}=(4-2)+(7-6)=3\,\mathrm{ms}$$
+$$C_{eigene}=(5-3)+(10-7)=5\,\mathrm{ms}$$
 
-$$R=7-1=6\,\mathrm{ms},\quad\text{Slack}=8-7=1\,\mathrm{ms}$$
+$$R=10-2=8\,\mathrm{ms},\quad\text{Slack}=11-10=1\,\mathrm{ms}$$
 
-Anfangswarten 1 + Verdrängung 2 + eigene Arbeit 3 = Antwortzeit 6 ms.
+Anfangswarten 1 + Verdrängung 2 + eigene Arbeit 5 = Antwortzeit 8 ms.
 
 ::: notes
-C eigene bezeichnet die dem Modelljob zugeordnete Prozessorarbeit, nicht bereits eine allgemeine Worst-Case-Schranke. r ist Freigabe, s erster Start, f Abschluss und d die absolute Deadline. R ist die Antwortzeit, Slack das verbleibende Abschlussbudget. ms bedeutet Millisekunden. Alle Zahlen stammen aus der synthetischen Spur der vorherigen Folie; Kontextwechselkosten sind dort null.
+C eigene bezeichnet die dem Modelljob zugeordnete Prozessorarbeit, keine allgemeine Worst-Case-Schranke. r ist Freigabe, s erster Start, f Abschluss und d die absolute Deadline. R ist Antwortzeit, Slack das verbleibende Abschlussbudget. ms bedeutet Millisekunden. Die relative Deadline beträgt hier D gleich neun Millisekunden, weil elf minus zwei gleich neun ist. Alle Zahlen stammen aus der synthetischen Spur der vorherigen Folie; Kontextwechselkosten sind dort null.
 
-Die eigene Arbeit liegt in zwei disjunkten Running-Abschnitten: vier minus zwei gleich zwei und sieben minus sechs gleich eins. Zusammen sind das drei Millisekunden. Die Antwortzeit beginnt bereits bei Freigabe eins und endet bei sieben, also sechs Millisekunden. Bis zur Deadline acht bleibt eine Millisekunde. Zur Kontrolle erhält man dieselben sechs aus einer Millisekunde Anfangswarten, zwei Millisekunden Verdrängung und drei Millisekunden Arbeit. Fremde Prozessorarbeit gehört nicht zur eigenen Arbeit von A. Der gemessene Funktionsabstand von zwei bis sieben wäre nochmals eine andere Größe und enthielte Verdrängung. Papieraufgabe 2 prüft genau diese Abgrenzung.
+Die eigene Arbeit liegt in zwei getrennten Running-Abschnitten: fünf minus drei gleich zwei und zehn minus sieben gleich drei. Zusammen sind das fünf Millisekunden. Die Antwortzeit beginnt bei Freigabe zwei und endet bei zehn, also acht Millisekunden. Bis zur Deadline elf bleibt eine Millisekunde. Zur Kontrolle erhält man dieselben acht aus einer Millisekunde Anfangswarten, zwei Millisekunden Verdrängung und fünf Millisekunden Arbeit. Das gesamte Nichtlaufen innerhalb der Antwortzeit beträgt damit drei Millisekunden.
+
+Fremde Prozessorarbeit gehört nicht zur eigenen Arbeit von A. Der Funktionsabstand vom ersten Start drei bis Abschluss zehn wäre sieben Millisekunden und enthielte die zweimillisekündige Verdrängung. Er wäre zugleich kürzer als die Antwortzeit, weil das Anfangswarten fehlt. Der Begriff Laufzeit ohne weitere Grenze wäre deshalb mehrdeutig. Diese Unterscheidung ist entscheidend, bevor Messergebnisse für einen Fristvergleich verwendet werden.
 :::
 
 ## Eine Lücke darf nicht als laufende Zeit zählen
 
 | Aufzeichnung | Zulässige Aussage |
 |---|---|
-| A läuft 2–4 und 6–7 ms, vollständig | 3 ms eigene Arbeit |
-| Abschnitt 4–6 ms fehlt | dort ist die Zuordnung unbekannt |
+| A läuft 3–5 und 7–10 ms, vollständig | 5 ms eigene Arbeit |
+| Abschnitt 5–7 ms fehlt | dort ist die Zuordnung unbekannt |
 | Freigabe fehlt | Antwortzeit nicht vollständig bestimmbar |
 | neuer Abschnitt nach bestätigter Sync | getrennt auswertbar |
 
@@ -304,7 +308,7 @@ Eine Gerade über eine Lücke wäre eine erfundene Historie.
 ::: notes
 Sync steht für Synchronisation der Traceaufnahme und ihrer Dekodierung. Eine Traceaufnahme ist eine geordnete Ereignishistorie einer ausgewählten Quelle. Die Zuordnung eines Intervalls zu Task A setzt gültige Grenzen und den Ausführungskontext voraus. ms sind Millisekunden. Die Tabelle verwendet die vorherige Lehrspur, verändert aber ihre Vollständigkeit.
 
-Wenn beide Running-Abschnitte vollständig bekannt sind, beträgt die eigene Arbeit drei Millisekunden. Fehlt dagegen ein Abschnitt, weiß man dort nicht, welche Aufgabe oder Exception lief. Eine grafisch durchgezogene Linie ersetzt dieses Wissen nicht. Fehlt die Freigabe, kann man eventuell einen Funktionsabstand bestimmen, aber keine vollständige Jobantwortzeit ab r. Nach bestätigter neuer Synchronisation und Kontextzuordnung kann ein späterer Abschnitt separat gültig sein. Man muss nicht zwangsläufig jede spätere Aufnahme verwerfen. Die Lücke selbst bleibt dennoch unbekannt und wird aus Summen über vollständige Jobs ausgeschlossen. Diese Regel ist unabhängig davon, ob der Verlust im Zielpuffer, im Transport oder bei der Dekodierung entstanden ist.
+Wenn beide Running-Abschnitte vollständig bekannt sind, beträgt die eigene Arbeit fünf Millisekunden. Fehlt dagegen ein Abschnitt, weiß man dort nicht, welche Aufgabe oder Exception lief. Eine grafisch durchgezogene Linie ersetzt dieses Wissen nicht. Fehlt die Freigabe, kann man eventuell einen Funktionsabstand bestimmen, aber keine vollständige Jobantwortzeit ab der Freigabemarke r. Nach bestätigter neuer Synchronisation und Kontextzuordnung kann ein späterer Abschnitt separat gültig sein. Man muss nicht zwangsläufig jede spätere Aufnahme verwerfen. Die Lücke selbst bleibt dennoch unbekannt und darf nicht mit angenommener Taskarbeit in eine Summe eigener Ausführungsabschnitte eingehen. Sind Freigabe und Abschluss desselben Jobs mit verlässlichen Zeitmarken und durchgehender Zeitbasis erhalten, bleibt ihre Differenz als Antwortzeit trotz fehlender Zwischenereignisse berechenbar. Die eigene Prozessorarbeit lässt sich daraus weiterhin nicht rekonstruieren. Diese Regel ist unabhängig davon, ob der Verlust im Zielpuffer, im Transport oder bei der Dekodierung entstanden ist.
 :::
 
 ## Flanke, ISR und Veröffentlichung sind verschiedene Marken
@@ -400,18 +404,18 @@ Lehrbeispiel:
 
 ```c
 uint32_t before = 0xFFFFFFF0u;
-uint32_t after  = 0x00000030u;
-uint32_t delta  = after - before; /* 64 modulo 2^32 */
+uint32_t after  = 0x00000050u;
+uint32_t delta  = after - before; /* 96 modulo 2^32 */
 ```
 
-$$T_{Umlauf}=\frac{2^{32}}{400\cdot10^6}\,\mathrm{s}\approx10{,}7374\,\mathrm{s}$$
+$$T_{Umlauf}=\frac{2^{32}}{240\cdot10^6}\,\mathrm{s}\approx17{,}8957\,\mathrm{s}$$
 
 Die Zeitumrechnung gilt nur für ein Intervall kürzer als einen Umlauf.
 
 ::: notes
-uint32_t ist ein vorzeichenloser 32-Bit-C-Typ. before und after sind zwei Stände desselben lokalen Zählers; delta ist ihre Differenz. Vorzeichenlose Rechnung erfolgt modulo zwei hoch zweiunddreißig. Die Startmarke liegt sechzehn Takte vor dem Zahlenende, die Endmarke achtundvierzig danach. Die Differenz ist deshalb vierundsechzig, obwohl der zweite Zahlenwert kleiner aussieht.
+uint32_t ist ein vorzeichenloser 32-Bit-C-Typ. before und after sind zwei Stände desselben lokalen Zählers; delta ist ihre Differenz. Vorzeichenlose Rechnung erfolgt modulo zwei hoch zweiunddreißig. Bis zum nächsten Umlauf fehlen ab der Startmarke sechzehn Takte; die Endmarke liegt achtzig Takte nach diesem Umlauf. Die Differenz ist deshalb sechsundneunzig, obwohl der zweite Zahlenwert kleiner aussieht.
 
-T Umlauf ist die Zeit einer vollständigen Zählerperiode. Zwei hoch zweiunddreißig sind 4294967296 Takte. Bei der hypothetischen stabilen Frequenz von vierhundert Millionen Takten je Sekunde sind das etwa 10,73741824 Sekunden. Die vierundsechzig Takte entsprechen dann 0,16 Mikrosekunden. Die Differenz allein kann nicht erkennen, ob zusätzlich ein vollständiger Umlauf oder mehrere vergangen sind. Ein längeres unbekanntes Intervall hat denselben Restwert. Das Programm muss daher eine bekannte kürzere Beobachtungsdauer und fortlaufende Zeitbasis voraussetzen. Bei Debughalt, Sleep oder Taktwechsel entfällt diese einfache Zeitdeutung. Die Referenz benennt das Feld ausdrücklich als Modulo-Differenz.
+T Umlauf ist die Zeit einer vollständigen Zählerperiode. Zwei hoch zweiunddreißig sind 4294967296 Takte. Bei der hypothetischen stabilen Frequenz von zweihundertvierzig Millionen Takten je Sekunde sind das etwa 17,89569707 Sekunden. Die sechsundneunzig Takte entsprechen dann 0,4 Mikrosekunden. Die Differenz allein kann nicht erkennen, ob zusätzlich ein vollständiger Umlauf oder mehrere vergangen sind. Ein längeres unbekanntes Intervall hat denselben Restwert. Das Programm muss daher eine bekannte kürzere Beobachtungsdauer und fortlaufende Zeitbasis voraussetzen. Bei Debughalt, Sleep oder Taktwechsel entfällt diese einfache Zeitdeutung. Die Referenz benennt das Feld ausdrücklich als Modulo-Differenz.
 :::
 
 ## CYCCNT zählt ein Intervall, nicht nur die Funktion
@@ -428,20 +432,22 @@ DWT bedeutet Data Watchpoint and Trace. CYCCNT bedeutet Cycle Count, Zykluszähl
 Angenommen, eine Funktion beginnt vor einem Interrupt und kehrt erst nach dessen Behandler zurück. Wenn der Zähler währenddessen läuft, liegt die Behandlerzeit zwischen beiden Lesungen. Auf einem Kernelkern kann außerdem eine andere Task innerhalb des Fensters ausgeführt werden. Die Zählerdifferenz ist dann keine reine Funktions-CPU-Zeit. Für diese Größe müssen gültige Running-Abschnitte der richtigen Task zusammengezählt und Exceptions getrennt zugeordnet werden. Im Labor läuft das Zählermodul auf dem Bare-Metal-M7, aber auch dort können Interrupts das Fenster verlängern. Der M4 kann zusätzlich gemeinsame Ressourcen belasten. Die Auswertung nennt deshalb Messfenster, Last und Bedingungen. Sie deaktiviert nicht ungeprüft Interrupts, um aus einer anderen Ausführung scheinbar die ursprüngliche Zeit zu machen.
 :::
 
-## Den Zähler aktivieren und seinen Lauf prüfen
+## Den Zähler einmal initialisieren und seinen Lauf prüfen
 
 CM7-Referenz: `Lab07_Init(SystemCoreClock)`.
 
-- tatsächliche Kernfrequenz zuerst bestätigen und aktualisieren
-- TRCENA und CYCCNTENA setzen, Unterstützung prüfen
-- M7-Softwarelock bei Bedarf lösen
-- zwei Lesungen mit begrenzter NOP-Probe vergleichen
-- Zähler nicht auf null setzen; Zuständigkeit mit Debugger klären
+- tatsächliche Kernfrequenz bestätigen und aktualisieren
+- vorhandene Initialisierung des Zählers verwenden
+- zwei Lesungen mit kurzer bekannter Zwischenarbeit vergleichen
+- bei fehlendem Fortschritt abbrechen
+- Zähler nicht während der Messreihe zurücksetzen
 
 ::: notes
-CM7 bezeichnet das Cortex-M7-Ziel. SystemCoreClock ist die CMSIS-Variable für dessen aktuelle Kernfrequenz; CMSIS bedeutet Common Microcontroller Software Interface Standard. TRCENA ist das Trace-Enable-Bit im Debugsteuerregister, CYCCNTENA das Enable-Bit des DWT-Zykluszählers. DWT bedeutet Data Watchpoint and Trace. NOP bedeutet No Operation, ein Befehl ohne eigene Anwendungswirkung.
+CM7 bezeichnet das Cortex-M7-Ziel. SystemCoreClock ist die Variable der Common Microcontroller Software Interface Standard-Schnittstelle, kurz CMSIS, für die aktuelle Kernfrequenz. Die vorhandene Funktion Lab07_Init initialisiert den lokalen Zykluszähler. Das Ziel dieser Folie ist die Startprüfung; die Registerbelegung wird nicht als auswendig zu lernende Werkzeugschulung behandelt.
 
-Die vollständige Funktion Lab07_Init prüft einen von null verschiedenen Frequenzwert und seine Übereinstimmung mit der aktualisierten Variable. Sie aktiviert den vorgesehenen Zählerpfad, behandelt den Cortex-M7-Softwarelock und prüft, ob der Zykluszähler vorhanden ist. Anschließend liegen 128 NOP-Befehle zwischen zwei Lesungen. Gleiche Werte melden einen nicht fortschreitenden Zähler. Das ist eine Startprüfung, kein dauernder Beweis störungsfreien Zählerlaufs. Die Referenz setzt CYCCNT nicht zurück und verändert keine Tracekomparatoren. Ein gleichzeitig angeschlossenes Werkzeug muss dieselbe Zählerzuständigkeit respektieren. Die lokalen CMSIS-Header und die reale Clock-Konfiguration bleiben verbindlich. Ein numerisch passendes SystemCoreClock allein beweist noch nicht jeden tatsächlichen Hardwareteiler.
+Die vollständige Referenz prüft einen von null verschiedenen Frequenzwert und seine Übereinstimmung mit der aktualisierten Variable. Sie aktiviert den vorgesehenen Zähler, prüft seine Unterstützung und vergleicht zwei Lesungen mit 128 NOP-Befehlen dazwischen. NOP bedeutet No Operation, ein Befehl ohne eigene Anwendungswirkung. Gleiche Werte melden fehlenden Fortschritt. Das ist eine Startprüfung, kein dauernder Beweis störungsfreien Zählerlaufs.
+
+Die Routine setzt den Zählstand nicht auf null. Ein angeschlossenes Debugwerkzeug darf ihn während der Aufnahme ebenfalls nicht zurücksetzen oder anders konfigurieren. Die tatsächliche Taktkonfiguration wird am vorbereiteten Projekt geprüft; eine numerisch passende Frequenzvariable allein beweist nicht jeden Hardwareteiler. Schlägt die Startprüfung fehl, wird die technische Ursache geklärt. Null Takte werden nicht als besonders schnelle Arbeit ausgegeben. Nach erfolgreicher Prüfung bleibt die leere Messanordnung selbst als Einfluss zu untersuchen.
 :::
 
 ## Eine leere Messung hat ebenfalls Kosten
@@ -457,7 +463,7 @@ Leeres und Arbeitsfenster benutzen dieselben Marken.
 ::: notes
 Eine Barriere ist ein Prozessorbefehl zur Ordnung oder Vervollständigung bestimmter Zugriffe. WCET bedeutet Worst-Case Execution Time, begründete obere Ausführungszeitschranke unter festgelegten Annahmen. Ein Leerfenster enthält dieselben Zeitmarken und Barrieren wie das Arbeitsfenster, jedoch nicht die synthetische Arbeit dazwischen.
 
-Auch Zählerlesen, Barrieren und der Kontrollpfad benötigen Arbeit. Die Pflichtübung zeichnet daher sieben Leerfenster und sieben Arbeitsfenster auf. Unterschiedliche Resultate können aus Interrupts, Pipeline- und Cachezuständen sowie weiteren Bedingungen entstehen. Man berichtet die beiden Gruppen separat mit ihrer Anzahl und ihren Extremwerten. Leerwertsubtraktion kann unter kontrollierten Bedingungen eine Abschätzung des Instrumentierungsanteils unterstützen. Sie entfernt jedoch nicht automatisch wechselnde Störungen oder macht aus dem Ergebnis reine Jobarbeit. Die leere und die arbeitende Variante können beispielsweise verschiedene Speicherzustände besitzen. Das Modul benutzt deshalb keine eingebauten Mikrosekunden-Sollwerte und keine automatische Bereinigung. Die einfache Stichprobe der folgenden Folie zeigt, welche Zahlen man aus beobachteten Werten tatsächlich ableiten darf.
+Auch Zählerlesen, Barrieren und der Kontrollpfad benötigen Arbeit. Die unveränderte Referenz zeichnet daher sieben Leerfenster und sieben Arbeitsfenster auf; die eigene Programmieraufgabe konfiguriert fünf je Art. Unterschiedliche Resultate können aus Interrupts, Pipeline- und Cachezuständen sowie weiteren Bedingungen entstehen. Man berichtet die beiden Gruppen separat mit ihrer Anzahl und ihren Extremwerten. Leerwertsubtraktion kann unter kontrollierten Bedingungen eine Abschätzung des Instrumentierungsanteils unterstützen. Sie entfernt jedoch nicht automatisch wechselnde Störungen oder macht aus dem Ergebnis reine Jobarbeit. Die leere und die arbeitende Variante können beispielsweise verschiedene Speicherzustände besitzen. Das Modul benutzt deshalb keine eingebauten Mikrosekunden-Sollwerte und keine automatische Bereinigung. Die einfache Stichprobe der folgenden Folie zeigt, welche Zahlen man aus beobachteten Werten tatsächlich ableiten darf.
 :::
 
 ## Eine Stichprobe liefert ein beobachtetes Maximum
@@ -477,60 +483,151 @@ t min ist das Minimum der Stichprobe, t max beob das größte beobachtete Interv
 WCET bedeutet Worst-Case Execution Time, eine obere Schranke für alle zulässigen Ausführungen unter benannten Annahmen. Die vier Beobachtungen schließen ungetestete Eingaben, Pfade, Speicherzustände oder Lastfälle nicht ein. Auch ein größerer Stichprobenumfang ersetzt diese Begründung nicht automatisch. C i ist der konservative eigene Ausführungsbedarf einer Aufgabe aus den Schedulingmodellen der früheren Vorlesungen. Ein beobachtetes Funktionsintervall mit Unterbrechungen und unbekannten Pfaden wird nicht ungeprüft als diese Größe eingesetzt. Gültige Beobachtungen müssen außerdem vollständige Grenzen und eine passende Zeitbasis haben. Datenqualität ist damit Teil der Rechnung, nicht nur ein nachträglicher Kommentar zum Diagramm.
 :::
 
-## CoreSight ordnet Quellen und Zugriffswege
+## Welche zulässigen Fälle fehlen in der Stichprobe?
 
-Architekturmodell; tatsächliche Verbindung am Chip und Board prüfen.
+Lehrfall: Ein Algorithmus verarbeitet Listen mit 1 bis 100 Elementen.
 
-```{mermaid}
-%%| fig-width: 5.4
-%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TD
-  SW[Softwaremarker] --> ITM[ITM]
-  CPU[Kernereignisse] --> DWT[DWT]
-  CF[Kontrollfluss] --> ETM[ETM]
-  ITM --> P[Tracepfad]
-  DWT --> P
-  ETM --> P
-  P --> R[Ausgang oder Speicher]
-  DAP[Debugzugriff] --> BUS[Speicherweg]
-  style P fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+| Versuchsstand | Nachgewiesen |
+|---|---|
+| vier Läufe mit je einem Element | diese vier konkreten Abläufe |
+| alle Listenlängen einmal | weitere konkrete Abläufe |
+| größter beobachteter Wert | Maximum der gültigen Stichprobe |
+
+Datenabhängige Pfade, Speicherzustände und Konkurrenz bleiben zu begründen.
+
+::: notes
+Die vorherige Folie liefert ein Maximum aus vier Beobachtungen. Hier wird geprüft, was dieses Maximum über zulässige Eingaben aussagt. Ein Algorithmus ist eine festgelegte Verarbeitungsvorschrift. Ein datenabhängiger Pfad ist eine Folge ausgeführter Programmschritte, die von den Eingabewerten abhängt. Die Listenlängen eins bis hundert sind ausdrücklich eine didaktische Anforderung, keine Beschreibung des Labormoduls.
+
+Vier kurze Listen testen keine lange Liste. Selbst je ein Lauf für jede Länge deckt nicht automatisch alle Werte und Pfade ab: Eine Suche kann beim ersten Element abbrechen oder erst nach dem letzten erfolglos enden. Eine Sortierung kann je nach Reihenfolge unterschiedliche Arbeit auslösen. Dazu kommen unterschiedliche Speicherzustände und konkurrierende Prozessor- oder Buszugriffe. Hundert getestete Längen sind deshalb eine bessere Beschreibung der Stichprobe, aber noch kein Vollständigkeitsbeweis.
+
+WCET bedeutet Worst-Case Execution Time, begründete obere Schranke der eigenen Ausführungszeit. Für diese Aussage müssen der zulässige Zustandsraum und die Methode zur sicheren Begrenzung feststehen. Messungen können dabei Hinweise und überprüfbare Gegenbeispiele liefern. Ein neuer gültiger längerer Lauf widerlegt eine zu kleine behauptete Schranke unmittelbar. Dass bisher kein solcher Lauf gefunden wurde, beweist ihre Allgemeingültigkeit nicht. Der nächste Schritt ist ein gezielter Versuchsplan, der die Aussagekraft der Beobachtungen verbessert und ihre Grenzen offenhält.
+:::
+
+## Ein Versuchsplan macht Ergebnisse vergleichbar
+
+Vor dem Lauf festlegen:
+
+1. welche Eingaben und Betriebszustände verglichen werden
+2. welcher Build, Takt und Messvertrag gelten
+3. wie viele gültige Wiederholungen pro Fall entstehen
+4. wie Fehler und fehlende Datensätze behandelt werden
+5. welche Aussage am Ende zulässig ist
+
+Beobachtung, Modellannahme und Nachweis getrennt protokollieren.
+
+::: notes
+Ein Versuchsplan ist eine vorab festgehaltene Auswahl von Fällen und Auswertungsregeln. Ein Build ist ein bestimmter übersetzter Programmstand einschließlich seiner Optimierung. Ein Betriebszustand beschreibt hier beispielsweise Hintergrundlast oder vorangegangene Speicherzugriffe. Das Ziel ist Vergleichbarkeit: Wer gleichzeitig Eingabe, Takt und Messgrenzen ändert, kann einen Unterschied nicht eindeutig einer Ursache zuordnen.
+
+Für einen einfachen Vergleich wird dieselbe Arbeit mit derselben Übersetzung und denselben Marken mehrfach durchgeführt. Danach wird genau eine weitere Bedingung verändert und wiederholt. Die Reihenfolge wird dokumentiert, weil ein früherer Durchlauf einen Cache, also lokalen Zwischenspeicher, beeinflussen kann. Ein fehlgeschlagener Start oder unvollständiger Datensatz zählt nicht als gültige schnelle Beobachtung. Umgekehrt wird ein langer gültiger Wert nicht allein deshalb verworfen, weil er unbequem erscheint; ein Interrupt innerhalb des vereinbarten Fensters kann gerade zum realen Verhalten gehören.
+
+Der Bericht trennt die tatsächlich beobachteten Rohdaten von Annahmen wie konstantem Takt und von Aussagen über Fristen. Eine Wiederholungszahl ist keine magische Sicherheitsschwelle. Die geplante Aussage kann bewusst klein bleiben: Unter den genannten Bedingungen lagen sieben gültige Arbeitsfenster in einem beobachteten Bereich. Das ist nützlicher als eine unbegründete allgemeine Garantie.
+:::
+
+## Der Mittelwert schützt keine einzelne Deadline
+
+Synthetische Antwortzeiten: 4, 4, 4 und 12 ms; relative Deadline 8 ms.
+
+$$\bar R=\frac{4+4+4+12}{4}=6\,\mathrm{ms}$$
+
+$$R_{max,beob}=12\,\mathrm{ms}>D=8\,\mathrm{ms}$$
+
+Drei Abschlüsse sind rechtzeitig, einer verletzt die Frist.
+
+::: notes
+R bezeichnet Antwortzeit von Freigabe bis gefordertem Abschluss; R quer ist ihr arithmetischer Mittelwert. D ist die relative Deadline, also die erlaubte Dauer ab Freigabe. ms sind Millisekunden. Die vier Zahlen sind synthetische vollständige Antwortzeiten mit demselben Messvertrag. Der Fall setzt also voraus, dass die Freigabe in jedem Datensatz enthalten ist.
+
+Vier plus vier plus vier plus zwölf sind vierundzwanzig Millisekunden. Geteilt durch vier Beobachtungen ergibt das sechs Millisekunden. Sechs ist kleiner als acht, der Mittelwert liegt somit unter der Frist. Dennoch dauert der vierte Job zwölf Millisekunden und überschreitet seine erlaubten acht um vier Millisekunden. Drei von vier beobachteten Jobs sind rechtzeitig; daraus ergibt sich für diese kleine Stichprobe ein Anteil von 75 Prozent. Dieser Anteil ist keine garantierte Ausfallwahrscheinlichkeit zukünftiger Jobs.
+
+Eine harte Echtzeitanforderung betrifft jeden zulässigen Job und benötigt eine passende obere Begrenzung. Der Mittelwert kann Durchsatz oder typisches Verhalten beschreiben, ersetzt aber diesen Nachweis nicht. Auch das beobachtete Maximum zwölf ist noch keine allgemeine Worst-Case-Schranke; es reicht hier bereits als konkretes Gegenbeispiel zur Behauptung, alle vier beobachteten Jobs hätten die Frist gehalten. Für eine brauchbare Bewertung müssen deshalb Kennzahl und Anforderung zusammenpassen.
+:::
+
+## Die Anforderung bestimmt Anfang und Ende
+
+Lehrfall mit gemeinsamer Uhr, alle Zeiten in ms:
+
+| Ereignis | Marke |
+|---|---:|
+| Anfrage freigegeben | 20 |
+| Verarbeitung beginnt | 22 |
+| Ergebnis berechnet | 25 |
+| geforderter Ausgang aktualisiert | 27 |
+
+Gefordert: Ausgang innerhalb von 6 ms ab Anfrage.
+
+$$R=27-20=7\,\mathrm{ms}>6\,\mathrm{ms}$$
+
+::: notes
+Die vorherige Folie verglich vollständige Antwortzeiten mit einer Frist. Hier zeigt ein weiteres synthetisches Beispiel, warum Anfang und Ende zuerst feststehen müssen. Eine Anfrage ist die konkrete Freigabe eines Jobs. Die Anforderung nennt als Abschluss die Aktualisierung eines Ausgangs, beispielsweise einer vorgesehenen Anzeige. Alle Ereignisse liegen in derselben Modelluhr, ms bedeutet Millisekunden. Es werden keine physischen Verzögerungen eines realen Boards behauptet.
+
+Von Verarbeitungsbeginn zweiundzwanzig bis berechnetem Ergebnis fünfundzwanzig vergehen drei Millisekunden. Diese Zahl beschreibt das ausgewählte Verarbeitungsintervall; ohne Ausführungszuordnung ist sie nicht automatisch reine eigene Prozessorarbeit. Vom Anfragezeitpunkt zwanzig bis zum berechneten Ergebnis vergehen fünf Millisekunden. Auch fünf ist nicht die geforderte Antwortzeit, weil die Ausgangsaktualisierung noch fehlt. Erst siebenundzwanzig minus zwanzig ergibt sieben Millisekunden für die benannte Anforderung.
+
+Die absolute Deadline liegt bei zwanzig plus sechs gleich sechsundzwanzig. Der Ausgang kommt bei siebenundzwanzig und damit eine Millisekunde zu spät. Ein Bericht nur über die dreimillisekündige Funktion würde eine andere, engere Frage beantworten. Die richtige Messgrenze muss zur Anforderung passen, bevor eine schnelle Zahl als Erfolg interpretiert wird. Diese Regel gilt später ebenso für Serververfahren und die integrierte Fallstudie.
+:::
+
+## Ein Messbericht lässt sich nachrechnen
+
+| Bestandteil | Inhalt |
+|---|---|
+| Frage | welches Intervall, welche Anforderung? |
+| Bedingungen | Build, Eingaben, Takt, Last, Messgrenzen |
+| Rohdaten | vollständige Marken, Einheiten, Verluste |
+| Auswertung | gültige Anzahl, Min/Max, nachvollziehbare Rechnung |
+| Aussage | beobachteter Bereich und begründete Grenzen |
+
+„18 µs“ allein ist kein vollständiges Ergebnis.
+
+::: notes
+Ein Messbericht verbindet die Zahlen mit ihrer Herkunft. Min und Max bedeuten Minimum und Maximum der gültigen Stichprobe; sie werden nicht über fehlende oder ungültige Datensätze gebildet. µs sind Mikrosekunden. Ein Build bezeichnet den tatsächlich übersetzten Programmstand. Zur Last gehören die anderen Aktivitäten, die während des Fensters den Ablauf beeinflussen können.
+
+Die Frage benennt Anfang und Ende. Die Bedingungen beschreiben, wann die Zeitskalierung und der Zählerlauf gelten. Rohdaten ermöglichen es einer anderen Person, die Rechnung unabhängig nachzuvollziehen. Wenn ein Zählstand vor und nach einem Fenster gespeichert wird, lässt sich die Modulo-Differenz erneut berechnen. Bei bereits gespeicherter Differenz wird deren Vertrag dokumentiert. Ein Verlustzähler oder eine Sequenzlücke gehört zum Ergebnis und wird nicht stillschweigend entfernt.
+
+Die Auswertung nennt zunächst die gültige Anzahl und getrennte Gruppen. Ein Leerfenster ist keine Arbeitsbeobachtung und wird nicht mit deren Minimum vermischt. Die Schlussfolgerung bleibt an ihren Nachweis gebunden: ein beobachteter Bereich unter diesen Bedingungen, ein konkreter Fristverstoß oder eine ausdrücklich anders begründete Schranke. So kann das Labor auch ohne spektakuläres Tracebild ein fachlich starkes Ergebnis liefern. Die folgenden Folien betrachten nur die Quellen und Datenregeln, die dafür wirklich gebraucht werden.
+:::
+
+## Tracequellen liefern verschiedene Informationen
+
+| Quelle / Weg | Was erfasst oder gelesen wird |
+|---|---|
+| lokaler DWT-Zähler | Kerntakte zwischen eigenen Lesungen |
+| Softwarelog / ITM-Marker | ausdrücklich markierte Ereignisse |
+| ETM mit passendem Maschinenbild | rekonstruierbarer Kontrollfluss |
+| Debuggerfenster | momentane Sicht über seinen Zugriffsweg |
+
+CoreSight bündelt Arm-Debug- und Tracebausteine.
+
+BlueBox / winIDEA sind ein zusätzlicher geräteabhängiger Aufnahmeweg.
+
+::: notes
+CoreSight ist die Debug- und Tracearchitektur von Arm. DWT bedeutet Data Watchpoint and Trace; hier verwenden wir daraus den lokalen Zykluszähler. ITM bedeutet Instrumentation Trace Macrocell und kann unter anderem Softwaremarkierungen transportieren. ETM bedeutet Embedded Trace Macrocell und liefert Informationen zur Rekonstruktion des Maschinenkontrollflusses. Ein Maschinenbild ist das tatsächlich übersetzte Programm. Die Tabelle ist eine Orientierung zur Aussagekraft und keine vollständige Hardwarebeschreibung.
+
+Ein Softwaremarker wird vom Programm ausgeführt und kostet Arbeit. Ein Kontrollfluss-Trace benötigt den passenden Programmstand und belegt nicht automatisch jeden Datenwert oder die Zeit jeder einzelnen Instruktion. Ein Debuggerfenster liefert wiederum keine beliebige Vergangenheit. Bei gemeinsamem Speicher beweist ein aufgezeichneter Schreibzugriff des Cortex-M7 noch nicht, welchen Wert der Cortex-M4 bereits lesen konnte; Sichtbarkeit bleibt der Vertrag aus Vorlesung 6.
+
+BlueBox bezeichnet eine Familie externer Aufnahmegeräte, winIDEA die zugehörige Analyseumgebung. Konkrete Quellen, Verbindungen, Zeitbasis und Verlustanzeigen hängen vom Gerät und der Konfiguration ab. Eine Debugverbindung allein beweist keinen vollständigen Trace. Der Pflichtversuch benötigt diese zusätzlichen Geräte nicht. Für die folgenden Überlegungen genügt ein begrenztes privates Ereignislog mit einem klaren Datenvertrag; Bedienmenüs und gerätespezifische Anschlussdetails sind keine zusätzlichen Lernziele.
+:::
+
+## Eine Zeitmarke braucht eine eindeutige Bedeutung
+
+Lehrschema eines Anwendungslogs:
+
+```c
+struct Event {
+  uint32_t sequence;
+  uint32_t request_id;
+  uint32_t event_kind;
+  uint32_t cycles;
+};
 ```
 
-::: notes
-CoreSight ist die Debug- und Tracearchitektur von Arm. ITM bedeutet Instrumentation Trace Macrocell, DWT Data Watchpoint and Trace und ETM Embedded Trace Macrocell. DAP bedeutet Debug Access Port, Debugzugangsport. Die Abbildung wird von oben nach unten gelesen. Softwaremarker, Kernereignisse und Kontrollfluss haben verschiedene Quellen. Ihre Pfeile führen zu einem konzeptionellen Tracepfad und anschließend einem Ausgang oder Speicher. Rot markiert diesen gemeinsamen Rollenbereich. Der separate DAP-Pfeil bezeichnet einen Debugzugriff, keine Historie.
+Beispiel: Anfrage 42 · `RELEASE` oder `DONE` · gleicher lokaler Zähler.
 
-Das Diagramm ist keine vollständige Verdrahtung des STM32H755. Welche Quelle über welchen Pfad transportiert wird, steht im passenden Referenzhandbuch und in der konkreten Konfiguration. DWT-Komparatoren beobachten nicht automatisch DMA, Direct Memory Access oder Hardware-Speicherzugriff, und nicht den anderen Kern. Ein Debugfenster liest einen benannten Speicherweg, während ein Trace Ereignisse einer Quelle aufzeichnet. Hardwareereignisse können ohne zusätzliche Anwendungsmarker erfasst werden. Das macht aber Puffer, Zeitbasis und Verluste nicht bedeutungslos. Die nächste Folie trennt den Debugzugang vom physisch verfügbaren Traceausgang.
-:::
-
-## Debugzugang ist nicht gleich Traceausgang
-
-| Weg | Rolle |
-|---|---|
-| SWD / JTAG | Debugzugang zum Ziel |
-| SWO | serieller Traceausgang, wenn verbunden |
-| paralleler Trace | eigener bestätigter Pin- und Aufnahmeweg |
-| interner Tracepuffer | begrenzte Speicherung auf dem Chip |
-
-Dual-Core-Debug bestätigt nicht automatisch gleichzeitigen Dual-Core-Trace.
+Der Aufruf und sein Speicherzugriff erzeugen selbst Aufwand.
 
 ::: notes
-SWD bedeutet Serial Wire Debug, serieller Debugzugang. JTAG steht für Joint Test Action Group und bezeichnet hier das entsprechende Debugprotokoll. SWO bedeutet Serial Wire Output, serieller Traceausgang. Dual Core bezeichnet zwei Prozessorkerne. Ein Tracepuffer ist ein begrenzter Speicher aufgezeichneter Ereignisse.
+Der C-Ausschnitt ist ein Lehrschema für Anwendungsereignisse und keine zusätzliche Pflichtschnittstelle des vorhandenen Labormoduls. uint32_t bezeichnet einen vorzeichenlosen 32-Bit-Typ. Event ist ein Ereignisdatensatz. sequence ist die fortlaufende Datensatznummer, request_id die Kennung derselben Anfrage, event_kind ihre Ereignisart und cycles der lokale Zählstand. RELEASE steht für die vereinbarte Freigabe, DONE für den geforderten Abschluss. Die genaue Grenze muss beispielsweise vor oder nach der jeweiligen Programmaktion ausdrücklich festgelegt werden.
 
-Die Namen beschreiben verschiedene Wege. Eine erfolgreiche SWD-Verbindung beweist, dass man bestimmte Debugfunktionen erreicht. Sie beweist weder einen verbundenen SWO-Empfänger noch die Aufnahme jedes ETM-Kontrollflusses; ETM ist Embedded Trace Macrocell. Paralleler Trace braucht passende Pins, Pinmultiplexierung, Adapter und Recorder. Ein interner Puffer besitzt wiederum eine begrenzte Historie. Auch zwei debuggte Kerne liefern nicht automatisch zwei gleichzeitig korrelierte Tracequellen. Am NUCLEO-H755ZI-Q werden die tatsächliche Boardrevision, Steckerbelegung und der Schaltplan geprüft. Ein 20-poliger Paralleltraceanschluss wird nicht aus einem anderen Boardbild übernommen. Für das Zählerlabor ist dieser externe Tracepfad keine Voraussetzung. Die Quelle ITM zeigt nun, was eine Softwaremarke in einem bestätigten Pfad aussagen kann.
-:::
+Die Anfragekennung verhindert, dass der Abschluss eines älteren Jobs mit der Freigabe eines neueren verbunden wird. Die Sequenznummer hilft, fehlende Einträge zu erkennen; sie ist keine Zeitangabe. Für eine Differenz aus zwei cycles-Werten müssen weiterhin derselbe Zähler, konstanter Takt, fortlaufender Betrieb und eine Dauer unterhalb eines Umlaufs gelten. Gleiche Anfragekennungen allein synchronisieren keine zwei Kernuhren.
 
-## ITM: ein Softwaremarker ist zusätzliche Arbeit
-
-- Stimulusport nimmt geschriebene Daten entgegen
-- ITM formatiert keinen `printf`-Text
-- `ITM_SendChar` kann auf freien Platz warten
-- Nicht wartende Varianten brauchen eine Verlustregel
-- Die Ankunft am Host ist nicht automatisch die Ereigniszeit
-
-::: notes
-ITM bedeutet Instrumentation Trace Macrocell. Ein Stimulusport ist ein adressierter Eingang für Daten, die die Software schreibt. printf ist eine formatierende C-Ausgabefunktion; ITM übernimmt diese Formatierung nicht selbst. ITM_SendChar ist eine CMSIS-Hilfsfunktion, wobei CMSIS Common Microcontroller Software Interface Standard bedeutet. Der tatsächlich eingesehene Cortex-M7-Header kann auf Kapazität des Stimulusports warten.
-
-Ein Softwaremarker kostet Anwendungsbefehle und ist damit instrumentiert. Eine alternative nicht wartende Funktion kann höchstens einen Versuch machen und bei fehlendem Platz ein Ereignis verwerfen. Dann braucht man eine dokumentierte Verlustregel und einen sicheren Zählerbesitz. Die Softwaremarken sind nur ein Teil der ITM-Funktionen; der gesamte Baustein wird deshalb nicht pauschal mit reiner Softwareaufzeichnung gleichgesetzt. Die Hostankunft enthält Transport- und Pufferverzögerungen und ist nicht automatisch der ursprüngliche Ereigniszeitpunkt. Für Zeitrechnung braucht das Ereignis eine passende Zielzeitmarke oder einen bestätigten Hardware-Zeitbezug. Die Pflichtübung vermeidet diesen Transport im Messfenster und speichert begrenzte Datensätze privat.
+Der Funktionsaufruf zum Erfassen und das Schreiben in den Speicher sind zusätzliche Arbeit. Eine nicht wartende Aufzeichnung benötigt eine Kapazitätsregel, sobald kein Platz mehr vorhanden ist. Im Zählerlabor werden die Diagnosefelder erst nach der Endlesung geschrieben. Sie gehören dann nicht zum aktuellen Arbeitsfenster, können jedoch den Zustand vor dem nächsten Fenster verändern. Der Ort der Marke und der Ort der Speicherung sind deshalb beide Teil des Messvertrags.
 :::
 
 ## Ein begrenztes Log braucht eine Überlaufregel
@@ -551,82 +648,28 @@ Ein Log ist eine gespeicherte Ereignisnotiz, ein Drop ein verworfener Datensatz.
 Die ersten sechzehn erfolgreichen Angebote erhalten je einen freien Platz. Ist die Kapazität ausgeschöpft, wird der neue Datensatz nicht gespeichert und ein privater Verlustzähler erhöht. Das Verfahren wartet nicht auf Platz und überschreibt die frühere Historie nicht. Ein Zähler sagt aber noch nicht, welche konkreten Ereignisse fehlen. Ohne Sequenz oder anderen Bezug bleibt ein Teil des Verlaufs unbekannt. Mehrere Schreiber oder ein gleichzeitiger Leser bräuchten einen eigenen Synchronisationsvertrag. volatile allein schützt keine konkurrierende Zählererhöhung. Im Labor schreibt ausschließlich der M7-Hauptkontext; die Diagnose wird nach beendetem Logging mit passendem Debugzugriff ausgewertet. Die Speicher- und Schreibkosten liegen außerhalb des gemessenen Arbeitsfensters, verändern aber weiterhin die Bedingungen späterer Fenster.
 :::
 
-## DWT-Kernzugriff ist nicht die SRAM-Sicht des M4
+## Erst aufnehmen, danach auswerten
 
-Cache-Fehlerhypothese aus Vorlesung 6; kein garantiertes Boardresultat.
+Einfacher Vertrag: ein Schreiber, endliche Aufnahme, kein gleichzeitiges Leeren.
 
 ```{mermaid}
-%%| fig-width: 5.4
-%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
+%%{init: {'theme':'base','htmlLabels':false,'flowchart':{'htmlLabels':false},'themeVariables':{'background':'#FFFFFF','primaryColor':'#FFFFFF','primaryBorderColor':'#E5E5EA','primaryTextColor':'#1D1D1F','lineColor':'#86868B','fontFamily':'Inter, sans-serif'}}}%%
 flowchart TD
-  M7[M7 schreibt 1] --> DWT[DWT-Ereignis]
-  M7 --> C[Dirty-Cachekopie 1]
-  C -.-> S[SRAM kann 0 bleiben]
-  S --> M4[M4 liest SRAM]
-  style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  A[Arbeitsfenster mit Anfang und Ende] --> B[Privaten Datensatz speichern]
+  B --> C{Noch ein Fenster?}
+  C -->|ja| A
+  C -->|nein| D[Aufnahme beendet markieren]
+  D --> E[Gruppen prüfen und auswerten]
+  E --> F[Ergebnis auf Board-LED anzeigen]
+  style D fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
 ```
 
 ::: notes
-DWT bedeutet Data Watchpoint and Trace. SRAM ist Static Random Access Memory, Arbeitsspeicher. Dirty bedeutet eine lokal veränderte Cachezeile; Write Back beschreibt deren spätere Rückschreibung. M7 und M4 sind die beiden Cortex-Kerne. Die Abbildung wird von oben nach unten gelesen. Der linke Rollenpfeil zum DWT-Ereignis beschreibt einen konfigurierten Kernzugriff; der andere Weg führt zur lokalen Cachekopie. Die gestrichelte Verbindung kennzeichnet die noch nicht notwendigerweise erfolgte Sichtbarmachung im SRAM. Rot hebt die Dirty-Kopie hervor.
+Das Ablaufdiagramm beschreibt eine begrenzte Aufnahme im Hauptkontext des Cortex-M7. Ein privater Datensatz liegt außerhalb des gemeinsamen Speicherbereichs beider Kerne. Ein Schreiber bedeutet, dass weder eine zweite Task noch ein Interruptbehandler gleichzeitig Einträge erzeugt. Eine LED, Light Emitting Diode oder Leuchtdiode, dient nach Abschluss als einfache sichtbare Anzeige. Die Pfeile werden von oben nach unten gelesen; die Rückkante wiederholt nur die geplanten Fenster. Rot markiert den Übergang zur beendeten Aufnahme.
 
-Die Cachefehlerhypothese nimmt eine tatsächlich cachebare Write-Back-Region an. Ein aufgezeichneter M7-Store mit eins kann dann zusammen mit einem alten SRAM-Wert null auftreten. Das Ereignis beweist nicht den vom M4 gelesenen Wert. DWT ist kein allgemeiner Monitor sämtlicher Speicherwege oder DMA-Schreiber. Die gültige Basis aus Vorlesung 6 nutzt für den gemeinsamen Block andere Attribute. Für einen Filter werden Kern, tatsächliche Adresse, Feldbreite und Richtung geprüft. Bei payload gehört der Offset acht zum zwölf Byte großen gemeinsamen Typ; ein geratenes altes Symbol wäre eine andere Beobachtung.
-:::
+Anfangs- und Endlesung begrenzen die Arbeit. Erst danach wird ihr Datensatz gespeichert. Sind weitere Wiederholungen geplant, beginnt ein neues Fenster; andernfalls wird die Aufnahme beendet und die Auswertung aufgerufen. Die Auswertung liegt damit außerhalb aller aufgenommenen Fenster. Der Versuchsvertrag verzichtet bewusst auf gleichzeitiges Leeren. Ein laufender Verbraucher würde zusätzliche Synchronisation sowie einen Vertrag über Veröffentlichung und Wiederverwendung der Einträge verlangen.
 
-## ETM rekonstruiert Kontrollfluss mit dem Maschinenbild
-
-Schema, kein tatsächliches Tracepaketformat.
-
-```{mermaid}
-%%| fig-width: 5.4
-%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TD
-  P[Maschinenkontrollfluss] --> T[ETM-Ereignisse]
-  T --> D[Decoder mit passender ELF]
-  D --> G[Gültiger Abschnitt]
-  T --> L[Syncverlust: unbekannt]
-  L --> N[Neuer Abschnitt nach Sync]
-```
-
-::: notes
-ETM bedeutet Embedded Trace Macrocell und liefert komprimierte Informationen über den Kontrollfluss eines Kerns. ELF bedeutet Executable and Linkable Format, das Format des Maschinenbilds und weiterer Programminformationen. Ein Decoder rekonstruiert die Ausführung aus dem passenden Maschinenbild und dem Traceprotokoll. Sync bedeutet Synchronisation der Dekodierung.
-
-Das Diagramm wird von oben nach unten gelesen. Ereignisse einer Quelle führen mit der passenden ELF zu einem gültigen Abschnitt. Bei Synchronisationsverlust führt der andere Zweig in einen unbekannten Bereich. Erst nach bestätigter neuer Synchronisation kann ein weiterer Abschnitt separat gelten. Die Zeichnung stellt kein echtes Paketformat dar. ETM liefert nicht zwingend einen vollständigen Zeitstempel für jede Instruktion, ebenso wenig automatisch deren Datenwerte. Der Kontrollfluss und eine Zeitachse sind verschiedene Informationen. Ein angezeigter Quellname benötigt zusätzlich passende Debugzuordnung. Die Aufnahme wird deshalb mit dem wirklich geflashten Build verbunden. Ein anderes Image kann plausible, aber falsche Funktions- oder Zeilennamen liefern. Diese Zuordnung wird auf der folgenden Folie genauer eingeordnet.
-:::
-
-## Eine C-Zeile ist keine einzelne Instruktion
-
-- ELF des tatsächlich geflashten Builds verwenden
-- je Kern die passende Datei, Buildkennung dokumentieren
-- `-g` und `-O2` können zusammen verwendet werden
-- Inlining und Optimierung verändern die Quellzuordnung
-- Taktzahl ist keine Instruktionszahl
-- Zeilenmarke ersetzt keine definierte Maschinenkante
-
-::: notes
-ELF bedeutet Executable and Linkable Format und enthält das Maschinenbild sowie Symbole und gegebenenfalls Debuginformation. Ein Build ist ein bestimmter übersetzter Programmstand. Die GCC-Option -g erzeugt Debuginformation, -O2 aktiviert Optimierungen; GCC bedeutet GNU Compiler Collection. Inlining übernimmt Funktionscode an die Aufrufstelle.
-
-Ein C-Ausdruck kann mehreren Maschinenbefehlen entsprechen, eine Quellzeile mehreren Ausdrücken. Optimierung kann Befehle zusammenfassen, verschieben oder ganz entfernen und Variablen unzugänglich machen. Debuginformation verhindert das nicht; -g und -O2 sind miteinander vereinbar. Für eine Traceauswertung verwendet man deshalb das tatsächlich laufende Maschinenbild und die passende Zuordnung je Kern. Eine Buildkennung oder ein Hash unterstützt diese Identifikation, ein nachträglich neu erzeugter Debugstand kann davon abweichen. Der Beginn einer angezeigten C-Zeile ist keine universell eindeutige Zeitmarke. Für ein strenges Fenster werden die tatsächlichen Maschinen- oder Messereignisse festgelegt. Diese Trennung erklärt auch, warum eine hohe Kernfrequenz keine gleich große Zahl ausgeführter Instruktionen je Sekunde garantiert.
-:::
-
-## Quelle, Transport und Darstellung sind drei Schritte
-
-Rollenmodell, tatsächliche Fähigkeiten getrennt bestätigen.
-
-```{mermaid}
-%%| fig-width: 5.4
-%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
-flowchart TD
-  Q[Tracequelle] --> A[Ausgang und Pinmux]
-  A --> P[Probe oder Adapter]
-  P --> R[Recorder und Puffer]
-  R --> H[Hostdecoder und Darstellung]
-  style R fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
-```
-
-::: notes
-Eine Tracequelle erzeugt ausgewählte Ereignisse. Pinmux bedeutet Pinmultiplexierung, die Zuordnung einer Funktion zu einem physischen Anschluss. Eine Probe oder ein Adapter verbindet den Zielpfad mit einem Recorder, also Aufnahmegerät. Ein Host ist der Auswertungsrechner. Das Diagramm zeigt diese Rollen von oben nach unten; Rot hebt den begrenzten Aufnahmespeicher hervor. Es ist keine bestätigte Verdrahtung eines Kursgeräts.
-
-Jeder Schritt hat eigene Voraussetzungen. Eine aktivierte Quelle genügt nicht, wenn der gewählte Pin anders konfiguriert ist. Eine erfolgreiche Debugverbindung genügt nicht für den erforderlichen Tracekanal. Ein Recorder kann Ereignisse aufnehmen, während der Host sie aufgrund falscher Buildzuordnung falsch darstellt. TPIU bedeutet Trace Port Interface Unit und ist ein möglicher chipseitiger Traceausgang, keine Garantie jedes Pfads. Das praktische Protokoll nennt deshalb Quelle, tatsächliche Leitungen, Gerät, Puffer, Decoder und Zeitbasis. Eine Stromaufnahme am Host ist außerdem noch nicht der Ereigniszeitpunkt im Ziel. Die nächste Rechnung zeigt, wie endliche Kapazität die Länge einer Historie begrenzt.
+Im realen Kursprojekt können weiterhin Interrupts und der andere Kern aktiv sein. Ein Schreiber ist also keine Behauptung eines völlig ungestörten Prozessors. Auch spätere Debugzugriffe brauchen die passende Sicht auf die privaten Daten, insbesondere bei lokal zwischengespeicherten Werten. Das Ende wird zuerst geprüft, bevor eine Tabelle als vollständiger Datensatz benutzt wird. Die Trennung vereinfacht die kleine Programmieraufgabe und macht den Beobachteraufwand sichtbar.
 :::
 
 ## Dauerlast kann einen Tracepuffer füllen
@@ -642,23 +685,31 @@ $$t_{voll}=\frac{65536}{1000000-600000}\,\mathrm{s}=0{,}16384\,\mathrm{s}$$
 Größerer Puffer verschiebt das Problem, erhöht nicht den dauerhaften Abfluss.
 
 ::: notes
-KiB bedeutet Kibibyte mit 1024 Byte. t voll ist die Zeit, bis der anfangs freie Puffer gefüllt ist. Die angegebenen Ereignisgrößen, Raten und Kapazitäten sind didaktische Annahmen und keine ETM-Bitrate oder BlueBox-Spezifikation. ETM bedeutet Embedded Trace Macrocell; BlueBox bezeichnet eine Recorderfamilie.
+KiB bedeutet Kibibyte mit 1024 Byte. t voll ist die Zeit, bis der anfangs freie Puffer gefüllt ist. Die angegebenen Ereignisgrößen, Raten und Kapazitäten sind didaktische Annahmen und keine Spezifikation eines konkreten Geräts.
 
 250000 Ereignisse je Sekunde mit jeweils vier Byte ergeben eine Million Byte je Sekunde. Der Abfluss beträgt 600000 Byte je Sekunde. Die Belegung wächst daher konstant um 400000 Byte je Sekunde. 65536 freie Byte geteilt durch diese Wachstumsrate ergeben 0,16384 Sekunden. Paketoverhead, Lastspitzen und schwankender Abfluss sind in diesem Modell ausdrücklich nicht enthalten. Ein doppelt so großer Puffer verdoppelte hier die Füllzeit, würde aber die dauerhafte Überlast nicht beseitigen. Das entspricht der Queue-Grundidee aus Vorlesung 5. Was nach Vollbelegung geschieht, hängt vom tatsächlichen Pfad ab: Verlust, Überschreiben oder eine Rückwirkung auf den Kern werden nicht für jedes Gerät gleich behauptet. Die Auswertung muss den zutreffenden Mechanismus protokollieren.
 :::
 
-## Trigger und Verluste entscheiden über die Historie
+## Eine Sequenzlücke bleibt ein unbekannter Abschnitt
 
-- Pre-Trigger bewahrt einen begrenzten Abschnitt vor dem Ereignis
-- Ringpuffer überschreibt ältere Historie gemäß seinem Vertrag
-- Fehlendes Anfangspaket bedeutet unbekannt, nicht null
-- Sequenzlücke oder Overflow wird markiert
-- Nach bestätigter Sync kann ein neuer Abschnitt gültig sein
+Synthetische gespeicherte Ereignisse:
+
+| Sequenz | Anfrage | Ereignis |
+|---:|---:|---|
+| 101 | 42 | RELEASE |
+| 102 | 42 | START |
+| 105 | 43 | RELEASE |
+
+Zusätzlich gemeldet: zwei verworfene Datensätze.
+
+Abschlusszeit von Anfrage 42: aus diesen Daten nicht bestimmbar.
 
 ::: notes
-Ein Trigger ist eine Bedingung, die eine Aufnahme startet, stoppt oder markiert. Pre-Trigger bezeichnet gespeicherte Historie vor diesem Ereignis. Ein Ringpuffer verwendet seine Plätze zyklisch und kann dabei ältere Einträge überschreiben. Overflow bedeutet Kapazitätsüberschreitung, Sync die Synchronisation der Dekodierung.
+Sequenz bedeutet hier die fortlaufende Ereignisnummer des Erzeugers. Anfrage ist die Kennung eines Jobs. RELEASE bezeichnet die vereinbarte Freigabe, START den ersten Verarbeitungsbeginn. Die Tabelle ist eine synthetische Logauswahl und besitzt bewusst keine vollständige Abschlussinformation. Die Nummern 103 und 104 fehlen; der Verlustzähler meldet dazu zwei verworfene Einträge.
 
-Wenn die Ursache vor der Fehlermeldung liegt, wäre eine erst danach gestartete Aufnahme möglicherweise zu spät. Eine begrenzte Vorhistorie kann die Ursache enthalten, sofern die gewählte Quelle sie überhaupt erfasst hat. Auch ihre Grenzen werden dokumentiert. Ein fehlendes erstes Datenpaket darf nicht als Anfangswert null interpretiert werden. Eine gezeichnete flache Kurve kann beispielsweise ein Darstellungsdefault sein und ist dann keine Wertbeobachtung. Ein Verlustzähler zeigt einen unvollständigen Abschnitt, sagt aber nicht allein, welche konkreten Zugriffe fehlen. Nach neuer bestätigter Synchronisation und Kontextzuordnung kann eine spätere Aufnahme separat ausgewertet werden. Die Lücke bleibt unbekannt. Der Benutzer muss damit zwischen gültigen beobachteten Werten, nicht erfassten Ereignissen und rechnerisch angenommenen Anfangszuständen unterscheiden.
+Man darf vermuten, dass unter den verlorenen Ereignissen ein Abschluss liegt. Belegt ist das nicht: Es könnten andere Ereignisse, eine Fehlerdiagnose oder Ereignisse einer weiteren Anfrage gewesen sein. Ebenso wäre die Behauptung falsch, Anfrage 42 sei nie fertig geworden. Aus fehlender Beobachtung folgt weder ein ausgeführter noch ein unterbliebener Abschluss. Die Antwortzeit dieses Jobs ist deshalb aus der Tabelle nicht bestimmbar.
+
+Ein späterer Job kann separat auswertbar sein, wenn seine eigenen Grenzen und der Ausführungskontext vollständig erfasst sind. Die gesamte Aufnahme muss nicht pauschal verworfen werden; die Lücke darf aber nicht durch eine durchgezogene Kurve oder einen angenommenen Nullwert ersetzt werden. Welche Ereignisse nach einem Verlust wieder sicher interpretierbar sind, hängt auch vom Aufzeichnungsformat ab. Das einfache Anwendungslog besitzt vollständige Einzelkennungen. Ein komprimierter Kontrollfluss benötigt gegebenenfalls eine neue bestätigte Synchronisation. Der Bericht kennzeichnet diese Grenze ausdrücklich.
 :::
 
 ## Taskzeiger und tatsächliche CPU-Ausführung unterscheiden
@@ -715,50 +766,46 @@ CPU bedeutet Central Processing Unit, Prozessor. ISR bedeutet Interrupt Service 
 Von null bis drei läuft Task A. Von drei bis sieben führt der Kern ISR-Code aus, obwohl die Taskzuordnung noch A zeigt. Von sieben bis acht ist der PendSV-Übergang dargestellt. Danach läuft B und die ausgewählte Task ist B. Der konkrete Updatepunkt innerhalb eines realen PendSV-Handlers wird aus seinem passenden Port bestimmt; hier ist acht die vereinbarte Modellkante. pxCurrentTCB ist der FreeRTOS-Zeiger auf den aktuellen Task Control Block, Taskverwaltungsblock. Wenn er während der ISR auf A bleibt, beweist das keine eigene A-Prozessorarbeit. Ein korrektes Profil benötigt die Exceptionzuordnung zusätzlich zur Taskidentität. Genau dieses Gegenbeispiel verhindert falsche Summen aus einer scheinbar durchgehenden Running-Leiste.
 :::
 
-## Eine Taskliste ist keine Zustandshistorie
+## Taskarbeit aus vollständigen Abschnitten berechnen
 
-| Darstellung | Aussage |
-|---|---|
-| Debuggerliste | momentane Kernelobjekte |
-| Running-Profil mit Exceptions | zugeordnete Ausführungsabschnitte |
-| Ereignistrace der Zustände | Ready-/Blocked-Kanten, wenn erfasst |
+Bezug auf die vorherige synthetische Spur, Intervall 0–10 µs:
 
-`pxCurrentTCB` beschreibt die M4-Kernelinstanz, nicht beide Kerne.
+| Ausführung | Abschnitt | Dauer |
+|---|---|---:|
+| Task A | 0–3 | 3 µs |
+| Interruptbehandler | 3–7 | 4 µs |
+| Kontextwechsel | 7–8 | 1 µs |
+| Task B | 8–10 | 2 µs |
+
+Kontrolle: $3+4+1+2=10$ µs. Taskidentität allein würde A zu viel zuordnen.
 
 ::: notes
-Eine Kernelinstanz ist die Verwaltung eines bestimmten Betriebssystemkerns, hier FreeRTOS auf dem Cortex-M4. pxCurrentTCB ist der Zeiger auf dessen aktuellen Task Control Block, Taskverwaltungsblock. Ready bedeutet ausführungsbereit, Blocked wartend. Eine Exception ist ein vom Prozessor behandelter Ausnahme- oder Interruptkontext. Ein Running-Profil zeigt zugeordnete Ausführungsabschnitte.
+Die Tabelle wertet die vorherige synthetische Spur aus. µs bedeutet Mikrosekunden. Ein Kontextwechsel ist der Übergang zwischen den gespeicherten Ausführungszuständen zweier Tasks; hier ist er als eigener Abschnitt modelliert. Die vier Abschnitte sind vollständig, überschneiden sich nicht und füllen zusammen das betrachtete Intervall von null bis zehn. Ihre Summen sind deshalb kontrollierbar.
 
-Die Tabelle trennt drei Darstellungen. Eine Debuggerliste kann an einem Zeitpunkt zeigen, welche Tasks existieren und welchen Zustand die Verwaltungsfelder enthalten. Sie liefert dadurch noch keine frühere Historie. Ein Running-Profil mit korrekter Exceptionzuordnung erlaubt Summen tatsächlicher Taskausführung, enthält aber nicht automatisch jede Ready- oder Blocked-Kante. Ein entsprechender Ereignistrace braucht diese zusätzlichen Ereignisse und ihre gültige Aufnahme. Kernelversion, Objektlayout und Traceanbindung müssen zum Build passen. OS-Awareness bedeutet Operating System Awareness, die Betriebssystemzuordnung eines Werkzeugs. Sie liest nicht beliebige fremde Kernelobjekte durch einen gemeinsamen Zeiger. Der M7 bleibt im Kursprojekt ein eigener Bare-Metal-Kontext. Für Jobfreigabe und Deadline braucht auch das M4-Profil zusätzliche Anforderungsinformationen.
+Task A läuft von null bis drei und erhält drei Mikrosekunden eigene Prozessorarbeit. Der Interruptbehandler läuft von drei bis sieben und erhält vier. Der Kontextwechsel dauert sieben bis acht, also eine. Task B läuft von acht bis zehn und erhält zwei. Drei plus vier plus eins plus zwei ergibt zehn. Würde man nur die ausgewählte Task A von null bis acht betrachten, ordnete man ihr acht statt drei Mikrosekunden zu. Die Behandler- und Wechselzeit wären fälschlich eigene A-Arbeit.
+
+Eine andere Analyse darf bestimmte Betriebssystemkosten ausdrücklich einer Aufgabe zurechnen, muss diese Konvention aber vorab nennen und dieselben Kosten anschließend nicht doppelt zählen. In dieser Lehrspur werden sie getrennt gehalten. Antwortzeiten lassen sich aus der Tabelle allein weiterhin nicht vollständig bestimmen: Die Freigaben und geforderten Abschlüsse der jeweiligen Jobs sind nicht angegeben. Das Beispiel zeigt damit sowohl eine erlaubte Rechnung als auch die Grenze der vorhandenen Daten.
 :::
 
-## Freigabe und Abschluss brauchen eigene Ereignisse
+## Freigabe und Abschluss derselben Anfrage verbinden
 
-- Kernelzustand und Anwendungsanforderung getrennt definieren
-- Nachricht veröffentlicht: noch nicht notwendig verarbeitet
-- ISR und PendSV nicht als eigene Taskarbeit zählen
-- Zustands- und Release-Hooks sind zusätzliche Instrumentierung
-- Polling mit `osDelay(1)` enthält mehr als Kontextwechsel
+Synthetische Anwendungsereignisse mit gemeinsamer Modelluhr:
 
-::: notes
-ISR bedeutet Interrupt Service Routine, Interruptbehandler. PendSV ist die Systemexception des üblichen Cortex-M-FreeRTOS-Kontextwechsels. Ein Hook ist ein gezielt eingefügter Aufruf bei einem Ereignis. Release bezeichnet die Jobfreigabe. osDelay ist der CMSIS-RTOS2-Warteaufruf in Kernel-Ticks; CMSIS bedeutet Common Microcontroller Software Interface Standard und RTOS2 die zweite Betriebssystem-Schnittstelle.
+| Zeit in ms | Anfrage | Ereignis |
+|---:|---:|---|
+| 30 | 7 | Freigabe |
+| 32 | 8 | Freigabe |
+| 35 | 7 | Abschluss |
+| 38 | 8 | Abschluss |
 
-Eine Task kann bereit werden, ohne dass jede ihrer späteren Anforderungen einen neuen Thread erzeugt. Der Jobbeginn wird deshalb an der Anwendung definiert. Eine veröffentlichte Nachricht ist noch nicht notwendig fertig verarbeitet. Für eine vollständige Antwortzeit werden die zugehörige Freigabe und der geforderte Abschluss erfasst. Hooks für Zustände oder Anforderungen kosten zusätzliche Arbeit und benötigen ihren eigenen Verlustvertrag. ISR- und PendSV-Zeit wird nicht als eigene Taskarbeit ausgegeben, wenn sie separat ausgeführt wird. Der Pollworker aus Vorlesung 6 benutzt osDelay mit eins. Das zählt einen Tick und anschließend kann noch Ready-Wartezeit folgen. Die Reaktionsverzögerung des Pollings ist daher nicht nur eine Umschaltdauer und nicht zwangsläufig genau eine Millisekunde.
-:::
-
-## Beide Kerne beobachten heißt beide Quellen bestätigen
-
-Für einen Inter-Core-Abstand sind erforderlich:
-
-1. benötigte Ereignisse beider Kerne tatsächlich erfasst
-2. richtige Kern- und Buildzuordnung
-3. bestätigte gemeinsame Uhr oder Korrelation
-4. vollständiger relevanter Abschnitt
-5. keine Vermischung mit Hostankunftszeiten
+$$R_7=35-30=5\,\mathrm{ms},\qquad R_8=38-32=6\,\mathrm{ms}$$
 
 ::: notes
-Inter Core bedeutet zwischen Prozessorkernen. Ein Build ist ein bestimmter übersetzter Programmstand. Korrelation bezeichnet den bestätigten Zeitbezug unterschiedlicher Quellen. Der Host ist der Auswertungsrechner. Eine Hostankunft kann durch Transport und Pufferung verzögert sein und ist keine automatische Zielzeitmarke.
+Die Tabelle ist ein Anwendungsmodell mit zwei sich zeitlich überlappenden Anfragen und einer gemeinsamen Uhr. ms bedeutet Millisekunden. Die Anfragekennung verbindet jeweils eine Freigabe mit dem geforderten Abschluss desselben Jobs. R sieben und R acht bezeichnen ihre Antwortzeiten. Es wird keine konkrete Schedulingreihenfolge oder gemessene Inter-Core-Kommunikation behauptet.
 
-Die fünf Punkte sind notwendige Bedingungen für eine sinnvolle Inter-Core-Zeitmessung. Ein Werkzeugfenster mit zwei Kernnamen beweist allein noch nicht, dass beide Tracequellen gleichzeitig liefen. Ebenso reichen zwei separat aufgenommene Kurven ohne Zeitbezug nicht zur Subtraktion. Erst wenn die benötigte Veröffentlichung und Antwort tatsächlich erfasst und zeitlich zugeordnet sind, entsteht der gewünschte Abstand. Für einen M7-Roundtrip könnte derselbe M7-Zähler Anfang und Ende begrenzen, sofern die Marken unmittelbar zur Veröffentlichung und bestätigten Antwort gehören und die Umlaufbedingungen gelten. Ein Fenster nur um Lab06_CM7_Run ist anders: Die erste Anfrage wurde schon vor dessen Aufruf veröffentlicht. Die Pflichtübung behauptet deshalb keine solche Roundtripmessung. Sie misst ausdrücklich lokale Arbeitsfenster.
+Anfrage sieben wird bei dreißig freigegeben und bei fünfunddreißig abgeschlossen, ihre Antwortzeit ist fünf Millisekunden. Anfrage acht wird bei zweiunddreißig freigegeben und bei achtunddreißig abgeschlossen, ihre Antwortzeit ist sechs. Wer nur jeweils benachbarte Ereignisse subtrahiert, erhielte zwei, drei und drei Millisekunden. Diese Abstände beantworten jeweils andere Fragen und sind keine der beiden Antwortzeiten. Auch die Reihenfolge der Abschlüsse allein legt nicht allgemein fest, zu welcher Freigabe sie gehören.
+
+Wenn Anfang und Ende auf unterschiedlichen Prozessorkernen erfasst werden, reichen passende Anfragekennungen noch nicht aus. Die Zeitmarken benötigen zusätzlich dieselbe Zeitbasis oder eine bestätigte Korrelation ihrer Nullpunkte und Frequenzen. Eine Ankunft am Auswertungsrechner enthält mögliche Transportverzögerungen. Für das Pflichtlabor bleibt die sichere, einfache Grenze deshalb ein lokales Fenster mit demselben M7-Zähler. Die allgemeine Ereignisrechnung wird in Vorlesung 9 für eine Papierfallstudie wiederverwendet.
 :::
 
 ## Die Pflicht-Werkzeugkette bleibt CubeMX und VS Code
@@ -769,28 +816,11 @@ Die fünf Punkte sind notwendige Bedingungen für eine sinnvolle Inter-Core-Zeit
 | VS Code + STM32 VS Code Extension | CMake-Ziele, Build, Flash, Debug |
 | ELF und Map | Image und tatsächliche Platzierung |
 | private Zählerdiagnose | lokaler Versuch ohne Traceprobe |
-| BlueBox / winIDEA | zusätzlicher bestätigter Aufnahmeweg |
 
 ::: notes
 STM32CubeMX konfiguriert und generiert die Firmwarebasis. VS Code bedeutet Visual Studio Code; die STM32 VS Code Extension integriert die entsprechenden Entwicklungsfunktionen. CMake beschreibt die Buildziele. ELF bedeutet Executable and Linkable Format, das Maschinenbildformat. Eine Map protokolliert die Linkerplatzierung. Ein Image ist das übersetzte Programm eines Kerns.
 
-Die Pflichtübung verwendet das NUCLEO-H755ZI-Q mit STM32H755ZIT6 und die bestehenden CM7- und CM4-Ziele. CM7 und CM4 bezeichnen Cortex-M7 und Cortex-M4. Der zusätzliche Zählercode gehört ausschließlich ins CM7-Ziel. Takte, Bootoptionen, tatsächlich verwendete Dateien und Benutzerbereiche werden am vorbereiteten Projekt geprüft. Eine `.ioc`-Datei beschreibt die CubeMX-Konfiguration, nimmt neue C-Dateien aber nicht automatisch in jeden CMake-Build auf. BlueBox ist eine externe Recorderfamilie; winIDEA ihre Analyseumgebung. Dieser Weg ergänzt den Versuch, wenn seine tatsächlichen Fähigkeiten bestätigt sind, und ersetzt nicht die vorgegebene Projektwerkzeugkette. Auswendig gelernte Menüpfade oder Debugserverports einer anderen Version sind kein Integrationsnachweis.
-:::
-
-## BlueBox und winIDEA ergänzen einen bestätigten Pfad
-
-Vor einer Aufnahme konkret festhalten:
-
-- Gerätemodell, Revision, Probe und Adapter
-- unterstützte Quelle und tatsächlich verbundene Pins
-- winIDEA-Version und passende ELF je Kern
-- Puffer, Trigger, Zeitbasis und Overflow-Anzeige
-- Kernelversion und bestätigte OS-Awareness
-
-::: notes
-BlueBox bezeichnet eine Familie externer Debug- und Tracegeräte. Eine Probe oder ein Adapter verbindet den konkreten Zielanschluss mit dem Gerät. winIDEA ist die zugehörige Analyseumgebung. ELF bedeutet Executable and Linkable Format, Maschinenbildformat. OS-Awareness bedeutet Operating System Awareness, die Betriebssystemzuordnung des Werkzeugs. Overflow ist eine Kapazitätsüberschreitung.
-
-Die Liste ist eine konkrete Konfigurationsaufnahme, keine Behauptung eines vorhandenen Kursgeräts. Ein bestimmtes Modell kann andere Quellen, Stecker oder Zusatzmodule besitzen als ein anderes. Pinbelegung und Pegel werden aus dem passenden Board- und Gerätehandbuch übernommen; auch der Anschlussablauf richtet sich danach. Die Hostverbindung ist nicht der Target-Tracepfad. Target bezeichnet das Zielsystem. Für winIDEA werden das laufende Image, die unterstützte Quelle und die richtige Kernelversion zugeordnet. Danach wird mit einem einfachen bekannten Ereignis geprüft, ob der Pfad die erwarteten Zugriffe tatsächlich zeigt. Ein erfolgreiches Verbindungsfenster allein reicht nicht. Die Pflichtübung ist deshalb vollständig ohne diese zusätzliche Hardware bearbeitbar; vorhandene Aufnahmen werden als gesonderte Evidenz dokumentiert.
+Die Pflichtübung verwendet das NUCLEO-H755ZI-Q mit STM32H755ZIT6 und die bestehenden CM7- und CM4-Ziele. CM7 und CM4 bezeichnen Cortex-M7 und Cortex-M4. Der zusätzliche Zählercode gehört ausschließlich ins CM7-Ziel. Takte, Bootoptionen, tatsächlich verwendete Dateien und Benutzerbereiche werden am vorbereiteten Projekt geprüft. Eine `.ioc`-Datei beschreibt die CubeMX-Konfiguration, nimmt neue C-Dateien aber nicht automatisch in jeden CMake-Build auf. Die Auswertung benötigt keine zusätzlichen Geräte. Alle Änderungen bleiben in den vorhandenen Benutzerbereichen und im tatsächlichen M7-Buildziel. Eine nachvollziehbare kleine Erweiterung genügt; auswendig gelernte Menüpfade oder Debugserverports einer anderen Version sind kein Integrationsnachweis.
 :::
 
 ## Das Labor verwendet ein vollständiges CM7-Modul
@@ -799,14 +829,14 @@ Dateien: `code/lab07/lab07_timing.h` und `lab07_timing.c`.
 
 - private Diagnose, außerhalb der Shared-Region
 - genau ein Schreiber im M7-Hauptkontext
-- sieben Leerfenster, danach sieben Arbeitsfenster
+- unveränderte Referenz: sieben Leer- und sieben Arbeitsfenster
 - kein Heap, keine Kernelaufrufe, keine Ausgabe im Fenster
 - M4-Kernel und Datenvertrag aus Vorlesung 6 beibehalten
 
 ::: notes
 CM7 bezeichnet das Cortex-M7-Ziel. Ein Heap ist dynamisch verwalteter Speicher. Die Shared-Region ist der gemeinsam vereinbarte Speicher aus Vorlesung 6. Die beiden bereitgestellten Dateien enthalten das vollständige Zähler-, Arbeits- und Logmodul, ersetzen aber kein generiertes STM32-Firmwareprojekt.
 
-Die Headerdatei deklariert Funktionen, Statuswerte und Diagnosefelder. Die C-Datei definiert sie genau einmal im M7-Image. M4 verwendet diese Funktionen nicht. Das Modul hat einen einzigen schreibenden Hauptkontext; Interrupts und weitere Threads dürfen nicht parallel Logeinträge erzeugen. Die Ergebnisse gehören in private M7-Regionen, nicht in den Ping-Pong-Block. Die bereitgestellte Routine erfasst sieben Leerfenster und sieben synthetische Arbeitsfenster und kehrt zurück. Ausgabe, Speichern der Datensätze und Debugauswertung liegen außerhalb des zeitlich abgegrenzten Abschnitts. Der vorhandene M4-Kernel und die gemeinsame Speicherbasis werden dadurch nicht neu gestartet oder zurückgesetzt. Wer neue Quellen nur in ein Verzeichnis kopiert, hat sie noch nicht in das tatsächliche CMake-Ziel aufgenommen. Die folgende Reihenfolge macht die Einbindung überprüfbar.
+Die Headerdatei deklariert Funktionen, Statuswerte und Diagnosefelder. Die C-Datei definiert sie genau einmal im M7-Image. M4 verwendet diese Funktionen nicht. Das Modul hat einen einzigen schreibenden Hauptkontext; Interrupts und weitere Threads dürfen nicht parallel Logeinträge erzeugen. Die Ergebnisse gehören in private M7-Regionen, nicht in den Ping-Pong-Block. Die unveränderte Referenz erfasst sieben Leerfenster und sieben synthetische Arbeitsfenster und kehrt zurück. Die Programmieraufgabe konfiguriert dagegen fünf je Art, ohne den Ablauf der Routine umzuschreiben. Ausgabe, Speichern der Datensätze und Debugauswertung liegen außerhalb des zeitlich abgegrenzten Abschnitts. Der vorhandene M4-Kernel und die gemeinsame Speicherbasis werden dadurch nicht neu gestartet oder zurückgesetzt. Wer neue Quellen nur in ein Verzeichnis kopiert, hat sie noch nicht in das tatsächliche CMake-Ziel aufgenommen. Die folgende Reihenfolge macht die Einbindung überprüfbar.
 :::
 
 ## Init und Versuch erst nach stabilem Systemstart
@@ -848,9 +878,9 @@ uint32_t delta = end - begin;
 Barrieren und Funktionskosten innerhalb der Marken sind enthalten.
 
 ::: notes
-Der C-Ausschnitt erläutert die Fenstergrenzen; vollständige Startprüfungen und Fehlerlogik stehen in lab07_timing.c. DWT bedeutet Data Watchpoint and Trace, CYCCNT Cycle Count, Zykluszählstand. begin und end sind Anfangs- und Endstand desselben M7-Zählers. delta ist ihre vorzeichenlose Modulo-Differenz. DMB bedeutet Data Memory Barrier, Datenspeicherbarriere; DSB Data Synchronization Barrier, Datensynchronisationsbarriere.
+Der C-Ausschnitt erläutert die Fenstergrenzen; vollständige Startprüfungen und Fehlerlogik stehen in lab07_timing.c. uint32_t ist ein vorzeichenloser 32-Bit-Typ. DWT bedeutet Data Watchpoint and Trace, CYCCNT Cycle Count, Zykluszählstand. begin und end sind Anfangs- und Endstand desselben M7-Zählers. delta ist ihre vorzeichenlose Modulo-Differenz. DMB bedeutet Data Memory Barrier, Datenspeicherbarriere; DSB Data Synchronization Barrier, Datensynchronisationsbarriere.
 
-Vor der Anfangslesung richtet die vollständige Referenz den Übergang mit Barrieren ein. Innerhalb des Fensters liegt die gezeigte DMB und vor der Endlesung eine DSB. Ihre Kosten sind Teil des Resultats. Work führt synthetische private 32-Bit-Arbeit mit zehntausend bewusst beobachtbaren volatile-Schritten aus. Diese Zugriffe sind absichtlicher Teil der gemessenen Arbeit; es wird keine beliebige reine Berechnung allein durch einen unbenutzten Rückgabewert vor Optimierung geschützt. Das Ergebnis wird nach Ende als digest gespeichert. Auch die restlichen Logfelder werden erst danach geschrieben. Speicherkosten können trotzdem spätere Fenster beeinflussen. WCET bedeutet Worst-Case Execution Time, obere Ausführungszeitschranke unter Annahmen. Die Differenz beweist weder diese Schranke noch mehrere Umläufe; maßgeblich bleiben die bereits genannten Messbedingungen.
+Vor der Anfangslesung richtet die vollständige Referenz den Übergang mit Barrieren ein. Innerhalb des Fensters liegt die gezeigte DMB und vor der Endlesung eine DSB. Ihre Kosten sind Teil des Resultats. Work ist die synthetische Arbeitsfunktion. Sie führt private 32-Bit-Arbeit aus: ohne weitere Konfiguration mit zehntausend Schritten und dem Anfangswert sieben, im Übungsprojekt mit fünfzehntausend Schritten und dem Anfangswert dreizehn. volatile kennzeichnet hier ausdrücklich auszuführende Zugriffe auf das Arbeitsobjekt; es ist weder ein Synchronisationsvertrag noch ein Cacheprotokoll. Diese Zugriffe sind absichtlicher Teil der gemessenen Arbeit; es wird keine beliebige reine Berechnung allein durch einen unbenutzten Rückgabewert vor Optimierung geschützt. Das Ergebnis wird nach Ende als digest gespeichert. Auch die restlichen Logfelder werden erst danach geschrieben. Speicherkosten können trotzdem spätere Fenster beeinflussen. WCET bedeutet Worst-Case Execution Time, obere Ausführungszeitschranke unter Annahmen. Die Differenz beweist weder diese Schranke noch mehrere Umläufe; maßgeblich bleiben die bereits genannten Messbedingungen.
 :::
 
 ## Sollstruktur der Diagnose, keine Hardware-Sollzeit
@@ -863,89 +893,89 @@ Vor der Anfangslesung richtet die vollständige Referenz den Übergang mit Barri
 | `digest` | 0 für EMPTY, geprüftes Ergebnis für WORK |
 | `cycles_mod32` | tatsächlich erfasste Modulo-Differenz |
 
+Referenzkonfiguration: sieben je Art. Programmieraufgabe: fünf je Art.
+
 Min/Max je Gruppe bilden; Mikrosekunden erst bei gültigen Bedingungen.
 
 ::: notes
 EMPTY und WORK sind die beiden Datensatzarten der Referenz: leeres und synthetisches Arbeitsfenster. lab07_count ist die gespeicherte Eintragszahl, lab07_done das private Abschlusskennzeichen. core_hz enthält die beim Start bestätigte Kernfrequenz in Hertz, Takten je Sekunde. digest ist das verwendete Arbeitsergebnis. cycles_mod32 ist die Modulo-Differenz der beiden 32-Bit-Zählerstände.
 
-Die Tabelle nennt logische Sollwerte, keine Boardzeiten. Nach dem gültigen Lauf liegen vierzehn fortlaufend nummerierte Datensätze vor: sieben Leer- und sieben Arbeitsfenster. EMPTY hat digest null; WORK hat bei gleicher Arbeit denselben rechnerisch überprüfbaren Digest. Unterschiedliche Zählerdifferenzen können trotzdem auftreten. Man bildet Minimum und beobachtetes Maximum getrennt je Gruppe und notiert ihre Bedingungen. Eine Mikrosekundenumrechnung verlangt stabilen Takt, fortlaufenden Zähler und ein Intervall kürzer als dessen Umlauf. Ein Rohwert allein beweist diese Voraussetzungen nicht. Nach beendetem Logging wird mit der richtigen ELF und einem zur M7-Cacheansicht passenden Debugzugriff gelesen. Ein unverändert wirkendes Live-Memory-Fenster ist kein zusätzlicher Laufzeitbeweis.
+Die Tabelle nennt logische Sollwerte, keine Boardzeiten. Die Tabelle gilt für die unveränderte Referenzkonfiguration: vierzehn fortlaufend nummerierte Datensätze mit sieben Leer- und sieben Arbeitsfenstern. In der eigenen Programmieraufgabe wird die Zahl bewusst auf fünf je Art geändert; dann sind zehn Einträge und Sequenzen eins bis zehn korrekt. Beide Konfigurationen werden nicht miteinander vermischt. EMPTY hat digest null; WORK hat bei gleicher Arbeit denselben rechnerisch überprüfbaren Digest. Unterschiedliche Zählerdifferenzen können trotzdem auftreten. Man bildet Minimum und beobachtetes Maximum getrennt je Gruppe und notiert ihre Bedingungen. Eine Mikrosekundenumrechnung verlangt stabilen Takt, fortlaufenden Zähler und ein Intervall kürzer als dessen Umlauf. Ein Rohwert allein beweist diese Voraussetzungen nicht. Nach beendetem Logging wird mit dem richtigen Maschinenbild im Executable and Linkable Format, kurz ELF, und einem zur M7-Cacheansicht passenden Debugzugriff gelesen. Ein unverändert wirkendes Live-Memory-Fenster ist kein zusätzlicher Laufzeitbeweis.
 :::
 
 ## Papieraufgaben prüfen denselben Messvertrag
 
-1. UART-Leitung, CPU-Arbeit und Beobachtereffekt
-2. Jobzeiten und überlappende Interruptintervalle
-3. Lokaler Zähler, Umlauf und Stichprobenmaximum
-4. Cache-/Tasksicht, Pufferkapazität und fehlende Pakete
+1. Ausgabeaufwand und Beobachtereffekt
+2. Jobzeiten und vollständige Ereignisgrenzen
+3. Zählerumlauf, Umrechnung und Stichprobenmaximum
+4. Datenqualität und begrenzte Aufzeichnung
 
-Vier Aufgaben, 32 Punkte; vollständige Musterlösungen im Lösungsprofil.
+Vier Aufgaben mit je 8 Orientierungspunkten: insgesamt 32.
 
-::: notes
-UART bedeutet Universal Asynchronous Receiver/Transmitter, serielle Schnittstelle. CPU ist die Central Processing Unit, Prozessor. Ein Job ist eine konkrete Taskaktivierung. Ein Cache ist ein lokaler Zwischenspeicher. Ein Paket ist eine Einheit einer Traceaufnahme. Die vier Papieraufgaben sind ohne Gerät und ohne Traceinstallation vollständig lösbar.
+Zusatz: eigene kleine Auswertung und begründeter Messbericht.
 
-Aufgabe eins trennt die fünfzig Leitungsbits von der Prozessorarbeit und bewertet den blockierenden Lehrfall. Aufgabe zwei nutzt den Job mit drei Millisekunden eigener Arbeit, sechs Antwortzeit und einer Restbudget sowie die Interruptkette mit achtundzwanzig Mikrosekunden Gesamtreaktion. Aufgabe drei rechnet den 32-Bit-Umlauf und die zwei Frequenzskalierungen und begründet die Grenze eines beobachteten Maximums. Aufgabe vier wählt Aussagen nach Quelle: Ein M7-Store ist keine M4-Sicht, eine Taskidentität kein ISR-Beweis und ein fehlendes Paket nicht null. Dazu kommt das konstante Füllratenmodell. Die Musterlösungen begründen sowohl die Zahlen als auch ihre Gültigkeit. Das Programmieren liefert ergänzende eigene Beobachtungen, ersetzt aber die schriftliche Erklärung der Voraussetzungen nicht.
-:::
-
-## Optionaler Trace: den bekannten Kanal beobachten
-
-Basis aus Vorlesung 6, gleiche Adresse und nicht cachebare Region.
-
-- erwartete M4-Antworten: 1, 3, 5
-- Kern, Feld, Richtung und tatsächlichen Offset bestätigen
-- `payload` bei Offset 8 ist nicht `state` bei Offset 4
-- Aufnahmeverlust markieren, Debugzugriff getrennt beurteilen
-- Fehlerbuild separat neu starten; Timeout übernimmt keinen Besitz
+Vollständige Musterlösungen stehen ausschließlich im Lösungsprofil.
 
 ::: notes
-Eine nicht cachebare Region verhindert hier die private M7-Datenkopie für den gemeinsamen Kanal. payload ist dessen Nutzwert, state der Phasenzustand. Die gemeinsame Struktur aus Vorlesung 6 hat die Feldoffsets null, vier und acht für magic, state und payload; jedes Wort ist vier Byte groß. M7 und M4 bezeichnen die beiden Cortex-Kerne. Ein Timeout ist die lokale Ablaufdiagnose einer Wartefrist.
+Das Übungsblatt beginnt unmittelbar mit Aufgaben. Die vier Papieraufgaben sind ohne Gerät vollständig lösbar. Orientierungspunkte helfen, die verlangten Teilaspekte zu gewichten; vier mal acht ergibt zweiunddreißig. Die Zahlen und Fälle des Blatts unterscheiden sich von den Folien. Studierende übertragen damit dieselben Begriffe und Rechenregeln auf neue Situationen, statt die vorgeführten Ergebnisse abzuschreiben.
 
-Ein vorhandener bestätigter Tracepfad kann den bekannten Kanal beobachten. Zuerst wird geprüft, welche Quelle genau welches Feld und welchen Kern erfasst. Die drei Antwortwerte eins, drei und fünf sind logische Protokoll-Sollwerte, keine Traceaufnahme dieses Repositorys. Der Endblock behält Nutzwert fünf und TURN_M7; es gibt keine vierte Anfrage. Fehlende Ereignisse werden als Verlust oder unbekannter Abschnitt eingeordnet. Der cachebare Fehlerbuild aus Vorlesung 6 ist ein eigener gemeinsamer Neustart mit geprüften effektiven Attributen, keine spontane Umschaltung während der Kommunikation. Ein Timeout rechtfertigt weiterhin kein Nullen eines fremd besessenen Blocks. Messung und Diagnose ersetzen den Datenvertrag nicht.
+Bei der Ausgabeaufgabe werden Leitungsdauer, Prozessorarbeit und blockierende Verzögerung getrennt. Die Jobaufgabe verbindet Freigabe, eigene Ausführungsabschnitte, Abschluss und Frist. Die Zähleraufgabe benötigt vorzeichenlose Modulo-Rechnung, eine passende Frequenz und die Bedingung eines hinreichend kurzen Intervalls. Die vierte Aufgabe behandelt fehlende Beobachtungen und endliche Kapazität. Zu jeder Zahl gehört eine Aussage, warum gerade diese Grenzen und Einheiten verwendet werden dürfen.
+
+Das Lösungsprofil ist die gesonderte Quarto-Ausgabe mit Musterlösungen. In der Studierendenfassung bleiben die Lösungen verborgen. Die Zusatzaufgabe führt die Papierregeln in eine kleine eigene C-Auswertung über. Ein korrekter Programmcode ersetzt nicht die Erklärung der Messbedingungen. Ebenso ersetzt eine Papiermusterlösung keinen tatsächlich durchgeführten Boardlauf. Die Ergebnisse werden jeweils als Rechnung, Implementierung oder beobachteter Versuch gekennzeichnet.
 :::
 
-## Ausblick: Pfadabdeckung ist noch keine Zeitaussage
+## Eigene Implementierung: fünf Arbeitsfenster auswerten
 
-C-Kurzschlussausdruck: `if (a && b)`.
+Auf Basis der vorhandenen Startdatei `summary_student.c`:
 
-| Eingabe a/b | b ausgewertet? | Entscheidung |
-|---|---|---|
-| true / true | ja, true | true |
-| true / false | ja, false | false |
-| false / true | nein | false |
+- fünf Leerfenster und fünf Arbeitsfenster konfigurieren
+- gültige Arbeitsdatensätze auswählen
+- Anzahl, Minimum, Maximum und 64-Bit-Summe berechnen
+- leere Gruppen, Argument- und Taktfehler ablehnen
+- Erfolg nach Aufnahme über die vorhandene LD1 anzeigen
 
-Decision Coverage und Condition Coverage sind verschiedene Aussagen.
+Nur Board, CubeMX und VS Code mit STM32 Extension erforderlich.
 
 ::: notes
-Decision Coverage ist Entscheidungsabdeckung: Die vollständige Entscheidung wird mit wahr und falsch durchlaufen. Condition Coverage ist Bedingungsabdeckung: Die tatsächlich ausgewerteten Einzelbedingungen nehmen die geforderten Werte an. C verwendet bei a und b mit logischem Und eine Kurzschlussauswertung. Wenn a falsch ist, wird b nicht mehr ausgewertet.
+summary_student.c ist die bereitgestellte C-Startdatei für die eigene Gruppenauswertung. Sie enthält zunächst keine fertige Lösung. Die Funktion Lab07_Summarize erhält die privaten Datensätze, ihre Anzahl, die gesuchte Art und einen Ergebniszeiger. LD1 bezeichnet die zugeordnete vorhandene Leuchtdiode des NUCLEO-H755ZI-Q. Die STM32 Extension ist die STM32-Erweiterung für Visual Studio Code; CubeMX generiert weiterhin die Projektkonfiguration.
 
-Die Tabelle zeigt drei vereinbarte Eingabepaare. Schon true/true und false/true decken beide Entscheidungsausgänge ab, ohne b jemals falsch auszuwerten. Decision- und Condition-Abdeckung sind deshalb nicht gleich. Im dritten Fall ist b zwar als Eingabe wahr, aber kein ausgewertetes b-Ereignis. Ein Kontrollfluss-Trace allein beobachtet daher nicht automatisch jede Boolesche Eingabe. ETM bedeutet Embedded Trace Macrocell und rekonstruiert den Maschinenkontrollfluss mit passendem Image. Die Paare true/true gegen false/true sowie true/true gegen true/false zeigen im benannten Booleschen Eingabemodell den unabhängigen Einfluss von a beziehungsweise b. MC/DC bedeutet Modified Condition/Decision Coverage und verwendet hierfür ausdrücklich festgelegte Abdeckungsregeln, auch beim Kurzschluss. Ein Fenster mit Quellnamen ist keine automatische MC/DC-Bescheinigung. Pfadabdeckung beweist außerdem weder funktionale Richtigkeit noch eine gehaltene Deadline. Der Ausblick ergänzt die Traceeinordnung und ist keine zusätzliche Gerätepflicht.
+Die Aufnahme wird bewusst auf fünf Datensätze je Art eingestellt. Nach erfolgreichem Lauf liegen zehn Einträge vor. Die Auswertung prüft die im Übungsblatt vereinbarten Argumente und Datensatzbedingungen und bildet die Kennzahlen der gewählten Gruppe. Eine 64-Bit-Summe vermeidet, dass bereits das Addieren mehrerer gültiger 32-Bit-Differenzen stillschweigend im kleineren Typ umläuft. Minimum und Maximum bleiben reine Stichprobenwerte. Die Summe ist noch keine Summe von Mikrosekunden; dafür müssen die Zeitbedingungen und die gemeinsame Frequenz gelten.
+
+Die vorhandene Anbindung ruft die Auswertung erst nach beendetem Zählerlauf auf und setzt LD1 bei erfolgreicher Prüfung. Sie zeigt keinen Fristnachweis und keine allgemeine Worst-Case-Schranke. Ein fehlerhafter Testdatensatz lässt sich vorab am Papier durchspielen, ohne eine zusätzliche Hardwareanforderung einzuführen. Eine vollständige Musterfunktion steht im Lösungsprofil. Wer die Aufgabe bearbeitet, schreibt und erklärt seine eigene Funktion sowie einen kurzen Bericht zu den tatsächlich verfügbaren Nachweisen.
 :::
 
-## Quiz: Aussage und Evidenz zusammen nennen
+## Quiz: Welche Aussage tragen die Daten?
 
-- Messgrenzen und Einheiten zuerst
-- eigene CPU-Zeit und Antwortzeit getrennt
-- lokaler Zähler mit Takt und Umlaufbedingung
-- Tracequelle, Build und Datenqualität zusammen prüfen
-- beobachtetes Maximum ist keine allgemeine Schranke
+- Messgrenzen und Anforderung verbinden
+- eigene CPU-Zeit und Antwortzeit unterscheiden
+- lokale Zähler mit Takt und Umlaufbedingung auswerten
+- Verluste und Beobachtereffekte sichtbar machen
+- Stichprobenmaximum von begründeter WCET trennen
 
-Vorlesung 8 erweitert den gemeinsamen Synchronisationsvertrag.
+Vorlesung 8: Polling-, Deferrable- und Sporadic-Server.
+
+Vorlesung 9: integrierte Papierfallstudie mit Watchdog-Grundideen.
 
 ::: notes
-Evidenz bezeichnet die Beobachtung oder Rechnung, auf der eine Aussage beruht. CPU bedeutet Central Processing Unit, Prozessor. Ein Build ist ein bestimmter übersetzter Programmstand. Die fünf Punkte verbinden die Rechen- und Messfragen dieses Termins. Eine Zahl ohne Anfang, Ende, Einheit und Bedingungen bleibt mehrdeutig.
+CPU bedeutet Central Processing Unit, Prozessor. WCET bedeutet Worst-Case Execution Time, eine begründete obere Schranke der eigenen Ausführungszeit unter benannten Annahmen. Das Quiz enthält zehn eigenständig verständliche Anwendungsfragen. Es prüft vor allem, ob eine Aussage durch den genannten Messvertrag und die vorhandenen Daten gedeckt ist. Eine Zahl kann rechnerisch richtig sein und dennoch die falsche Anforderung beantworten.
 
-Das Quiz umfasst zehn Anwendungsfälle. Sie begründen beispielsweise, warum dieselben tausend Kerntakte je nach Frequenz verschiedene Zeiten bedeuten, warum die volle ISR-Dauer nicht nochmals zu allen Teilintervallen addiert wird und warum ein DWT-Store keine aktuelle M4-Sicht beweist. ISR bedeutet Interrupt Service Routine, Interruptbehandler; DWT Data Watchpoint and Trace. Auch ein erfolgreicher lokaler Zählerversuch ist keine gemeinsame Uhr beider Kerne und keine allgemeine Worst-Case-Schranke. Die nächste Vorlesung erweitert die kernübergreifende Synchronisation. Der heute beobachtete Datenvertrag mit gleicher Adresse, Besitz und Sichtbarkeit bleibt dabei Grundlage. Eine gute Diagnose liefert eine passende Spur und Hypothese, keine zusätzliche Berechtigung zum unkoordinierten Zurücksetzen des Kanals.
+Die wichtigsten Kontrollen sind: Beginnt die Antwortzeit bei der Freigabe? Wurden fremde Ausführungsanteile von eigener Prozessorarbeit getrennt? Gehören beide Zählerstände zur gleichen Zeitbasis und ist das Fenster kürzer als ein Umlauf? Ist der betreffende Abschnitt vollständig? Beschreibt das Maximum nur die Stichprobe oder wurde eine allgemeine Schranke gesondert begründet? Die Antworten werden mit einer kurzen Begründung verbunden, nicht nur als Zahl genannt.
+
+Vorlesung 8 behandelt Serververfahren für aperiodische Arbeit: Polling-, Deferrable- und Sporadic-Server sind unterschiedliche Verträge darüber, wann bereitgestelltes Prozessorbudget benutzt und erneuert wird. Die heutige Trennung von Ausführungsbedarf und Antwortzeit bleibt dafür notwendig. Vorlesung 9 verbindet die Methoden in einer überschaubaren Papierfallstudie. Ein Watchdog ist eine Überwachung, die ausbleibenden vereinbarten Fortschritt nach einer Frist erkennt. Ein solcher Mechanismus braucht ebenfalls klare Ereignisgrenzen und ersetzt keine begründete zeitliche Analyse.
 :::
 
-## Quellen und ausgeführte Nachweise
+## Quellen und Grenzen der Nachweise
 
 - Buttazzo: *Hard Real-Time Computing Systems*, 3. Auflage
 - ST: RM0399, UM2408 und AN4989
-- [CMSIS-M7: Register und ITM_SendChar](https://github.com/ARM-software/CMSIS_5/blob/develop/CMSIS/Core/Include/core_cm7.h)
-- [winIDEA-Dokumentation](https://www.isystem.com/downloads/winIDEA/help/)
-- Lokaler Hosttest und Renderprüfung getrennt vom STM32-Boardlauf
+- [CMSIS-M7: Definition des lokalen Zykluszählers](https://github.com/ARM-software/CMSIS_5/blob/develop/CMSIS/Core/Include/core_cm7.h)
+- Referenzcode: `code/lab07/lab07_timing.c` und `.h`
+- Modellrechnung, Hostprüfung und Boardmessung getrennt berichten
 
 ::: notes
-Giorgio C. Buttazzos Hard Real-Time Computing Systems ist die zentrale Literatur für Antwortzeiten und Echtzeitmodelle. STs RM0399 beschreibt die Mikrocontrollerfamilie, UM2408 die betreffende Nucleo-Boardfamilie und AN4989 den Debugwerkzeugkasten für STM32. Der tatsächlich eingesehene CMSIS-M7-Header belegt die verwendeten Registerfelder und die wartende ITM_SendChar-Implementierung. CMSIS bedeutet Common Microcontroller Software Interface Standard, ITM Instrumentation Trace Macrocell.
+Giorgio C. Buttazzos Hard Real-Time Computing Systems ist die zentrale Literatur für Antwortzeiten und Echtzeitmodelle. STs RM0399 beschreibt die betreffende Mikrocontrollerfamilie, UM2408 die Nucleo-Boardfamilie und AN4989 den Debugwerkzeugkasten für STM32. CMSIS bedeutet Common Microcontroller Software Interface Standard; der verlinkte Cortex-M7-Header beschreibt die verwendeten Registerfelder. Öffentliche Entwicklungszweige sind veränderlich, daher wird bei einer konkreten Implementierung die tatsächlich verwendete Projektversion festgehalten.
 
-Die winIDEA-Hilfe ist eine Quelle für die jeweilige unterstützte Geräte- und Kernelanbindung, kein Beleg einer vorhandenen Kursinstallation. Die Projektversionen werden im Laborprotokoll festgehalten; öffentliche Entwicklungszweige sind veränderlich. Alle Zahlenbeispiele der Vorlesung sind als Modellannahmen bezeichnet und werden rechnerisch geprüft. Der C-Hosttest untersucht mit Registerersatz die Anwendungslogik und den Digest, nicht echte Cortex-Takte oder Traceleitungen. Ein Dokumentrender prüft lesbare Abbildungen und Notizen, nicht Firmwarestart oder Deadline. STM32-Zielbuild, Boardlauf, Messgerät und tatsächliche Traceaufnahme bleiben eigene Nachweise und werden nur bei Durchführung als solche berichtet.
+Alle Zahlenbeispiele dieses Termins sind didaktische Modellannahmen. Ihre Rechnungen sind unabhängig von einem Boardlauf nachvollziehbar. Der vorhandene Referenzcode dokumentiert die logischen Grenzen des lokalen Versuchs und seine technischen Startprüfungen. Eine Prüfung auf dem Entwicklungsrechner kann Anwendungslogik und Rechenergebnisse kontrollieren, bildet jedoch weder reale Cortex-Takte noch Buskonkurrenz oder Interruptlatenzen nach.
+
+Ein Dokumentrender prüft Zuordnung und Lesbarkeit der Folien und Notizen. Er beweist keinen Firmwarestart und keine gehaltene Deadline. Ein STM32-Zielbuild prüft wiederum die Übersetzbarkeit für die verwendete Zielkonfiguration, aber noch keine tatsächliche Laufzeit. Boardlauf, Zählerbeobachtung und externe Traceaufnahme werden ausschließlich dann als durchgeführt berichtet, wenn sie wirklich stattgefunden haben. Diese Trennung ist selbst ein Lernziel der Timing-Analyse: Jede Evidenz trägt eine bestimmte Aussage und besitzt eine erkennbare Grenze.
 :::

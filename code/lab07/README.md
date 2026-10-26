@@ -1,7 +1,7 @@
 # Implementierungsaufgabe zu Übungsblatt 7
 
-`summary_student.c` enthält die eigene Gruppenauswertung mit 64-Bit-Summe. `lab07_summary.c/.h` bindet sie nach beendetem Zählerlauf ein. Für die neue Aufgabe fünf Datensätze je Art konfigurieren; LD1 zeigt erfolgreiche Auswertung.
+Die vorhandene Cortex-M7-Routine erfasst kurze lokale Zählerfenster. Die Studierenden implementieren in `summary_student.c` die Gruppenauswertung `Lab07_Summarize()` mit Anzahl, Minimum, Maximum und 64-Bit-Summe sowie Argument- und Taktprüfung. `lab07_summary.c/.h` bindet sie nach beendetem Log ein; LD1 auf PB0 zeigt eine erfolgreiche WORK-Auswertung an.
 
-[Projektvorbereitung](../../labs/vertiefung/lab_07_programmierung.md) · [Aufgaben und Musterlösung](../../labs/lab_07_tracing-timing-analyse.qmd)
+Für die Übung wird `LAB07_SAMPLES_PER_KIND=5` im vorbereiteten M7-Ziel gesetzt: fünf EMPTY- und fünf WORK-Datensätze. Ohne diese Compile-Definition bleiben die bisherigen Quelltextstandardwerte erhalten. Details zu Integration und Messvertrag stehen in der [Projektvorbereitung](../../labs/vertiefung/lab_07_programmierung.md), Aufgaben und ausschließlich im Profil `solution` sichtbare Musterlösung im [Übungsblatt](../../labs/lab_07_tracing-timing-analyse.qmd).
 
-Die studentischen Startdateien enthalten bewusst noch keine Lösung. Vollständige Musterfunktionen stehen im Quarto-Profil `solution`. Benötigt werden NUCLEO-H755ZI-Q, STM32CubeMX und VS Code mit STM32 VS Code Extension; zusätzliche Elektronik oder Messgeräte sind nicht erforderlich. Die Dateien ergänzen ein vorbereitetes generiertes Projekt, sie ersetzen weder dessen Startup-/Linker-/Kernelkonfiguration noch einen tatsächlichen Boardtest.
+Benötigt werden NUCLEO-H755ZI-Q, USB/ST-LINK, STM32CubeMX und VS Code mit STM32 VS Code Extension. Zusätzliche Elektronik oder ein externer Traceadapter sind nicht erforderlich. Die Dateien ergänzen eine vorbereitete Projektbasis und ersetzen weder deren Startup-/Linkerkonfiguration noch einen tatsächlichen Firmwarebuild und Boardtest. Die studentische Startfunktion gibt bis zur eigenen Implementierung absichtlich Fehler zurück. Es werden keine Hardwaremesswerte vorgegeben.

@@ -3,79 +3,164 @@ title: "Übungsblatt 7: Timing messen und Beobachtungen auswerten"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 ---
 
-## Aufgabe 1: Was kostet die Beobachtung? (8 Punkte)
+## Aufgabe 1: Was kostet die Beobachtung? (8 Orientierungspunkte)
 
-Eine Funktion benötigt im Lehrmodell 18 µs eigene Arbeit. Anschließend sendet sie die sechs ASCII-Zeichen `READY\n` bei 230400 bit/s, 8N1, ohne Nullterminator. Bei diesem blockierenden Lehrfall liegt die volle Leitungsdauer zusätzlich innerhalb der Antwort; andere Kosten sind null. Abschlussfrist: 240 µs.
+Didaktischer Ein-Kern-Fall: Eine Funktion benötigt 18 µs eigene Prozessorarbeit. Danach sendet sie die vier ASCII-Zeichen `ACK\n` bei 230400 bit/s mit acht Datenbits, keiner Parität und einem Stopbit (8N1), ohne Nullterminator. Im vorgegebenen blockierenden Modell verlängert die volle Leitungsdauer die Antwort. Weitere Kosten sind null, die relative Abschlussfrist beträgt 180 µs.
 
 1. Berechnen Sie Bitzahl und reine Leitungsdauer. (2 Punkte)
 2. Berechnen Sie Antwortzeit und Fristabweichung. (2 Punkte)
-3. Weshalb ist bei DMA nicht dieselbe Leitungsdauer automatisch eigene CPU-Zeit? Welche Restkosten bleiben? (2 Punkte)
-4. Definieren Sie eine Messung der ursprünglichen Funktion ohne Ausgabe im Fenster. Warum kann selbst ein Zählerfenster fremde Arbeit enthalten? (2 Punkte)
+3. Bei direktem Speicherzugriff (DMA) überträgt Hardware die vorbereiteten Bytes. Warum ist die Leitungsdauer dann nicht automatisch eigene CPU-Zeit? Nennen Sie verbleibende Arbeit. (2 Punkte)
+4. Formulieren Sie einen Messvertrag für die ursprüngliche Funktion ohne Ausgabe im Fenster: Anfang, Ende, Quelle, Einheit und Betriebsbedingungen. Warum kann ein lokaler Zähler trotzdem fremde Arbeit mitzählen? (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Sechs Bytes zu zehn Bit sind 60 Bit, Dauer $60/230400\,\mathrm{s}\approx260{,}417\,\text{µs}$. Antwort $278{,}417$ µs, Verletzung um $38{,}417$ µs. DMA kann senden, während der Kern anderweitig arbeitet; Einrichtung, Formatierung, Pufferbesitz und Abschlussbehandlung bleiben. Anfang/Ende und Quelle definieren, Ausgabe nach der Endmarke; ihre Wirkung auf Folgejobs trotzdem benennen. Ein fortlaufender Kernzähler zählt dazwischenliegende Interrupts und andere Taskarbeit mit, nicht nur eigene Funktionsarbeit.
+### Musterlösung zu Aufgabe 1
+
+1. ASCII kodiert hier jedes Zeichen in einem Byte. `\n` ist ein einzelnes Zeilenumbruchzeichen, also sind es vier Bytes. 8N1 benötigt je Byte ein Startbit, acht Datenbits und ein Stopbit. Damit gilt
+
+   $$N_{\mathrm{Bit}}=4\cdot(1+8+1)=40,$$
+
+   $$t_{\mathrm{Leitung}}=\frac{40}{230400}\,\mathrm{s}
+   =173{,}611\ldots\,\text{µs}.$$
+
+2. Nach der Modellannahme wird die volle Dauer zur Arbeit addiert:
+
+   $$R=18+173{,}611\ldots=191{,}611\ldots\,\text{µs}.$$
+
+   Die Reserve beträgt $180-R=-11{,}611\ldots$ µs. Die Frist wird um rund 11,61 µs verletzt. Dies ist eine Modellrechnung zur blockierenden Ausgabe, keine Messung des Boards.
+
+3. Bei DMA kann der Prozessor während der Übertragung andere Arbeit ausführen. Formatierung, Einrichtung des Transfers, Pufferverwaltung und Abschlussbehandlung können trotzdem Prozessorzeit oder Wartezeit kosten. Wann der Job als fertig gilt, entscheidet die Anforderung: Ist die physische Übertragung Teil seines Abschlusses, kann ihre Dauer weiter in der Antwortzeit liegen, obwohl der Prozessor nicht durchgehend für diesen Job arbeitet.
+
+4. Ein möglicher Vertrag lautet: Anfang ist die erste Zählerlesung unmittelbar vor dem Arbeitsabschnitt, Ende die zweite Lesung unmittelbar danach. Quelle ist der fortlaufende lokale Cortex-M7-Zykluszähler, Einheit zunächst Kerntakte. Der konkrete übersetzte Programmstand, tatsächlicher stabiler Kerntakt, laufender Zähler und ein Fenster kürzer als ein Umlauf werden festgehalten. Es gibt keinen Debughalt im Fenster. Gespeichert und angezeigt wird erst danach. Interrupts oder andere Taskausführung zwischen den beiden Lesungen werden mitgezählt, sofern der Zähler weiterläuft. Das Intervall ist daher nicht automatisch reine eigene Prozessorzeit.
 :::
 
-## Aufgabe 2: Jobantwort und Interruptkette (8 Punkte)
+## Aufgabe 2: Jobantwort und Interruptkette (8 Orientierungspunkte)
 
-1. Ein Job wird bei 4 ms freigegeben, läuft 6–9 und 12–14 ms und ist bei 14 ms fertig; Deadline bei 16 ms. Bestimmen Sie eigene CPU-Zeit, Startverzug, Antwortzeit und Reserve. (4 Punkte)
-2. Gemeinsame Modelluhr in µs: Ereignis 200, ISR-Eintritt 207, Task Ready 214, ISR-Ende 221, Taskstart 229, Reaktion 242. Berechnen Sie Eintrittslatenz, ISR-Intervall, Ready-Warten und Gesamtreaktion. Geben Sie eine Zerlegung ohne Überlappung an. (4 Punkte)
+Alle folgenden Zeiten sind didaktische Annahmen auf jeweils einer gemeinsamen Uhr. Kontextwechselkosten sind bereits in der Zeitachse enthalten, es gibt keine weitere eigene Arbeit des betrachteten Jobs.
+
+1. Ein Job wird bei 4 ms freigegeben, läuft von 6 bis 9 ms und von 12 bis 14 ms. Er ist bei 14 ms fertig; seine absolute Deadline liegt bei 16 ms. Bestimmen Sie eigene CPU-Zeit, Startverzug, Antwortzeit und Reserve. Zerlegen Sie die Antwortzeit in eigene Arbeit und Zeiten ohne eigene Ausführung. (4 Punkte)
+2. Eine Interruptkette hat diese Marken in µs: äußeres Ereignis 200, Eintritt in die Interrupt-Service-Routine (ISR) 207, zugehörige Task wird Ready 214, ISR-Ende 221, Taskstart 229, geforderte Reaktion 242. Bestimmen Sie Eintrittslatenz, ISR-Intervall, Ready-Wartezeit und Gesamtreaktion. Geben Sie eine Zerlegung der Gesamtreaktion ohne überlappende Summanden an. (4 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** CPU-Zeit 5 ms, Startverzug 2 ms, Antwortzeit 10 ms, Reserve 2 ms. Anfangswarten 2 plus Verdrängung 3 plus eigene Arbeit 5 ergeben 10 ms. Interruptkette: 7 µs Eintritt, 14 µs ISR-Intervall, 15 µs Ready-Warten, 42 µs Gesamtreaktion. Disjunkt etwa $7+14+8+13=42$ µs; Ready-Warten 214–229 überlappt die ISR 214–221 und wird nicht zusätzlich zur vollen Zerlegung addiert.
+### Musterlösung zu Aufgabe 2
+
+1. Die eigene Prozessorzeit summiert nur die laufenden Abschnitte:
+
+   $$C=(9-6)+(14-12)=5\,\mathrm{ms}.$$
+
+   Der Startverzug beträgt $6-4=2$ ms. Die Antwortzeit reicht dagegen von Freigabe bis Abschluss:
+
+   $$R=14-4=10\,\mathrm{ms},\qquad\mathrm{Reserve}=16-14=2\,\mathrm{ms}.$$
+
+   Die Antwort zerfällt in 2 ms Anfangswarten, 3 ms Unterbrechung eigener Ausführung und 5 ms eigene Arbeit. Es gilt also $R=2+3+5=10$ ms. Die 5 ms sind die eigene Zeit dieses Modelljobs, keine allgemeine Worst-Case-Ausführungszeit seiner Task.
+
+2. Die Eintrittslatenz beträgt $207-200=7$ µs. Das ISR-Intervall beträgt $221-207=14$ µs. Die Task wartet ab Ready bis zu ihrem ersten Start $229-214=15$ µs. Die Gesamtreaktion beträgt $242-200=42$ µs. Eine lückenlose, überschneidungsfreie Zerlegung entlang der Uhr ist
+
+   $$42=(207-200)+(221-207)+(229-221)+(242-229)
+   =7+14+8+13\,\text{µs}.$$
+
+   Die Ready-Wartezeit von 214 bis 229 µs enthält bereits die letzten 7 µs des ISR-Intervalls. Man darf deshalb nicht Eintrittslatenz, vollständiges ISR-Intervall, vollständige Ready-Wartezeit und anschließende Arbeit addieren. Ready bedeutet ausführungsbereit, aber noch nicht laufend.
 :::
 
-## Aufgabe 3: Modulo, Takt und Stichprobe (8 Punkte)
+## Aufgabe 3: Modulo, Takt und Stichprobe (8 Orientierungspunkte)
 
-1. Ein bestätigter lokaler 32-Bit-Zähler startet bei `0xFFFFFF80` und endet bei `0x00000050`. Berechnen Sie Modulo-Differenz und Zeit bei stabilen 160 MHz. Wie lange dauert ein voller Umlauf, und welche zusätzliche Annahme braucht die Differenz? (3 Punkte)
-2. 2400 Takte werden einmal bei 160 und einmal bei 320 MHz gezählt. Rechnen Sie um. Darf ein M4-Endwert ohne Zeitkorrelation von einem M7-Anfangswert abgezogen werden? (2 Punkte)
-3. Vollständige Antwortintervalle betragen 19, 22, 20, 27 und 21 µs. Bestimmen Sie Minimum, Maximum, Mittelwert und Spanne. Prüfen Sie 25 µs Frist. Beweist oder widerlegt die Stichprobe eine Garantie? (3 Punkte)
+1. Ein bestätigter lokaler 32-Bit-Zähler startet bei `0xFFFFFF80` und endet bei `0x00000050`. Berechnen Sie die vorzeichenlose Modulo-Differenz und die Zeit bei stabilen 160 MHz. Wie lange dauert ein voller Umlauf? Welche Annahme über die echte Fensterlänge braucht die Umrechnung? (3 Punkte)
+2. Ein Messfenster umfasst 2400 Takte. Rechnen Sie für 160 MHz und für 320 MHz um. Darf ein Cortex-M4-Endwert ohne Zeitkorrelation von einem Cortex-M7-Anfangswert abgezogen werden? (2 Punkte)
+3. Fünf vollständige, gültige Antwortintervalle betragen 19, 22, 20, 27 und 21 µs. Bestimmen Sie Minimum, beobachtetes Maximum, Mittelwert und Spanne. Prüfen Sie die Antwortfrist von 25 µs. Welche Aussage erlaubt die Stichprobe über eine Garantie für alle zulässigen Fälle? (3 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Modulo-Differenz $128+80=208$ Takte, Zeit 1,3 µs. Umlauf $2^{32}/(160\cdot10^6)=26{,}8435456$ s. Der tatsächlich verstrichene Bereich muss kürzer als ein Umlauf sein, bei stabilem Takt und laufendem Zähler. 2400 Takte ergeben 15 bzw. 7,5 µs. Verschiedene lokale Zähler benötigen Skalierung und korrelierte Nullpunkte. Stichprobe: Minimum 19, Maximum 27, Mittelwert $109/5=21{,}8$ µs, Spanne 8 µs. Ein gültiger 27-µs-Fall verletzt die Antwortfrist um 2 µs. Er widerlegt die Garantie unter den Bedingungen; günstige Stichproben beweisen umgekehrt keine allgemeine WCET oder Antwortgrenze.
+### Musterlösung zu Aufgabe 3
+
+1. Vom Startwert bis zum Umlauf fehlen 128 Takte, danach folgen 80 Takte. Deshalb gilt
+
+   $$\Delta c=(c_{\mathrm{Ende}}-c_{\mathrm{Anfang}})\bmod 2^{32}
+   =128+80=208\,\mathrm{Takte},$$
+
+   $$\Delta t=\frac{208}{160\cdot10^6}\,\mathrm{s}=1{,}3\,\text{µs}.$$
+
+   Ein voller Umlauf dauert
+
+   $$T_{\mathrm{Umlauf}}=\frac{2^{32}}{160\cdot10^6}\,\mathrm{s}
+   =26{,}8435456\,\mathrm{s}.$$
+
+   Die echte verstrichene Zeit muss kürzer als dieser Umlauf sein. Gleiche Endstände könnten sonst zusätzlich einen oder mehrere vollständige Umläufe verbergen. Außerdem müssen Takt und Zählerbetrieb über das ganze Fenster zum Vertrag passen.
+
+2. $2400/(160\cdot10^6)=15$ µs, bei 320 MHz sind es 7,5 µs. Die Taktzahl allein legt also noch keine Zeit fest. Zwei lokale Kernzähler haben ohne bestätigte Korrelation weder einen gemeinsamen Nullpunkt noch notwendig dieselbe Skalierung. Ihre Rohwerte dürfen nicht einfach voneinander abgezogen werden.
+
+3. Minimum 19 µs, Maximum 27 µs, Spanne $27-19=8$ µs. Die Summe beträgt 109 µs, somit ist der Mittelwert $109/5=21{,}8$ µs. Der gültige 27-µs-Fall verletzt die Frist um 2 µs. Er widerlegt eine Garantie, die diesen Fall einschließt. Auch ein vollständig fristgerechter endlicher Datensatz würde umgekehrt keine allgemeine Antwortzeitgrenze beweisen. Das beobachtete Antwortmaximum ist außerdem keine WCET: WCET bedeutet Worst-Case Execution Time, obere Grenze der eigenen Ausführungszeit über die definierten zulässigen Fälle.
 :::
 
-## Aufgabe 4: Tracequelle und Datenqualität (8 Punkte)
+## Aufgabe 4: Ein kurzes Ereignislog beurteilen (8 Orientierungspunkte)
 
-1. Ein separater Shared-Datensatz hat vier 32-Bit-Felder bei Offsets 0, 4, 8 und 12. Die Basis ist `0x38008000`, der gesuchte Wert das letzte Feld. Welche Adresse muss ein Schreibfilter beobachten? Beweist ein M7-Store bei Write-Back-Cache automatisch die M4-Sicht? (2 Punkte)
-2. Ein IRQ läuft, `pxCurrentTCB` verweist weiter auf Task X. Ist das X-CPU-Zeit? Was unterscheidet Taskliste, Running-Profil und Zustandshistorie? (2 Punkte)
-3. 120000 Traceereignisse/s zu acht Byte, Abfluss 720000 Byte/s, anfangs 48 KiB frei; konstante Raten ohne Overhead. Bestimmen Sie Füllzeit und Wirkung doppelter Kapazität. (2 Punkte)
-4. Eine Verlustmarke trennt zwei Abschnitte; danach ist neue Synchronisation mit Kontext bestätigt. Darf man die Lücke interpolieren oder fehlenden Anfang null setzen? Wie wird der spätere vollständige Abschnitt behandelt? (2 Punkte)
+Ein begrenztes Softwarelog erfasst ausgewählte Ereignisse. Seine Zeitstempel stammen von einer bestätigten gemeinsamen Modelluhr in µs. Jobnummern erlauben die Zuordnung von Freigabe zu Abschluss. Eine Verlustmarke bedeutet, dass Ereignisse fehlen können.
+
+| Aufgezeichnete Information | Zeit in µs |
+|---|---:|
+| Job A freigegeben | 100 |
+| Job A abgeschlossen | 126 |
+| Job B freigegeben | 150 |
+| Verlustmarke, danach keine gesicherte Zuordnung | 160 |
+| Neue Synchronisation und vollständiger Kontext bestätigt | 200 |
+| Job C freigegeben | 210 |
+| Job C abgeschlossen | 234 |
+
+1. Welche Antwortintervalle sind auswertbar? Darf für Job B ein fehlender Abschluss mit null oder mit der nächsten Zeitmarke ersetzt werden? (2 Punkte)
+2. Nennen Sie den Messvertrag für die auswertbaren Intervalle. Lässt sich aus diesen Freigabe-/Abschlussmarken zusätzlich die eigene CPU-Zeit bestimmen? (2 Punkte)
+3. Das Log erzeugt konstant 90000 Ereignisse/s zu acht Byte. Der Abfluss beträgt konstant 540000 Byte/s, anfangs sind 36 KiB frei. Zusatzkosten werden im Modell ignoriert. Nach welcher Zeit ist der freie Puffer gefüllt? Wie wirkt doppelte Kapazität? (2 Punkte)
+4. Ein Team schlägt eine Ausgabe nach jedem Ereignis oder einen Breakpoint bei Jobfreigabe vor. Nennen Sie je einen konkreten Beobachtereffekt und eine schonendere Vorgehensweise für die zeitliche Auswertung. (2 Punkte)
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Filteradresse `0x3800800C`; Quelle, tatsächliches Image, Breite und Richtung prüfen. Ein lokales Storeereignis beweist keine Kohärenz oder M4-Lesung. Während des IRQ läuft Exceptioncode, nicht notwendig X; die Taskliste ist eine Momentaufnahme, Running-Profil braucht CPU-/Exceptionzuordnung, Zustandshistorie zusätzliche Ready-/Blocked-Ereignisse. Eingang 960000 Byte/s, Rückstau 240000 Byte/s, Kapazität 49152 Byte, Füllzeit 0,2048 s; doppelte Kapazität 0,4096 s, keine dauerhafte Lösung. Fehlendes bleibt unbekannt, keine erfundenen Nullwerte/Interpolation. Später bestätigte vollständige Intervalle separat auswerten, keine Jobpaare über die Lücke konstruieren.
+### Musterlösung zu Aufgabe 4
+
+1. Job A hat die vollständige Antwortzeit $126-100=26$ µs. Nach bestätigter Synchronisation und bekanntem Kontext ist Job C separat mit $234-210=24$ µs auswertbar. Für Job B bleibt die Antwort unbekannt. Eine null oder der Zeitpunkt 200 µs würde einen nicht aufgezeichneten Abschluss erfinden. Es wird auch kein Ereignispaar über die Datenlücke gebildet. Die zwei gültigen Fälle haben ein beobachtetes Maximum von 26 µs, das nur diese Fälle beschreibt.
+
+2. Anfang ist die Freigabemarke, Ende die Abschlussmarke desselben Jobs. Die Quelle ist die bestätigte gemeinsame Modelluhr, Einheit µs. Die jeweiligen Ereignispaare liegen in vollständigen Abschnitten mit bekanntem Kontext. Es werden die festgelegten Betriebsbedingungen und der instrumentierte Programmstand dokumentiert. Die Intervalle sind Antwortzeiten. Eigene CPU-Zeit erfordert zusätzliche Information über die tatsächlich ausgeführten Abschnitte und die Zuordnung von Interrupt- beziehungsweise Taskarbeit. Sie folgt nicht aus zwei Endpunkten.
+
+3. 36 KiB entsprechen $36\cdot1024=36864$ Byte. Der Eingang beträgt $90000\cdot8=720000$ Byte/s. Der Puffer wächst daher mit $720000-540000=180000$ Byte/s. Seine Füllzeit ist
+
+   $$t_{\mathrm{voll}}=\frac{36864}{180000}\,\mathrm{s}=0{,}2048\,\mathrm{s}.$$
+
+   Doppelte Kapazität ergibt 0,4096 s. Sie verzögert den Überlauf, beseitigt aber den dauerhaften Ratenüberschuss nicht. Eine begrenzte Ereignisauswahl oder ausreichender Abfluss muss zum geplanten Messfenster passen.
+
+4. Eine Ausgabe benötigt Befehle und kann auf eine Sperre oder Pufferplatz warten. Sie kann dadurch Antwortzeiten und Ausführungsreihenfolgen ändern. Ein Breakpoint hält den untersuchten Kern an, während Peripherie oder der andere Kern weiterlaufen können; danach fehlt möglicherweise der ursprüngliche zeitliche Zusammenhang. Kurze begrenzte Einträge ohne blockierende Ausgabe und eine Auswertung nach Ende des Messfensters reduzieren diese Einflüsse. Ihr Restaufwand wird trotzdem im Messvertrag benannt.
 :::
 
 ## Aufgabe 5: Ein Leerfenster ist kein universeller Abzug
 
-Leerfenster enthalten 30, 36 und 33 Takte, Arbeitsfenster 480, 560 und 520 Takte. Darf von jedem Arbeitsfenster 30 abgezogen und der größte Rest „WCET“ genannt werden? Nennen Sie zwei unabhängige Gründe.
+Zusätzliche Verständnisaufgabe, ohne Orientierungspunkte: Leerfenster enthalten 30, 36 und 33 Takte, Arbeitsfenster 480, 560 und 520 Takte. Alle Zahlen sind didaktische Annahmen. Darf von jedem Arbeitsfenster 30 abgezogen und der größte Rest „WCET“ genannt werden? Nennen Sie zwei unabhängige Gründe.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** Nein. Das kleinste fremde Leerfenster ist nicht nachgewiesen der jeweilige Messaufwand jedes Arbeitsfensters. Außerdem können Unterbrechungen enthalten sein und die endliche Auswahl deckt nicht alle zulässigen Ausführungen ab. Der größte Rest 530 Takte ist deshalb keine sichere WCET der Funktion.
+### Musterlösung zu Aufgabe 5
+
+Nein. Der kleinste Wert eines getrennten Leerfensters ist nicht nachgewiesen der jeweilige Messaufwand in jedem Arbeitsfenster. Beispielsweise können andere Speicherzustände oder Interrupts die Fenster unterschiedlich beeinflussen. Ein pauschaler Abzug rekonstruiert deshalb nicht automatisch die eigene Prozessorzeit.
+
+Unabhängig davon decken die drei Arbeitsfenster nicht alle zulässigen Eingaben und Systemzustände ab. Der größte rechnerische Rest ist $560-30=530$ Takte. Diese Zahl ist ein bearbeitetes Stichprobenmaximum, keine bewiesene obere Grenze der Ausführungszeit. Auch ein korrekt bestimmter Messaufwand würde aus endlich vielen günstigen Beobachtungen keinen WCET-Nachweis machen.
 :::
 
 {{< pagebreak >}}
 
 ## Aufgabe 6: Die eigene Zählerauswertung implementieren
 
-**Programmieren, etwa 30–40 Minuten.** Die vorbereitete CM7-Basis führt fünf EMPTY- und fünf WORK-Fenster aus; danach schreibt niemand mehr in `lab07_records`. Kein Traceadapter erforderlich. Der DWT-Zähler und der tatsächliche Kerntakt werden vorab geprüft. Sie implementieren `Lab07_Summarize()` in `summary_student.c`.
+Zusätzliche Programmieraufgabe, etwa 30–40 Minuten, ohne Orientierungspunkte. Die vorbereitete Cortex-M7-Basis führt fünf EMPTY- und fünf WORK-Fenster aus. EMPTY enthält keine synthetische Arbeit, WORK die vorgegebene kleine Berechnung. Nach erfolgreichem Lauf schreibt niemand mehr in `lab07_records`. Die Hardwarebasis und der tatsächliche Kerntakt sind vor dem Termin geprüft. Sie implementieren `Lab07_Summarize()` in `summary_student.c` selbst.
 
-1. Prüfen Sie Pointer, Anzahl höchstens `LAB07_CAPACITY` und Auswahl EMPTY/WORK. Berücksichtigen Sie nur die gewählte Art. Ohne passenden Datensatz ist das Ergebnis ungültig, nicht ein künstlicher Nullzeitwert.
-2. Bestimmen Sie Anzahl, Minimum, Maximum und 64-Bit-Summe der `cycles_mod32`. Übernehmen Sie `core_hz` aus dem ersten passenden Datensatz und weisen Sie null oder unterschiedliche Takte innerhalb der Gruppe zurück. Die Basis sichert die Messfensterannahmen.
-3. Geben Sie Erfolg eins oder Fehler null zurück; auf Fehler bleibt die Ausgabe unverändert. Die Basis legt das Ergebnis in `lab07_summary` ab; **LD1/PB0** leuchtet nur bei erfolgreicher Analyse.
-4. Rechnen Sie den Mittelwert erst nach dem Versuch mit $\overline t=\mathrm{sum}/(\mathrm{count}\cdot f)$ um. Logging gehört nicht ins Messfenster. Vergleichen Sie beide Arten getrennt und nennen Sie die Grenzen der Aussage.
-5. Testen Sie zusätzlich auf Papier oder im Debugger: leere Gruppe, abweichender Takt und eine Summe oberhalb von 32 Bit.
+1. Prüfen Sie beide Pointer, die Anzahl höchstens `LAB07_CAPACITY` und die Auswahl EMPTY/WORK. Berücksichtigen Sie nur Datensätze der gewählten Art. Ohne passenden Datensatz ist das Ergebnis ungültig, kein künstlicher Nullzeitwert.
+2. Bestimmen Sie Anzahl, Minimum, Maximum und 64-Bit-Summe der `cycles_mod32`. Übernehmen Sie `core_hz` aus dem ersten passenden Datensatz. Weisen Sie null oder unterschiedliche Takte innerhalb der gewählten Gruppe zurück.
+3. Geben Sie bei Erfolg eins, bei Fehler null zurück. Auf Fehler bleibt die Ausgabe unverändert. Die Basis legt eine erfolgreiche WORK-Auswertung in `lab07_summary` ab; LD1 auf PB0 leuchtet nur bei erfolgreicher Analyse.
+4. Rechnen Sie den Mittelwert erst nach dem Versuch mit $\overline t=\mathrm{sum}/(\mathrm{count}\cdot f)$ um. Dabei ist $f$ der tatsächliche Kerntakt in Hz. Vergleichen Sie EMPTY und WORK getrennt und erläutern Sie, weshalb das Ergebnis kein Fristnachweis ist.
+5. Prüfen Sie die unten genannten Fälle mit selbst angelegten Datensätzen, auf Papier oder nach Ende der Messung im Debugger. Dies sind synthetische Funktionstests, keine erwarteten Boardmesswerte. Halten Sie eigene Implementierung und tatsächlich erreichten Prüfstatus fest.
 
-**Vorbereitete Basis:** [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_07_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Board und USB/ST-LINK genügen. Eigene Implementierung und tatsächlichen Prüfstatus festhalten; Debuggerdiagnosen bei angehaltenem zuständigem Kern lesen.
+| Synthetischer Prüfinput | Zu prüfende Eigenschaft |
+|---|---|
+| Kein Datensatz der gewählten Art | Fehler und unveränderte Ausgabe |
+| Zwei gewählte Datensätze mit verschiedenen `core_hz` | Fehler und unveränderte Ausgabe |
+| Zwei WORK-Werte 3000000000 und 2000000000, beide 160000000 Hz | Richtige Summe oberhalb von 32 Bit |
+| Eine andere Art zwischen zwei WORK-Datensätzen | Nur WORK trägt zur Auswertung bei |
 
-**Quellen:** Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS und gegebenenfalls CMSIS-RTOS2. Papierwerte sind Lehrannahmen.
+Vorbereitung: [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_07_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für NUCLEO-H755ZI-Q / STM32H755ZIT6. Board und USB/ST-LINK genügen. Es ist kein zusätzlicher Traceadapter erforderlich. Diagnosewerte erst bei beendetem Log und angehaltenem zuständigem Kern lesen. Die Umrechnung setzt einen kontinuierlich laufenden Zähler, stabilen Takt und Fenster kürzer als einen vollständigen Umlauf voraus. Die Auswertungsfunktion kann Verletzungen dieser Annahmen nicht nachträglich erkennen.
 
 ::: {.content-visible when-profile="solution"}
-**Musterlösung:** {{< pagebreak >}}
-
 ### Musterlösung zu Aufgabe 6
 
-Eine private Teilsumme wird erst nach vollständiger Prüfung veröffentlicht. `uint64_t` verhindert einen Summenüberlauf für höchstens 16 32-Bit-Differenzen. Die Auswertung heilt keine mehrfachen Zählerumläufe oder Zählerhalte im ursprünglichen Fenster.
+Die C-Funktion sammelt zuerst in einer lokalen Struktur. Erst wenn alle passenden Datensätze geprüft sind, wird diese Struktur veröffentlicht. So bleibt `*out` bei jedem Fehler unverändert. Ein `uint64_t` genügt für die Summe von höchstens 16 vorzeichenlosen 32-Bit-Werten. Die vorangehende Prüfung der Fensterlänge und des Zählerbetriebs bleibt eine separate Aufgabe der Messung.
 
 ```c
 #include "lab07_summary.h"
@@ -84,13 +169,17 @@ int Lab07_Summarize(const volatile Lab07_Record *records, uint32_t count,
                     Lab07_Kind kind, Lab07_Summary *out)
 {
     if (records == NULL || out == NULL || count > LAB07_CAPACITY ||
-        (kind != LAB07_EMPTY && kind != LAB07_WORK)) { return 0; }
+        (kind != LAB07_EMPTY && kind != LAB07_WORK)) {
+        return 0;
+    }
     Lab07_Summary s = {0};
     for (uint32_t i = 0U; i < count; ++i) {
         if (records[i].kind != (uint32_t)kind) { continue; }
         const uint32_t cycles = records[i].cycles_mod32;
         const uint32_t hz = records[i].core_hz;
-        if (hz == 0U || (s.count != 0U && hz != s.core_hz)) { return 0; }
+        if (hz == 0U || (s.count != 0U && hz != s.core_hz)) {
+            return 0;
+        }
         if (s.count == 0U) {
             s.minimum = s.maximum = cycles;
             s.core_hz = hz;
@@ -106,5 +195,11 @@ int Lab07_Summarize(const volatile Lab07_Record *records, uint32_t count,
 }
 ```
 
-Der Mittelwert wird in Gleitkomma oder ausreichend breiter Rechnung gebildet; insbesondere das Produkt aus Count und Frequenz nicht unbeabsichtigt in 32 Bit überlaufen lassen. Die LED bestätigt die Analysefunktion dieses Datensatzes, keine harte Frist.
+Für den synthetischen 64-Bit-Fall ergeben sich Anzahl 2, Minimum 2000000000, Maximum 3000000000 und Summe 5000000000 Takte. Bei 160 MHz wäre der rechnerische Mittelwert 15,625 s. Diese großen Testzahlen dienen ausschließlich dazu, einen irrtümlichen 32-Bit-Summenüberlauf sichtbar zu machen. Für den Normalversuch werden die tatsächlich erfassten Werte verwendet.
+
+Bei leerer gewählter Gruppe, ungültigem Argument, Nulltakt oder Taktabweichung in der gewählten Gruppe wird null zurückgegeben. Ein vorab mit bekannten Werten gefülltes `out` bleibt dabei unverändert. Ein Datensatz anderer Art zählt weder zur Summe noch zur Prüfung des Gruppentakts.
+
+Bei der Umrechnung darf insbesondere das Produkt aus Anzahl und Frequenz nicht unbeabsichtigt in 32 Bit berechnet werden. Eine mögliche Auswertung nach dem Messfenster lautet `(double)s.sum / ((double)s.count * (double)s.core_hz)` für Sekunden. EMPTY und WORK werden zunächst separat beschrieben. Die LED bestätigt die erfolgreiche Analyse dieses Datensatzes, keine harte Frist und keine universelle WCET.
 :::
+
+Quellen zur Einordnung: Buttazzo, *Hard Real-Time Computing Systems*; ST UM2408 und RM0399; Arm CMSIS. Alle Papierwerte und Funktionstestdaten sind ausdrücklich Lehrannahmen.
