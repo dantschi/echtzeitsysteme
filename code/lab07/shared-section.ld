@@ -9,14 +9,14 @@
 .shared ORIGIN(RAM_SHARED) (NOLOAD) :
 {
     . = ALIGN(32);
-    __lab06_shared_begin = .;
+    __lab07_shared_begin = .;
     KEEP(*(.shared .shared.*))
-    __lab06_shared_data_end = .;
+    __lab07_shared_data_end = .;
     . = ALIGN(32);
 } > RAM_SHARED
 
 ASSERT(ADDR(.shared) == 0x38000000, "IPC base address differs")
-ASSERT(__lab06_shared_data_end - __lab06_shared_begin == 12,
+ASSERT(__lab07_shared_data_end - __lab07_shared_begin == 12,
        "Only the 12-byte IPC object may occupy the shared section")
 ASSERT(SIZEOF(.shared) == 32, "IPC section must contain one padded object")
 ASSERT(ipc == 0x38000000, "IPC symbol differs")

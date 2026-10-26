@@ -10,7 +10,9 @@ mkdir -p "$OUT_DIR"
 echo "Baue Dozenten-Versionen (mit Lösungen)..."
 quarto render labs/ --to pdf --profile solution
 
-for pdf in labs/*.pdf; do
+for qmd in labs/lab_[0-9][0-9]_*.qmd labs/probeklausur.qmd; do
+  [ -f "$qmd" ] || continue
+  pdf="${qmd%.qmd}.pdf"
   [ -f "$pdf" ] || continue
   base="$(basename "$pdf" .pdf)"
   case "$base" in
@@ -22,7 +24,9 @@ done
 echo "Baue Studierenden-Versionen (ohne Lösungen)..."
 quarto render labs/ --to pdf
 
-for pdf in labs/*.pdf; do
+for qmd in labs/lab_[0-9][0-9]_*.qmd labs/probeklausur.qmd; do
+  [ -f "$qmd" ] || continue
+  pdf="${qmd%.qmd}.pdf"
   [ -f "$pdf" ] || continue
   base="$(basename "$pdf" .pdf)"
   case "$base" in

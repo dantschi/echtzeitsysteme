@@ -1,35 +1,34 @@
 # Projektvorbereitung zu Übungsblatt 8
 
-Aufgabe 6 ist eine **selbst implementierte Polling-Server-Simulation** mit zwei gewöhnlichen FreeRTOS-Threads auf **CM4**. Es wird kein Scheduling-Server in den FreeRTOS-Kernel eingebaut. Die vollständigen Datenstrukturen, Regeln und Musterfunktionen stehen im [Übungsblatt](../lab_08_server-verfahren.qmd); zusätzliche Laborquelldateien sind nicht erforderlich.
+Die Aufgabe ergänzt das vorhandene vorbereitete Projekt für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Verwendet werden STM32CubeMX sowie VS Code mit STM32 VS Code Extension. Installation, erstmaliger Build, Flashen und Bootprüfung erfolgen vor dem Termin. Die Studierenden implementieren im Termin die kleine Auswertungsfunktion selbst; die vorbereitete Zählerroutine bleibt erhalten.
 
-## Projektbasis und CubeMX
+Board, USB/ST-LINK und die eingebaute LD1 genügen. B1 wird für diese Aufgabe nicht benötigt. Es sind keine zusätzliche Elektronik, UART-Verkabelung oder externen Mess- und Tracegeräte erforderlich. Alle Papieraufgaben bleiben ohne Hardware vollständig lösbar.
 
-Verwenden Sie **NUCLEO-H755ZI-Q / STM32H755ZIT6**, **STM32CubeMX** und **VS Code mit STM32 VS Code Extension**. Die [M4-only-Projektbasis aus Übung 3](lab_03_programmierung.md) liefert den geprüften eigenständigen Start, die Taktinitialisierung und den gemeinsamen SysTick für HAL und Kernel. CM7 bleibt boot-deaktiviert. Ein neuer Dual-Core-Kanal, Hardware-Semaphoren, MPU-Anpassungen oder Hardware-Watchdogs gehören nicht zu diesem Versuch.
+## Vorbereiteter Projektstand
 
-1. Öffnen Sie die `.ioc`-Datei im CM4-Kontext. **PE1 / LD2** und **PB0 / LD1** als `GPIO_Output` dem CM4 zuordnen. Unter **System Core > GPIO**: Output Push Pull, No pull-up and no pull-down, Low speed, Ausgangspegel Low. Pinbelegung und aktive Polarität gegen UM2408 prüfen. B1/PC13 bleibt unbenutzt.
-2. **Middleware and Software Packs > FREERTOS**: Interface **CMSIS_V2**, Präemption an, **1000 Hz**, **32-Bit-Ticks**, Tickless Idle aus. Die HAL verwendet den vorbereiteten gemeinsamen SysTick. Keinen zusätzlichen Zeitbasis-Timer starten. Kontrollieren Sie die tatsächlich erzeugte `FreeRTOSConfig.h`; Menünamen können versionsabhängig abweichen.
-3. Unter **Tasks and Queues** Default-Thread entfernen und genau zwei Anwendungsthreads dynamisch anlegen:
+- Die installierte Werkzeugkombination unterstützt die gewählten Cortex-M7-/Cortex-M4-Ziele. Der vorhandene Dual-Core-Boot einschließlich generierter HSEM-Startfolge bleibt erhalten; beide Images passen zusammen. Der M4 erhält nach dem Boot keine zusätzliche Laborlast.
+- Takt, Startup, Linker sowie nötige Speicher-/Cachekonfiguration stammen aus der geprüften Projektbasis. Der tatsächliche M7-Kerntakt stimmt mit dem aktualisierten `SystemCoreClock` überein. Die Messung verlangt privilegierte M7-Ausführung.
+- Eigene Quellen und Benutzerbereiche überstehen eine erneute CubeMX-Generierung und den anschließenden Build. Es gibt keine zweite Instanz der Laborroutine, keinen zusätzlichen Callback und keinen konkurrierenden Schreiber des Logs. C11 oder neuer wird verwendet.
+- DWT bedeutet Data Watchpoint and Trace. Verfügbarkeit und Lauf seines lokalen Zykluszählers `CYCCNT`, dessen Verhalten bei Debughalt beziehungsweise Sleep und die Zuständigkeit für diesen Zähler werden am tatsächlichen Projekt geprüft. Kein zweiter Debug-/Traceclient setzt ihn während des Versuchs zurück. Der Versuch benötigt keine Einrichtung von ITM, ETM oder externer Traceaufnahme.
 
-| Task | Entry Function | Priorität | Stack in Byte |
-|---|---|---|---:|
-| Heartbeat | `StartHeartbeatTask` | `osPriorityNormal` | 512 |
-| Simulation | `StartSimulationTask` | `osPriorityBelowNormal` | 1024 |
+## Einbindung auf dem Cortex-M7
 
-   Bei einer Dialogeinheit von 32-Bit-Wörtern entsprechen die Werte **128** bzw. **256** Wörtern. Kontrollieren Sie die CMSIS-Attribute `.stack_size` in Byte. Die Größen sind Ausgangswerte; Heap/RAM müssen auch Idle, Verwaltungsdaten und Handlerstack berücksichtigen.
-4. Unter **Project Manager > Project** CMake wählen, unter **Code Generator** *Keep User Code when re-generating* aktivieren. Nur das CM4-Ziel bauen und laden. Prüfen Sie den Aufruf der GPIO-Initialisierung und den Erhalt der M4-/SysTick-Anpassungen nach erneuter Generierung.
+1. `code/lab08/lab08_timing.c` und `lab08_timing.h` in das M7-Ziel aufnehmen. Für diese Aufgabe die Compile-Definitionen `LAB08_SAMPLES_PER_KIND=5`, `LAB08_WORK_STEPS=15000` und `LAB08_WORK_SEED=13` setzen. Damit sind fünf EMPTY- und fünf WORK-Datensätze vorgesehen. Die unveränderte Quelldatei verwendet ohne Definitionen weiterhin ihre bisherigen Standardwerte. Beide Gruppen müssen in den festen Log passen; das prüft eine statische Zusicherung beim Übersetzen.
+2. `lab08_summary.c`, `summary_student.c` und den zugehörigen Headerpfad zusätzlich ins M7-Ziel aufnehmen. In CubeMX LD1 auf PB0 mit User Label `LAB08_RESULT` als Ausgang mit initialem Pegel LOW ausschließlich dem M7 zuordnen. Der M4 konfiguriert diesen Port nicht.
+3. Nach bestätigter Takt- und GPIO-Initialisierung `lab08_timing.h` und `lab08_summary.h` einbinden. Genau einmal `Lab08_Init(SystemCoreClock)` und danach `Lab08_Run()` auf `LAB08_OK` prüfen. Nur nach beiden Erfolgen einmal `Lab08_ShowAnalysis()` aufrufen. Bei Fehler wird der bestehende Fehlerpfad der Projektbasis verwendet. Die Funktionen werden weder in einem Interruptbehandler noch wiederholt aus der Hauptschleife aufgerufen.
+4. Vor der Ausgabe des Basisstands den vorgesehenen Ablauf am Board prüfen: Nach erfolgreichem Lauf sind `lab08_done == 1` und zehn Datensätze mit fünf Einträgen je Art zu erwarten. Mit der unveränderten studentischen Startfunktion bleibt `lab08_analysis_valid` null und LD1 aus. Das ist die erwartete Ausgangslage vor Implementierung und kein Defekt des Messlaufs.
+5. Die Studierenden implementieren `Lab08_Summarize()` in `summary_student.c`. Nach erfolgreicher Implementierung wird WORK durch `Lab08_ShowAnalysis()` ausgewertet. Für die separate EMPTY-Auswertung kann nach beendetem Log `Lab08_Summarize()` mit dieser Auswahl und einer eigenen Ergebnisstruktur aufgerufen werden. Der Log wird dafür nicht erneut beschrieben.
 
-## Was die Studierenden schreiben
+## Messvertrag und Auswertung
 
-Der Typ `Modell` und die selbst geschriebene Funktion `ModellSchritt` stehen im erhaltenen gemeinsamen Benutzerbereich der erzeugten CM4-Anwendungsdatei. Falls Threadfunktionen in einer anderen Datei liegen, werden Typ und Funktionsdeklaration in einem eigenen erhaltenen Deklarationsbereich gemeinsam bekannt gemacht. Es werden keine zweiten Definitionen der vom Generator erzeugten Threadfunktionen hinzugefügt.
+Das Fenster reicht von der ersten bis zur zweiten lokalen Zählerlesung. Die vorgegebene Routine speichert den Datensatz erst nach der Endlesung. EMPTY enthält den Messpfad ohne synthetische Arbeitsfunktion, WORK zusätzlich diese Arbeitsfunktion. Die Messfenster enthalten dennoch ihren eigenen Befehlsaufwand und gegebenenfalls dazwischenliegende Interruptarbeit. Der resultierende Wert ist ein Intervall in lokalen Kerntakten, keine automatisch reine eigene CPU-Zeit.
 
-Die zwei Schleifen stehen jeweils in ihren `USER CODE`-Bereichen. Heartbeat besitzt ausschließlich LD2. Simulation besitzt ausschließlich LD1 und ihr lokales Modell. Benötigt werden `main.h`, `cmsis_os2.h` und `stdint.h`. Die vom Generator angelegten Handles werden unmittelbar nach beiden `osThreadNew`-Aufrufen und vor `osKernelStart()` geprüft. Es bleiben genau eine Kernelinitialisierung und ein Kernelstart bestehen. Delay-Fehler führen zu `Error_Handler()`.
+Die zeitliche Umrechnung setzt stabilen tatsächlichen Kerntakt, durchlaufenden Zähler und ein Fenster kürzer als einen vollständigen Umlauf voraus. Diese Voraussetzungen sind durch die Lehrperson für die Basis zu prüfen. Ein unverändertes `SystemCoreClock` allein beweist keinen unveränderten tatsächlichen Takt. Die Statusprüfungen der Basis erkennen einige Konfigurationsfehler; sie beweisen weder kontinuierlichen Zählerbetrieb noch die Abwesenheit versteckter vollständiger Umläufe. Die nachgeschaltete Gruppenauswertung kann solche Fehler nicht reparieren.
 
-Jeder Modellschritt bedeutet **eine virtuelle Millisekunde**. Die Pause von 100 realen Kernelticks verlangsamt die Anzeige. Die Ankünfte bei 1, 3, 7 und 8, das Budget zwei und die Modellperiode sechs sind reine Lehrdaten. Bei den Schritten **6, 7, 12 und 13** soll LD1 an sein. Nach Schritt 17 sind alle vier Aufträge verarbeitet, anschließend beginnt das nächste endliche Modell von vorn. Die Vorgabefolge ist absichtlich von den Papierbeispielen verschieden.
+Logs werden erst nach ihrem Ende und bei angehaltenem zuständigem Kern über die zum Image und Cache passende Debuggersicht gelesen. Keine Ausgabe und kein manueller Debughalt gehören ins laufende Messfenster. Die Studierenden dokumentieren Anzahl, Minimum, Maximum, 64-Bit-Summe und tatsächlichen Kerntakt je Gruppe. EMPTY und WORK werden getrennt beschrieben; ein pauschaler Leerfensterabzug und ein endliches Maximum ersetzen keinen WCET- oder Antwortfristnachweis.
 
-## Abnahme und Grenzen
+## Prüfstatus festhalten
 
-Vor dem Termin müssen CM4-Build, Kaltstart und die beiden Eintrittsfunktionen auf der tatsächlichen Hardware geprüft sein. Erst nach studentischer Implementierung wird das erwartete Modellmuster verlangt. Der Heartbeat soll dabei weiterhin blinken. Ein Hosttest kann die diskrete Modellfolge prüfen, aber weder reale LED-Zeiten noch eine Kernelreservation nachweisen.
+Vor dem Termin wird ein auf der tatsächlichen Hardware gebauter und gestarteter Basisstand bereitgestellt. Die studentische Startdatei enthält bewusst keine Aufgabenlösung. Vollständige Musterfunktionen und begründete Rechenergebnisse stehen ausschließlich im zugehörigen Übungsblatt unter Quarto-Profil `solution`.
 
-Die Simulation reserviert keine echte CPU-Zeit. Insbesondere ist `osDelay(100)` keine Budgetabrechnung; es ist nur die Anzeigepause. Ein vollständiger Sporadic Server würde zusätzlich korrekte Aktivierungs-/Auffüllregeln, tatsächliche CPU-Verbrauchserfassung und die Einbindung in die Schedulingentscheidung benötigen. Der Praxisteil vertieft deshalb die Modellbegriffe, während die Klausuraufgaben die Serveranalyse prüfen.
-
-Die früheren HSEM-/WWDG-/Supervisorquellen unter `code/lab08/` bleiben getrennte Archivbeispiele und werden hier nicht eingebunden. Board und USB/ST-LINK genügen; zusätzliche Elektronik oder Tracegeräte sind nicht erforderlich. Ein nicht durchgeführter Boardlauf wird als solcher dokumentiert.
+Quelltextprüfung, Hosttests einer reinen C-Auswertung und ein erfolgreicher Dokumentbuild sind jeweils eigene Nachweise. Sie bestätigen keinen STM32-Build, Boardlauf, tatsächlichen Takt oder reale Zeitgrenzen. Ein Protokoll nennt deshalb Werkzeugversionen, Build-/Boardstatus, Messvertrag und tatsächlich erhobene Werte. Ungemessene Zeiten bleiben offen.

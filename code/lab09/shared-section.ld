@@ -1,7 +1,7 @@
 /* Integration fragment, not a complete firmware linker script.
  * BOTH actual scripts reserve SRAM4 exclusively, with no overlapping alias:
  * RAM_SHARED (rw) : ORIGIN = 0x38000000, LENGTH = 64K
- * Remove lab06/lab08 .shared objects and section definitions. Private data,
+ * Remove the Multicore lab07 and archived Safety .shared objects and section definitions. Private data,
  * heap and stacks go elsewhere. Insert inside existing SECTIONS: */
 .shared ORIGIN(RAM_SHARED) (NOLOAD) :
 {

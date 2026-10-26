@@ -1,7 +1,10 @@
-# Implementierungsaufgabe zu Übungsblatt 6
+# Code zu Übungsblatt 6
 
-`respond_student.c` enthält die eigene Phasen-/Datenantwort des M4. In beiden Images `LAB06_STUDENT_EXERCISE` definieren; Anfragen 4,11,23, erwartete Antworten 14,35,71. Ohne Definition bleibt der bisherige Basislauf unverändert.
+Die Vorlesung 6 behandelt **Server-Verfahren für ereignisgetriebene Last**. Die Implementierungsaufgabe simuliert einen Polling Server auf CM4 mit zwei FreeRTOS-Threads und den eingebauten LEDs. **Alle benötigten Codebausteine stehen im Aufgabenblatt.**
 
-[Projektvorbereitung](../../labs/vertiefung/lab_06_programmierung.md) · [Aufgaben und Musterlösung](../../labs/lab_06_multicore-shared-memory-cache-kohaerenz.qmd)
+- [Aufgaben und Musterlösung im Lösungsprofil](../../labs/lab_06_server-verfahren.qmd)
+- [CubeMX-Projektvorbereitung](../../labs/vertiefung/lab_06_programmierung.md)
 
-Die studentischen Startdateien enthalten bewusst noch keine Lösung. Vollständige Musterfunktionen stehen im Quarto-Profil `solution`. Benötigt werden NUCLEO-H755ZI-Q, STM32CubeMX und VS Code mit STM32 VS Code Extension; zusätzliche Elektronik oder Messgeräte sind nicht erforderlich. Die Dateien ergänzen ein vorbereitetes generiertes Projekt, sie ersetzen weder dessen Startup-/Linker-/Kernelkonfiguration noch einen tatsächlichen Boardtest.
+Die früheren HSEM-, WWDG- und Supervisor-Versuche liegen getrennt im [Code-Archiv](../archiv/multicore-safety/README.md). Sie werden in der aktuellen Übung nicht eingebunden und sind keine Voraussetzung der Server-Theorie oder der Fallstudie.
+
+Ein Dokument- oder Hosttest ersetzt keinen ARM-Build und keinen tatsächlichen Boardlauf.

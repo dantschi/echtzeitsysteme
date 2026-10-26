@@ -38,7 +38,7 @@ extern volatile uint32_t lab08_final, lab08_expected, lab08_complete;
  * priority above conflicting overlaps. Other MPU regions remain in place. */
 void Lab08_CM7_ConfigureMemory(uint32_t free_region);
 /* Exactly once, CM4 still stopped by the EXISTING generated boot handshake.
- * Replace the lab06 shared object; do not link both examples together. */
+ * Replace the lab07 shared object; do not link both examples together. */
 void Lab08_CM7_InitShared(Lab08_Mode mode);
 /* After existing CM4 boot release; running HAL millisecond timebase. */
 void Lab08_CM7_Run(void);

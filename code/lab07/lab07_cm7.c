@@ -4,54 +4,54 @@
  * Fault build only: TEX=1 C=1 B=1 S=0 with D-cache enabled, no maintenance.
  * Change attributes ONLY at joint restart; never during communication. */
 #include "main.h"
-#include "lab06_ipc.h"
-#ifdef LAB06_STUDENT_EXERCISE
-#include "lab06_student.h"
+#include "lab07_ipc.h"
+#ifdef LAB07_STUDENT_EXERCISE
+#include "lab07_student.h"
 #endif
 
 #if !defined(CORE_CM7) || defined(CORE_CM4)
-#error "lab06_cm7.c is only for the CM7 target"
+#error "lab07_cm7.c is only for the CM7 target"
 #endif
 
 #define WAIT_TIMEOUT_MS UINT32_C(2000)
 
-volatile Lab06_Error lab06_error;
-volatile uint32_t lab06_cm7_reply[LAB06_ROUNDS];
-volatile uint32_t lab06_cm7_done;
+volatile Lab07_Error lab07_error;
+volatile uint32_t lab07_cm7_reply[LAB07_ROUNDS];
+volatile uint32_t lab07_cm7_done;
 static int memory_configured;
 static int shared_initialized;
 static int run_started;
 
-static void Fail(Lab06_Error error)
+static void Fail(Lab07_Error error)
 {
-    lab06_error = error;
+    lab07_error = error;
     Error_Handler();
     for (;;) {}
 }
 
-void Lab06_CM7_ConfigureMemory(uint32_t region_number, Lab06_MemoryMode mode)
+void Lab07_CM7_ConfigureMemory(uint32_t region_number, Lab07_MemoryMode mode)
 {
     uint32_t region_count = (MPU->TYPE & MPU_TYPE_DREGION_Msk)
                             >> MPU_TYPE_DREGION_Pos;
     if (memory_configured || shared_initialized || region_number >= region_count ||
         region_number > 15u || (SCB->CCR & SCB_CCR_DC_Msk) != 0u ||
-        (mode != LAB06_NONCACHED && mode != LAB06_CACHED_FAULT)) {
-        Fail(LAB06_ERROR_SETUP);
+        (mode != LAB07_NONCACHED && mode != LAB07_CACHED_FAULT)) {
+        Fail(LAB07_ERROR_SETUP);
     }
     MPU_Region_InitTypeDef region = {0};
     region.Enable = MPU_REGION_ENABLE;
     region.Number = (uint8_t)region_number;
-    region.BaseAddress = LAB06_SHARED_ADDRESS;
+    region.BaseAddress = LAB07_SHARED_ADDRESS;
     region.Size = MPU_REGION_SIZE_64KB;
     region.SubRegionDisable = 0u;
     region.TypeExtField = MPU_TEX_LEVEL1;
     region.AccessPermission = MPU_REGION_FULL_ACCESS;
     region.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
-    region.IsShareable = mode == LAB06_NONCACHED ? MPU_ACCESS_SHAREABLE
+    region.IsShareable = mode == LAB07_NONCACHED ? MPU_ACCESS_SHAREABLE
                                                : MPU_ACCESS_NOT_SHAREABLE;
-    region.IsCacheable = mode == LAB06_NONCACHED ? MPU_ACCESS_NOT_CACHEABLE
+    region.IsCacheable = mode == LAB07_NONCACHED ? MPU_ACCESS_NOT_CACHEABLE
                                                : MPU_ACCESS_CACHEABLE;
-    region.IsBufferable = mode == LAB06_NONCACHED ? MPU_ACCESS_NOT_BUFFERABLE
+    region.IsBufferable = mode == LAB07_NONCACHED ? MPU_ACCESS_NOT_BUFFERABLE
                                                 : MPU_ACCESS_BUFFERABLE;
     /* Existing regions remain. Caller must reserve this free region number
      * and verify effective attributes, including all overlapping regions. */
@@ -63,18 +63,18 @@ void Lab06_CM7_ConfigureMemory(uint32_t region_number, Lab06_MemoryMode mode)
     memory_configured = 1;
 }
 
-void Lab06_CM7_InitShared(void)
+void Lab07_CM7_InitShared(void)
 {
     if (!memory_configured || shared_initialized ||
         (SCB->CCR & SCB_CCR_DC_Msk) != 0u) {
-        Fail(LAB06_ERROR_SETUP);
+        Fail(LAB07_ERROR_SETUP);
     }
     /* CM4 is still stopped in the agreed generated boot handshake.
      * D-cache OFF: even the fault build has initial bytes in SRAM. */
     ipc.magic = 0u;
     ipc.state = TURN_M7;
-#ifdef LAB06_STUDENT_EXERCISE
-    ipc.payload = Lab06_ExerciseRequest(0U);
+#ifdef LAB07_STUDENT_EXERCISE
+    ipc.payload = Lab07_ExerciseRequest(0U);
 #else
     ipc.payload = 0u;
 #endif
@@ -86,44 +86,44 @@ void Lab06_CM7_InitShared(void)
     shared_initialized = 1;
 }
 
-void Lab06_CM7_Run(void)
+void Lab07_CM7_Run(void)
 {
     if (!shared_initialized || run_started) {
-        Fail(LAB06_ERROR_SETUP);
+        Fail(LAB07_ERROR_SETUP);
     }
     run_started = 1;
-    for (uint32_t round = 0u; round < LAB06_ROUNDS; ++round) {
+    for (uint32_t round = 0u; round < LAB07_ROUNDS; ++round) {
         uint32_t wait_begin = HAL_GetTick();
         for (;;) {
             if (ipc.magic != IPC_MAGIC) {
-                Fail(LAB06_ERROR_MAGIC);
+                Fail(LAB07_ERROR_MAGIC);
             }
             uint32_t state = ipc.state;
             if (state == RESPONSE_M7) {
                 break;
             }
             if (state != REQUEST_M4) {
-                Fail(LAB06_ERROR_STATE);
+                Fail(LAB07_ERROR_STATE);
             }
             if ((uint32_t)(HAL_GetTick() - wait_begin) >= WAIT_TIMEOUT_MS) {
-                Fail(LAB06_ERROR_TIMEOUT);
+                Fail(LAB07_ERROR_TIMEOUT);
             }
             /* Throttle polling; active HAL wait, not an IPC latency measure. */
             HAL_Delay(1u);
         }
         __DMB(); /* State observed before reading the associated payload. */
         uint32_t reply = ipc.payload;
-#ifdef LAB06_STUDENT_EXERCISE
-        if (reply != 3U * Lab06_ExerciseRequest(round) + 2U) {
+#ifdef LAB07_STUDENT_EXERCISE
+        if (reply != 3U * Lab07_ExerciseRequest(round) + 2U) {
 #else
         if (reply != 2u * round + 1u) {
 #endif
-            Fail(LAB06_ERROR_PAYLOAD);
+            Fail(LAB07_ERROR_PAYLOAD);
         }
-        lab06_cm7_reply[round] = reply;
-        if (round + 1u < LAB06_ROUNDS) {
-#ifdef LAB06_STUDENT_EXERCISE
-            ipc.payload = Lab06_ExerciseRequest(round + 1U);
+        lab07_cm7_reply[round] = reply;
+        if (round + 1u < LAB07_ROUNDS) {
+#ifdef LAB07_STUDENT_EXERCISE
+            ipc.payload = Lab07_ExerciseRequest(round + 1U);
 #else
             ipc.payload = reply + 1u;
 #endif
@@ -137,5 +137,5 @@ void Lab06_CM7_Run(void)
             __DMB();
         }
     }
-    lab06_cm7_done = 1u;
+    lab07_cm7_done = 1u;
 }

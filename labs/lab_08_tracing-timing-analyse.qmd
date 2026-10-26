@@ -1,5 +1,5 @@
 ---
-title: "Übungsblatt 7: Timing messen und Beobachtungen auswerten"
+title: "Übungsblatt 8: Timing messen und Beobachtungen auswerten"
 author: "Prof. Dr.-Ing. Daniel Klünder"
 ---
 
@@ -140,11 +140,11 @@ Unabhängig davon decken die drei Arbeitsfenster nicht alle zulässigen Eingaben
 
 ## Aufgabe 6: Die eigene Zählerauswertung implementieren
 
-Zusätzliche Programmieraufgabe, etwa 30–40 Minuten, ohne Orientierungspunkte. Die vorbereitete Cortex-M7-Basis führt fünf EMPTY- und fünf WORK-Fenster aus. EMPTY enthält keine synthetische Arbeit, WORK die vorgegebene kleine Berechnung. Nach erfolgreichem Lauf schreibt niemand mehr in `lab07_records`. Die Hardwarebasis und der tatsächliche Kerntakt sind vor dem Termin geprüft. Sie implementieren `Lab07_Summarize()` in `summary_student.c` selbst.
+Zusätzliche Programmieraufgabe, etwa 30–40 Minuten, ohne Orientierungspunkte. Die vorbereitete Cortex-M7-Basis führt fünf EMPTY- und fünf WORK-Fenster aus. EMPTY enthält keine synthetische Arbeit, WORK die vorgegebene kleine Berechnung. Nach erfolgreichem Lauf schreibt niemand mehr in `lab08_records`. Die Hardwarebasis und der tatsächliche Kerntakt sind vor dem Termin geprüft. Sie implementieren `Lab08_Summarize()` in `summary_student.c` selbst.
 
-1. Prüfen Sie beide Pointer, die Anzahl höchstens `LAB07_CAPACITY` und die Auswahl EMPTY/WORK. Berücksichtigen Sie nur Datensätze der gewählten Art. Ohne passenden Datensatz ist das Ergebnis ungültig, kein künstlicher Nullzeitwert.
+1. Prüfen Sie beide Pointer, die Anzahl höchstens `LAB08_CAPACITY` und die Auswahl EMPTY/WORK. Berücksichtigen Sie nur Datensätze der gewählten Art. Ohne passenden Datensatz ist das Ergebnis ungültig, kein künstlicher Nullzeitwert.
 2. Bestimmen Sie Anzahl, Minimum, Maximum und 64-Bit-Summe der `cycles_mod32`. Übernehmen Sie `core_hz` aus dem ersten passenden Datensatz. Weisen Sie null oder unterschiedliche Takte innerhalb der gewählten Gruppe zurück.
-3. Geben Sie bei Erfolg eins, bei Fehler null zurück. Auf Fehler bleibt die Ausgabe unverändert. Die Basis legt eine erfolgreiche WORK-Auswertung in `lab07_summary` ab; LD1 auf PB0 leuchtet nur bei erfolgreicher Analyse.
+3. Geben Sie bei Erfolg eins, bei Fehler null zurück. Auf Fehler bleibt die Ausgabe unverändert. Die Basis legt eine erfolgreiche WORK-Auswertung in `lab08_summary` ab; LD1 auf PB0 leuchtet nur bei erfolgreicher Analyse.
 4. Rechnen Sie den Mittelwert erst nach dem Versuch mit $\overline t=\mathrm{sum}/(\mathrm{count}\cdot f)$ um. Dabei ist $f$ der tatsächliche Kerntakt in Hz. Vergleichen Sie EMPTY und WORK getrennt und erläutern Sie, weshalb das Ergebnis kein Fristnachweis ist.
 5. Prüfen Sie die unten genannten Fälle mit selbst angelegten Datensätzen, auf Papier oder nach Ende der Messung im Debugger. Dies sind synthetische Funktionstests, keine erwarteten Boardmesswerte. Halten Sie eigene Implementierung und tatsächlich erreichten Prüfstatus fest.
 
@@ -155,7 +155,7 @@ Zusätzliche Programmieraufgabe, etwa 30–40 Minuten, ohne Orientierungspunkte.
 | Zwei WORK-Werte 3000000000 und 2000000000, beide 160000000 Hz | Richtige Summe oberhalb von 32 Bit |
 | Eine andere Art zwischen zwei WORK-Datensätzen | Nur WORK trägt zur Auswertung bei |
 
-Vorbereitung: [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_07_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für NUCLEO-H755ZI-Q / STM32H755ZIT6. Board und USB/ST-LINK genügen. Es ist kein zusätzlicher Traceadapter erforderlich. Diagnosewerte erst bei beendetem Log und angehaltenem zuständigem Kern lesen. Die Umrechnung setzt einen kontinuierlich laufenden Zähler, stabilen Takt und Fenster kürzer als einen vollständigen Umlauf voraus. Die Auswertungsfunktion kann Verletzungen dieser Annahmen nicht nachträglich erkennen.
+Vorbereitung: [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_08_programmierung.md), STM32CubeMX und VS Code mit STM32 VS Code Extension für NUCLEO-H755ZI-Q / STM32H755ZIT6. Board und USB/ST-LINK genügen. Es ist kein zusätzlicher Traceadapter erforderlich. Diagnosewerte erst bei beendetem Log und angehaltenem zuständigem Kern lesen. Die Umrechnung setzt einen kontinuierlich laufenden Zähler, stabilen Takt und Fenster kürzer als einen vollständigen Umlauf voraus. Die Auswertungsfunktion kann Verletzungen dieser Annahmen nicht nachträglich erkennen.
 
 ::: {.content-visible when-profile="solution"}
 ### Musterlösung zu Aufgabe 6
@@ -163,16 +163,16 @@ Vorbereitung: [Projektanleitung](https://github.com/dantschi/echtzeitsysteme/blo
 Die C-Funktion sammelt zuerst in einer lokalen Struktur. Erst wenn alle passenden Datensätze geprüft sind, wird diese Struktur veröffentlicht. So bleibt `*out` bei jedem Fehler unverändert. Ein `uint64_t` genügt für die Summe von höchstens 16 vorzeichenlosen 32-Bit-Werten. Die vorangehende Prüfung der Fensterlänge und des Zählerbetriebs bleibt eine separate Aufgabe der Messung.
 
 ```c
-#include "lab07_summary.h"
+#include "lab08_summary.h"
 
-int Lab07_Summarize(const volatile Lab07_Record *records, uint32_t count,
-                    Lab07_Kind kind, Lab07_Summary *out)
+int Lab08_Summarize(const volatile Lab08_Record *records, uint32_t count,
+                    Lab08_Kind kind, Lab08_Summary *out)
 {
-    if (records == NULL || out == NULL || count > LAB07_CAPACITY ||
-        (kind != LAB07_EMPTY && kind != LAB07_WORK)) {
+    if (records == NULL || out == NULL || count > LAB08_CAPACITY ||
+        (kind != LAB08_EMPTY && kind != LAB08_WORK)) {
         return 0;
     }
-    Lab07_Summary s = {0};
+    Lab08_Summary s = {0};
     for (uint32_t i = 0U; i < count; ++i) {
         if (records[i].kind != (uint32_t)kind) { continue; }
         const uint32_t cycles = records[i].cycles_mod32;

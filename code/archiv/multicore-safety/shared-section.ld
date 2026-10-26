@@ -2,7 +2,7 @@
  * In BOTH actual linker scripts, reserve SRAM4 exclusively, replacing any
  * existing alias for that range. Private .data/.bss/heap/stack go elsewhere:
  * RAM_SHARED (rw) : ORIGIN = 0x38000000, LENGTH = 64K
- * Insert the section INSIDE the existing SECTIONS block. Remove the lab06
+ * Insert the section INSIDE the existing SECTIONS block. Remove the lab07
  * section/object first; this layout REPLACES its 12-byte protocol. */
 .shared ORIGIN(RAM_SHARED) (NOLOAD) :
 {

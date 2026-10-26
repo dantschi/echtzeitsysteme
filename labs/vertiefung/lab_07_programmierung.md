@@ -1,34 +1,49 @@
 # Projektvorbereitung zu Übungsblatt 7
 
-Die Aufgabe ergänzt das vorhandene vorbereitete Projekt für **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Verwendet werden STM32CubeMX sowie VS Code mit STM32 VS Code Extension. Installation, erstmaliger Build, Flashen und Bootprüfung erfolgen vor dem Termin. Die Studierenden implementieren im Termin die kleine Auswertungsfunktion selbst; die vorbereitete Zählerroutine bleibt erhalten.
+Verwenden Sie STM32CubeMX, VS Code mit STM32 VS Code Extension und **NUCLEO-H755ZI-Q / STM32H755ZIT6**. Die installierte Kombination muss die gewählten CM7-/CM4-CMake-Ziele unterstützen. Erhalten Sie die generierte Dual-Core-Boot-/HSEM-Startfolge und laden Sie zusammengehörige Images. C11 oder neuer; fremde Laborlast und doppelte Callbacks/Threadanlagen entfernen. Eigene Quellen und Benutzerbereiche müssen eine erneute CubeMX-Generierung mit anschließendem Build überstehen.
 
-Board, USB/ST-LINK und die eingebaute LD1 genügen. B1 wird für diese Aufgabe nicht benötigt. Es sind keine zusätzliche Elektronik, UART-Verkabelung oder externen Mess- und Tracegeräte erforderlich. Alle Papieraufgaben bleiben ohne Hardware vollständig lösbar.
+Die Programmieraufgabe wird von den Studierenden selbst implementiert. Bereiten Sie Installation, Boot, GPIO und gegebenenfalls Kernel, Linker und MPU vor dem Termin vor. Alle Versuche verwenden ausschließlich eingebaute LEDs, B1 und ST-LINK. Kein Sensor, Steckbrett, externer Widerstand, UART-Aufbau, Oszilloskop oder zusätzlicher Traceadapter ist erforderlich. Die Papieraufgaben sind unabhängig vom Aufbau lösbar; die Lehrperson kann aus dem Aufgabenpool auswählen.
 
-## Vorbereiteter Projektstand
+Die folgenden Integrationsschritte gehören zur Vorbereitung der Lehrperson. Im Termin beurteilen die Studierenden die vereinbarten Adressen, Schreibrechte und Sichtbarkeitsbedingungen und implementieren den begrenzten Antwortschritt aus Aufgabe 6. Sie richten nicht parallel dazu Boot, Linker und MPU neu ein.
 
-- Die installierte Werkzeugkombination unterstützt die gewählten Cortex-M7-/Cortex-M4-Ziele. Der vorhandene Dual-Core-Boot einschließlich generierter HSEM-Startfolge bleibt erhalten; beide Images passen zusammen. Der M4 erhält nach dem Boot keine zusätzliche Laborlast.
-- Takt, Startup, Linker sowie nötige Speicher-/Cachekonfiguration stammen aus der geprüften Projektbasis. Der tatsächliche M7-Kerntakt stimmt mit dem aktualisierten `SystemCoreClock` überein. Die Messung verlangt privilegierte M7-Ausführung.
-- Eigene Quellen und Benutzerbereiche überstehen eine erneute CubeMX-Generierung und den anschließenden Build. Es gibt keine zweite Instanz der Laborroutine, keinen zusätzlichen Callback und keinen konkurrierenden Schreiber des Logs. C11 oder neuer wird verwendet.
-- DWT bedeutet Data Watchpoint and Trace. Verfügbarkeit und Lauf seines lokalen Zykluszählers `CYCCNT`, dessen Verhalten bei Debughalt beziehungsweise Sleep und die Zuständigkeit für diesen Zähler werden am tatsächlichen Projekt geprüft. Kein zweiter Debug-/Traceclient setzt ihn während des Versuchs zurück. Der Versuch benötigt keine Einrichtung von ITM, ETM oder externer Traceaufnahme.
+## Vorbereiteter Shared-Kanal
 
-## Einbindung auf dem Cortex-M7
+1. Verwenden Sie die Basisdateien `lab07_ipc.h`, `lab07_shared.c`, `lab07_cm7.c`, `lab07_cm4.c` und `shared-section.ld` aus `code/lab07/`. Dieses reale Modul behält sein **Dreiwortlayout** bei; der Vierwort-Papierentwurf aus Aufgabe 2 ist ausdrücklich ein anderes Beispiel.
+2. In beiden tatsächlich verwendeten Linkerskripten SRAM4 ab `0x38000000` mit 64 KiB exklusiv reservieren; dort genau ein 32-Byte-ausgerichtetes `ipc` und eine 32-Byte-`NOLOAD`-Section. Andere Aliase, private Daten, Heap und Stacks dort entfernen. Beide Maps und Startup-Copy-/Zero-Tabellen prüfen; M4 und Debugger dürfen die initialisierte Shared-Section nach Freigabe nicht nullen.
+3. Beim gemeinsamen Neustart vor M7-D-Cache-Aktivierung eine freie, effektiv vorrangige MPU-Region mit `Lab07_CM7_ConfigureMemory(region, LAB07_NONCACHED);` einrichten. Attribute Normal/TEX1, nicht cachebar, nicht bufferbar, Shareable, XN. Überlappende höhere Regionsnummern müssen den Vertrag erhalten. `region` ist eine tatsächlich freie Nummer, kein zu kopierender Platzhalterwert. Danach `Lab07_CM7_InitShared();`, D-Cache aktivieren und erst dann die **vorhandene** M4-Bootfreigabe ausführen. Keine zweite HSEM-Bootfolge ergänzen.
+4. CM4 bekommt einen CMSIS-RTOS2-Worker (1000 Hz, 32-Bit-Ticks), der einmal `Lab07_CM4_Run(argument);` aufruft; keine anderen IPC-Nutzer. M7 ruft nach Bootfreigabe einmal `Lab07_CM7_Run();` auf. Seine HAL-Millisekundenzeit muss fortschreiten. Lokale Timeouts sind Diagnosepfade, keine automatische globale Eigentumsübernahme.
+5. Prüfen Sie den vorbereiteten Alt-Basislauf zunächst **ohne** `LAB07_STUDENT_EXERCISE`: Antworten 1,3,5. Für die neue Aufgabe definieren Sie anschließend `LAB07_STUDENT_EXERCISE` in **beiden** CMake-Zielen und nehmen `respond_student.c` zusätzlich nur in CM4 auf. Erst dann gelten Anfragen 4,11,23 und Antworten 14,35,71. Eine einseitige Definition führt absichtlich zur Protokollabweichung. Der leere Rumpf erzeugt einen diagnostizierten Phasenfehler.
+6. CM7 besitzt LD1/PB0 als `LAB07_RESULT`, Anfang LOW. Nach erfolgreichem Run, fehlerfreier Prüfung und gesetztem `lab07_cm7_done` im erhaltenen Benutzerbereich `HAL_GPIO_WritePin(LAB07_RESULT_GPIO_Port, LAB07_RESULT_Pin, GPIO_PIN_SET);` ausführen. M4 benutzt keinen LED-/Portkonfigurationscode für diesen Pin. Beide Done-Kennzeichen und alle Antworten im Debugger bei angehaltenen beiden Kernen prüfen.
+7. Erneute Generierung und Build prüfen. Das 2000-Tick-/2000-ms-Wartebudget macht den Versuch endlich, beweist aber keine vollständige Inter-Core-Deadline. Keine cachebare Fehlerkonfiguration oder externe Zeitmessung ist für Aufgabe 6 erforderlich.
 
-1. `code/lab07/lab07_timing.c` und `lab07_timing.h` in das M7-Ziel aufnehmen. Für diese Aufgabe die Compile-Definitionen `LAB07_SAMPLES_PER_KIND=5`, `LAB07_WORK_STEPS=15000` und `LAB07_WORK_SEED=13` setzen. Damit sind fünf EMPTY- und fünf WORK-Datensätze vorgesehen. Die unveränderte Quelldatei verwendet ohne Definitionen weiterhin ihre bisherigen Standardwerte. Beide Gruppen müssen in den festen Log passen; das prüft eine statische Zusicherung beim Übersetzen.
-2. `lab07_summary.c`, `summary_student.c` und den zugehörigen Headerpfad zusätzlich ins M7-Ziel aufnehmen. In CubeMX LD1 auf PB0 mit User Label `LAB07_RESULT` als Ausgang mit initialem Pegel LOW ausschließlich dem M7 zuordnen. Der M4 konfiguriert diesen Port nicht.
-3. Nach bestätigter Takt- und GPIO-Initialisierung `lab07_timing.h` und `lab07_summary.h` einbinden. Genau einmal `Lab07_Init(SystemCoreClock)` und danach `Lab07_Run()` auf `LAB07_OK` prüfen. Nur nach beiden Erfolgen einmal `Lab07_ShowAnalysis()` aufrufen. Bei Fehler wird der bestehende Fehlerpfad der Projektbasis verwendet. Die Funktionen werden weder in einem Interruptbehandler noch wiederholt aus der Hauptschleife aufgerufen.
-4. Vor der Ausgabe des Basisstands den vorgesehenen Ablauf am Board prüfen: Nach erfolgreichem Lauf sind `lab07_done == 1` und zehn Datensätze mit fünf Einträgen je Art zu erwarten. Mit der unveränderten studentischen Startfunktion bleibt `lab07_analysis_valid` null und LD1 aus. Das ist die erwartete Ausgangslage vor Implementierung und kein Defekt des Messlaufs.
-5. Die Studierenden implementieren `Lab07_Summarize()` in `summary_student.c`. Nach erfolgreicher Implementierung wird WORK durch `Lab07_ShowAnalysis()` ausgewertet. Für die separate EMPTY-Auswertung kann nach beendetem Log `Lab07_Summarize()` mit dieser Auswahl und einer eigenen Ergebnisstruktur aufgerufen werden. Der Log wird dafür nicht erneut beschrieben.
+## Linkerreserve und Speicherattribute
 
-## Messvertrag und Auswertung
+Das vorhandene Fragment [`shared-section.ld`](../../code/lab07/shared-section.ld) wird in beide tatsächlich verwendeten Linkerdateien integriert. `RAM_SHARED` bezeichnet dort die einmal für den Kanal reservierte SRAM4-Region. Der zentrale Sektionsausschnitt lautet:
 
-Das Fenster reicht von der ersten bis zur zweiten lokalen Zählerlesung. Die vorgegebene Routine speichert den Datensatz erst nach der Endlesung. EMPTY enthält den Messpfad ohne synthetische Arbeitsfunktion, WORK zusätzlich diese Arbeitsfunktion. Die Messfenster enthalten dennoch ihren eigenen Befehlsaufwand und gegebenenfalls dazwischenliegende Interruptarbeit. Der resultierende Wert ist ein Intervall in lokalen Kerntakten, keine automatisch reine eigene CPU-Zeit.
+```ld
+.shared ORIGIN(RAM_SHARED) (NOLOAD) :
+{
+  . = ALIGN(32);
+  __lab07_shared_begin = .;
+  KEEP(*(.shared .shared.*))
+  __lab07_shared_data_end = .;
+  . = ALIGN(32);
+} > RAM_SHARED
+```
 
-Die zeitliche Umrechnung setzt stabilen tatsächlichen Kerntakt, durchlaufenden Zähler und ein Fenster kürzer als einen vollständigen Umlauf voraus. Diese Voraussetzungen sind durch die Lehrperson für die Basis zu prüfen. Ein unverändertes `SystemCoreClock` allein beweist keinen unveränderten tatsächlichen Takt. Die Statusprüfungen der Basis erkennen einige Konfigurationsfehler; sie beweisen weder kontinuierlichen Zählerbetrieb noch die Abwesenheit versteckter vollständiger Umläufe. Die nachgeschaltete Gruppenauswertung kann solche Fehler nicht reparieren.
+`ORIGIN` setzt den Beginn an den Regionsursprung, `ALIGN(32)` richtet aus beziehungsweise polstert, und `KEEP` erhält die erfassten Eingabesektionen auch bei Entfernung unbenutzter Bereiche. `NOLOAD` legt keine normalen Initialisierungsdaten im Image an. Es verhindert keine späteren Startup- oder Debugger-Schreibzugriffe. Die vollständigen Prüfungen im Fragment verlangen die gemeinsame Adresse, zwölf Byte Objektinhalt und 32 Byte Sektionsreserve. Beide Maps und Kopier-/Nulltabellen sind zusätzlich zu prüfen; private Speicherbereiche dürfen SRAM4 nicht über einen zweiten Alias belegen.
 
-Logs werden erst nach ihrem Ende und bei angehaltenem zuständigem Kern über die zum Image und Cache passende Debuggersicht gelesen. Keine Ausgabe und kein manueller Debughalt gehören ins laufende Messfenster. Die Studierenden dokumentieren Anzahl, Minimum, Maximum, 64-Bit-Summe und tatsächlichen Kerntakt je Gruppe. EMPTY und WORK werden getrennt beschrieben; ein pauschaler Leerfensterabzug und ein endliches Maximum ersetzen keinen WCET- oder Antwortfristnachweis.
+Die vorbereitete M7-MPU-Region umfasst 64 KiB ab `0x38000000`, mit Lesen/Schreiben und Execute Never. Die folgenden Attribute gelten für den hier benutzten Cortex-M7-Entwurf:
 
-## Prüfstatus festhalten
+| Attribut | Gültige Basis | Optionale Fehlervariante |
+|---|---|---|
+| Speichertyp | Normal, nicht cachebar | Normal, Write Back |
+| TEX / C / B / S | 1 / 0 / 0 / 1 | 1 / 1 / 1 / 0 |
+| Daten-Cache | darf nach Einrichtung aktiviert sein | muss tatsächlich aktiviert sein |
+| Wartung des Kanals | keine private Cachekopie | absichtlich nicht ergänzt |
 
-Vor dem Termin wird ein auf der tatsächlichen Hardware gebauter und gestarteter Basisstand bereitgestellt. Die studentische Startdatei enthält bewusst keine Aufgabenlösung. Vollständige Musterfunktionen und begründete Rechenergebnisse stehen ausschließlich im zugehörigen Übungsblatt unter Quarto-Profil `solution`.
+TEX bedeutet Type Extension, C cacheable, B bufferable und S shareable. Shareable erzeugt hier keine automatische Kohärenz zwischen M7 und M4. Eine freie, effektiv vorrangige Region wählen und alle aktivierten Überlappungen prüfen. Konfiguration und gemeinsame Initialisierung erfolgen bei ausgeschaltetem Daten-Cache vor der M4-Freigabe; Attribute werden nicht während laufender Kommunikation geändert. Der Fehlerbuild ist kein Teil der studentischen Implementierungsaufgabe. Ein beobachteter Erfolg dieses Builds belegt auch keine korrekte cachebare Kommunikation.
 
-Quelltextprüfung, Hosttests einer reinen C-Auswertung und ein erfolgreicher Dokumentbuild sind jeweils eigene Nachweise. Sie bestätigen keinen STM32-Build, Boardlauf, tatsächlichen Takt oder reale Zeitgrenzen. Ein Protokoll nennt deshalb Werkzeugversionen, Build-/Boardstatus, Messvertrag und tatsächlich erhobene Werte. Ungemessene Zeiten bleiben offen.
+## Prüfstatus und Abgrenzung
+
+Geben Sie einen vor dem Termin auf der tatsächlichen Hardware gebauten und gestarteten Basisstand aus. Die studentische Startdatei enthält bewusst noch keine Aufgabenlösung. Aufgaben und vollständige Musterfunktionen stehen im zugehörigen Übungsblatt, Lösungen nur im Quarto-Profil `solution`. Ein Source-/PDF-Build ist kein erfolgreicher Firmware- oder Boardtest. Die Cloudprüfung kann Anwendungslogik am Host prüfen, jedoch keine STM32-Takte, GPIO-/IRQ-Zuordnung, Speicherattribute oder reale Zeitgrenzen bestätigen. Ungemessene Zeiten bleiben offen.

@@ -1,10 +1,7 @@
-# Code zu Übungsblatt 8
+# Implementierungsaufgabe zu Übungsblatt 8
 
-Die aktuelle Vorlesung 8 behandelt **Server-Verfahren für ereignisgetriebene Last**. Ihre kleine Implementierungsaufgabe simuliert einen Polling Server auf CM4 mit zwei FreeRTOS-Threads und den eingebauten LEDs. **Alle benötigten Codebausteine stehen im Aufgabenblatt.**
+Die vorhandene Cortex-M7-Routine erfasst kurze lokale Zählerfenster. Die Studierenden implementieren in `summary_student.c` die Gruppenauswertung `Lab08_Summarize()` mit Anzahl, Minimum, Maximum und 64-Bit-Summe sowie Argument- und Taktprüfung. `lab08_summary.c/.h` bindet sie nach beendetem Log ein; LD1 auf PB0 zeigt eine erfolgreiche WORK-Auswertung an.
 
-- [Aufgaben und Musterlösung im Lösungsprofil](../../labs/lab_08_server-verfahren.qmd)
-- [CubeMX-Projektvorbereitung](../../labs/vertiefung/lab_08_programmierung.md)
+Für die Übung wird `LAB08_SAMPLES_PER_KIND=5` im vorbereiteten M7-Ziel gesetzt: fünf EMPTY- und fünf WORK-Datensätze. Ohne diese Compile-Definition bleiben die bisherigen Quelltextstandardwerte erhalten. Details zu Integration und Messvertrag stehen in der [Projektvorbereitung](../../labs/vertiefung/lab_08_programmierung.md), Aufgaben und ausschließlich im Profil `solution` sichtbare Musterlösung im [Übungsblatt](../../labs/lab_08_tracing-timing-analyse.qmd).
 
-Die vorhandenen HSEM-, WWDG- und Supervisor-C-Dateien stammen aus der früheren Veranstaltungsstruktur. Sie werden in der aktuellen Übung nicht eingebunden. Ihre zusammengehörige technische Dokumentation bleibt als [Archiv](ARCHIV.md) verfügbar; sie ist keine Voraussetzung für Vorlesung 8 oder 9.
-
-Ein Dokument- oder Hosttest ersetzt keinen ARM-Build und keinen tatsächlichen Boardlauf.
+Benötigt werden NUCLEO-H755ZI-Q, USB/ST-LINK, STM32CubeMX und VS Code mit STM32 VS Code Extension. Zusätzliche Elektronik oder ein externer Traceadapter sind nicht erforderlich. Die Dateien ergänzen eine vorbereitete Projektbasis und ersetzen weder deren Startup-/Linkerkonfiguration noch einen tatsächlichen Firmwarebuild und Boardtest. Die studentische Startfunktion gibt bis zur eigenen Implementierung absichtlich Fehler zurück. Es werden keine Hardwaremesswerte vorgegeben.
