@@ -25,16 +25,36 @@ Ein Thread ist der fortsetzbare Ablauf aus Vorlesung 3. FreeRTOS nennt die vom K
 Wir betrachten weiterhin genau einen FreeRTOS-Kernel auf dem Cortex-M4 des STM32H755. Der Cortex-M7 übernimmt den bisherigen System- und Startanteil und bearbeitet die hier geschützten Daten nicht. Eine Ressource kann ein Speicherobjekt, ein zusammengehöriges Wertepaar oder ein Ausgabegerät sein. Synchronisation bedeutet, die Zugriffe so abzustimmen, dass ihre beabsichtigte Bedeutung erhalten bleibt. Sie benötigen Zustände, Prioritäten und Warteaufrufe aus Vorlesung 3. Neue Sperr- und Signalobjekte werden hier eingeführt. Die Notizen erklären die Folien als zusammenhängenden Lerntext.
 :::
 
+## Drei Wartewerkzeuge aus dem Alltag
+
+| Mechanismus | Alltagsbild | Was wird gemerkt? |
+|---|---|---|
+| Mutex | ein Toilettenschlüssel | wer die Ressource besitzt |
+| Binärer Semaphor | Klingel mit Merklicht | höchstens ein offener Hinweis |
+| Zähl-Semaphor | Parkhaus mit drei Plätzen | Anzahl freier Plätze |
+
+Schützen, signalisieren oder zählen: zuerst den Zweck wählen.
+
+::: notes
+Die Alltagsbilder geben eine erste Orientierung für den Schutz und die Übergabe gemeinsamer Ressourcen. Die Zustände bereit, laufend und wartend kennen Sie bereits aus Vorlesung 3. Ein Thread ist ein vom Betriebssystem verwalteter Ausführungsablauf. Eine Ressource ist hier etwas gemeinsam Nutzbares, etwa ein Ausgabegerät oder ein Speicherpuffer. Die drei Mechanismen lösen unterschiedliche Aufgaben; äußerlich ähnliches Warten macht sie nicht austauschbar. Die Analogie beschreibt den Zweck des jeweiligen Vertrags; seine technischen Aufrufregeln folgen im Verlauf dieses Termins.
+
+Mutex kommt von Mutual Exclusion, gegenseitiger Ausschluss. Beim Toilettenschlüssel darf jeweils nur die Person mit dem Schlüssel den Raum benutzen. Unsere Besitzregel lautet: Wer ihn genommen hat, gibt ihn selbst zurück. Ein Mutex merkt entsprechend, welcher Thread ihn erfolgreich erworben hat. Alle Zugriffe auf die geschützte Ressource müssen sich an denselben Vertrag halten.
+
+Der binäre Semaphor entspricht einer Klingel mit Merklicht: Ein Klingeln setzt den offenen Hinweis, die zuständige Person nimmt ihn an und setzt die Anzeige zurück. Mehrmaliges Klingeln bei bereits leuchtender Anzeige speichert keine Anzahl. Der meldende und der annehmende Teilnehmer dürfen verschieden sein; es gibt keine Mutex-Besitzregel. In dieser Signalverwendung beginnt der Semaphor leer.
+
+Ein Zähl-Semaphor kann dagegen mehrere verfügbare Marken speichern. Das Parkhaus startet im Beispiel mit drei freien Plätzen. Jede Einfahrt braucht eine Marke, jede Ausfahrt gibt eine zurück. Bei null freien Plätzen darf der nächste Teilnehmer keinen Platz benutzen; er wartet oder kehrt je nach Warteoption erfolglos zurück. In den Detailbeispielen übertragen wir dies auf eine gemeinsame Ausgabe, einen Tasterhinweis und drei Messpuffer. Die Analogien versprechen weder eine bestimmte Bedienreihenfolge noch einen sofortigen Prozessorstart. Dazu müssen wir später Wartebedingung und Prozessorzuteilung unterscheiden.
+:::
+
 ## Was Sie nach diesem Termin erklären können
 
 1. Ein verlorenes Update Schritt für Schritt herleiten
 2. Schutzumfang und kritischen Abschnitt festlegen
-3. Mutexbesitz von Semaphor-Token unterscheiden
+3. Besitzschutz, Ereignishinweis und Ressourcenzahl unterscheiden
 4. Deadlock und Prioritätsinversion getrennt diagnostizieren
 5. Warte- und Antwortzeiten ohne und mit Vererbung vergleichen
 
 ::: notes
-Ein verlorenes Update ist eine beabsichtigte Änderung, die durch einen späteren Zugriff mit veraltetem Ausgangswert überschrieben wird. Ein kritischer Abschnitt fasst die Zugriffe zusammen, die gemeinsam konsistent sein müssen. Ein Mutex ist eine Sperre mit Besitzer, ein Semaphor verwaltet verfügbare Berechtigungen, sogenannte Token. Diese Begriffe werden an konkreten Abläufen eingeführt, bevor Schnittstellenfunktionen nötig sind.
+Ein verlorenes Update ist eine beabsichtigte Änderung, die durch einen späteren Zugriff mit veraltetem Ausgangswert überschrieben wird. Ein kritischer Abschnitt fasst die Zugriffe zusammen, die gemeinsam konsistent sein müssen. Ein Mutex ist eine Sperre mit Besitzer, ein Semaphor verwaltet verfügbare Berechtigungen, sogenannte Token. Ein binärer Semaphor hält höchstens ein Token, ein Zähl-Semaphor mehrere. Ein Thread-Flag ist dagegen ein Hinweisbit eines bestimmten Threads. Diese Begriffe werden an den Alltagsbildern und konkreten Abläufen eingeführt, bevor Schnittstellenfunktionen nötig sind.
 
 Ein Deadlock ist eine Verklemmung durch gegenseitige Ressourcenabhängigkeiten. Prioritätsinversion bezeichnet hier das indirekte Verzögern einer höheren Aufgabe durch einen niedrigeren Ressourcenbesitzer. Priority Inheritance, Prioritätsvererbung, verändert zeitweise die wirksame Priorität des Besitzers. Wir prüfen, welche Verzögerung dadurch entfällt und welche bleibt.
 
@@ -45,15 +65,15 @@ Die Lernziele werden zuerst durch Papieraufgaben, anschließend durch einen kont
 
 | Abschnitt | Gemeinsame Erklärung | Anwenden |
 |---|---|---|
-| 0–45 min | Zugriffsfehler und Mutex: 25 min | Papier 1 und 2.1: 20 min |
-| 45–90 min | Semaphor und Deadlock: 30 min | Papier 2.2–2.3 und 3: 15 min |
+| 0–45 min | Alltagsbilder, Zugriffsfehler, Mutex: 25 min | Papier 1 und 2.1: 20 min |
+| 45–90 min | Semaphoren, Flags, Deadlock: 30 min | Papier 2.2–2.3 und 3: 15 min |
 | 90–135 min | Inversion und Versuch: 20 min | Papier 4: 15 min; Code: 10 min |
 | 135–180 min | Quiz und Abschluss: 20 min | Variantenvergleich: 25 min |
 
 Den funktionierenden CM4-Grundstand aus Vorlesung 3 vorbereiten.
 
 ::: notes
-Vier Schulstunden zu je 45 Minuten ergeben 180 Minuten Unterrichtszeit; etwaige Pausen werden zusätzlich organisiert. Die Tabelle ordnet die 50 Folien, das Übungsblatt und zehn Quizfragen zu einem Lernablauf. Insgesamt sind 75 Minuten für Erklärungen und gemeinsame Auswertung, 50 Minuten für Papieraufgaben, 35 Minuten für Codeintegration und Versuche sowie 20 Minuten für Quiz und Abschluss vorgesehen. Nach dem ersten Block werden Aufgabe 1 und der Maskierungsbudget-Teil 2.1 bearbeitet. Nach dem zweiten folgen die Token-Teile 2.2 und 2.3 sowie der Deadlock in Aufgabe 3. Erst nach dem dritten Erklärblock wird die Inversionsrechnung aus Aufgabe 4 bearbeitet; danach beginnt die Codeintegration. Kurze Verständnisfragen sind Teil der gemeinsamen Erklärung.
+Vier Schulstunden zu je 45 Minuten ergeben 180 Minuten Unterrichtszeit; etwaige Pausen werden zusätzlich organisiert. Die Tabelle ordnet die 52 Folien, das Übungsblatt und zehn Quizfragen zu einem Lernablauf. Die Alltagsbilder und der Flagvergleich gehören zu den angegebenen Erklärungsblöcken; ihre Beispiele erleichtern die anschließende Anwendung der technischen Regeln. Insgesamt sind 75 Minuten für Erklärungen und gemeinsame Auswertung, 50 Minuten für Papieraufgaben, 35 Minuten für Codeintegration und Versuche sowie 20 Minuten für Quiz und Abschluss vorgesehen. Nach dem ersten Block werden Aufgabe 1 und der Maskierungsbudget-Teil 2.1 bearbeitet. Nach dem zweiten folgen die Token-Teile 2.2 und 2.3 sowie der Deadlock in Aufgabe 3. Erst nach dem dritten Erklärblock wird die Inversionsrechnung aus Aufgabe 4 bearbeitet; danach beginnt die Codeintegration. Kurze Verständnisfragen sind Teil der gemeinsamen Erklärung.
 
 CM4 bezeichnet den Projektteil für den Cortex-M4. Die Programmiertools STM32CubeMX und Visual Studio Code mit der STM32-Erweiterung sowie der Dual-Core-Grundstart aus Vorlesung 3 müssen vorbereitet sein. Neue Werkzeuginstallation und erstmalige Bootfehlersuche passen nicht verlässlich in die 20-minütige Integrationsphase. Das Labor untersucht einen neuen Anwendungsbaustein auf diesem Grundstand.
 
@@ -426,6 +446,8 @@ Eine sofortige Anfrage ohne Warten oder ein endlicher Timeout, der Ablauf einer 
 
 ## Mutex: Der Besitzer gibt die Ressource frei
 
+Praxis: `Temp=23` und `Akku=80%` teilen dieselbe serielle Ausgabe.
+
 | Zustand | Bedeutung |
 |---|---|
 | frei | noch kein Besitzer |
@@ -433,12 +455,14 @@ Eine sofortige Anfrage ohne Warten oder ein endlicher Timeout, der Ablauf einer 
 | B fordert an | B wartet oder erhält Fehler |
 | A gibt frei | ein anderer darf erwerben |
 
-Ein Release durch B ist kein gültiger Ersatz für As Freigabe.
+Ein Mutex um die ganze Nachricht; nur der Besitzer gibt frei.
 
 ::: notes
-Mutex ist die Kurzbezeichnung für Mutual Exclusion, gegenseitigen Ausschluss. Owner bedeutet Besitzer. Nach erfolgreichem Erwerb merkt sich der Kernel, welchem Thread der Mutex gehört. Ein anderer Thread kann ihn nicht auf dem normalen Besitzerpfad freigeben. In der Tabelle ist A der Besitzer und B zunächst nur ein Anfordernder.
+Mutex ist die Kurzbezeichnung für Mutual Exclusion, gegenseitigen Ausschluss. Owner bedeutet Besitzer. Das Alltagsbild ist der gemeinsam genutzte Toilettenschlüssel: Wer ihn genommen hat, gibt ihn selbst zurück. Nach erfolgreichem Erwerb merkt sich der Kernel, welchem Thread der Mutex gehört. Ein anderer Thread kann ihn nicht auf dem normalen Besitzerpfad freigeben. In der Tabelle ist A der Besitzer und B zunächst nur ein Anfordernder.
 
 Acquire bedeutet erwerben. Wenn B bei belegtem Mutex wartet, wird B Blocked, also wartend, oder erhält bei einer entsprechend gewählten kurzen Warteoption einen Fehler. Release bedeutet freigeben. Erst As passende Freigabe erlaubt einen neuen erfolgreichen Erwerb. Ob der geweckte Thread sofort tatsächlich läuft, hängt zusätzlich von seiner Priorität und dem aktuellen Kontext ab.
+
+Eine serielle Ausgabe überträgt Zeichen nacheinander über einen gemeinsamen Kanal. Im praktischen Beispiel senden zwei Threads zeichenweise die vollständigen Nachrichten Temp=23 und Akku=80% über dieselbe serielle Ausgabe. Jeder erwirbt denselben Mutex vor dem ersten Zeichen und gibt ihn nach dem letzten Zeichen seiner Nachricht selbst frei. So vermischen sich die beiden Zeichenfolgen nicht. Ein eigener Mutex je Thread würde den gemeinsamen Kanal nicht gegeneinander schützen. Bei asynchroner Gerätebenutzung muss der Schutz bis zum tatsächlichen Ende der geschützten Nutzung reichen; diesen Fall betrachten wir später genauer. Das Beispiel veranschaulicht den Vertrag und ist keine zusätzliche Hardwareaufgabe.
 
 Dieses Besitzrecht wird durch die Schnittstelle kontrolliert, nicht durch eine allgemeine Hardware-Sperre auf jede geschützte Speicheradresse. Greift B direkt auf die Daten zu, ohne zu erwerben, verletzt B den Anwendungsvertrag. Deshalb müssen auch konsistente Leser denselben Mutex benutzen. Die Besitzinformation ist außerdem die Voraussetzung dafür, später die Priorität genau desjenigen Threads anzuheben, der eine höhere wartende Aufgabe aufhält.
 :::
@@ -555,25 +579,29 @@ Ein Token ist keine Nachricht und auch nicht automatisch die Identität eines fr
 
 ## Binärer Semaphor: der Anfangswert hat eine Bedeutung
 
+Praxis: Ein Tasterinterrupt meldet Arbeit an eine LED-Task.
+
 | Bedeutung | Anlage |
 |---|---|
 | ein Ressourcentoken anfangs verfügbar | `osSemaphoreNew(1, 1, NULL)` |
 | Ereignis noch nicht eingetreten | `osSemaphoreNew(1, 0, NULL)` |
 
 Maximum 1; Zähler entweder 0 oder 1.
-Wiederholtes Release kann die Kapazität überschreiten.
+Für den Tasterhinweis gilt: Anfangswert 0, Maximum 1.
 
 ::: notes
 Binär bedeutet hier, dass der verfügbare Zähler nur null oder eins betragen kann. Die C-Aufrufe verwenden CMSIS-RTOS2, die Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. osSemaphoreNew erhält Maximum, Anfangszahl und optionale Attribute. NULL ist der Nullzeiger für hier nicht angegebene Zusatzattribute.
 
 Mit osSemaphoreNew(1, 1, NULL) steht sofort ein Token bereit. Das passt im kontrollierten Vergleich zu einer zunächst verfügbaren exklusiven Ressource. Mit osSemaphoreNew(1, 0, NULL) ist zunächst kein Token vorhanden. Das passt zu einem Ereignis, das noch nicht eingetreten ist. Ein wartender Worker, die verarbeitende Aufgabe, soll also nicht schon ohne Ereignis losarbeiten.
 
+Im Tasterbeispiel stellt der zulässige Interruptbehandler eine Marke bereit. Die LED-Task, also der Thread für die Leuchtdiode, wartet auf diese Marke, schaltet nach erfolgreichem Erwerb die LED und wartet wieder. LED bedeutet Light Emitting Diode, Leuchtdiode. Der meldende und der empfangende Teilnehmer sind verschieden; ein Mutex mit Besitzer wäre dafür ungeeignet. Erst ISR-Ende und Prozessorzuteilung erlauben dem geweckten Thread die tatsächliche Verarbeitung. ISR heißt Interrupt Service Routine, Interruptbehandler. Das ist die technische Entsprechung der Klingel mit Merklicht aus dem Einstieg.
+
 Nach einem Release bei leerem Zähler steht eins bereit. Ein weiteres Release vor Verbrauch erreicht nicht den Wert zwei, sondern scheitert an der Kapazität. Das Ergebnis muss ausgewertet werden. Ebenso speichert ein einzelnes Thread-Flag aus Vorlesung 3 nicht automatisch jede wiederholte Flanke. Der Semaphor ist damit ein nützlicher Hinweisspeicher, aber keine grenzenlose Ereigniswarteschlange und kein Mutexbesitzrecht.
 :::
 
 ## Zähl-Semaphor: drei Berechtigungen, keine Platzadressen
 
-Start: `osSemaphoreNew(3, 3, NULL)`.
+Drei Messpuffer: `osSemaphoreNew(3, 3, NULL)`.
 
 | Operation | verfügbare Token |
 |---|---:|
@@ -583,12 +611,16 @@ Start: `osSemaphoreNew(3, 3, NULL)`.
 | B gibt frei, niemand wartet | 1 |
 | D versucht später erneut | 0, Erfolg |
 
-Welche von drei Pufferadressen frei ist, verrät dieser Zähler nicht.
+Der Zähler kennt die Anzahl freier Puffer, nicht ihre Adressen.
 
 ::: notes
 Der Zähl-Semaphor erlaubt mehr als ein verfügbares Token. osSemaphoreNew ist der Anlageaufruf der CMSIS-RTOS2-Schnittstelle des Common Microcontroller Software Interface Standard. Die Argumente drei und drei legen das Maximum und die Anfangszahl fest; NULL bedeutet hier keine Zusatzattribute.
 
 A, B und C erwerben jeweils ein Token. Danach steht der Zähler bei null. D versucht Acquire mit Timeout null und erhält sofort einen Fehler; D ist dadurch kein auf ein zukünftiges Token wartender Thread. Wenn B später freigibt und kein anderer wartet, steigt die verfügbare Anzahl auf eins. Erst Ds neuer Aufruf verbraucht dieses Token erfolgreich.
+
+Das praktische Beispiel zählt drei freie Messpuffer, also Speicherbereiche für je einen Messblock. A, B und C sind Messaufträge, die jeweils eine Berechtigung und anschließend einen konkreten freien Puffer übernehmen. D darf bei fehlender Berechtigung keinen Puffer benutzen. Die Zahl drei entspricht den drei freien Plätzen der Parkhausanalogie; der Semaphor kennt wie die Anzeige nicht die genaue Platznummer.
+
+Bei der Rückgabe wird zuerst der Puffer wieder in eine separat geschützte Verwaltung aufgenommen und danach das Token freigegeben. Umgekehrt folgt auf den erfolgreichen Token-Erwerb die Entnahme einer konkreten freien Pufferidentität. Eine Marke ohne tatsächlich freien Puffer wäre ein Protokollfehler. Die gewünschte Bilanz muss die Anwendung sicherstellen, denn der Semaphor speichert keinen Mutexbesitzer und überträgt auch keine Messdaten.
 
 Die Tabelle nennt ausdrücklich keine blockierten zusätzlichen Wartenden. Ein tatsächlich wartender anderer Thread könnte nach Release ebenfalls bereit werden und das Token später verbrauchen. D hat durch seinen früheren Fehler kein reserviertes Recht auf dieses Token. Ein Pufferpool mit drei konkreten Speicherplätzen benötigt außerdem eine eigene Identitätsverwaltung. Die Zahl eins sagt nicht, welcher Platz frei ist. Ebenso ist bei vollem Zähler ein weiteres Release ein Kapazitätsfehler, keine vierte Berechtigung.
 :::
@@ -676,6 +708,29 @@ Ein binärer Semaphor hat eine Kapazität von einem gespeicherten Token. Die Tab
 Release stellt ein Token bereit. Acquire verbraucht es. Diese Operationen stammen aus CMSIS-RTOS2, der Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. Ein Rückgabestatus ungleich osOK muss diagnostiziert werden: Ungültige Kennung und volles Tokenfach dürfen nicht ungeprüft dieselbe Erklärung bekommen.
 
 Für die Anwendung muss festgelegt sein, ob mehrere Ereignisse zusammengefasst werden dürfen. Reicht ein ausstehender Reaktionswunsch, kann ein binärer Speicher passen. Müssen Ereignisse einzeln gezählt werden, sind Kapazität und Überlaufpolitik anders auszulegen. Auch ein größerer Zähler ist endlich. Ein Token enthält außerdem weiterhin keine Nutzdaten. Diese Grenzen erklären, warum der Vergleich zum Mutex nicht nur aus zwei unterschiedlichen Funktionsnamen besteht.
+:::
+
+## Thread-Flag oder binärer Semaphor?
+
+Im Kurs: CMSIS-RTOS2-Thread-Flags auf FreeRTOS.
+
+| Frage | Thread-Flag im Kurs | Binärer Semaphor |
+|---|---|---|
+| Hinweis | Bit im Zielthread | Token in eigenem Objekt |
+| Verbraucher | dieser Zielthread | einer der Erwerber |
+| Hinweisarten | verschiedene Bits möglich | eine verfügbare Marke |
+| Wiederholung vor Annahme | Bit bleibt gesetzt | höchstens ein Token |
+
+Beide dienen hier der Signalisierung. Ein Mutex schützt mit Besitz.
+
+::: notes
+CMSIS heißt Common Microcontroller Software Interface Standard; RTOS2 bezeichnet die zweite Version seiner Betriebssystem-Schnittstelle. Ein Thread, auch Task genannt, ist ein verwalteter Ausführungsablauf. Mit Thread-Flag meinen wir hier ein Hinweisbit eines bestimmten Threads. osThreadFlagsSet setzt Bits gezielt beim angegebenen Zielthread. osThreadFlagsWait wartet auf Bits des aufrufenden Threads; er wartet damit nicht auf die privaten Thread-Flags einer anderen Task. Im verwendeten CMSIS-FreeRTOS-Adapter werden diese Bits über eine Task-Benachrichtigung des FreeRTOS-Betriebssystemkerns abgebildet. Native Task-Benachrichtigungen haben weitere Betriebsarten, darunter Zählverhalten; unsere Aussage bezieht sich auf die Bitverwendung.
+
+Ein binärer Semaphor ist dagegen ein eigenes Kernelobjekt, auf dessen Handle mehrere Verbraucher warten können. Handle bedeutet die Kennung des Objekts. Eine bereitgestellte Marke ermöglicht genau einen erfolgreichen Erwerb. Ein Thread-Flag adressiert unmittelbar einen Zielthread; beim Semaphor kann eine Gruppe von verarbeitenden Threads auf dasselbe Objekt warten, und jeweils ein Erwerber verbraucht die Marke. Beides hat keinen Mutexbesitzer und ersetzt keinen vereinbarten Ressourcenschutz.
+
+In beiden Fällen können wiederholte Meldungen zusammenfallen. Ein bereits gesetztes Bit erneut zu setzen bleibt eine gültige Bitsetzung. Eine weitere Semaphorfreigabe bei bereits voller Kapazität scheitert dagegen mit einem Ressourcenfehler. Der erfolgreiche Flag-Wait löscht die angenommenen Bits in unserer Standardeinstellung automatisch; der erfolgreiche Semaphorerwerb verbraucht eine Marke. Mehrere Flagbits erlauben außerdem verschiedene Hinweisarten und Wartebedingungen, nicht automatisch eine Anzahl gleicher Ereignisse.
+
+Der Ausdruck FreeRTOS-Flag ist ohne Kontext mehrdeutig. FreeRTOS bietet auch Event-Gruppen, also eigene Objekte mit Ereignisbits, auf die mehrere Tasks warten können. Das Setzen solcher Bits kann mehrere passende Wartebedingungen erfüllen und mehrere Tasks wecken. Das ist eine andere Semantik als der Verbrauch einer einzelnen Semaphormarke. Das Tasterbeispiel aus Vorlesung 3 verwendet CMSIS-Thread-Flags, keine Event-Gruppe. Für eine konkrete Auswahl prüfen wir daher Zielthread, Anzahl möglicher Verbraucher, Hinweisarten und zulässigen Interruptkontext. Danach vergleichen wir den Signalisierungszweck noch einmal mit dem Besitzschutz durch einen Mutex.
 :::
 
 ## Mutex und Semaphor nebeneinander
@@ -1218,7 +1273,7 @@ L liest seine wirksame Priorität nach der H-Freigabe. Im vererbenden Fall sollt
 Zehn Quizfragen: 10 Minuten Antworten, 5 Minuten gemeinsame Begründung.
 
 - Invariante und Konkurrenten bestimmen den Schutz
-- Mutex: Besitz; Semaphor: Token
+- Mutex: Besitz; Thread-Flag: Hinweis; Semaphor: Token
 - Deadlock: Zyklus; Inversion: verzögerter Halter
 - Vererbung beseitigt hier M-Verdrängung, nicht Ls Restarbeit
 - Beobachtung, Modell und Fristnachweis getrennt halten
@@ -1226,7 +1281,7 @@ Zehn Quizfragen: 10 Minuten Antworten, 5 Minuten gemeinsame Begründung.
 Vorlesung 5: Nutzdaten mit Queues übertragen.
 
 ::: notes
-Das Quiz im Ordner quizacademy enthält weiterhin zehn Fragen. Nach der Planung beantworten Sie sie zunächst selbstständig und begründen anschließend besonders strittige Entscheidungen gemeinsam. Eine Invariante ist die zu erhaltende Eigenschaft gemeinsamer Daten. Der Mutex ist eine Sperre mit Besitzer, der Semaphor ein Zähler verfügbarer Token. Diese Unterscheidung erklärt sowohl Ressourcenzugriffe als auch zugelassene Ereignisübergaben.
+Das Quiz im Ordner quizacademy enthält weiterhin zehn Fragen. Nach der Planung beantworten Sie sie zunächst selbstständig und begründen anschließend besonders strittige Entscheidungen gemeinsam. Eine Invariante ist die zu erhaltende Eigenschaft gemeinsamer Daten. Der Mutex ist eine Sperre mit Besitzer, der Semaphor ein Zähler verfügbarer Token. Ein Thread-Flag speichert dagegen Bits im Zielthread; ein binärer Semaphor stellt in einem eigenen Objekt höchstens ein Token bereit. Diese Unterscheidungen erklären sowohl Ressourcenzugriffe als auch zugelassene Ereignisübergaben.
 
 Ein Deadlock ist ein geschlossener Wartezyklus auf Ressourcen. Prioritätsinversion benötigt dagegen keinen solchen Zyklus: Die höhere Aufgabe wartet auf einen fortschrittsfähigen niedrigeren Halter, den mittlere Arbeit verdrängen kann. Prioritätsvererbung hebt diesen Halter vorübergehend an. Im Zahlenmodell bleiben vier Millisekunden Restarbeit von L bestehen, während die zusätzlichen 20 Millisekunden M nicht mehr vor H liegen.
 
