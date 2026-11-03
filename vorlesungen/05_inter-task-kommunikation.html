@@ -7,15 +7,15 @@
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
 <link href="../site_libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-63b5708e65d6cd79cd7618c58d0c21e7.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <link href="../site_libs/quarto-contrib/livefigures-0.8.0/livefigures.css" rel="stylesheet"><meta charset="utf-8">
-  <meta name="generator" content="quarto-1.10.19">
+  <meta name="generator" content="quarto-1.11.9">
 
   <meta name="author" content="Prof.&nbsp;Dr.-Ing. Daniel Klünder">
   <title>Echtzeitsysteme – 05 · Inter-Task-Kommunikation und Interrupts</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="../site_libs/revealjs/dist/reset.css">
   <link rel="stylesheet" href="../site_libs/revealjs/dist/reveal.css">
   <style>
@@ -103,7 +103,7 @@
     code span.vs { color: #20794d; } /* VerbatimString */
     code span.wa { color: #5e5e5e; font-style: italic; } /* Warning */
   </style>
-  <link rel="stylesheet" href="../site_libs/revealjs/dist/theme/quarto-f355cf95444bdbe7a358cd689c441e6f.css">
+  <link rel="stylesheet" href="../site_libs/revealjs/dist/theme/quarto-569b8a2fd288a06e6095e27b81a5517f.css">
   <link rel="stylesheet" href="../assets/styles/lecture05.css">
   <link href="../site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="../site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
@@ -414,6 +414,7 @@
 <div>
 <p></p><figure class=""><p></p>
 <div>
+
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
 flowchart TD
   P[Producer] --&gt;|Put: Kopie| Q[Queue: N Plätze]
@@ -476,6 +477,7 @@ flowchart TD
 <div>
 <p></p><figure class=""><p></p>
 <div>
+
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
 flowchart LR
   S0[Slot 0] --&gt; S1[Slot 1]
@@ -625,6 +627,7 @@ flowchart LR
 <aside class="notes">
 <p>Consumer ist der empfangende Thread. Die waagerechte Achse zeigt schematische Schritte, keine gemessenen Millisekunden. Running bedeutet laufend, Blocked wartend und Ready ausführungsbereit. Der Consumer ruft bei Schritt eins Get auf einer leeren Queue mit erlaubter Wartezeit auf. Der Kernel setzt ihn auf Blocked. Er führt in diesem Zustand keine eigene Pollingschleife aus.</p>
 <p>Ein erfolgreicher Put bei Schritt drei kann den wartenden Consumer auf Ready setzen. Er läuft trotzdem erst bei Schritt fünf, wenn der Scheduler ihn auswählt. Der Abstand ist hier bewusst sichtbar: Ready ist kein Verarbeitungsbeginn. Nach Verarbeitung versucht er bei Schritt sechs erneut ein Get und wartet wieder. Tickbehandlung, andere Threads und Interrupts können während seiner Blockierung weiterlaufen. Ein Get mit Timeout null würde sofort einen Status zurückgeben, anstatt diesen Wartezustand einzugehen. Eine endliche Wartezeit kann auch ohne Nachricht ablaufen. Erst der erfolgreiche Rückgabestatus bestätigt, dass eine neue Nachricht im Zielobjekt angekommen ist.</p>
+<p><strong>Kernaussage:</strong> Ein Consumer, der auf eine leere Queue wartet, verbraucht keine Rechenzeit. Der Kernel nimmt ihn aus der Auswahl und weckt ihn bei Bedarf wieder. Geweckt heißt aber nur ausführungsbereit: Zwischen Ready und Running liegt eine Zeitspanne, die der Scheduler bestimmt und nicht die Queue.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -653,6 +656,30 @@ flowchart LR
 <aside class="notes">
 <p>Der C-Ausschnitt zeigt die Anlage, nicht ein vollständiges Bootprogramm. CMSIS-RTOS2 ist die standardisierte Betriebssystem-Schnittstelle. osMessageQueueId_t ist ihr Queue-Handle, also ein Bezeichner des angelegten Objekts. osMessageQueueNew erhält vier Elementplätze, die mit sizeof ermittelte Bytegröße von SensorMsg und mit NULL keine zusätzlichen Attribute. SensorMsg muss zuvor als gemeinsamer Nachrichtentyp definiert sein. Die vier ist die Kapazität, nicht die Zahl erzeugter Threads.</p>
 <p>Im betrachteten Adapter wird bei NULL-Attributen dynamisch Speicher reserviert. Ein NULL-Ergebnis kann an Speicher, Parametern, Aufrufkontext oder Konfiguration liegen. Damit darf kein Thread die Queue benutzen. Error_Handler bezeichnet den Fehlerpfad des generierten Projekts; er muss diesen Initialisierungsabbruch tatsächlich stoppen. Im Labor enthält die Hilfsfunktion zusätzlich eine Endlosschleife, falls der Handler unerwartet zurückkehrt. Das Cube-Projekt initialisiert und startet den Kernel bereits. Wir fügen nur die Objektanlage an der richtigen Stelle ein, statt den Startablauf zu duplizieren.</p>
+<p><strong>Kernaussage:</strong> Die Queue wird genau einmal angelegt, bevor irgendein Thread oder Interrupt sie benutzen kann. Ein NULL-Handle ist ein harter Fehler, kein Sonderfall, mit dem man weiterarbeitet.</p>
+<p>Die drei Parameter von osMessageQueueNew sind schnell erklärt:</p>
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>4</code></td>
+<td>Kapazität in Elementen</td>
+</tr>
+<tr class="even">
+<td><code>sizeof(SensorMsg)</code></td>
+<td>Größe eines Elements in Byte</td>
+</tr>
+<tr class="odd">
+<td><code>NULL</code></td>
+<td>Standardattribute, also dynamische Allokation</td>
+</tr>
+</tbody>
+</table>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -770,8 +797,45 @@ flowchart LR
 </ul>
 <p><span class="math inline">\(\lambda=1000\,/\mathrm{s}\)</span> und <span class="math inline">\(\mu=200\,/\mathrm{s}\)</span></p>
 <aside class="notes">
-<p>N ist die Kapazität in Elementen, ms sind Millisekunden und API bedeutet Application Programming Interface, Programmierschnittstelle. Die Rechenzeit ihrer Operationen wird im Modell vernachlässigt. lambda ist die angebotene Nachrichtenrate und mu die mögliche Entnahmerate, jeweils in Nachrichten pro Sekunde. Ein Put pro Millisekunde entspricht tausend pro Sekunde; ein Get alle fünf Millisekunden entspricht zweihundert pro Sekunde.</p>
-<p>Die Queue ist zu Beginn leer. Jeder Put versucht, den Wert seines Zeitpunkts einzureihen. Bei Vollbelegung wird dieser neue Wert verworfen. Bereits gespeicherte Werte bleiben erhalten. Bei gleichen Zeitpunkten gilt eine feste Reihenfolge: Put vor Get. Diese Zählkonvention beeinflusst die Belegungsspitze und den ersten Verlust. Der Consumer entnimmt bei jedem Get nur eine Nachricht. Ein Worker, der nach einer Pause die gesamte Queue leert, wäre ein anderes Modell. Die Annahmen erlauben eine genaue Handrechnung, stellen jedoch keinen Ablaufbeweis für osDelay auf realer Hardware dar.</p>
+<p><strong>Kernaussage:</strong> Erst wenn alle Annahmen ausdrücklich festgelegt sind, lässt sich eine Lastrechnung von Hand eindeutig nachrechnen. Jede Annahme kann das Ergebnis verändern.</p>
+<p><span class="math inline">\(N=10\)</span> ist die Kapazität in Elementen, ms bedeutet Millisekunden. API steht für Application Programming Interface, Programmierschnittstelle; ihre Aufrufzeit wird im Modell vernachlässigt. Die Queue ist anfangs leer. Jeder Put, also Einfügeversuch, bietet den Wert seines Zeitpunkts als Nachricht an. Jeder Get, also Entnahmeaufruf, entnimmt genau ein Element. Die Zeitpunkte sind didaktische Vorgaben und keine Boardmessungen.</p>
+<p>Die angebotene Ankunftsrate ist <span class="math inline">\(\lambda=1000\,/\mathrm{s}\)</span>, die mögliche Entnahmerate <span class="math inline">\(\mu=200\,/\mathrm{s}\)</span>, jeweils in Nachrichten pro Sekunde. Ihr Verhältnis <span class="math inline">\(\rho=\lambda/\mu=5\)</span> beschreibt eine fünffache angebotene Last bezogen auf die Entnahmekapazität. Prozessorrechenzeiten werden dabei nicht modelliert. In jedem Abschnitt von fünf Millisekunden kommen fünf Nachrichten hinzu und eine kann entnommen werden: Der verlustfreie Rückstau wächst netto um vier. Bereits eine Überschlagsrechnung lässt erwarten, dass zehn Plätze nach etwas mehr als zehn Millisekunden voll sind. Diese Schätzung eignet sich als Frage an das Plenum vor der genauen Rechnung auf der nächsten Folie.</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Annahme</th>
+<th>Bedeutung einer Änderung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Queue anfangs leer</td>
+<td>Eine Anfangsbelegung <span class="math inline">\(Q_0&gt;0\)</span> kann den ersten Verlust vorverlegen.</td>
+</tr>
+<tr class="even">
+<td>API-Zeit vernachlässigt</td>
+<td>Zusätzlicher Verwaltungsaufwand kann Entnahmen verzögern; die erreichbare Rate muss neu bestimmt werden.</td>
+</tr>
+<tr class="odd">
+<td>Ein Element pro Get</td>
+<td>Ein Consumer, der bei jeder Aktivierung die gesamte Queue leert, hat eine andere Entnahmedynamik.</td>
+</tr>
+<tr class="even">
+<td>Put vor Get bei Gleichzeitigkeit</td>
+<td>Die Zwischenbelegung und die Zahl erfolgreicher Puts können sich ändern.</td>
+</tr>
+<tr class="odd">
+<td>Neue Nachricht verwerfen</td>
+<td>Beim Überschreiben der ältesten Nachricht bleiben stattdessen die jüngsten Werte erhalten; andere Nachrichten gehen verloren.</td>
+</tr>
+</tbody>
+</table>
+<p>Der Consumer ist der empfangende Thread. Seine Entnahmezeitpunkte sind hier fest vorgegeben. Ein Consumer mit <code>osDelay(5)</code> in einer Schleife entnimmt dagegen nicht automatisch exakt alle fünf Millisekunden. Der Parameter bezeichnet fünf Kernel-Ticks, also Schritte der Betriebssystemzeit; erst bei einer Tickfrequenz von 1000 Hertz dauert ein Tick eine Millisekunde. Die relative Wartezeit beginnt am Aufruf. Verarbeitungszeit und Verzögerungen durch die Auswahl des Schedulers kommen zur Schleifenlaufzeit hinzu. <code>osDelayUntil</code> verwendet einen absoluten Ziel-Tick und kann dadurch eine feste Folge geplanter Aktivierungszeitpunkte erhalten. Tickauflösung und die Verzögerung zwischen Ready, ausführungsbereit, und Running, laufend, bleiben bestehen. Diese Lastrechnung ist deshalb kein Ablaufbeweis für <code>osDelay</code> auf realer Hardware.</p>
+<p>Die Raten stammen aus der Warteschlangentheorie. Hier sind Ankunfts- und Entnahmeabstände deterministisch, also fest vorgegeben. Auch bei <span class="math inline">\(\lambda&lt;\mu\)</span> können Phasenlagen, Verarbeitungspausen oder Bursts, also kurzzeitige Ankunftshäufungen, vorübergehend Rückstau erzeugen. Eine ausreichende mittlere Entnahmerate allein bestimmt deshalb noch keine passende Puffergröße.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -815,8 +879,16 @@ flowchart LR
 <p>Erster Fehl-Put: <span class="math inline">\(13\,\mathrm{ms}\)</span>.</p>
 <p>Bis 20 ms: <span class="math inline">\(20=13+7\)</span> Versuche, <span class="math inline">\(13=4+9\)</span> Erfolge.</p>
 <aside class="notes">
-<p>Die Tabelle setzt das Lehrmodell mit zehn Plätzen, anfangs leerer Queue, einem Put je Millisekunde und einem Get alle fünf Millisekunden fort. Einheiten sind Millisekunden und Nachrichten. Nach den ersten fünf Puts und einem Get sind vier Elemente vorhanden. Nach zehn Puts und zwei Gets sind es acht. Put elf und zwölf füllen die Queue vollständig. Der erste abgewiesene Versuch liegt daher bei dreizehn Millisekunden.</p>
-<p>Die Werte dreizehn, vierzehn und fünfzehn werden verworfen. Erst der Get nach dem gescheiterten Put bei fünfzehn schafft einen Platz. Put sechzehn gelingt; siebzehn bis zwanzig scheitern wieder vor dem Get bei zwanzig. Insgesamt gibt es dreizehn erfolgreiche Puts und sieben Verluste. Vier Gets liefern eins, zwei, drei und vier; neun Elemente bleiben übrig. Die erste Bilanz zerlegt zwanzig Versuche in dreizehn Erfolge und sieben Fehler. Die zweite zerlegt dreizehn Erfolge in vier Entnahmen und neun Restnachrichten. Diese Bilanzen prüfen den Verlauf unabhängig von einzelnen Tabellenzeilen.</p>
+<p><strong>Kernaussage:</strong> Regelmäßige Entnahmen verhindern den Überlauf nicht, wenn die Ankunftsrate dauerhaft größer ist. Zwei Bilanzgleichungen erlauben eine Kontrolle der Rechnung unabhängig von einzelnen Tabellenzeilen.</p>
+<p>Das Lehrmodell verwendet eine anfangs leere Queue mit zehn Plätzen, einen Put pro Millisekunde und einen Get alle fünf Millisekunden. Put bedeutet Einfügeversuch, Get Entnahme. Bei Gleichzeitigkeit kommt Put zuerst; bei voller Queue wird die neue Nachricht verworfen. Die Tabelle zeigt die Belegung nach allen Operationen des jeweiligen Zeitpunkts.</p>
+<p>Bis fünf Millisekunden gibt es fünf erfolgreiche Puts und einen Get: Vier Elemente bleiben. Bis zehn Millisekunden sind es zehn erfolgreiche Puts und zwei Gets: Acht bleiben. Die Puts bei elf und zwölf füllen die Queue vollständig. Der erste abgewiesene Versuch liegt bei dreizehn Millisekunden. Auch die Werte vierzehn und fünfzehn werden verworfen. Erst der Get nach dem gescheiterten Put bei fünfzehn schafft einen Platz. Put sechzehn gelingt; siebzehn bis zwanzig scheitern wieder vor dem Get bei zwanzig.</p>
+<p>Die beiden Kontrollbilanzen lauten:</p>
+<p><span class="math display">\[\underbrace{20}_{\text{Versuche}}=\underbrace{13}_{\text{Erfolge}}+\underbrace{7}_{\text{Verluste}}\]</span></p>
+<p><span class="math display">\[\underbrace{13}_{\text{Erfolge}}=\underbrace{4}_{\text{Entnahmen}}+\underbrace{9}_{\text{Rest}}\]</span></p>
+<p>Die zweite Gleichung setzt die leere Anfangsqueue voraus. Mit einer Anfangsbelegung müsste diese auf der linken Seite zusätzlich berücksichtigt werden. Solche Bilanzen sollten jede Lastrechnung abschließen: Ein fehlender oder doppelt gezählter Vorgang wird dadurch oft sichtbar.</p>
+<p><strong>Inhalt und Alter der Daten:</strong> Die Queue arbeitet nach FIFO, First In First Out, also in der Reihenfolge erfolgreicher Einfügungen. Nach zwanzig Millisekunden enthält sie die Werte <span class="math inline">\(5,6,\ldots,12,16\)</span>. Der Consumer entnimmt später zwölf und anschließend sechzehn. Werden die Putversuche fortlaufend nummeriert und diese Sequenznummern mitgesendet, macht die Lücke die abgewiesenen Übergaben sichtbar. Das konkretisiert den Nachrichtenvertrag aus Folie 6.</p>
+<p>Beim Get bei zwanzig Millisekunden wird Wert vier entnommen: Diese Messung ist bereits sechzehn Millisekunden alt. Bei unveränderter Fortsetzung wird Wert sechzehn erst bei fünfundsechzig Millisekunden entnommen; seine Queue-Wartezeit beträgt also neunundvierzig Millisekunden. Die Größenordnung ist <span class="math inline">\(N/\mu=10/(200\,/\mathrm{s})=50\,\mathrm{ms}\)</span>, wobei <span class="math inline">\(N\)</span> die Kapazität und <span class="math inline">\(\mu\)</span> die Entnahmerate bezeichnet. Der Unterschied von einer Millisekunde ergibt sich aus der Phasenlage: Der nächste erfolgreiche Put folgt eine Millisekunde nach dem Get. Die anschließende Verarbeitung ist in diesem Alter bis zur Entnahme noch nicht enthalten. Unter Dauerüberlast hält ein größerer Puffer bei dieser Verwerfungsregel mehr alte Daten fest und erhöht die mögliche Wartezeit. Damit wird die Auswahl einer Überlastregel auf Folie 20 auch zu einer Frage der Aktualität.</p>
+<p><strong>Verlustrate und Reihenfolge:</strong> Langfristig können bei voller Queue nur so viele Nachrichten angenommen werden, wie entnommen werden. Mit <span class="math inline">\(\lambda=1000\,/\mathrm{s}\)</span> angebotenen und <span class="math inline">\(\mu=200\,/\mathrm{s}\)</span> entnommenen Nachrichten beträgt die Verlustrate <span class="math inline">\(\lambda-\mu=800\,/\mathrm{s}\)</span>. Vier von fünf Versuchen scheitern; im Fenster von sechzehn bis zwanzig Millisekunden sind es genau ein Erfolg und vier Verluste. Bei der umgekehrten Konvention Get vor Put ergeben sich bis zwanzig Millisekunden dagegen vierzehn Erfolge, sechs Verluste und zehn Restnachrichten. Der erste Verlust liegt weiterhin bei dreizehn Millisekunden. Auch diese Zahlen erfüllen beide Bilanzen; die Reihenfolge muss deshalb ausdrücklich festgelegt werden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -840,8 +912,66 @@ flowchart LR
 <li>Ein endlicher Puffer löst dauerhafte <span class="math inline">\(\lambda&gt;\mu\)</span> nicht</li>
 </ul>
 <aside class="notes">
-<p>N ist die erforderliche Kapazität in Elementen. Q null ist die Anfangsbelegung. A von t zählt angebotene Nachrichten bis zum betrachteten Zeitpunkt, D von t die Entnahmen im gedachten verlustfreien Referenzablauf. Der Ausdruck ist die Belegung, solange keine Nachricht abgewiesen wird. Das Maximum muss auch Zwischenstände nach einem Put und vor einem zeitgleichen Get erfassen. Man darf nicht nur die nach bereits eingetretenen Verlusten erfolgreichen Puts zählen: Das würde den benötigten Speicher unterschätzen.</p>
-<p>Für die leere Startqueue im begrenzten Intervall von eins bis zwanzig Millisekunden sind unmittelbar nach Put zwanzig erst drei Gets erfolgt. Die Spitze beträgt zwanzig minus drei gleich siebzehn. Nach dem vierten Get bleiben sechzehn. Die erforderliche Kapazität ist also siebzehn und nicht sechzehn. lambda und mu bezeichnen angebotene Rate und Entnahmerate. Wenn dauerhaft mehr ankommt als entnommen werden kann, wächst der Referenzrückstau unbegrenzt. Die Formel liefert dann keine endliche Dauerlösung. Bursts, also kurzzeitige Nachrichtenhäufungen, können dagegen mit ausreichendem Speicher aufgefangen werden.</p>
+<p><strong>Kernaussage:</strong> Die verlustfreie Mindestkapazität ist die höchste Belegung, die eine unbegrenzte Queue erreichen würde, einschließlich aller Zwischenstände.</p>
+<p>Die Formel <span class="math inline">\(N\ge\max_t\bigl(Q_0+A(t)-D(t)\bigr)\)</span> betrachtet ein gedachtes Referenzmodell mit unbegrenztem Speicher. <span class="math inline">\(N\)</span> ist die erforderliche Kapazität in Elementen, <span class="math inline">\(Q_0\)</span> die Anfangsbelegung. <span class="math inline">\(A(t)\)</span> zählt die bis zum betrachteten Zeitpunkt angebotenen Nachrichten und <span class="math inline">\(D(t)\)</span> die tatsächlich erfolgten Entnahmen in diesem verlustfreien Referenzablauf. Die Differenz ist seine Belegung. Das Maximum ist die höchste Zwischenbelegung im untersuchten Zeitintervall. Bei gleichzeitigem Put und Get muss zusätzlich die Reihenfolge berücksichtigt werden: Put heißt Einfügen, Get Entnehmen. Ein Get auf eine leere Queue zählt nicht als Entnahme; sonst würden Nachrichten rechnerisch auf Vorrat entnommen und spätere Spitzen unterschätzt.</p>
+<p>Zwei typische Fehler sind:</p>
+<ul>
+<li><strong>Nur erfolgreiche Puts der begrenzten Queue zählen.</strong> Deren Belegung ist bereits durch die vorhandenen zehn Plätze gedeckelt. Die für Verlustfreiheit benötigte Kapazität würde dadurch unterschätzt.</li>
+<li><strong>Nur nach allen Operationen eines Zeitpunkts auswerten.</strong> Nach dem Get bei zwanzig Millisekunden enthält die Referenz sechzehn Nachrichten. Unmittelbar davor, nach Put zwanzig, waren es siebzehn. Die Mindestkapazität beträgt daher siebzehn.</li>
+</ul>
+<p>Ein Vergleich unmittelbar nach dem jeweiligen Put verdeutlicht die beiden Modelle. Ein zeitgleicher Get ist in diesen Zeilen noch nicht ausgeführt; ms bedeutet Millisekunden.</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">Zeitpunkt in ms</th>
+<th style="text-align: right;">Begrenzt, <span class="math inline">\(N=10\)</span></th>
+<th style="text-align: right;">Verlustfreie Referenz</th>
+<th style="text-align: right;">Bisherige Verluste</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">13</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">7</td>
+</tr>
+</tbody>
+</table>
+<p>Bis zwölf Millisekunden stimmen beide Verläufe überein. Ab dem ersten Verlust trennen sie sich. Ihr vertikaler Abstand entspricht hier den kumulierten Verlusten, weil in beiden Modellen dieselben vier Gets erfolgreich sind. Die Belegungsspitze der Referenz lässt sich als Tafelbild bis siebzehn weiterzeichnen, während die begrenzte Queue höchstens zehn Elemente hält.</p>
+<p><strong>Überschlag und endlicher Burst:</strong> Bei anhaltender Überlast wächst der Rückstau näherungsweise um <span class="math inline">\((\lambda-\mu)\cdot T\)</span> in einem Intervall der Länge <span class="math inline">\(T\)</span>. <span class="math inline">\(\lambda\)</span> ist die angebotene Ankunftsrate und <span class="math inline">\(\mu\)</span> die Entnahmerate. Hier ergibt <span class="math inline">\(800\,/\mathrm{s}\cdot0{,}020\,\mathrm{s}=16\)</span> Nachrichten. Die diskrete Spitze von siebzehn liegt um eins darüber, weil der Get am Intervallende erst nach dem Put erfolgt. Bei dauerhaftem <span class="math inline">\(\lambda&gt;\mu\)</span> wächst der Speicherbedarf mit der betrachteten Zeit unbegrenzt.</p>
+<p>Für einen Burst, also eine zeitlich begrenzte Häufung, kann die Formel dagegen eine endliche Kapazität liefern. <span class="math inline">\((\lambda-\mu)\cdot T_b\)</span> mit Burstdauer <span class="math inline">\(T_b\)</span> ist dabei nur ein Überschlag für den Belegungszuwachs; Anfangsbelegung, Phasenlage und diskrete Zwischenstände müssen zusätzlich berücksichtigt werden. Enden im Beispiel alle Ankünfte nach Put zwanzig, liegt die Spitze vor dem gleichzeitigen Get bei siebzehn. Nach diesem Get bleiben sechzehn Nachrichten. Die weiteren Gets bei fünfundzwanzig bis einhundert Millisekunden leeren sie. Die letzte, bei zwanzig eingereihte Nachricht wird bei einhundert entnommen und wartet damit achtzig Millisekunden. Die Verarbeitung nach dem Get kommt für die Deadline noch hinzu. Speicherbedarf und Wartezeit müssen deshalb gemeinsam zur Anforderung passen.</p>
+<p><strong>Für Rückfragen über das Rechenmodell hinaus:</strong> In einer stationären, stabilen Warteschlange beschreibt Littles Gesetz die Beziehung <span class="math inline">\(\overline Q=\lambda_{\mathrm{eff}}\,\overline W\)</span>. Dabei ist <span class="math inline">\(\overline Q\)</span> die mittlere Queue-Belegung, <span class="math inline">\(\lambda_{\mathrm{eff}}\)</span> die tatsächlich angenommene Ankunftsrate und <span class="math inline">\(\overline W\)</span> die mittlere Wartezeit bis zur Entnahme. Diese Mittelwerte liefern allein keine maximale Wartezeit für einen Deadline-Nachweis. Network Calculus, ein mathematisches Verfahren zur Analyse begrenzter Datenflüsse, verwendet obere Ankunfts- und garantierte Bedienkurven; die größte vertikale Abweichung begrenzt den Rückstau. Bei einer anfangs leeren Queue, einer sogenannten Token-Bucket-Quelle mit höchstens <span class="math inline">\(b+r\Delta\)</span> Ankünften in jedem Intervall der Länge <span class="math inline">\(\Delta\)</span> und einer sofort verfügbaren konstanten Bedienrate <span class="math inline">\(R\ge r\)</span> beträgt die idealisierte Speicherschranke <span class="math inline">\(b\)</span>. Dabei ist <span class="math inline">\(b\)</span> die erlaubte Burstmenge, <span class="math inline">\(r\)</span> die langfristige Zuflussrate und <span class="math inline">\(R\)</span> die Bedienrate. Anlaufverzögerungen erfordern eine zusätzliche Betrachtung. Diese Vertiefung ist keine Voraussetzung für die Papieraufgaben.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -931,8 +1061,13 @@ flowchart LR
 <p>Der Consumer erhält weiterhin <code>sample = 10</code>, sofern niemand die Queue verändert.</p>
 <p>Queue-Slots speichern die festgelegte Elementgröße.</p>
 <aside class="notes">
-<p>Der C-Code zeigt eine kleine Wertnachricht. sample ist der Nutzwert, seq die Sequenznummer und q ein gültiger Handle einer Queue mit der Elementgröße SensorMsg. Put kopiert bei osOK, dem Erfolgsstatus, die vereinbarten Bytes von &amp;msg in den Queue-Speicher. Die spätere Änderung des lokalen Felds sample auf neunundneunzig verändert diese gespeicherte Kopie nicht. Ein späterer erfolgreicher Get kann daher weiterhin zehn empfangen.</p>
-<p>Der Zusatz über Änderungen an der Queue grenzt den Ablauf ein: Ein anderer Consumer könnte die Nachricht entnommen oder eine zulässige Verwaltungsoperation den Inhalt verworfen haben. Wir betrachten hier einen unveränderten gespeicherten Datensatz. Die Kopie erfolgt byteweise entsprechend der Elementgröße. Felder mit Adressen sind deshalb keine tiefe Kopie der referenzierten Daten. Ein Strukturfeld namens buffer bleibt eine Adresse, wenn sein Typ ein Pointer ist. Für die kleine Nachricht mit reinen Zahlen reicht die lokale Lebensdauer während des Put-Aufrufs aus. Diese Eigenschaft macht Wertnachrichten zum geeigneten Einstieg, bevor große Datensätze einen zusätzlichen Besitzvertrag benötigen.</p>
+<p><strong>Kernaussage:</strong> Nach einem erfolgreichen Put sind die lokale Variable und die gespeicherte Nachricht zwei unabhängige Objekte. Spätere Änderungen am Original erreichen die Queue nicht.</p>
+<p>Der C-Code zeigt eine kleine Wertnachricht. <code>sample</code> ist der Nutzwert, <code>seq</code> die Sequenznummer und <code>q</code> ein gültiger Handle, also Bezeichner einer Queue mit der Elementgröße <code>sizeof(SensorMsg)</code>. Put bedeutet Einreihen; <code>osOK</code> bestätigt den Erfolg. Nach dem erfolgreichen Put wird <code>msg.sample</code> auf neunundneunzig gesetzt, ein späterer erfolgreicher Get, also Entnahmeaufruf, liefert trotzdem zehn. Das entspricht den zwei Kopiervorgängen aus Folie 7: Put kopiert vom Producer, dem Erzeuger, in den Queue-Speicher; Get kopiert von dort zum Consumer, dem Empfänger. Die lokale Nachricht darf nach dem erfolgreichen Put wiederverwendet werden.</p>
+<p>Der Zusatz „sofern niemand die Queue verändert“ grenzt den Ablauf ein. Ein zweiter Consumer könnte die Nachricht zuvor entnehmen, oder <code>osMessageQueueReset</code>, eine Verwaltungsfunktion zum Leeren der Queue, könnte sie verwerfen. Betrachtet wird hier eine weiterhin gespeicherte Nachricht.</p>
+<p>Für die folgenden Folien ist entscheidend: Die Kopie ist <strong>flach</strong>. Der Kernel kopiert die festgelegte Anzahl von Bytes und interpretiert deren Inhalt nicht. Der Unterschied zwischen einem eingebetteten Array und einem Pointerfeld wird an zwei C-Strukturtypen deutlich:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span> <span class="dt">uint8_t</span> data<span class="op">[</span><span class="dv">8</span><span class="op">];</span> <span class="op">}</span> MsgA<span class="op">;</span></span>
+<span id="cb5-2"><a aria-label="2"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span> <span class="dt">uint8_t</span> <span class="op">*</span>data<span class="op">;</span>   <span class="op">}</span> MsgB<span class="op">;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>uint8_t</code> bezeichnet einen vorzeichenlosen Acht-Bit-Typ. Bei <code>MsgA</code> gehört das gesamte Array zum Strukturinhalt; seine acht Nutzdatenbytes werden mitkopiert. Bei <code>MsgB</code> gehört nur der Pointer, also die Adresse, zur Struktur. Die referenzierten Nutzdaten werden weder dupliziert noch gegen gleichzeitige Änderungen geschützt. Das Feld lässt sich in beiden Fällen mit <code>msg.data[i]</code> ansprechen, wobei <code>i</code> ein gültiger Index sein muss. Bei <code>MsgB</code> muss der Pointer zusätzlich auf einen gültigen, ausreichend großen Puffer zeigen. Die gleiche Zugriffsschreibweise bedeutet somit unterschiedliche Speicherverhältnisse. Kleine reine Wertnachrichten benötigen während des Put-Aufrufs eine gültige Quelle; Pointer-Nachrichten brauchen darüber hinaus einen Besitzvertrag für die Lebensdauer des referenzierten Puffers.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -947,17 +1082,57 @@ flowchart LR
 </section>
 <section id="eine-pointerkopie-kopiert-kein-bild" class="slide level2">
 <h2>Eine Pointerkopie kopiert kein Bild</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb5-1"><a aria-label="1"></a><span class="dt">uint8_t</span> <span class="op">*</span>ptr <span class="op">=</span> image_buffer<span class="op">;</span></span>
-<span id="cb5-2"><a aria-label="2"></a><span class="co">/* q_ptr wurde mit sizeof(ptr) angelegt. */</span></span>
-<span id="cb5-3"><a aria-label="3"></a>osStatus_t st <span class="op">=</span> osMessageQueuePut<span class="op">(</span>q_ptr<span class="op">,</span> <span class="op">&amp;</span>ptr<span class="op">,</span> <span class="dv">0</span><span class="bu">u</span><span class="op">,</span> <span class="dv">0</span><span class="bu">u</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="dt">uint8_t</span> <span class="op">*</span>ptr <span class="op">=</span> image_buffer<span class="op">;</span></span>
+<span id="cb6-2"><a aria-label="2"></a><span class="co">/* q_ptr wurde mit sizeof(ptr) angelegt. */</span></span>
+<span id="cb6-3"><a aria-label="3"></a>osStatus_t st <span class="op">=</span> osMessageQueuePut<span class="op">(</span>q_ptr<span class="op">,</span> <span class="op">&amp;</span>ptr<span class="op">,</span> <span class="dv">0</span><span class="bu">u</span><span class="op">,</span> <span class="dv">0</span><span class="bu">u</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li>Kopiert wird die Adresse, nicht der Bildinhalt</li>
 <li>Puffer muss gültig und unverändert verfügbar bleiben</li>
 <li><code>static</code> verlängert die Lebensdauer, schützt aber nicht vor Überschreiben</li>
 </ul>
 <aside class="notes">
-<p>Der C-Ausschnitt ist Lehrcode für einen Pointer, also eine Speicheradresse. uint8_t bezeichnet einen vorzeichenlosen Acht-Bit-Typ. image_buffer steht für einen tatsächlich bereitgestellten Bildpuffer, ptr für dessen Adresse. q_ptr muss mit sizeof(ptr), der Größe eines solchen Pointerwerts, angelegt worden sein. &amp;ptr übergibt die Adresse des Pointerobjekts als Kopierquelle. Der Status st muss genauso wie bei anderen Puts geprüft werden.</p>
-<p>Bei Erfolg wird nur die Adresse kopiert. Die Bytes des Bildes bleiben im externen Puffer. Der Consumer kann nur richtig lesen, wenn dieser Puffer noch existiert und der Producer, der Erzeuger, ihn nicht inzwischen verändert. Ein lokales Array einer beendeten Funktion ist kein geeigneter langfristiger Speicher. Ein static-Array lebt länger, kann aber weiterhin zu früh wiederbefüllt werden. Ebenso darf eine laufende Hardwareübertragung den Inhalt nicht gleichzeitig überschreiben. Copy by Reference wird als Kurzname für diesen Vertrag verwendet; technisch kopiert die Queue den Pointer weiterhin als Wert. Erst geregelter Besitz macht die kleine Adressnachricht sicher nutzbar.</p>
+<p><strong>Kernaussage:</strong> Wird ein Pointer eingereiht, transportiert die Queue nur eine Adresse. Die Nutzdaten bleiben, wo sie sind, und ihre Gültigkeit ist Sache der Anwendung.</p>
+<p>Der C-Ausschnitt ist Lehrcode. <code>uint8_t</code> bezeichnet einen vorzeichenlosen Acht-Bit-Typ, <code>image_buffer</code> einen separat bereitgestellten Bildpuffer und <code>ptr</code> dessen Adresse. <code>q_ptr</code> ist der Handle, also Bezeichner einer Queue für Pointerwerte. Im betrachteten STM32H755-Modell ist ein solcher Pointer vier Byte groß. <code>st</code> ist der Rückgabestatus; erst <code>osOK</code> bestätigt eine erfolgreiche Übergabe. Zwei Fehlerquellen verdienen besondere Aufmerksamkeit.</p>
+<p><strong>Erstens: <code>&amp;ptr</code> statt <code>ptr</code>.</strong> Put erwartet die Adresse des zu kopierenden Objekts. Dieses Objekt ist hier die Pointervariable; deshalb ist <code>&amp;ptr</code> richtig. Wird bei einer Elementgröße von vier Byte versehentlich <code>ptr</code> übergeben, kopiert der Kernel vier Byte vom Anfang des Bildpuffers. Bei einem Graustufenbild mit einem Byte pro Pixel wären das vier Pixelwerte. Der Consumer erhält diese Bytes als vermeintlichen Pointer. Beim späteren Zugriff auf diese falsche Adresse drohen falsche Daten oder ein HardFault, eine Prozessor-Fehlerausnahme. Der Parameter von <code>osMessageQueuePut</code> hat den allgemeinen Zeigertyp <code>const void *</code>; beide Argumentformen sind in C zulässig, deshalb erkennt der Compiler diesen Vertragsfehler üblicherweise nicht.</p>
+<p>Beim Get, dem Entnahmeaufruf, gilt die Regel spiegelbildlich. Die Zieladresse ist die Adresse der Pointervariable des Consumers:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">uint8_t</span> <span class="op">*</span>rx <span class="op">=</span> NULL<span class="op">;</span></span>
+<span id="cb7-2"><a aria-label="2"></a>osStatus_t rx_status <span class="op">=</span> osMessageQueueGet<span class="op">(</span></span>
+<span id="cb7-3"><a aria-label="3"></a>    q_ptr<span class="op">,</span> <span class="op">&amp;</span>rx<span class="op">,</span> NULL<span class="op">,</span> <span class="dv">0</span><span class="bu">u</span><span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>osStatus_t</code> ist der Statusdatentyp. Nur bei <code>rx_status == osOK</code> liegt ein neu empfangener Pointer vor, dessen Puffer gemäß Besitzvertrag benutzt werden darf. <code>NULL</code> fordert keine Rückgabe einer Nachrichtenpriorität an; Timeout null bedeutet hier sofortige Rückkehr, falls die Queue leer ist. Ein versehentliches <code>rx</code> statt <code>&amp;rx</code> würde die Nutzdaten an eine falsche Zieladresse schreiben oder einen Parameterfehler auslösen.</p>
+<p><strong>Zweitens: die Elementgröße bei der Anlage.</strong> Für <code>uint8_t image_buffer[76800]</code> und eine Queue mit zehn Plätzen ergeben sich im STM32H755-Modell folgende Größen:</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 30%">
+<col style="width: 40%">
+<col style="width: 30%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Ausdruck</th>
+<th style="text-align: right;">Byte pro Element</th>
+<th>Wirkung</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>sizeof(ptr)</code></td>
+<td style="text-align: right;">4</td>
+<td>Richtig für einen Pointer pro Queue-Platz.</td>
+</tr>
+<tr class="even">
+<td><code>sizeof(*ptr)</code></td>
+<td style="text-align: right;">1</td>
+<td>Nur ein Byte des Pointerobjekts wird übertragen; die Adresse ist unvollständig.</td>
+</tr>
+<tr class="odd">
+<td><code>sizeof(image_buffer)</code></td>
+<td style="text-align: right;">76 800</td>
+<td>Platz für eine vollständige Bildkopie je Element; zehn Plätze benötigen 750 KiB reinen Nutzspeicher.</td>
+</tr>
+</tbody>
+</table>
+<p><code>sizeof</code> ermittelt eine Größe in Byte, ohne die Bilddaten zu lesen. Der letzte Tabellenfall ist nur dann eine Bild-Wertkopie, wenn auch der Bildpuffer selbst als Put-Quelle übergeben wird. Mit unverändertem <code>&amp;ptr</code> würde der Kernel weit über die Pointervariable hinaus lesen. Die große Queue-Anlage kann bei unzureichendem verfügbarem Speicher scheitern; ein <code>NULL</code>-Handle muss den Initialisierungsablauf stoppen. KiB bedeutet Kibibyte mit 1024 Byte. Der zusätzliche Verwaltungsbedarf und die tatsächlich nutzbaren Speicherregionen sind gesondert zu prüfen. Die vier Byte Pointergröße sind eine Zielplattformannahme und gelten beispielsweise auf einem 64-Bit-PC nicht allgemein. Für die Pointer-Queue ist <code>sizeof(uint8_t *)</code> oder ein eigener Nachrichtentyp eine klare Wahl.</p>
+<p>Nach erfolgreicher Pointerübergabe muss der Bildpuffer weiter existieren und bis zum Ende der Consumer-Nutzung vor Überschreiben geschützt sein. Ein lokales Array einer beendeten Funktion ist dafür ungeeignet. <code>static</code> verlängert die Lebensdauer, schützt aber nicht vor erneutem Befüllen; dasselbe gilt gegenüber einer laufenden Hardwareübertragung. Der Ausdruck Copy by Reference bezeichnet hier diesen Besitzvertrag. Technisch bleibt die Queue-Operation eine Wertkopie des Pointers.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -978,6 +1153,7 @@ flowchart LR
 <div>
 <p></p><figure class=""><p></p>
 <div>
+
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
 flowchart TD
   F[FREE] --&gt;|Producer nimmt| W[FILLING]
@@ -1033,8 +1209,18 @@ flowchart TD
 </table>
 <p>Kontrollblock, Alignment und Allokator kommen hinzu.</p>
 <aside class="notes">
-<p>KiB bedeutet Kibibyte, also 1024 Byte. Die angenommenen Bilder enthalten je fünfundsiebzig KiB, die angenommenen Pointer jeweils vier Byte. Zehn Pointer-Slots brauchen damit zehn mal vier gleich vierzig Byte reinen Elementnutzspeicher. Zehn tatsächliche Bildpuffer brauchen zehn mal fünfundsiebzig gleich siebenhundertfünfzig KiB. Diese beiden Zahlen beschreiben verschiedene Speicherbereiche. Eine Queue mit zehn freien Pointerplätzen erzeugt keine zehn Bildpuffer.</p>
-<p>Bei nur zwei Bildpuffern sind maximal zwei unabhängige Bilder gleichzeitig im gesamten Besitzkreislauf verfügbar: frei, beim Producer, in der Queue oder beim Consumer. Die Zahl wartender Queue-Adressen allein zählt nicht alle belegten Puffer. Kontrollblock, Alignment, also Speicherausrichtung, und Allokatorverwaltung erhöhen den Gesamtbedarf. Ein Deskriptor mit Pointer, Länge und Sequenz ist außerdem größer als ein reiner Pointer. Die Zahlen sind eine Modellrechnung, keine Behauptung über frei verfügbaren RAM des Boards. RAM bedeutet Random Access Memory, Arbeitsspeicher. Linker-Map, Speicherregion und konkrete Adapterforderungen bestimmen, ob der Entwurf im Zielprojekt tatsächlich passt.</p>
+<p><strong>Kernaussage:</strong> Queue-Plätze und Bildpuffer sind getrennte Ressourcen. Bei zehn Queue-Plätzen und nur zwei Puffern bestimmt die Pufferzahl, wie viele unabhängige Bilder gleichzeitig unterwegs sein können.</p>
+<p>Payload bedeutet Nutzdaten; ein Payload-Pool ist ein Vorrat separat bereitgestellter Datenpuffer. KiB steht für Kibibyte mit 1024 Byte. Das Lehrmodell nimmt zehn Queue-Plätze, Pointer mit vier Byte und Bilder mit je fünfundsiebzig KiB an. Zehn reine Pointer-Slots benötigen <span class="math inline">\(10\cdot4=40\)</span> Byte Elementnutzspeicher. Zehn Bildpuffer benötigen <span class="math inline">\(10\cdot75=750\,\mathrm{KiB}\)</span>, zwei dagegen <span class="math inline">\(150\,\mathrm{KiB}\)</span>. Diese Zahlen beschreiben verschiedene Speicherbereiche: Eine Queue mit zehn Pointerplätzen erzeugt keine zehn Bildpuffer.</p>
+<p>Ein anschauliches Bildformat ist QVGA, Quarter Video Graphics Array, hier mit <span class="math inline">\(320\times240\)</span> Bildpunkten. Bei einem Byte Grauwert pro Pixel hat ein Bild genau <span class="math inline">\(320\cdot240\cdot1=76\,800\)</span> Byte, also <span class="math inline">\(76\,800/1024=75\,\mathrm{KiB}\)</span>. Das Bildformat veranschaulicht die angenommene Nutzdatenmenge.</p>
+<p>Die entscheidende Tabellenzeile ist die dritte. Der Besitzvertrag aus der vorherigen Folie setzt voraus, dass jeder Puffer eindeutig verwaltet wird und höchstens einmal zur Consumerseite unterwegs ist. Mit nur zwei Bildpuffern enthält die Queue deshalb höchstens zwei verschiedene Bildadressen, obwohl sie zehn Plätze besitzt. Mindestens acht Queue-Plätze bleiben ungenutzt. Meist warten weniger Adressen: Ein Puffer kann gerade vom Producer, dem Erzeuger, befüllt oder vom Consumer, dem Verbraucher, verarbeitet werden. Diese Puffer belegen keinen Queue-Platz, gehören aber weiterhin zum begrenzten Pool. Die Queue-Länge begrenzt wartende Adressen; die Pufferzahl begrenzt unabhängige Bilder über den gesamten Besitzkreislauf.</p>
+<p>Daraus folgen drei gebräuchliche Anordnungen für vollständige Bildpuffer:</p>
+<ul>
+<li><strong>Ein Puffer:</strong> Producer und Consumer nutzen ihn abwechselnd. Das nächste vollständige Bild darf erst entstehen, wenn die Verarbeitung des vorherigen beendet ist.</li>
+<li><strong>Zwei Puffer, Double Buffering:</strong> Ein Puffer kann befüllt werden, während der andere verarbeitet wird. Die beiden Arbeitsschritte können sich an unterschiedlichen Bildern überlappen.</li>
+<li><strong>Drei Puffer, Triple Buffering:</strong> Zusätzlich zu einem Puffer beim Producer und einem beim Consumer kann ein vollständiges Bild in der Queue warten. Das kann begrenzte Laufzeitschwankungen auffangen, bevor eine Seite auf einen freien Puffer warten muss.</li>
+</ul>
+<p>Auf dem einzelnen M4-Prozessorkern werden die Threadanweisungen weiterhin nacheinander ausgeführt. Echte gleichzeitige Arbeit kann beispielsweise entstehen, wenn eine Hardwareübertragung einen Puffer füllt, während der Kern den anderen verarbeitet. Zusätzliche Puffer erlauben zeitliche Entkopplung und können zugleich die Wartezeit erhöhen. Eine dauerhaft langsamere Verarbeitung wird durch Double oder Triple Buffering nicht schneller.</p>
+<p>Kontrollblock, Alignment, also Speicherausrichtung, und Allokatorverwaltung erhöhen den Gesamtbedarf. Ein Deskriptor mit Pointer, Länge und Sequenznummer ist außerdem größer als ein reiner Pointer. Die Zahlen sind eine Modellrechnung über Nutzspeicher. Ob ein Entwurf in den verfügbaren RAM, Random Access Memory oder Arbeitsspeicher, passt, muss anhand der Linker-Map, der Speicherbelegung des gebundenen Programms, der erreichbaren Speicherregionen und der konkreten Adapteranforderungen geprüft werden.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1099,6 +1285,8 @@ flowchart TD
 <li>ISR verwendet keinen Mutex</li>
 </ul>
 <aside class="notes">
+<p><strong>Kernaussage:</strong> Für einen aktuellen Zustand genügt ein gemeinsam geschützter Datensatz; eine Queue ist dafür nicht erforderlich. Der Mutex sorgt dafür, dass alle Felder zusammenpassen. Die Versionsnummer zeigt, ob sich seit dem letzten Lesen etwas geändert hat. Eine Historie entsteht dabei bewusst nicht.</p>
+<p>Diese Folie zeigt eine konkrete Umsetzung des Latest-Value-Vertrags zwischen Threads: Gelesen wird der zuletzt veröffentlichte, zusammenhängende Zustand. Sie schließt an Folie 26 an, die die Grenzen einer Queue der Länge eins beim gewöhnlichen Put gezeigt hat, und arbeitet den „Einzelwert mit Mutex“ aus Folie 5 zu einem Datensatz mit mehreren Feldern aus.</p>
 <p>Ein Snapshot ist eine zusammengehörige Momentaufnahme mehrerer Felder. Ein veröffentlichender Thread schreibt beispielsweise Wert, Versionsnummer und Zeitstempel in einem kurzen, durch Mutex geschützten Abschnitt. Ein Mutex ist eine Sperre mit Besitzer. Alle beteiligten Leser kopieren unter derselben Sperre den vollständigen Datensatz und geben die Sperre danach frei. So stimmen die Felder zusammen, sofern kein weiterer ungeschützter Teilnehmer schreibt.</p>
 <p>Die Version kennzeichnet Änderungen. Sie beweist keine Zustellung aller Zwischenversionen. Ein Leser kann etwa direkt von Version eins auf fünf springen, wenn er später liest. Für einen aktuellen Zustand kann das erlaubt sein. Wenn eine Benachrichtigung verwendet wird, folgt sie auf die vollständige Veröffentlichung, damit der geweckte Leser nicht erst einen alten Stand findet. ISR steht für Interrupt Service Routine, Interruptbehandler. Er darf keinen CMSIS-Mutex erwerben oder freigeben. Bei hardwareerfassten Daten übergibt daher ein erlaubter kurzer Kanal die Rohdaten an den veröffentlichenden Thread. Diese Lösung baut auf Vorlesung 4 auf und bleibt heute ein Entwurfsmuster, kein zusätzliches Pflichtprogramm.</p>
 <style type="text/css">
@@ -1193,6 +1381,7 @@ flowchart TD
 <div>
 <p></p><figure class=""><p></p>
 <div>
+
 <pre class="mermaid mermaid-js">%%{init: {'theme': 'base', 'htmlLabels': false, 'flowchart': {'htmlLabels': false}, 'themeVariables': {'background': '#FFFFFF', 'primaryColor': '#FFFFFF', 'primaryBorderColor': '#E5E5EA', 'primaryTextColor': '#1D1D1F', 'lineColor': '#86868B'}}}%%
 flowchart TD
   E[Ereignis] --&gt; T[Top-Half]
@@ -1430,11 +1619,11 @@ flowchart TD
 </section>
 <section id="vertiefung-die-native-isr-schnittstelle" class="slide level2">
 <h2>Vertiefung: die native ISR-Schnittstelle</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb6-1"><a aria-label="1"></a><span class="co">/* Vergleich für ein eigenes natives FreeRTOS-Objekt. */</span></span>
-<span id="cb6-2"><a aria-label="2"></a>BaseType_t higher_woken <span class="op">=</span> pdFALSE<span class="op">;</span></span>
-<span id="cb6-3"><a aria-label="3"></a>BaseType_t ok <span class="op">=</span> xQueueSendFromISR<span class="op">(</span>native_q<span class="op">,</span> <span class="op">&amp;</span>msg<span class="op">,</span> <span class="op">&amp;</span>higher_woken<span class="op">);</span></span>
-<span id="cb6-4"><a aria-label="4"></a><span class="co">/* ok prüfen: erfolgreich oder voll. */</span></span>
-<span id="cb6-5"><a aria-label="5"></a>portYIELD_FROM_ISR<span class="op">(</span>higher_woken<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb8-1"><a aria-label="1"></a><span class="co">/* Vergleich für ein eigenes natives FreeRTOS-Objekt. */</span></span>
+<span id="cb8-2"><a aria-label="2"></a>BaseType_t higher_woken <span class="op">=</span> pdFALSE<span class="op">;</span></span>
+<span id="cb8-3"><a aria-label="3"></a>BaseType_t ok <span class="op">=</span> xQueueSendFromISR<span class="op">(</span>native_q<span class="op">,</span> <span class="op">&amp;</span>msg<span class="op">,</span> <span class="op">&amp;</span>higher_woken<span class="op">);</span></span>
+<span id="cb8-4"><a aria-label="4"></a><span class="co">/* ok prüfen: erfolgreich oder voll. */</span></span>
+<span id="cb8-5"><a aria-label="5"></a>portYIELD_FROM_ISR<span class="op">(</span>higher_woken<span class="op">);</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Vergleichscode; das Labor verwendet CMSIS-RTOS2.</p>
 <aside class="notes">
 <p>Der C-Ausschnitt vertieft die native FreeRTOS-Schnittstelle. Er ist Vergleichscode und wird nicht in die CMSIS-Laboraufgabe übernommen. CMSIS-RTOS2 ist die zweite Betriebssystem-Schnittstelle des Common Microcontroller Software Interface Standard. ISR steht für Interrupt Service Routine, Interruptbehandler. native_q bezeichnet eine mit der nativen FreeRTOS-Schnittstelle angelegte Queue, msg die passende Nachricht. BaseType_t ist der native Porttyp für Status und Flag; pdFALSE bedeutet falsch. xQueueSendFromISR reiht ohne blockierendes Warten ein und kann higher_woken auf wahr setzen, wenn eine höher priorisierte Aufgabe geweckt wird.</p>
@@ -1673,10 +1862,10 @@ flowchart TD
 <section id="hal-callback-pinmaske-weiterreichen" class="slide level2">
 <h2>HAL-Callback: Pinmaske weiterreichen</h2>
 <p>Den einen bestehenden Callback ergänzen:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb7-1"><a aria-label="1"></a><span class="dt">void</span> HAL_GPIO_EXTI_Callback<span class="op">(</span><span class="dt">uint16_t</span> pin<span class="op">)</span></span>
-<span id="cb7-2"><a aria-label="2"></a><span class="op">{</span></span>
-<span id="cb7-3"><a aria-label="3"></a>    Lab05_ButtonIRQ<span class="op">(</span>pin<span class="op">);</span></span>
-<span id="cb7-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode numberSource c number-lines code-with-copy"><code class="sourceCode c"><span id="cb9-1"><a aria-label="1"></a><span class="dt">void</span> HAL_GPIO_EXTI_Callback<span class="op">(</span><span class="dt">uint16_t</span> pin<span class="op">)</span></span>
+<span id="cb9-2"><a aria-label="2"></a><span class="op">{</span></span>
+<span id="cb9-3"><a aria-label="3"></a>    Lab05_ButtonIRQ<span class="op">(</span>pin<span class="op">);</span></span>
+<span id="cb9-4"><a aria-label="4"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>Lab05_ButtonIRQ(pin)</code> prüft Pin und Kernelzustand.</p>
 <aside class="notes">
 <p>HAL bedeutet Hardware Abstraction Layer, Hardwareabstraktion. GPIO steht für General Purpose Input/Output, allgemeiner Ein- und Ausgang, EXTI für die externe Interruptanbindung. Ein Callback ist eine vom Treiber aufgerufene Funktion. Der C-Ausschnitt zeigt die Einbindung in den einen bereits bestehenden HAL_GPIO_EXTI_Callback; es wird keine zweite gleichnamige Funktion angelegt. uint16_t ist ein vorzeichenloser 16-Bit-Typ. pin enthält die Pinmaske der gemeldeten Leitung und wird unverändert weitergereicht.</p>
@@ -1808,7 +1997,7 @@ flowchart TD
 'autoAnimateDuration': 1,
 'autoAnimateUnmatched': true,
 'jumpToSlide': true,
-'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"}],"openButton":true},
+'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"\u003ci class=\"fas fa-gear\">\u003c/i>","content":"\u003cul class=\"slide-menu-items\">\n\u003cli class=\"slide-tool-item active\" data-item=\"0\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\">\u003ckbd>f\u003c/kbd> Fullscreen\u003c/a>\u003c/li>\n\u003cli class=\"slide-tool-item\" data-item=\"1\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\">\u003ckbd>s\u003c/kbd> Speaker View\u003c/a>\u003c/li>\n\u003cli class=\"slide-tool-item\" data-item=\"2\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\">\u003ckbd>o\u003c/kbd> Slide Overview\u003c/a>\u003c/li>\n\u003cli class=\"slide-tool-item\" data-item=\"3\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\">\u003ckbd>e\u003c/kbd> PDF Export Mode\u003c/a>\u003c/li>\n\u003cli class=\"slide-tool-item\" data-item=\"4\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\">\u003ckbd>r\u003c/kbd> Scroll View Mode\u003c/a>\u003c/li>\n\u003cli class=\"slide-tool-item\" data-item=\"5\">\u003ca href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\">\u003ckbd>?\u003c/kbd> Keyboard Help\u003c/a>\u003c/li>\n\u003c/ul>"}],"openButton":true,"openButtonLabel":"Slide menu"},
 'smaller': false,
  
         // Display controls in the bottom right corner
@@ -2210,7 +2399,8 @@ flowchart TD
               return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
           }
           // Inspect non-navigation links and adorn them if external
-         var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+          window.quartoDecorateExternalLinks = function (root) {
+         var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
           for (var i=0; i<links.length; i++) {
             const link = links[i];
             if (!isInternal(link.href)) {
@@ -2219,8 +2409,69 @@ flowchart TD
               if (link.dataset.originalHref !== undefined) {
                 link.href = link.dataset.originalHref;
               }
+              if (!link.classList.contains('no-external-icon')) {
+              }
             }
           }
+          };
+          window.quartoDecorateExternalLinks(window.document);
+        // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+        // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+        const hideOnEscAndFocusOut = {
+          name: 'hideOnEscAndFocusOut',
+          defaultValue: true,
+          fn(instance) {
+            const dismiss = () => {
+              // A show scheduled by the trigger delay would otherwise reopen it
+              instance.clearDelayTimeouts();
+              instance.hide();
+            };
+            const onKeyDown = (event) => {
+              if (event.key !== 'Escape') {
+                return;
+              }
+              // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+              // except an open reveal.js slide menu, which Esc should close too.
+              // The menu handles keys only when its keyboard option is on.
+              const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+                window.Reveal.getConfig().menu?.keyboard !== false;
+              if (!menuHandlesEsc) {
+                event.stopPropagation();
+              }
+              if (instance.popper.contains(window.document.activeElement)) {
+                // Disabled while refocusing so the focus trigger does not reopen it
+                instance.disable();
+                instance.reference.focus();
+                instance.enable();
+              }
+              dismiss();
+            };
+            const onFocusOut = (event) => {
+              const target = event.relatedTarget;
+              if (target && !instance.reference.contains(target) &&
+                  !instance.popper.contains(target)) {
+                dismiss();
+              }
+            };
+            // On the trigger too: a click trigger (code-annotations: select) has no
+            // blur handling. Attached for the instance's lifetime so leaving the
+            // trigger also cancels a show still pending on the trigger delay.
+            instance.reference.addEventListener('focusout', onFocusOut);
+            return {
+              onShow() {
+                window.document.addEventListener('keydown', onKeyDown, true);
+                instance.popper.addEventListener('focusout', onFocusOut);
+              },
+              onHide() {
+                window.document.removeEventListener('keydown', onKeyDown, true);
+                instance.popper.removeEventListener('focusout', onFocusOut);
+              },
+              onDestroy() {
+                instance.reference.removeEventListener('focusout', onFocusOut);
+              },
+            };
+          },
+        };
         function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
           const config = {
             allowHTML: true,
@@ -2234,6 +2485,7 @@ flowchart TD
             interactiveBorder: 10,
             theme: 'light-border',
             placement: 'bottom-start',
+            plugins: [hideOnEscAndFocusOut],
           };
           if (contentFn) {
             config.content = contentFn;
