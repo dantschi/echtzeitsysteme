@@ -248,6 +248,8 @@ Schematische Schritte: Get leer bei 1 · Put bei 3 · Auswahl bei 5.
 Consumer ist der empfangende Thread. Die waagerechte Achse zeigt schematische Schritte, keine gemessenen Millisekunden. Running bedeutet laufend, Blocked wartend und Ready ausführungsbereit. Der Consumer ruft bei Schritt eins Get auf einer leeren Queue mit erlaubter Wartezeit auf. Der Kernel setzt ihn auf Blocked. Er führt in diesem Zustand keine eigene Pollingschleife aus.
 
 Ein erfolgreicher Put bei Schritt drei kann den wartenden Consumer auf Ready setzen. Er läuft trotzdem erst bei Schritt fünf, wenn der Scheduler ihn auswählt. Der Abstand ist hier bewusst sichtbar: Ready ist kein Verarbeitungsbeginn. Nach Verarbeitung versucht er bei Schritt sechs erneut ein Get und wartet wieder. Tickbehandlung, andere Threads und Interrupts können während seiner Blockierung weiterlaufen. Ein Get mit Timeout null würde sofort einen Status zurückgeben, anstatt diesen Wartezustand einzugehen. Eine endliche Wartezeit kann auch ohne Nachricht ablaufen. Erst der erfolgreiche Rückgabestatus bestätigt, dass eine neue Nachricht im Zielobjekt angekommen ist.
+
+**Kernaussage:** Ein Consumer, der auf eine leere Queue wartet, verbraucht keine Rechenzeit. Der Kernel nimmt ihn aus der Auswahl und weckt ihn bei Bedarf wieder. Geweckt heißt aber nur ausführungsbereit: Zwischen Ready und Running liegt eine Zeitspanne, die der Scheduler bestimmt und nicht die Queue.
 :::
 
 ## Queue einmal anlegen und Handle prüfen
@@ -269,6 +271,16 @@ if (q == NULL) {
 Der C-Ausschnitt zeigt die Anlage, nicht ein vollständiges Bootprogramm. CMSIS-RTOS2 ist die standardisierte Betriebssystem-Schnittstelle. osMessageQueueId_t ist ihr Queue-Handle, also ein Bezeichner des angelegten Objekts. osMessageQueueNew erhält vier Elementplätze, die mit sizeof ermittelte Bytegröße von SensorMsg und mit NULL keine zusätzlichen Attribute. SensorMsg muss zuvor als gemeinsamer Nachrichtentyp definiert sein. Die vier ist die Kapazität, nicht die Zahl erzeugter Threads.
 
 Im betrachteten Adapter wird bei NULL-Attributen dynamisch Speicher reserviert. Ein NULL-Ergebnis kann an Speicher, Parametern, Aufrufkontext oder Konfiguration liegen. Damit darf kein Thread die Queue benutzen. Error_Handler bezeichnet den Fehlerpfad des generierten Projekts; er muss diesen Initialisierungsabbruch tatsächlich stoppen. Im Labor enthält die Hilfsfunktion zusätzlich eine Endlosschleife, falls der Handler unerwartet zurückkehrt. Das Cube-Projekt initialisiert und startet den Kernel bereits. Wir fügen nur die Objektanlage an der richtigen Stelle ein, statt den Startablauf zu duplizieren.
+
+**Kernaussage:** Die Queue wird genau einmal angelegt, bevor irgendein Thread oder Interrupt sie benutzen kann. Ein NULL-Handle ist ein harter Fehler, kein Sonderfall, mit dem man weiterarbeitet.
+
+Die drei Parameter von osMessageQueueNew sind schnell erklärt:
+
+| Parameter | Bedeutung |
+|---|---|
+| `4` | Kapazität in Elementen |
+| `sizeof(SensorMsg)` | Größe eines Elements in Byte |
+| `NULL` | Standardattribute, also dynamische Allokation |
 :::
 
 ## Put übergibt eine Kopie bei Erfolg
@@ -341,9 +353,23 @@ Lehrannahmen, keine Boardmessung:
 $\lambda=1000\,/\mathrm{s}$ und $\mu=200\,/\mathrm{s}$
 
 ::: notes
-N ist die Kapazität in Elementen, ms sind Millisekunden und API bedeutet Application Programming Interface, Programmierschnittstelle. Die Rechenzeit ihrer Operationen wird im Modell vernachlässigt. lambda ist die angebotene Nachrichtenrate und mu die mögliche Entnahmerate, jeweils in Nachrichten pro Sekunde. Ein Put pro Millisekunde entspricht tausend pro Sekunde; ein Get alle fünf Millisekunden entspricht zweihundert pro Sekunde.
+**Kernaussage:** Erst wenn alle Annahmen ausdrücklich festgelegt sind, lässt sich eine Lastrechnung von Hand eindeutig nachrechnen. Jede Annahme kann das Ergebnis verändern.
 
-Die Queue ist zu Beginn leer. Jeder Put versucht, den Wert seines Zeitpunkts einzureihen. Bei Vollbelegung wird dieser neue Wert verworfen. Bereits gespeicherte Werte bleiben erhalten. Bei gleichen Zeitpunkten gilt eine feste Reihenfolge: Put vor Get. Diese Zählkonvention beeinflusst die Belegungsspitze und den ersten Verlust. Der Consumer entnimmt bei jedem Get nur eine Nachricht. Ein Worker, der nach einer Pause die gesamte Queue leert, wäre ein anderes Modell. Die Annahmen erlauben eine genaue Handrechnung, stellen jedoch keinen Ablaufbeweis für osDelay auf realer Hardware dar.
+$N=10$ ist die Kapazität in Elementen, ms bedeutet Millisekunden. API steht für Application Programming Interface, Programmierschnittstelle; ihre Aufrufzeit wird im Modell vernachlässigt. Die Queue ist anfangs leer. Jeder Put, also Einfügeversuch, bietet den Wert seines Zeitpunkts als Nachricht an. Jeder Get, also Entnahmeaufruf, entnimmt genau ein Element. Die Zeitpunkte sind didaktische Vorgaben und keine Boardmessungen.
+
+Die angebotene Ankunftsrate ist $\lambda=1000\,/\mathrm{s}$, die mögliche Entnahmerate $\mu=200\,/\mathrm{s}$, jeweils in Nachrichten pro Sekunde. Ihr Verhältnis $\rho=\lambda/\mu=5$ beschreibt eine fünffache angebotene Last bezogen auf die Entnahmekapazität. Prozessorrechenzeiten werden dabei nicht modelliert. In jedem Abschnitt von fünf Millisekunden kommen fünf Nachrichten hinzu und eine kann entnommen werden: Der verlustfreie Rückstau wächst netto um vier. Bereits eine Überschlagsrechnung lässt erwarten, dass zehn Plätze nach etwas mehr als zehn Millisekunden voll sind. Diese Schätzung eignet sich als Frage an das Plenum vor der genauen Rechnung auf der nächsten Folie.
+
+| Annahme | Bedeutung einer Änderung |
+|---|---|
+| Queue anfangs leer | Eine Anfangsbelegung $Q_0>0$ kann den ersten Verlust vorverlegen. |
+| API-Zeit vernachlässigt | Zusätzlicher Verwaltungsaufwand kann Entnahmen verzögern; die erreichbare Rate muss neu bestimmt werden. |
+| Ein Element pro Get | Ein Consumer, der bei jeder Aktivierung die gesamte Queue leert, hat eine andere Entnahmedynamik. |
+| Put vor Get bei Gleichzeitigkeit | Die Zwischenbelegung und die Zahl erfolgreicher Puts können sich ändern. |
+| Neue Nachricht verwerfen | Beim Überschreiben der ältesten Nachricht bleiben stattdessen die jüngsten Werte erhalten; andere Nachrichten gehen verloren. |
+
+Der Consumer ist der empfangende Thread. Seine Entnahmezeitpunkte sind hier fest vorgegeben. Ein Consumer mit `osDelay(5)` in einer Schleife entnimmt dagegen nicht automatisch exakt alle fünf Millisekunden. Der Parameter bezeichnet fünf Kernel-Ticks, also Schritte der Betriebssystemzeit; erst bei einer Tickfrequenz von 1000 Hertz dauert ein Tick eine Millisekunde. Die relative Wartezeit beginnt am Aufruf. Verarbeitungszeit und Verzögerungen durch die Auswahl des Schedulers kommen zur Schleifenlaufzeit hinzu. `osDelayUntil` verwendet einen absoluten Ziel-Tick und kann dadurch eine feste Folge geplanter Aktivierungszeitpunkte erhalten. Tickauflösung und die Verzögerung zwischen Ready, ausführungsbereit, und Running, laufend, bleiben bestehen. Diese Lastrechnung ist deshalb kein Ablaufbeweis für `osDelay` auf realer Hardware.
+
+Die Raten stammen aus der Warteschlangentheorie. Hier sind Ankunfts- und Entnahmeabstände deterministisch, also fest vorgegeben. Auch bei $\lambda<\mu$ können Phasenlagen, Verarbeitungspausen oder Bursts, also kurzzeitige Ankunftshäufungen, vorübergehend Rückstau erzeugen. Eine ausreichende mittlere Entnahmerate allein bestimmt deshalb noch keine passende Puffergröße.
 :::
 
 ## Die Belegung steigt trotz regelmäßiger Gets
@@ -360,9 +386,25 @@ Erster Fehl-Put: $13\,\mathrm{ms}$.
 Bis 20 ms: $20=13+7$ Versuche, $13=4+9$ Erfolge.
 
 ::: notes
-Die Tabelle setzt das Lehrmodell mit zehn Plätzen, anfangs leerer Queue, einem Put je Millisekunde und einem Get alle fünf Millisekunden fort. Einheiten sind Millisekunden und Nachrichten. Nach den ersten fünf Puts und einem Get sind vier Elemente vorhanden. Nach zehn Puts und zwei Gets sind es acht. Put elf und zwölf füllen die Queue vollständig. Der erste abgewiesene Versuch liegt daher bei dreizehn Millisekunden.
+**Kernaussage:** Regelmäßige Entnahmen verhindern den Überlauf nicht, wenn die Ankunftsrate dauerhaft größer ist. Zwei Bilanzgleichungen erlauben eine Kontrolle der Rechnung unabhängig von einzelnen Tabellenzeilen.
 
-Die Werte dreizehn, vierzehn und fünfzehn werden verworfen. Erst der Get nach dem gescheiterten Put bei fünfzehn schafft einen Platz. Put sechzehn gelingt; siebzehn bis zwanzig scheitern wieder vor dem Get bei zwanzig. Insgesamt gibt es dreizehn erfolgreiche Puts und sieben Verluste. Vier Gets liefern eins, zwei, drei und vier; neun Elemente bleiben übrig. Die erste Bilanz zerlegt zwanzig Versuche in dreizehn Erfolge und sieben Fehler. Die zweite zerlegt dreizehn Erfolge in vier Entnahmen und neun Restnachrichten. Diese Bilanzen prüfen den Verlauf unabhängig von einzelnen Tabellenzeilen.
+Das Lehrmodell verwendet eine anfangs leere Queue mit zehn Plätzen, einen Put pro Millisekunde und einen Get alle fünf Millisekunden. Put bedeutet Einfügeversuch, Get Entnahme. Bei Gleichzeitigkeit kommt Put zuerst; bei voller Queue wird die neue Nachricht verworfen. Die Tabelle zeigt die Belegung nach allen Operationen des jeweiligen Zeitpunkts.
+
+Bis fünf Millisekunden gibt es fünf erfolgreiche Puts und einen Get: Vier Elemente bleiben. Bis zehn Millisekunden sind es zehn erfolgreiche Puts und zwei Gets: Acht bleiben. Die Puts bei elf und zwölf füllen die Queue vollständig. Der erste abgewiesene Versuch liegt bei dreizehn Millisekunden. Auch die Werte vierzehn und fünfzehn werden verworfen. Erst der Get nach dem gescheiterten Put bei fünfzehn schafft einen Platz. Put sechzehn gelingt; siebzehn bis zwanzig scheitern wieder vor dem Get bei zwanzig.
+
+Die beiden Kontrollbilanzen lauten:
+
+$$\underbrace{20}_{\text{Versuche}}=\underbrace{13}_{\text{Erfolge}}+\underbrace{7}_{\text{Verluste}}$$
+
+$$\underbrace{13}_{\text{Erfolge}}=\underbrace{4}_{\text{Entnahmen}}+\underbrace{9}_{\text{Rest}}$$
+
+Die zweite Gleichung setzt die leere Anfangsqueue voraus. Mit einer Anfangsbelegung müsste diese auf der linken Seite zusätzlich berücksichtigt werden. Solche Bilanzen sollten jede Lastrechnung abschließen: Ein fehlender oder doppelt gezählter Vorgang wird dadurch oft sichtbar.
+
+**Inhalt und Alter der Daten:** Die Queue arbeitet nach FIFO, First In First Out, also in der Reihenfolge erfolgreicher Einfügungen. Nach zwanzig Millisekunden enthält sie die Werte $5,6,\ldots,12,16$. Der Consumer entnimmt später zwölf und anschließend sechzehn. Werden die Putversuche fortlaufend nummeriert und diese Sequenznummern mitgesendet, macht die Lücke die abgewiesenen Übergaben sichtbar. Das konkretisiert den Nachrichtenvertrag aus Folie 6.
+
+Beim Get bei zwanzig Millisekunden wird Wert vier entnommen: Diese Messung ist bereits sechzehn Millisekunden alt. Bei unveränderter Fortsetzung wird Wert sechzehn erst bei fünfundsechzig Millisekunden entnommen; seine Queue-Wartezeit beträgt also neunundvierzig Millisekunden. Die Größenordnung ist $N/\mu=10/(200\,/\mathrm{s})=50\,\mathrm{ms}$, wobei $N$ die Kapazität und $\mu$ die Entnahmerate bezeichnet. Der Unterschied von einer Millisekunde ergibt sich aus der Phasenlage: Der nächste erfolgreiche Put folgt eine Millisekunde nach dem Get. Die anschließende Verarbeitung ist in diesem Alter bis zur Entnahme noch nicht enthalten. Unter Dauerüberlast hält ein größerer Puffer bei dieser Verwerfungsregel mehr alte Daten fest und erhöht die mögliche Wartezeit. Damit wird die Auswahl einer Überlastregel auf Folie 20 auch zu einer Frage der Aktualität.
+
+**Verlustrate und Reihenfolge:** Langfristig können bei voller Queue nur so viele Nachrichten angenommen werden, wie entnommen werden. Mit $\lambda=1000\,/\mathrm{s}$ angebotenen und $\mu=200\,/\mathrm{s}$ entnommenen Nachrichten beträgt die Verlustrate $\lambda-\mu=800\,/\mathrm{s}$. Vier von fünf Versuchen scheitern; im Fenster von sechzehn bis zwanzig Millisekunden sind es genau ein Erfolg und vier Verluste. Bei der umgekehrten Konvention Get vor Put ergeben sich bis zwanzig Millisekunden dagegen vierzehn Erfolge, sechs Verluste und zehn Restnachrichten. Der erste Verlust liegt weiterhin bei dreizehn Millisekunden. Auch diese Zahlen erfüllen beide Bilanzen; die Reihenfolge muss deshalb ausdrücklich festgelegt werden.
 :::
 
 ## Kapazität aus der höchsten Zwischenbelegung
@@ -377,9 +419,32 @@ $$N\ge\max_t\bigl(Q_0+A(t)-D(t)\bigr)$$
 - Ein endlicher Puffer löst dauerhafte $\lambda>\mu$ nicht
 
 ::: notes
-N ist die erforderliche Kapazität in Elementen. Q null ist die Anfangsbelegung. A von t zählt angebotene Nachrichten bis zum betrachteten Zeitpunkt, D von t die Entnahmen im gedachten verlustfreien Referenzablauf. Der Ausdruck ist die Belegung, solange keine Nachricht abgewiesen wird. Das Maximum muss auch Zwischenstände nach einem Put und vor einem zeitgleichen Get erfassen. Man darf nicht nur die nach bereits eingetretenen Verlusten erfolgreichen Puts zählen: Das würde den benötigten Speicher unterschätzen.
+**Kernaussage:** Die verlustfreie Mindestkapazität ist die höchste Belegung, die eine unbegrenzte Queue erreichen würde, einschließlich aller Zwischenstände.
 
-Für die leere Startqueue im begrenzten Intervall von eins bis zwanzig Millisekunden sind unmittelbar nach Put zwanzig erst drei Gets erfolgt. Die Spitze beträgt zwanzig minus drei gleich siebzehn. Nach dem vierten Get bleiben sechzehn. Die erforderliche Kapazität ist also siebzehn und nicht sechzehn. lambda und mu bezeichnen angebotene Rate und Entnahmerate. Wenn dauerhaft mehr ankommt als entnommen werden kann, wächst der Referenzrückstau unbegrenzt. Die Formel liefert dann keine endliche Dauerlösung. Bursts, also kurzzeitige Nachrichtenhäufungen, können dagegen mit ausreichendem Speicher aufgefangen werden.
+Die Formel $N\ge\max_t\bigl(Q_0+A(t)-D(t)\bigr)$ betrachtet ein gedachtes Referenzmodell mit unbegrenztem Speicher. $N$ ist die erforderliche Kapazität in Elementen, $Q_0$ die Anfangsbelegung. $A(t)$ zählt die bis zum betrachteten Zeitpunkt angebotenen Nachrichten und $D(t)$ die tatsächlich erfolgten Entnahmen in diesem verlustfreien Referenzablauf. Die Differenz ist seine Belegung. Das Maximum ist die höchste Zwischenbelegung im untersuchten Zeitintervall. Bei gleichzeitigem Put und Get muss zusätzlich die Reihenfolge berücksichtigt werden: Put heißt Einfügen, Get Entnehmen. Ein Get auf eine leere Queue zählt nicht als Entnahme; sonst würden Nachrichten rechnerisch auf Vorrat entnommen und spätere Spitzen unterschätzt.
+
+Zwei typische Fehler sind:
+
+- **Nur erfolgreiche Puts der begrenzten Queue zählen.** Deren Belegung ist bereits durch die vorhandenen zehn Plätze gedeckelt. Die für Verlustfreiheit benötigte Kapazität würde dadurch unterschätzt.
+- **Nur nach allen Operationen eines Zeitpunkts auswerten.** Nach dem Get bei zwanzig Millisekunden enthält die Referenz sechzehn Nachrichten. Unmittelbar davor, nach Put zwanzig, waren es siebzehn. Die Mindestkapazität beträgt daher siebzehn.
+
+Ein Vergleich unmittelbar nach dem jeweiligen Put verdeutlicht die beiden Modelle. Ein zeitgleicher Get ist in diesen Zeilen noch nicht ausgeführt; ms bedeutet Millisekunden.
+
+| Zeitpunkt in ms | Begrenzt, $N=10$ | Verlustfreie Referenz | Bisherige Verluste |
+|---:|---:|---:|---:|
+| 10 | 9 | 9 | 0 |
+| 12 | 10 | 10 | 0 |
+| 13 | 10 | 11 | 1 |
+| 15 | 10 | 13 | 3 |
+| 20 | 10 | 17 | 7 |
+
+Bis zwölf Millisekunden stimmen beide Verläufe überein. Ab dem ersten Verlust trennen sie sich. Ihr vertikaler Abstand entspricht hier den kumulierten Verlusten, weil in beiden Modellen dieselben vier Gets erfolgreich sind. Die Belegungsspitze der Referenz lässt sich als Tafelbild bis siebzehn weiterzeichnen, während die begrenzte Queue höchstens zehn Elemente hält.
+
+**Überschlag und endlicher Burst:** Bei anhaltender Überlast wächst der Rückstau näherungsweise um $(\lambda-\mu)\cdot T$ in einem Intervall der Länge $T$. $\lambda$ ist die angebotene Ankunftsrate und $\mu$ die Entnahmerate. Hier ergibt $800\,/\mathrm{s}\cdot0{,}020\,\mathrm{s}=16$ Nachrichten. Die diskrete Spitze von siebzehn liegt um eins darüber, weil der Get am Intervallende erst nach dem Put erfolgt. Bei dauerhaftem $\lambda>\mu$ wächst der Speicherbedarf mit der betrachteten Zeit unbegrenzt.
+
+Für einen Burst, also eine zeitlich begrenzte Häufung, kann die Formel dagegen eine endliche Kapazität liefern. $(\lambda-\mu)\cdot T_b$ mit Burstdauer $T_b$ ist dabei nur ein Überschlag für den Belegungszuwachs; Anfangsbelegung, Phasenlage und diskrete Zwischenstände müssen zusätzlich berücksichtigt werden. Enden im Beispiel alle Ankünfte nach Put zwanzig, liegt die Spitze vor dem gleichzeitigen Get bei siebzehn. Nach diesem Get bleiben sechzehn Nachrichten. Die weiteren Gets bei fünfundzwanzig bis einhundert Millisekunden leeren sie. Die letzte, bei zwanzig eingereihte Nachricht wird bei einhundert entnommen und wartet damit achtzig Millisekunden. Die Verarbeitung nach dem Get kommt für die Deadline noch hinzu. Speicherbedarf und Wartezeit müssen deshalb gemeinsam zur Anforderung passen.
+
+**Für Rückfragen über das Rechenmodell hinaus:** In einer stationären, stabilen Warteschlange beschreibt Littles Gesetz die Beziehung $\overline Q=\lambda_{\mathrm{eff}}\,\overline W$. Dabei ist $\overline Q$ die mittlere Queue-Belegung, $\lambda_{\mathrm{eff}}$ die tatsächlich angenommene Ankunftsrate und $\overline W$ die mittlere Wartezeit bis zur Entnahme. Diese Mittelwerte liefern allein keine maximale Wartezeit für einen Deadline-Nachweis. Network Calculus, ein mathematisches Verfahren zur Analyse begrenzter Datenflüsse, verwendet obere Ankunfts- und garantierte Bedienkurven; die größte vertikale Abweichung begrenzt den Rückstau. Bei einer anfangs leeren Queue, einer sogenannten Token-Bucket-Quelle mit höchstens $b+r\Delta$ Ankünften in jedem Intervall der Länge $\Delta$ und einer sofort verfügbaren konstanten Bedienrate $R\ge r$ beträgt die idealisierte Speicherschranke $b$. Dabei ist $b$ die erlaubte Burstmenge, $r$ die langfristige Zuflussrate und $R$ die Bedienrate. Anlaufverzögerungen erfordern eine zusätzliche Betrachtung. Diese Vertiefung ist keine Voraussetzung für die Papieraufgaben.
 :::
 
 ## Bei Überlast eine bewusste Entscheidung treffen
@@ -429,9 +494,20 @@ Der Consumer erhält weiterhin `sample = 10`, sofern niemand die Queue veränder
 Queue-Slots speichern die festgelegte Elementgröße.
 
 ::: notes
-Der C-Code zeigt eine kleine Wertnachricht. sample ist der Nutzwert, seq die Sequenznummer und q ein gültiger Handle einer Queue mit der Elementgröße SensorMsg. Put kopiert bei osOK, dem Erfolgsstatus, die vereinbarten Bytes von &msg in den Queue-Speicher. Die spätere Änderung des lokalen Felds sample auf neunundneunzig verändert diese gespeicherte Kopie nicht. Ein späterer erfolgreicher Get kann daher weiterhin zehn empfangen.
+**Kernaussage:** Nach einem erfolgreichen Put sind die lokale Variable und die gespeicherte Nachricht zwei unabhängige Objekte. Spätere Änderungen am Original erreichen die Queue nicht.
 
-Der Zusatz über Änderungen an der Queue grenzt den Ablauf ein: Ein anderer Consumer könnte die Nachricht entnommen oder eine zulässige Verwaltungsoperation den Inhalt verworfen haben. Wir betrachten hier einen unveränderten gespeicherten Datensatz. Die Kopie erfolgt byteweise entsprechend der Elementgröße. Felder mit Adressen sind deshalb keine tiefe Kopie der referenzierten Daten. Ein Strukturfeld namens buffer bleibt eine Adresse, wenn sein Typ ein Pointer ist. Für die kleine Nachricht mit reinen Zahlen reicht die lokale Lebensdauer während des Put-Aufrufs aus. Diese Eigenschaft macht Wertnachrichten zum geeigneten Einstieg, bevor große Datensätze einen zusätzlichen Besitzvertrag benötigen.
+Der C-Code zeigt eine kleine Wertnachricht. `sample` ist der Nutzwert, `seq` die Sequenznummer und `q` ein gültiger Handle, also Bezeichner einer Queue mit der Elementgröße `sizeof(SensorMsg)`. Put bedeutet Einreihen; `osOK` bestätigt den Erfolg. Nach dem erfolgreichen Put wird `msg.sample` auf neunundneunzig gesetzt, ein späterer erfolgreicher Get, also Entnahmeaufruf, liefert trotzdem zehn. Das entspricht den zwei Kopiervorgängen aus Folie 7: Put kopiert vom Producer, dem Erzeuger, in den Queue-Speicher; Get kopiert von dort zum Consumer, dem Empfänger. Die lokale Nachricht darf nach dem erfolgreichen Put wiederverwendet werden.
+
+Der Zusatz „sofern niemand die Queue verändert“ grenzt den Ablauf ein. Ein zweiter Consumer könnte die Nachricht zuvor entnehmen, oder `osMessageQueueReset`, eine Verwaltungsfunktion zum Leeren der Queue, könnte sie verwerfen. Betrachtet wird hier eine weiterhin gespeicherte Nachricht.
+
+Für die folgenden Folien ist entscheidend: Die Kopie ist **flach**. Der Kernel kopiert die festgelegte Anzahl von Bytes und interpretiert deren Inhalt nicht. Der Unterschied zwischen einem eingebetteten Array und einem Pointerfeld wird an zwei C-Strukturtypen deutlich:
+
+```c
+typedef struct { uint8_t data[8]; } MsgA;
+typedef struct { uint8_t *data;   } MsgB;
+```
+
+`uint8_t` bezeichnet einen vorzeichenlosen Acht-Bit-Typ. Bei `MsgA` gehört das gesamte Array zum Strukturinhalt; seine acht Nutzdatenbytes werden mitkopiert. Bei `MsgB` gehört nur der Pointer, also die Adresse, zur Struktur. Die referenzierten Nutzdaten werden weder dupliziert noch gegen gleichzeitige Änderungen geschützt. Das Feld lässt sich in beiden Fällen mit `msg.data[i]` ansprechen, wobei `i` ein gültiger Index sein muss. Bei `MsgB` muss der Pointer zusätzlich auf einen gültigen, ausreichend großen Puffer zeigen. Die gleiche Zugriffsschreibweise bedeutet somit unterschiedliche Speicherverhältnisse. Kleine reine Wertnachrichten benötigen während des Put-Aufrufs eine gültige Quelle; Pointer-Nachrichten brauchen darüber hinaus einen Besitzvertrag für die Lebensdauer des referenzierten Puffers.
 :::
 
 ## Eine Pointerkopie kopiert kein Bild
@@ -447,9 +523,33 @@ osStatus_t st = osMessageQueuePut(q_ptr, &ptr, 0u, 0u);
 - `static` verlängert die Lebensdauer, schützt aber nicht vor Überschreiben
 
 ::: notes
-Der C-Ausschnitt ist Lehrcode für einen Pointer, also eine Speicheradresse. uint8_t bezeichnet einen vorzeichenlosen Acht-Bit-Typ. image_buffer steht für einen tatsächlich bereitgestellten Bildpuffer, ptr für dessen Adresse. q_ptr muss mit sizeof(ptr), der Größe eines solchen Pointerwerts, angelegt worden sein. &ptr übergibt die Adresse des Pointerobjekts als Kopierquelle. Der Status st muss genauso wie bei anderen Puts geprüft werden.
+**Kernaussage:** Wird ein Pointer eingereiht, transportiert die Queue nur eine Adresse. Die Nutzdaten bleiben, wo sie sind, und ihre Gültigkeit ist Sache der Anwendung.
 
-Bei Erfolg wird nur die Adresse kopiert. Die Bytes des Bildes bleiben im externen Puffer. Der Consumer kann nur richtig lesen, wenn dieser Puffer noch existiert und der Producer, der Erzeuger, ihn nicht inzwischen verändert. Ein lokales Array einer beendeten Funktion ist kein geeigneter langfristiger Speicher. Ein static-Array lebt länger, kann aber weiterhin zu früh wiederbefüllt werden. Ebenso darf eine laufende Hardwareübertragung den Inhalt nicht gleichzeitig überschreiben. Copy by Reference wird als Kurzname für diesen Vertrag verwendet; technisch kopiert die Queue den Pointer weiterhin als Wert. Erst geregelter Besitz macht die kleine Adressnachricht sicher nutzbar.
+Der C-Ausschnitt ist Lehrcode. `uint8_t` bezeichnet einen vorzeichenlosen Acht-Bit-Typ, `image_buffer` einen separat bereitgestellten Bildpuffer und `ptr` dessen Adresse. `q_ptr` ist der Handle, also Bezeichner einer Queue für Pointerwerte. Im betrachteten STM32H755-Modell ist ein solcher Pointer vier Byte groß. `st` ist der Rückgabestatus; erst `osOK` bestätigt eine erfolgreiche Übergabe. Zwei Fehlerquellen verdienen besondere Aufmerksamkeit.
+
+**Erstens: `&ptr` statt `ptr`.** Put erwartet die Adresse des zu kopierenden Objekts. Dieses Objekt ist hier die Pointervariable; deshalb ist `&ptr` richtig. Wird bei einer Elementgröße von vier Byte versehentlich `ptr` übergeben, kopiert der Kernel vier Byte vom Anfang des Bildpuffers. Bei einem Graustufenbild mit einem Byte pro Pixel wären das vier Pixelwerte. Der Consumer erhält diese Bytes als vermeintlichen Pointer. Beim späteren Zugriff auf diese falsche Adresse drohen falsche Daten oder ein HardFault, eine Prozessor-Fehlerausnahme. Der Parameter von `osMessageQueuePut` hat den allgemeinen Zeigertyp `const void *`; beide Argumentformen sind in C zulässig, deshalb erkennt der Compiler diesen Vertragsfehler üblicherweise nicht.
+
+Beim Get, dem Entnahmeaufruf, gilt die Regel spiegelbildlich. Die Zieladresse ist die Adresse der Pointervariable des Consumers:
+
+```c
+uint8_t *rx = NULL;
+osStatus_t rx_status = osMessageQueueGet(
+    q_ptr, &rx, NULL, 0u);
+```
+
+`osStatus_t` ist der Statusdatentyp. Nur bei `rx_status == osOK` liegt ein neu empfangener Pointer vor, dessen Puffer gemäß Besitzvertrag benutzt werden darf. `NULL` fordert keine Rückgabe einer Nachrichtenpriorität an; Timeout null bedeutet hier sofortige Rückkehr, falls die Queue leer ist. Ein versehentliches `rx` statt `&rx` würde die Nutzdaten an eine falsche Zieladresse schreiben oder einen Parameterfehler auslösen.
+
+**Zweitens: die Elementgröße bei der Anlage.** Für `uint8_t image_buffer[76800]` und eine Queue mit zehn Plätzen ergeben sich im STM32H755-Modell folgende Größen:
+
+| Ausdruck | Byte pro Element | Wirkung |
+|---|---:|---|
+| `sizeof(ptr)` | 4 | Richtig für einen Pointer pro Queue-Platz. |
+| `sizeof(*ptr)` | 1 | Nur ein Byte des Pointerobjekts wird übertragen; die Adresse ist unvollständig. |
+| `sizeof(image_buffer)` | 76 800 | Platz für eine vollständige Bildkopie je Element; zehn Plätze benötigen 750 KiB reinen Nutzspeicher. |
+
+`sizeof` ermittelt eine Größe in Byte, ohne die Bilddaten zu lesen. Der letzte Tabellenfall ist nur dann eine Bild-Wertkopie, wenn auch der Bildpuffer selbst als Put-Quelle übergeben wird. Mit unverändertem `&ptr` würde der Kernel weit über die Pointervariable hinaus lesen. Die große Queue-Anlage kann bei unzureichendem verfügbarem Speicher scheitern; ein `NULL`-Handle muss den Initialisierungsablauf stoppen. KiB bedeutet Kibibyte mit 1024 Byte. Der zusätzliche Verwaltungsbedarf und die tatsächlich nutzbaren Speicherregionen sind gesondert zu prüfen. Die vier Byte Pointergröße sind eine Zielplattformannahme und gelten beispielsweise auf einem 64-Bit-PC nicht allgemein. Für die Pointer-Queue ist `sizeof(uint8_t *)` oder ein eigener Nachrichtentyp eine klare Wahl.
+
+Nach erfolgreicher Pointerübergabe muss der Bildpuffer weiter existieren und bis zum Ende der Consumer-Nutzung vor Überschreiben geschützt sein. Ein lokales Array einer beendeten Funktion ist dafür ungeeignet. `static` verlängert die Lebensdauer, schützt aber nicht vor erneutem Befüllen; dasselbe gilt gegenüber einer laufenden Hardwareübertragung. Der Ausdruck Copy by Reference bezeichnet hier diesen Besitzvertrag. Technisch bleibt die Queue-Operation eine Wertkopie des Pointers.
 :::
 
 ## Pufferbesitz im Kreislauf
@@ -488,9 +588,23 @@ Lehrannahmen: zehn Plätze, 4-Byte-Pointer, Bilder mit $75\,\mathrm{KiB}$.
 Kontrollblock, Alignment und Allokator kommen hinzu.
 
 ::: notes
-KiB bedeutet Kibibyte, also 1024 Byte. Die angenommenen Bilder enthalten je fünfundsiebzig KiB, die angenommenen Pointer jeweils vier Byte. Zehn Pointer-Slots brauchen damit zehn mal vier gleich vierzig Byte reinen Elementnutzspeicher. Zehn tatsächliche Bildpuffer brauchen zehn mal fünfundsiebzig gleich siebenhundertfünfzig KiB. Diese beiden Zahlen beschreiben verschiedene Speicherbereiche. Eine Queue mit zehn freien Pointerplätzen erzeugt keine zehn Bildpuffer.
+**Kernaussage:** Queue-Plätze und Bildpuffer sind getrennte Ressourcen. Bei zehn Queue-Plätzen und nur zwei Puffern bestimmt die Pufferzahl, wie viele unabhängige Bilder gleichzeitig unterwegs sein können.
 
-Bei nur zwei Bildpuffern sind maximal zwei unabhängige Bilder gleichzeitig im gesamten Besitzkreislauf verfügbar: frei, beim Producer, in der Queue oder beim Consumer. Die Zahl wartender Queue-Adressen allein zählt nicht alle belegten Puffer. Kontrollblock, Alignment, also Speicherausrichtung, und Allokatorverwaltung erhöhen den Gesamtbedarf. Ein Deskriptor mit Pointer, Länge und Sequenz ist außerdem größer als ein reiner Pointer. Die Zahlen sind eine Modellrechnung, keine Behauptung über frei verfügbaren RAM des Boards. RAM bedeutet Random Access Memory, Arbeitsspeicher. Linker-Map, Speicherregion und konkrete Adapterforderungen bestimmen, ob der Entwurf im Zielprojekt tatsächlich passt.
+Payload bedeutet Nutzdaten; ein Payload-Pool ist ein Vorrat separat bereitgestellter Datenpuffer. KiB steht für Kibibyte mit 1024 Byte. Das Lehrmodell nimmt zehn Queue-Plätze, Pointer mit vier Byte und Bilder mit je fünfundsiebzig KiB an. Zehn reine Pointer-Slots benötigen $10\cdot4=40$ Byte Elementnutzspeicher. Zehn Bildpuffer benötigen $10\cdot75=750\,\mathrm{KiB}$, zwei dagegen $150\,\mathrm{KiB}$. Diese Zahlen beschreiben verschiedene Speicherbereiche: Eine Queue mit zehn Pointerplätzen erzeugt keine zehn Bildpuffer.
+
+Ein anschauliches Bildformat ist QVGA, Quarter Video Graphics Array, hier mit $320\times240$ Bildpunkten. Bei einem Byte Grauwert pro Pixel hat ein Bild genau $320\cdot240\cdot1=76\,800$ Byte, also $76\,800/1024=75\,\mathrm{KiB}$. Das Bildformat veranschaulicht die angenommene Nutzdatenmenge.
+
+Die entscheidende Tabellenzeile ist die dritte. Der Besitzvertrag aus der vorherigen Folie setzt voraus, dass jeder Puffer eindeutig verwaltet wird und höchstens einmal zur Consumerseite unterwegs ist. Mit nur zwei Bildpuffern enthält die Queue deshalb höchstens zwei verschiedene Bildadressen, obwohl sie zehn Plätze besitzt. Mindestens acht Queue-Plätze bleiben ungenutzt. Meist warten weniger Adressen: Ein Puffer kann gerade vom Producer, dem Erzeuger, befüllt oder vom Consumer, dem Verbraucher, verarbeitet werden. Diese Puffer belegen keinen Queue-Platz, gehören aber weiterhin zum begrenzten Pool. Die Queue-Länge begrenzt wartende Adressen; die Pufferzahl begrenzt unabhängige Bilder über den gesamten Besitzkreislauf.
+
+Daraus folgen drei gebräuchliche Anordnungen für vollständige Bildpuffer:
+
+- **Ein Puffer:** Producer und Consumer nutzen ihn abwechselnd. Das nächste vollständige Bild darf erst entstehen, wenn die Verarbeitung des vorherigen beendet ist.
+- **Zwei Puffer, Double Buffering:** Ein Puffer kann befüllt werden, während der andere verarbeitet wird. Die beiden Arbeitsschritte können sich an unterschiedlichen Bildern überlappen.
+- **Drei Puffer, Triple Buffering:** Zusätzlich zu einem Puffer beim Producer und einem beim Consumer kann ein vollständiges Bild in der Queue warten. Das kann begrenzte Laufzeitschwankungen auffangen, bevor eine Seite auf einen freien Puffer warten muss.
+
+Auf dem einzelnen M4-Prozessorkern werden die Threadanweisungen weiterhin nacheinander ausgeführt. Echte gleichzeitige Arbeit kann beispielsweise entstehen, wenn eine Hardwareübertragung einen Puffer füllt, während der Kern den anderen verarbeitet. Zusätzliche Puffer erlauben zeitliche Entkopplung und können zugleich die Wartezeit erhöhen. Eine dauerhaft langsamere Verarbeitung wird durch Double oder Triple Buffering nicht schneller.
+
+Kontrollblock, Alignment, also Speicherausrichtung, und Allokatorverwaltung erhöhen den Gesamtbedarf. Ein Deskriptor mit Pointer, Länge und Sequenznummer ist außerdem größer als ein reiner Pointer. Die Zahlen sind eine Modellrechnung über Nutzspeicher. Ob ein Entwurf in den verfügbaren RAM, Random Access Memory oder Arbeitsspeicher, passt, muss anhand der Linker-Map, der Speicherbelegung des gebundenen Programms, der erreichbaren Speicherregionen und der konkreten Adapteranforderungen geprüft werden.
 :::
 
 ## Eine Queue der Länge eins ist noch keine Mailbox
@@ -522,6 +636,10 @@ Ein Thread veröffentlicht Wert, Version und Zeitpunkt unter einem Mutex.
 - ISR verwendet keinen Mutex
 
 ::: notes
+**Kernaussage:** Für einen aktuellen Zustand genügt ein gemeinsam geschützter Datensatz; eine Queue ist dafür nicht erforderlich. Der Mutex sorgt dafür, dass alle Felder zusammenpassen. Die Versionsnummer zeigt, ob sich seit dem letzten Lesen etwas geändert hat. Eine Historie entsteht dabei bewusst nicht.
+
+Diese Folie zeigt eine konkrete Umsetzung des Latest-Value-Vertrags zwischen Threads: Gelesen wird der zuletzt veröffentlichte, zusammenhängende Zustand. Sie schließt an Folie 26 an, die die Grenzen einer Queue der Länge eins beim gewöhnlichen Put gezeigt hat, und arbeitet den „Einzelwert mit Mutex“ aus Folie 5 zu einem Datensatz mit mehreren Feldern aus.
+
 Ein Snapshot ist eine zusammengehörige Momentaufnahme mehrerer Felder. Ein veröffentlichender Thread schreibt beispielsweise Wert, Versionsnummer und Zeitstempel in einem kurzen, durch Mutex geschützten Abschnitt. Ein Mutex ist eine Sperre mit Besitzer. Alle beteiligten Leser kopieren unter derselben Sperre den vollständigen Datensatz und geben die Sperre danach frei. So stimmen die Felder zusammen, sofern kein weiterer ungeschützter Teilnehmer schreibt.
 
 Die Version kennzeichnet Änderungen. Sie beweist keine Zustellung aller Zwischenversionen. Ein Leser kann etwa direkt von Version eins auf fünf springen, wenn er später liest. Für einen aktuellen Zustand kann das erlaubt sein. Wenn eine Benachrichtigung verwendet wird, folgt sie auf die vollständige Veröffentlichung, damit der geweckte Leser nicht erst einen alten Stand findet. ISR steht für Interrupt Service Routine, Interruptbehandler. Er darf keinen CMSIS-Mutex erwerben oder freigeben. Bei hardwareerfassten Daten übergibt daher ein erlaubter kurzer Kanal die Rohdaten an den veröffentlichenden Thread. Diese Lösung baut auf Vorlesung 4 auf und bleibt heute ein Entwurfsmuster, kein zusätzliches Pflichtprogramm.
