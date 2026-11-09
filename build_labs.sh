@@ -1,41 +1,6 @@
-#!/bin/bash
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$ROOT"
-
-OUT_DIR="labs/_output"
-mkdir -p "$OUT_DIR"
-
-echo "Baue Dozenten-Versionen (mit Lösungen)..."
-quarto render labs/ --to pdf --profile solution
-
-for qmd in labs/lab_[0-9][0-9]_*.qmd labs/probeklausur.qmd; do
-  [ -f "$qmd" ] || continue
-  pdf="${qmd%.qmd}.pdf"
-  [ -f "$pdf" ] || continue
-  base="$(basename "$pdf" .pdf)"
-  case "$base" in
-    *template*|*student_check*|*studierende*|*musterloesung*) continue ;;
-  esac
-  cp "$pdf" "$OUT_DIR/${base}-musterloesung.pdf"
-done
-
-echo "Baue Studierenden-Versionen (ohne Lösungen)..."
-quarto render labs/ --to pdf
-
-for qmd in labs/lab_[0-9][0-9]_*.qmd labs/probeklausur.qmd; do
-  [ -f "$qmd" ] || continue
-  pdf="${qmd%.qmd}.pdf"
-  [ -f "$pdf" ] || continue
-  base="$(basename "$pdf" .pdf)"
-  case "$base" in
-    *template*|*student_check*|*studierende*|*musterloesung*) continue ;;
-  esac
-  # Kanonischer Name labs/<base>.pdf = Studierenden-Version (nicht überschreiben)
-  cp "$pdf" "$OUT_DIR/${base}-studierende.pdf"
-done
-
-echo "Fertig. PDFs unter $OUT_DIR (labs/*.pdf = Studierende):"
-ls -la "$OUT_DIR"
-ls -la labs/*.pdf 2>/dev/null || true
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ROOT/scripts/activate.sh"
+exec python3 "$ROOT/scripts/build-materials.py" labs "$@"

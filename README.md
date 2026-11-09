@@ -8,6 +8,25 @@ Herzlich willkommen zur Vorlesung **Echtzeitsysteme (EZS)** an der Dualen Hochsc
 
 Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten und weichen Echtzeitanforderungen über Task-Modelle und Scheduling (RMS/EDF) bis zu Echtzeitbetriebssystemen mit **FreeRTOS**, Synchronisation, Inter-Task-Kommunikation, Server-Verfahren für ereignisgetriebene Last, Multicore-Architekturen (AMP) am **STM32H755** sowie Timing-Analyse. Den Abschluss bildet eine integrierte Fallstudie zu Zeit- und Datenverträgen, Fortschrittsüberwachung und begründeter Verifikation. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis umzusetzen — mit klarem Blick auf die Trennung von **funktioneller Korrektheit** und **Korrektheit im Zeitbereich**.
 
+## Kursrahmen und Lernziele
+
+Der Kurs richtet sich an Bachelorstudierende der Elektro- und Informationstechnik. Echtzeitbetriebssysteme werden von Grund auf eingeführt; die Einheiten bauen auf den jeweils vorherigen Inhalten auf. Für die Programmierteile werden grundlegende C-Kenntnisse benötigt.
+
+- **Unterrichtsplanung:** neun Einheiten mit jeweils vier Schulstunden à 45 Minuten einschließlich Übungen und Quiz. Die Aufgabenblätter bilden einen Aufgabenpool, aus dem die Lehrperson passend zum Verlauf auswählt.
+- **Prüfungsform:** Papierklausur. Rechen-, Ablauf- und Begründungsaufgaben bereiten darauf vor; Programmieraufgaben unterstützen das Verständnis durch eigene kleine Implementierungen. Die Probeklausur umfasst als Übungsformat 60 Minuten und 60 Punkte.
+- **Praxisplattform:** NUCLEO-H755ZI-Q mit STM32H755ZIT6, STM32CubeMX und VS Code mit STM32 VS Code Extension. Die Aufgaben verwenden die eingebauten LEDs und gegebenenfalls den Taster B1. Kernzuordnung, Grundstart und Kernelkonfiguration stehen in der jeweiligen Implementierungshilfe; der Mehrkernteil wird gesondert eingeführt.
+- **Sprache und Modelle:** Die Firmwarebeispiele verwenden C und FreeRTOS über CMSIS-RTOS2. Konkrete Compiler-, Kernel- und Adapterversionen, Optionen und Takte sind am jeweiligen Projektstand zu prüfen. Papieraufgaben benennen ihre Zeit-, Ressourcen- und Ereignisannahmen; angenommene Laufzeiten sind keine Boardmessungen.
+
+Eine verbindliche Modulhandbuchfassung, Semesterzuordnung und Vorgabe zur Selbstlernzeit sind im Repository nicht hinterlegt. Der hier beschriebene Umfang und die folgenden Lernziele dokumentieren die Unterrichtsplanung.
+
+Nach Bearbeitung des Kurses können Sie:
+
+- Echtzeitanforderungen mit Latenz, Jitter und Deadline beschreiben und funktionelle von zeitlicher Korrektheit unterscheiden.
+- Scheduling-Abläufe und Antwortzeiten unter benannten Modellannahmen herleiten sowie die Wirkung von Server-Budgets und Überlastregeln beurteilen.
+- Threadzustände, Synchronisation, Nachrichtenübergabe und Speicherbesitz erklären und geeignete Zugriffsverträge begründen.
+- Sichtbarkeit und Verantwortlichkeit gemeinsam genutzter Daten im Mehrkernsystem analysieren.
+- Zeitmessungen, angenommene Schranken und belastbare Fristnachweise unterscheiden sowie eine integrierte Systemlösung auf ihre Zeit- und Datenverträge prüfen.
+
 ## Kursübersicht
 
 Der rote Faden der Veranstaltung:
@@ -65,6 +84,12 @@ Zur Vertiefung empfohlen:
 | **TASKING BlueBox / winIDEA** (optional) | zusätzlicher geprüfter Debug-/Tracepfad, keine Voraussetzung der Übungen | [tasking.com](https://www.tasking.com/) |
 | **Cheddar** | Scheduling-Simulation und Schedulability-Analysen zum Üben | [beru.univ-brest.fr/cheddar](http://beru.univ-brest.fr/~singhoff/cheddar/) |
 | **Tracealyzer** (optional) | Laufzeit-Tracing von Tasks und Prioritätswechseln | [percepio.com/tracealyzer](https://percepio.com/tracealyzer/) |
+
+## Materialien bauen und weiterentwickeln
+
+Die [technische Anleitung](TEMPLATE.md) beschreibt die gemeinsame lokale und CI-Build-Umgebung, Vorschau, PDF-Erzeugung und Startcode-Pakete. Die Website und alle Handouts sowie beide Fassungen der Übungen werden mit `python3 scripts/build-materials.py all` geprüft. Veröffentlichbare Ergebnisse liegen unter `_site/`, zusätzliche PDF-Kopien unter `_handout/` und `labs/_output/`.
+
+Für KI-gestützte Arbeiten gelten die [Projektregeln](AGENTS.md), die [Fachregeln](FACHREGELN.md) und das [Kursglossar](GLOSSAR.md); die zugehörigen Aufgabenanleitungen liegen unter [`.agents/skills/`](https://github.com/dantschi/echtzeitsysteme/tree/main/.agents/skills). Dieses Repository basiert auf dem [DHBW-Quarto-Template](https://github.com/dantschi/dhbw-quarto-template). Der [Template-Abgleich](docs/template-sync.md) dokumentiert Ausgangsstand, übernommene Änderungen und Prüfungen.
 
 ## OER und Lizenz
 
