@@ -15,12 +15,32 @@ center: false
 - Server-Verfahren für aperiodische Arbeit
 - Background, Polling, Deferrable und Sporadic Server
 - Budgets lesen, Zeitachsen zeichnen, Fristen prüfen
-- Papierklausur und vorbereiteter FreeRTOS-Modellversuch
+- Papieraufgaben und eigene FreeRTOS-Modellsimulation
 
 ::: notes
 Ein Bedienkommando oder Diagnoseauftrag trifft nicht unbedingt im Takt eines Reglers ein. Trotzdem teilt es sich mit diesem denselben Prozessor. Ein Server-Verfahren ordnet dieser ereignisgetriebenen Arbeit eine geregelte Bedienung zu. Server bezeichnet hier einen Mechanismus zur Zuteilung von Rechenzeit innerhalb eines Echtzeitsystems, keinen Rechner im Netzwerk. Aperiodisch bedeutet in diesem Termin, dass kein kleinster Ankunftsabstand zugesichert ist.
 
 Background heißt Hintergrundbearbeitung, Polling regelmäßiges Nachsehen, Deferrable aufschiebbar und Sporadic sporadisch. Wir entwickeln die Unterschiede an denselben Aufträgen, statt vier isolierte Namen auswendig zu lernen. FreeRTOS ist das im Kurs verwendete Echtzeitbetriebssystem; es liefert die feste Prioritätsauswahl, aber nicht automatisch diese Server-Verfahren. Die Beispiele sind ausdrücklich Modellrechnungen. Der praktische Teil macht eine Polling-Regel sichtbar; eine vollständige Implementierung des Sporadic Servers ist nicht Gegenstand dieses kurzen Versuchs.
+:::
+
+## Eine größere Queue schützt den Regler?
+
+Ein Kern, feste Prioritäten:
+
+- Ein Regler muss regelmäßig rechtzeitig rechnen.
+- Eine höher priorisierte Diagnose-Task bekommt ständig neue Aufträge.
+- Beide benötigen denselben Prozessor.
+
+Reicht eine größere Queue, damit der Regler seine Frist einhält?
+
+30 Sekunden nachdenken, dann eine Minute zu zweit begründen.
+
+::: notes
+Die Frage knüpft an Prioritäten aus Vorlesung 3 und Warteschlangen aus Vorlesung 5 an. Ein Regler ist hier die regelmäßige Berechnung einer Stellgröße mit einer geforderten Abschlussfrist. Die Diagnose-Task ist ein weiterer Thread, also ein fortsetzbarer Ausführungsablauf. Es gibt genau einen Kern mit festen Prioritäten. Für den Gedankenversuch nehmen wir an, dass immer neue Diagnoseaufträge bereitstehen und deren Bearbeitung ohne blockierende Pause fortgesetzt wird. Eine Queue ist der Speicher für wartende Aufträge.
+
+Lassen Sie zunächst dreißig Sekunden einzeln überlegen, anschließend eine Minute zu zweit begründen und sammeln Sie kurz zwei unterschiedliche Vermutungen. Plausible Antworten sind „Ja, weil mehr Aufträge gespeichert werden können“ oder „Nein, die hohe Priorität bleibt“. Die erste Aussage verwechselt Speicherplatz mit Rechenzeit. Solange die höhere Task ausführungsbereit bleibt, bekommt der niedrigere Regler in diesem Modell keinen Prozessor. Mehr Queueplätze ändern daran nichts. Sie können eine Lastspitze aufnehmen, erzeugen aber weder zusätzliche Rechenkapazität noch eine Fristgarantie.
+
+Eine niedrigere Diagnosepriorität könnte den Regler schützen, würde aber die Bedienung der Diagnose ebenfalls von verfügbarer Zeit abhängig machen. Heute entwickeln wir deshalb einen zusätzlichen Vertrag: Wie viel eigene Prozessorzeit darf Ereignisarbeit erhalten, wann steht diese Zeit bereit und welche anderen Fristen bleiben erfüllt? Diese Auflösung muss vor der Diskussion noch nicht bekannt sein. Die spätere Folie „Klausurcheck: sechs Angaben vor jeder Zeitachse“ nimmt die Frage mit dem erarbeiteten Budget- und Nachweisbegriff wieder auf.
 :::
 
 ## Vorwissen wird zur neuen Frage
@@ -56,18 +76,19 @@ Sporadic Server bezeichnet das Verfahren, das verbrauchte Kapazität nach Regeln
 
 | Tätigkeit | Minuten |
 |---|---:|
-| Modell, Background und Polling | 35 |
+| Einstiegsfrage und Austausch | 2 |
+| Modell, Background und Polling | 33 |
 | Deferrable und Sporadic Server | 35 |
 | Fristnachweis, Überlast und Umsetzung | 20 |
-| Vier Papieraufgaben mit Besprechung | 50 |
-| Vorbereiteter Modellversuch auf dem Board | 25 |
+| Papieraufgaben mit Besprechung (Auswahl) | 45 |
+| Eigene Modellimplementierung und Prüfung | 30 |
 | Quiz und gemeinsame Klärung | 15 |
 | Gesamt | 180 |
 
 ::: notes
-Vier Schulstunden mit je 45 Minuten ergeben 180 Minuten. Die ersten beiden Blöcke schaffen das Modell und vergleichen die Verfahren. Der dritte Block verbindet die Rechenregeln mit den Grenzen einer Implementierung. Die 50 Minuten Papierarbeit gehören ausdrücklich zum Termin: Sie üben Rechenschritte und Begründungen, die ohne Entwicklungsumgebung in einer Klausur möglich sind.
+Vier Schulstunden mit je 45 Minuten ergeben 180 Minuten. Nach zwei Minuten Einstiegsfrage und Austausch führen 33 Minuten in Modell, Background und Polling ein. Weitere 35 Minuten vergleichen Deferrable und Sporadic Server; 20 Minuten verbinden die Rechenregeln mit den Grenzen einer Implementierung. Der 45-Minuten-Block wird aus den vier Papierfolien und Aufgaben 1 bis 5 des Übungsblatts zusammengestellt. Sie üben darin Rechenschritte und Begründungen, die ohne Entwicklungsumgebung in einer Klausur möglich sind.
 
-Der Boardversuch setzt das bereits eingerichtete Projekt und funktionierende Ausführung auf dem Cortex-M4 voraus. Cortex-M4 bezeichnet den dafür verwendeten Prozessorkern des STM32H755. Neue Werkzeuginstallation und vollständige Serverprogrammierung passen nicht in 25 Minuten. Der vorbereitete Code im Übungsblatt und Programmierleitfaden simuliert eine einfache Polling-Regel. Ohne Board können Sie dessen Zustandsfolge auf Papier prognostizieren und prüfen. Das ist dann eine Modellprüfung, keine Hardwaremessung. Im Quiz erklären wir besonders die unterschiedlichen Auffüllregeln und die Verwechslung zwischen Prozessorzeit und verstrichener Zeit.
+Der Boardversuch setzt das bereits eingerichtete Projekt und funktionierende Ausführung auf dem Cortex-M4 voraus. Cortex-M4 bezeichnet den dafür verwendeten Prozessorkern des STM32H755. Neue Werkzeuginstallation und vollständige Serverprogrammierung gehören in die Vorbereitung. Der 30-Minuten-Block liegt im geschätzten Bereich von 25 bis 35 Minuten der Übungsaufgabe. Die Studierenden implementieren auf der vorbereiteten Basis selbst einen kleinen Polling-Modellschritt und die beiden Threadschleifen. Die Musterlösung erscheint nur im Lösungsprofil des Übungsblatts. Die Lehrperson kann aus dem Aufgabenpool auswählen, falls die praktische Integration länger dauert. Ohne Board können Sie dessen Zustandsfolge auf Papier prognostizieren und prüfen. Das ist dann eine Modellprüfung, keine Hardwaremessung. Im Quiz erklären wir besonders die unterschiedlichen Auffüllregeln und die Verwechslung zwischen Prozessorzeit und verstrichener Zeit.
 :::
 
 ## Der Regler bekommt unregelmäßige Nachbarn
@@ -141,12 +162,12 @@ Lehrmodell · Zeit in ms · fremde Arbeit ist keine Serverarbeit
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -250,12 +271,12 @@ Neues Lehrbeispiel · Vordergrund H: $C_H=3$, $T_H=5$ ms
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -345,12 +366,12 @@ $Q=2$, $T=8$ ms · A$(1,1)$, B$(6,1)$, C$(9,2)$
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -488,12 +509,12 @@ $Q=2$, $T=8$ ms · A$(1,1)$, B$(6,1)$, C$(9,2)$
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -575,12 +596,12 @@ DS: $Q=2$, $T=8$ · darunter L: $C_L=7$, $T_L=D_L=11$ ms
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -691,12 +712,12 @@ $Q=2$, $T=8$ ms · A$(1,1)$, B$(6,1)$, C$(9,2)$
 skinparam backgroundColor transparent
 skinparam defaultFontName "Inter, sans-serif"
 skinparam defaultFontColor #1D1D1F
-skinparam ArrowColor #86868B
+skinparam ArrowColor #656D76
 skinparam NoteBackgroundColor #F5F5F7
-skinparam NoteBorderColor #E5E5EA
+skinparam NoteBorderColor #656D76
 skinparam timing {
  BackgroundColor #FFFFFF
- BorderColor #E5E5EA
+ BorderColor #656D76
  LineColor #1D1D1F
  SignalColor #E2001A
 }
@@ -995,7 +1016,7 @@ Die Auslastung ist $1/5+2/10+2/20=1/2$, also 50 Prozent. Für den Regler ergibt 
 
 ## Papier 4: Frist und Überlast begründet beurteilen
 
-15 Minuten · zwei kurze Entscheidungen mit Rechnung.
+10 Minuten · zwei kurze Entscheidungen mit Rechnung.
 
 1. Papier 2: B kommt bei 5, relative Frist 2 ms. Ist sein Abschluss rechtzeitig? Ändert $T=6$ seine Frist?
 2. Server mit $Q=1$, $T=4$: dauerhaft 2 ms neue Arbeit je 4 ms. Reicht eine größere Queue für dauerhafte Rechtzeitigkeit?
@@ -1021,9 +1042,9 @@ Im zweiten Fall ist $Q$ die Kapazität und $T$ der Zeitraum. Die nominelle Bedie
 Die Simulation ist kein realer Kernelserver.
 
 ::: notes
-Cortex-M4 ist der verwendete Prozessorkern des STM32H755. FreeRTOS ist das Echtzeitbetriebssystem der bekannten Basis aus Vorlesung 3. Ein Thread ist ein vom Kernel verwalteter Ausführungspfad. Im vorbereiteten Versuch gibt es einen Modellthread und einen Heartbeatthread. Heartbeat bedeutet regelmäßiges Lebenszeichen. LED steht für Light Emitting Diode, Leuchtdiode. Eine Leuchtdiode zeigt die virtuelle Bedienentscheidung, die andere das unabhängige Lebenszeichen an.
+Cortex-M4 ist der verwendete Prozessorkern des STM32H755. FreeRTOS ist das Echtzeitbetriebssystem der bekannten Basis aus Vorlesung 3. Ein Thread ist ein vom Kernel verwalteter Ausführungspfad. Im selbst implementierten Versuch gibt es einen Modellthread und einen Heartbeatthread. Heartbeat bedeutet regelmäßiges Lebenszeichen. LED steht für Light Emitting Diode, Leuchtdiode. Eine Leuchtdiode zeigt die virtuelle Bedienentscheidung, die andere das unabhängige Lebenszeichen an.
 
-Aufgabe 6 des verlinkten Übungsblatts und der Programmierleitfaden enthalten die konkreten Projektschritte und den Code. Verwenden Sie die vorbereitete Projektbasis des Leitfadens und den eigenständigen Code aus Aufgabe 6. Der Modellthread simuliert einen Polling Server mit bekannten Arbeitseinheiten. Er misst und begrenzt nicht die tatsächliche eigene Prozessorzeit beliebiger Nutzfunktionen. Das Ziel ist, vor der Ausführung die Modellzustände auf Papier vorherzusagen und danach die angezeigte Folge zu prüfen. Ein tatsächlich ausgeführter Boardlauf ist gesondert zu dokumentieren; die vorliegenden Modellrechnungen behaupten keinen solchen Lauf.
+Aufgabe 6 des verlinkten Übungsblatts enthält den Typ, die Implementierungsregeln und die zu bearbeitenden Funktionen. Der Programmierleitfaden beschreibt die Projektvorbereitung. Verwenden Sie diese Basis und schreiben Sie den Modellschritt sowie die Threadschleifen selbst; vollständiger Lösungscode steht ausschließlich im Lösungsprofil. Der Modellthread simuliert einen Polling Server mit bekannten Arbeitseinheiten. Er misst und begrenzt nicht die tatsächliche eigene Prozessorzeit beliebiger Nutzfunktionen. Das Ziel ist, vor der Ausführung die Modellzustände auf Papier vorherzusagen und danach die angezeigte Folge zu prüfen. Ein tatsächlich ausgeführter Boardlauf ist gesondert zu dokumentieren; die vorliegenden Modellrechnungen behaupten keinen solchen Lauf.
 :::
 
 ## Praxis: pro Schritt genau eine Modellentscheidung
@@ -1034,26 +1055,27 @@ Virtuelle Aufträge: je eine Einheit bei 1, 3, 7 und 8.
 - Polling bei `t % 6 == 0`, Kapazität 2
 - Erst Ankunft, dann Polling, dann höchstens eine Einheit
 - Leere Arbeit: Restbudget verfällt.
-- Nach Schritt 17: Modell zurücksetzen.
+- Vor dem nächsten Zyklus Modell zurücksetzen.
 
 ::: notes
 Die vier Felder gehören zur C-Struktur Modell im Übungsblatt. C ist die verwendete Programmiersprache. t ist die virtuelle Zeit vor einem Schritt, pending die Zahl offener Einheitsaufträge, budget die verfügbare Modellkapazität und served die Zahl bereits bedienter Einheiten. Das Prozentzeichen im C-Ausdruck bedeutet Rest einer ganzzahligen Division. t modulo sechs gleich null kennzeichnet die Pollingzeitpunkte null, sechs und zwölf im endlichen Zyklus.
 
-An den virtuellen Zeiten eins, drei, sieben und acht wird zuerst je eine Einheit offener Arbeit hinzugefügt. Bei einem Pollingzeitpunkt wird das Budget auf zwei gesetzt, falls Arbeit wartet, sonst auf null. Danach wird bei positiver offener Arbeit und positivem Budget genau eine Einheit ausgeführt: offene Arbeit und Budget sinken um eins, die Bedienzahl steigt um eins. Wird die Arbeit leer, verfällt Restbudget. Die virtuelle Zeit wird anschließend erhöht. Nach dem bearbeiteten Schritt siebzehn wird ein neuer Nullzustand begonnen. Alle Aufträge haben genau eine bekannte Modelleinheit, deshalb genügt hier ein Zähler statt einer Nutzdatenqueue. Die Simulation erzeugt daraus keine Laufzeitschranke für beliebige Nachrichtenfunktionen.
+An den virtuellen Zeiten eins, drei, sieben und acht wird zuerst je eine Einheit offener Arbeit hinzugefügt. Bei einem Pollingzeitpunkt wird das Budget auf zwei gesetzt, falls Arbeit wartet, sonst auf null. Danach wird bei positiver offener Arbeit und positivem Budget genau eine Einheit ausgeführt: offene Arbeit und Budget sinken um eins, die Bedienzahl steigt um eins. Wird die Arbeit leer, verfällt Restbudget. Die virtuelle Zeit wird anschließend erhöht. Nach dem bearbeiteten Schritt siebzehn steht die virtuelle Zeit auf achtzehn. Dieser Endzustand kann vor dem Zurücksetzen beobachtet werden; erst vor dem nächsten Zyklus wird der neue Nullzustand angelegt. Alle Aufträge haben genau eine bekannte Modelleinheit, deshalb genügt hier ein Zähler statt einer Nutzdatenqueue. Die Simulation erzeugt daraus keine Laufzeitschranke für beliebige Nachrichtenfunktionen.
 :::
 
-## Praxis: erwartete Anzeige und echte Zeit trennen
+## Praxis: erst vorhersagen, dann die Anzeige prüfen
 
-| Erwartung im virtuellen Modell | Ergebnis |
-|---|---|
-| Bedienungsschritte | 6, 7, 12, 13 |
-| Nach bearbeitetem Schritt 17 | `served = 4` |
-| Noch offene Arbeit | `pending = 0` |
+Vor dem Ausführen schriftlich begründen:
+
+- In welchen virtuellen Schritten wird Arbeit bedient?
+- Wie lauten alle vier Modellfelder nach Schritt 17?
+- Warum kann ein Schritt trotz offener Arbeit keine Einheit bedienen?
+- Welche Zeitgröße zeigt die verlangsamte LED-Anzeige?
 
 Anzeigeabstand: `osDelay(100)` Kernel-Ticks, keine CPU-Budgetmessung.
 
 ::: notes
-Im Modell ist die Queue beim Pollingzeitpunkt null leer. Die bei eins und drei eingehenden Einheiten warten bis sechs. Bei sechs wird die erste, bei sieben die zweite Einheit bedient; die Ankunft bei sieben ist vorher bereits zum Arbeitszähler addiert worden. Nach sieben ist das Budget null. Die Ankunft bei acht erhöht die offene Arbeit nochmals. Bei zwölf und dreizehn werden diese beiden verbleibenden Einheiten bedient. served bedeutet Zahl der bedienten Einheiten, pending Zahl der noch offenen Einheiten. Nach Schritt siebzehn stehen sie auf vier und null; das Budget ist ebenfalls null.
+Lassen Sie die Studierenden ihre Prognose vor dem Bauen und Flashen festhalten. Die folgenden Ergebnisse dienen erst danach zur Auswertung. Im Modell ist die Queue beim Pollingzeitpunkt null leer. Die bei eins und drei eingehenden Einheiten warten bis sechs. Bei sechs wird die erste, bei sieben die zweite Einheit bedient; die Ankunft bei sieben ist vorher bereits zum Arbeitszähler addiert worden. Nach sieben ist das Budget null. Die Ankunft bei acht erhöht die offene Arbeit nochmals. Bei zwölf und dreizehn werden diese beiden verbleibenden Einheiten bedient. served bedeutet Zahl der bedienten Einheiten, pending Zahl der noch offenen Einheiten. Nach Schritt siebzehn stehen sie auf vier und null; das Budget ist ebenfalls null und die virtuelle Zeit t beträgt achtzehn.
 
 osDelay ist die Wartefunktion der CMSIS-RTOS2-Schnittstelle. CMSIS bedeutet Common Microcontroller Software Interface Standard, RTOS Real-Time Operating System, Echtzeitbetriebssystem. Ein Kernel-Tick ist eine Einheit der Betriebssystemzeitbasis. Bei 1000 Ticks pro Sekunde entsprechen 100 Ticks nominell 100 Millisekunden; die tatsächliche Konfiguration muss geprüft werden. Der Abstand enthält außerdem Modellrechnung und mögliche Verdrängung. CPU heißt Central Processing Unit, Prozessor. Diese Anzeigeverlangsamung ist weder ein 100-Millisekunden-CPU-Budget noch eine Messung des virtuellen Millisekundenbedarfs. Das zweite Lebenszeichen verwendet unabhängig eine Verzögerung von 500 Ticks.
 :::
@@ -1084,12 +1106,12 @@ Der verlinkte Fragensatz enthält zehn Fragen. Begründen Sie jede Auswahl durch
 5. Eigene CPU-Zeit und vollständige Antwortzeit
 6. Auftragsfristen und zulässige Eingangsbelastung
 
-Erst rechnen, dann die tatsächlich belegte Aussage formulieren.
+Zur Einstiegsfrage: Mehr Queueplätze erzeugen keine zusätzliche CPU-Zeit.
 
 ::: notes
 Eine gute Klausurlösung beginnt mit dem Modell. Anzahl der Kerne und feste Prioritäten legen die Konkurrenz fest. Ankünfte und eigene Bedarfe bestimmen die verfügbare Arbeit, die Bedienreihenfolge bestimmt den nächsten Auftrag. Anfangsbudget und Auffüllregel müssen zum benannten Verfahren passen. Bei gleichzeitigen Ereignissen werden in unseren Aufgaben fällige Rückgaben und neue Ankünfte vor der nächsten Auswahl berücksichtigt. CPU bedeutet Central Processing Unit, Prozessor; eigene CPU-Zeit ist von der gesamten Antwortzeit ab Freigabe zu unterscheiden.
 
-Markieren Sie anschließend jeden Laufabschnitt und seine verbrauchte Kapazität. Beim Sporadic-Server-Spezialfall führen Sie die Rückgabeliste parallel. Berechnen Sie die Antwortzeit als Abschluss minus Freigabe und vergleichen Sie sie mit der jeweiligen relativen Auftragsfrist, sofern diese gegeben ist. Für einen allgemeinen Nachweis reichen einzelne günstige Läufe nicht. Nennen Sie daher am Ende präzise, ob Sie einen konkreten Ablauf berechnet, eine volle periodische Bediengelegenheit nachgewiesen oder eine Überlastannahme widerlegt haben. Diese Vorgehensweise ist zugleich eine Vorbereitung auf die zeitlich begründete Architekturentscheidung im Abschlussprojekt.
+Markieren Sie anschließend jeden Laufabschnitt und seine verbrauchte Kapazität. Beim Sporadic-Server-Spezialfall führen Sie die Rückgabeliste parallel. Berechnen Sie die Antwortzeit als Abschluss minus Freigabe und vergleichen Sie sie mit der jeweiligen relativen Auftragsfrist, sofern diese gegeben ist. Für einen allgemeinen Nachweis reichen einzelne günstige Läufe nicht. Nennen Sie daher am Ende präzise, ob Sie einen konkreten Ablauf berechnet, eine volle periodische Bediengelegenheit nachgewiesen oder eine Überlastannahme widerlegt haben. Zur Einstiegsfrage lässt sich jetzt präzise antworten: Ein größerer Puffer schützt den Regler nicht vor unbegrenzt ausführungsbereiter Diagnosearbeit. Ein geeignet begrenztes Serverbudget kann deren Einfluss kontrollieren, wenn auch die Serverregel und der Fristnachweis der konkurrierenden Tasks passen. Diese Vorgehensweise bereitet die zeitlich begründete Architekturentscheidung in der integrierten Fallstudie vor.
 :::
 
 ## Literatur und Anschluss an Multicore
