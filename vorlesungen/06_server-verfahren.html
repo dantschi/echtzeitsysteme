@@ -130,6 +130,9 @@
       margin-right: 0; 
     }
   </style>
+  <script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+  <script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+  <link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
@@ -382,34 +385,38 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="drei-getrennte-größen-queue-budget-rang" class="slide level2">
-<h2>Drei getrennte Größen: Queue, Budget, Rang</h2>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Größe</th>
-<th>Frage</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Auftragsqueue</td>
-<td>Welche Arbeit wartet noch?</td>
-</tr>
-<tr class="even">
-<td>Restbudget <span class="math inline">\(b\)</span></td>
-<td>Wie viel eigene CPU-Zeit ist erlaubt?</td>
-</tr>
-<tr class="odd">
-<td>Serverpriorität</td>
-<td>Wer läuft bei Konkurrenz zuerst?</td>
-</tr>
-</tbody>
-</table>
-<p>Innerhalb des Servers heute: FIFO, ältester Auftrag zuerst.</p>
+<section id="queue-budget-und-priorität" class="slide level2">
+<h2>Queue, Budget und Priorität</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+
+<pre class="mermaid mermaid-js">%%{init: {"theme":"base","flowchart":{"htmlLabels":false,"nodeSpacing":24,"rankSpacing":28,"subGraphTitleMargin":{"top":8,"bottom":14}},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#656D76","primaryTextColor":"#1D1D1F","lineColor":"#656D76","secondaryColor":"#FFFFFF","tertiaryColor":"#FFFFFF"}}}%%
+flowchart LR
+  accTitle: Queue, Budget und Priorität
+  accDescr: Aufträge gelangen über eine Queue zum Server und zur CPU. Verfügbares Budget und die Auswahl nach Priorität sind zusätzliche Voraussetzungen.
+  E["Aufträge"] --&gt; Q["Queue"]
+  Q --&gt; S["Server"]
+  S --&gt; C["CPU"]
+  B["Budget"] -.-&gt; S
+  P["Priorität"] -.-&gt; S
+  class E,Q,S,C,B,P standard
+classDef standard fill:#FFFFFF,stroke:#656D76,color:#1D1D1F
+linkStyle default stroke:#656D76
+  style S fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>FIFO: ältester Auftrag zuerst.</p>
 <aside class="notes">
 <p>Eine Queue ist die Warteschlange der noch nicht abgeschlossenen Aufträge. FIFO bedeutet First In, First Out: Der zuerst eingegangene Auftrag wird zuerst bearbeitet. In unseren Beispielen wird ein unterbrochener Auftrag vor späteren Aufträgen fortgesetzt. Das Restbudget <span class="math inline">\(b\)</span> misst die noch verfügbare eigene CPU-Zeit, also Prozessorzeit; CPU steht für Central Processing Unit. Die Serverpriorität ist sein fester Rang gegenüber anderen Aufgaben auf diesem Kern.</p>
 <p>Eine volle Queue macht einen Server mit Budget null nicht ausführbar. Umgekehrt ist ein Server mit voller Kapazität und leerer Queue ebenfalls ohne Arbeit. Und selbst mit Arbeit und positivem Budget kann eine höher priorisierte Aufgabe zuerst laufen. Diese drei Fälle müssen getrennt sichtbar bleiben. Innerhalb der Queue könnten andere Regeln verwendet werden, etwa nach Auftragsfristen. Das würde die Reihenfolge einzelner Abschlüsse verändern und ist nicht Teil der heutigen FIFO-Rechnungen. Wir führen zunächst die Größe des Budgets ein, bevor wir seine Verfügbarkeit über die Zeit bestimmen.</p>
+<p>Die Grafik wird entlang der durchgezogenen Pfeile von links nach rechts gelesen: Ein Ereignis erzeugt einen Auftrag, die Auftragsqueue bewahrt ihn auf und der Server führt seine Bearbeitung auf der CPU aus. Die gestrichelten Pfeile zeigen zwei zusätzliche Bedingungen, keine zeitlichen Schritte: Der Server benötigt verfügbares Budget und muss vom Scheduler anhand seiner festen Priorität ausgewählt werden. Auch eine nichtleere Queue allein erlaubt daher noch keine Ausführung. Budget und Scheduler sind hier logische Voraussetzungen, keine weiteren Prozessoren. Die Darstellung erklärt die Architektur auf einem Kern; sie legt weder feste Ausführungsfenster noch eine Wiederauffüllregel fest.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -620,42 +627,14 @@
 </section>
 <section id="polling-verpasst-den-auftrag-kurz-nach-null" class="slide level2">
 <h2>Polling verpasst den Auftrag kurz nach null</h2>
-<p>Gemeinsames Modell: <span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span>, A bei 1, B bei 6.</p>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Zeitpunkt</th>
-<th>Queue / Ereignis</th>
-<th>Folge</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>0</td>
-<td>leer</td>
-<td>Budget verfällt</td>
-</tr>
-<tr class="even">
-<td>1</td>
-<td>A kommt</td>
-<td>wartet bis 8</td>
-</tr>
-<tr class="odd">
-<td>6</td>
-<td>B kommt</td>
-<td>wartet hinter A</td>
-</tr>
-<tr class="even">
-<td>8</td>
-<td>neue Gelegenheit</td>
-<td>A und B bedienen</td>
-</tr>
-</tbody>
-</table>
-<p>Eine freie CPU allein macht die verlorene Gelegenheit nicht wieder verfügbar.</p>
+<p>Gemeinsames Modell: <span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span> ms · A<span class="math inline">\((1,1)\)</span>, B<span class="math inline">\((6,1)\)</span>.</p>
+<p><img data-src="../_livefigures/inline-plantuml-2b8ea194.svg" class="livefigure"></p>
+<p>A wartet 1–8: <strong>7 ms bis zur Gelegenheit</strong>.</p>
+<p>Abschluss bei 9: Antwortzeit <span class="math inline">\(R_A=9-1=8\)</span> ms.</p>
 <aside class="notes">
 <p><span class="math inline">\(Q\)</span> ist die Serverkapazität von zwei Millisekunden, <span class="math inline">\(T\)</span> die Periode von acht Millisekunden. Im gemeinsamen Modell kommt A bei eins mit Bedarf eins und B bei sechs mit Bedarf eins. Die Auftragsqueue ist beim Pollingzeitpunkt null leer. Nach der definierten Regel verfällt damit die erste Bediengelegenheit. CPU bedeutet Central Processing Unit, Prozessor. A darf trotz freiem Prozessor nicht bei eins starten; das wäre eine andere Serverregel.</p>
 <p>Bei sechs wird B hinter A eingereiht. FIFO heißt First In, First Out, zuerst eingegangen zuerst bedient. Erst bei acht wird das Budget auf zwei gesetzt und der Server erneut freigegeben. A rechnet von acht bis neun und B von neun bis zehn. Ein bei neun ankommender dritter Auftrag kann eingereiht werden, erhält aber nach diesen beiden Einheiten keine zusätzliche Kapazität. Dass ein System scheinbar ungenutzte Zeit enthält, widerspricht dem Modell nicht: Die Regel reserviert eine bestimmte Art der Bedienung und schließt zusätzliche Hintergrundbedienung hier bewusst aus. Eine Kombination müsste gesondert benannt werden.</p>
+<p>Die zusätzliche Zustandsspur verfolgt nur Auftrag A; die waagerechte Achse zählt Millisekunden. Der Strich zeigt: A ist bis eins noch nicht vorhanden. A wartet von eins bis acht, rechnet von acht bis neun und ist danach fertig. B bleibt Teil desselben gemeinsamen Modells und wird anschließend bedient. Die sieben Millisekunden bis zum nächsten Poll sind nur Wartezeit; zur vollständigen Antwortzeit gehören zusätzlich die eigene Arbeit und gegebenenfalls weitere Verzögerungen. Deshalb ist die Pollingperiode keine allgemeine Schranke für den Abschluss beliebiger Aufträge.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -876,30 +855,14 @@
 </section>
 <section id="die-periodengrenze-kann-zwei-budgets-verbinden" class="slide level2">
 <h2>Die Periodengrenze kann zwei Budgets verbinden</h2>
-<p>Neues Beispiel: Deferrable Server mit <span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span> ms.</p>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Aufträge</th>
-<th>Ausführung</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>A kommt bei 6, Bedarf 2</td>
-<td>6–8: altes Budget</td>
-</tr>
-<tr class="even">
-<td>B kommt bei 8, Bedarf 2</td>
-<td>8–10: neues Budget</td>
-</tr>
-</tbody>
-</table>
-<p>Vier Millisekunden ununterbrochene Serverarbeit von 6 bis 10.</p>
-<p>Der nominelle Anteil bleibt <span class="math inline">\(Q/T=25\,\%\)</span>.</p>
+<p>DS: <span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span> ms · A<span class="math inline">\((6,2)\)</span>, B<span class="math inline">\((8,2)\)</span> · sonst keine Arbeit.</p>
+<p><img data-src="../_livefigures/inline-plantuml-8941137a.svg" class="livefigure"></p>
+<p>6–8: altes Budget · 8–10: neues Budget</p>
+<p>Vier CPU-Millisekunden am Stück trotz <span class="math inline">\(Q/T=25\,\%\)</span>.</p>
 <aside class="notes">
 <p><span class="math inline">\(Q\)</span> ist die Kapazität des Deferrable Servers und <span class="math inline">\(T\)</span> seine feste Auffüllperiode. Im neuen Beispiel ist das erste Budget bis sechs unbenutzt. A trifft bei sechs mit zwei Millisekunden eigenem Bedarf ein und darf von sechs bis acht rechnen. Bei acht endet dieses alte Budget, aber zugleich wird nach der Regel die Kapazität auf zwei gesetzt. B kommt genau bei acht mit Bedarf zwei an und rechnet bis zehn. Ankünfte und Auffüllungen werden vor der Auswahl berücksichtigt.</p>
 <p>So entstehen vier aufeinanderfolgende Millisekunden Serverarbeit, obwohl <span class="math inline">\(Q\)</span> nur zwei beträgt. Der langfristige nominelle Rechenanteil ist weiterhin zwei Achtel gleich 25 Prozent. Eine kurzfristige Störung kann daraus nicht durch schlichtes Multiplizieren eines Fensters mit 25 Prozent berechnet werden. Auch die Behandlung als einzelne gewöhnliche periodische Aufgabe mit Bedarf zwei und Periode acht kann eine solche verspätete alte plus neue Bedienung übersehen. Für Deferrable Server gibt es passende Einplanungstests und Interferenzschranken; die einfache Rechnung der Polling-Folien wird hier nicht übernommen.</p>
+<p>Die Zeitachse zeigt oben die tatsächliche nacheinander ausgeführte Arbeit auf einem Kern und unten die Herkunft des Budgets. Der untere Zustandsname bezeichnet die jeweilige Budgetperiode, nicht den während der Rechnung kontinuierlich sinkenden Restzähler. Am gemeinsamen Zeitpunkt acht endet A, das Budget wird auf zwei gesetzt und B kann beginnen. Es gibt keine überlappenden Ausführungen; gerade die unmittelbar anschließenden Intervalle sechs bis acht und acht bis zehn bilden den Budgetstoß. Die Grenze acht ist keine zusätzliche Ausführungsdauer.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -981,35 +944,39 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="die-rückgabeliste-wächst-aus-tatsächlichem-verbrauch" class="slide level2">
-<h2>Die Rückgabeliste wächst aus tatsächlichem Verbrauch</h2>
+<section id="verbrauch-erzeugt-listeneinträge" class="slide level2">
+<h2>Verbrauch erzeugt Listeneinträge</h2>
 <p>Gemeinsames Modell: <span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span> ms.</p>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Aktiver Abschnitt</th>
-<th style="text-align: right;">Verbrauch <span class="math inline">\(q\)</span></th>
-<th>neuer Listeneintrag</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>A: 1–2</td>
-<td style="text-align: right;">1</td>
-<td>Zeitpunkt 9, Menge 1</td>
-</tr>
-<tr class="even">
-<td>B: 6–7</td>
-<td style="text-align: right;">1</td>
-<td>Zeitpunkt 14, Menge 1</td>
-</tr>
-</tbody>
-</table>
-<p>Nach B: Budget 0, Liste <span class="math inline">\((9,1),(14,1)\)</span>.</p>
-<p>Bei 8 erfolgt kein pauschaler Reset.</p>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+
+<pre class="mermaid mermaid-js">%%{init: {"theme":"base","flowchart":{"htmlLabels":false,"nodeSpacing":24,"rankSpacing":28,"subGraphTitleMargin":{"top":8,"bottom":14}},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#656D76","primaryTextColor":"#1D1D1F","lineColor":"#656D76","secondaryColor":"#FFFFFF","tertiaryColor":"#FFFFFF"}}}%%
+flowchart LR
+  accTitle: Verbrauch und Rückgabeliste
+  accDescr: A verbraucht von 1 bis 2 eine Millisekunde und erzeugt den Eintrag 9, 1. B verbraucht von 6 bis 7 eine Millisekunde und erzeugt 14, 1. Nach B ist das Budget null.
+  A["A: 1–2 ms&lt;br/&gt;Verbrauch: 1 ms"] --&gt; RA["Eintrag&lt;br/&gt;(9, 1)"]
+  B["B: 6–7 ms&lt;br/&gt;Verbrauch: 1 ms"] --&gt; RB["Eintrag&lt;br/&gt;(14, 1)"]
+  RA --&gt; L["Liste"]
+  RB --&gt; L
+  L ~~~ Z["Nach B&lt;br/&gt;Budget: 0 ms"]
+  class A,B,RA,RB,L,Z standard
+classDef standard fill:#FFFFFF,stroke:#656D76,color:#1D1D1F
+linkStyle default stroke:#656D76
+  style L fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Kein Reset bei 8 ms · Rückgaben bei 9 und 14 ms.</p>
 <aside class="notes">
 <p><span class="math inline">\(Q\)</span> ist die Kapazität von zwei Millisekunden und <span class="math inline">\(T\)</span> der Wiederauffüllzeitraum von acht Millisekunden. Anfangs ist das Budget vollständig verfügbar. A kommt bei eins mit Bedarf eins, läuft von eins bis zwei und lässt eine Einheit unbenutztes Budget zurück. Sein aktiver Abschnitt beginnt bei <span class="math inline">\(t_a=1\)</span> und verbraucht <span class="math inline">\(q=1\)</span>. Deshalb entsteht der Listeneintrag <span class="math inline">\((1+8,1)=(9,1)\)</span>. Das Paar bedeutet Rückgabezeit neun und Menge eins.</p>
-<p>Während der leeren Queue von zwei bis sechs bleibt die andere Budgeteinheit erhalten. B benötigt sie von sechs bis sieben. Sein Abschnitt beginnt bei sechs und erzeugt entsprechend <span class="math inline">\((6+8,1)=(14,1)\)</span>. Danach ist das aktuelle Budget null, aber beide verbrauchten Mengen sind in der Liste für spätere Rückgaben vermerkt. Bei acht passiert keine periodische Auffüllung. Diese Unterscheidung erklärt, warum ein späterer Auftrag beim Sporadic Server anders bedient wird als beim Deferrable Server, obwohl beide mit derselben Anfangskapazität und demselben Zeitraum arbeiten.</p>
+<p>Während der leeren Queue von zwei bis sechs bleibt die andere Budgeteinheit erhalten. B benötigt sie von sechs bis sieben. Sein Abschnitt beginnt bei sechs und erzeugt entsprechend <span class="math inline">\((6+8,1)=(14,1)\)</span>. Die Einträge werden nach den Abschnittsenden bei zwei und sieben gebucht; neun und vierzehn sind ihre Fälligkeiten. Danach ist das aktuelle Budget null, aber beide verbrauchten Mengen sind in der Liste für spätere Rückgaben vermerkt. Bei acht passiert keine periodische Auffüllung. Diese Unterscheidung erklärt, warum ein späterer Auftrag beim Sporadic Server anders bedient wird als beim Deferrable Server, obwohl beide mit derselben Anfangskapazität und demselben Zeitraum arbeiten.</p>
+<p>Die Pfeile zeigen von links nach rechts eine Buchungsabhängigkeit: Aus jedem aktiven Abschnitt entsteht genau ein Eintrag, der anschließend in der Rückgabeliste steht. Beim Anfangsbudget von zwei Millisekunden und dem Wiederauffüllzeitraum von acht Millisekunden liefert A den Zeitpunkt eins plus acht gleich neun mit Menge eins; B liefert sechs plus acht gleich vierzehn mit Menge eins. Jedes Paar nennt zuerst den Rückgabezeitpunkt und dann die Menge, jeweils in Millisekunden. Der separate Kasten nennt das bereits auf null gesunkene Budget nach B. Die Grafik ist keine maßstäbliche Zeitachse; ihre Pfeile bedeuten weder unmittelbar folgende Ausführung noch sofortige Budgetrückgabe. Es gilt der eingeführte klassische Spezialfall ohne höher priorisierte Arbeit und ohne Rückgabe innerhalb eines laufenden Abschnitts.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1022,14 +989,15 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="sporadic-server-c-braucht-zwei-rückgaben" class="slide level2">
-<h2>Sporadic Server: C braucht zwei Rückgaben</h2>
+<section id="ss-c-wartet-trotz-freiem-kern" class="slide level2">
+<h2>SS: C wartet trotz freiem Kern</h2>
 <p><span class="math inline">\(Q=2\)</span>, <span class="math inline">\(T=8\)</span> ms · A<span class="math inline">\((1,1)\)</span>, B<span class="math inline">\((6,1)\)</span>, C<span class="math inline">\((9,2)\)</span></p>
-<p><img data-src="../_livefigures/inline-plantuml-af742786.svg" class="livefigure"></p>
-<p>C rechnet 9–10 und 14–15 · <span class="math inline">\(C_C=2\)</span> ms, <span class="math inline">\(R_C=15-9=6\)</span> ms.</p>
+<p><img data-src="../_livefigures/inline-plantuml-e8126a3e.svg" class="livefigure"></p>
+<p>C rechnet 9–10 und 14–15 · <span class="math inline">\(R_C=15-9=6\)</span> ms.</p>
 <aside class="notes">
-<p>Die waagerechte Achse des PlantUML-Diagramms zeigt Millisekunden, die obere Spur rechnende Aufträge oder einen freien Kern. Die untere markiert die Rückgabeereignisse, nicht das gesamte aktuelle Budget. <span class="math inline">\(Q=2\)</span> ist die Anfangskapazität, <span class="math inline">\(T=8\)</span> der Wiederauffüllzeitraum. Die Auftragsschreibweise gibt jeweils Freigabe und Bedarf an. Es gibt keine höher priorisierte Aufgabe und keine zusätzliche Rückgabe innerhalb eines laufenden Serverabschnitts.</p>
+<p>Die waagerechte Achse des PlantUML-Diagramms zeigt Millisekunden. Die obere Spur nennt rechnende Aufträge; ein Strich bedeutet einen freien Kern. Die mittlere Spur nennt das Anfangsbudget und markiert die Rückgabeereignisse mit +1; der Strich bedeutet keine weitere Rückgabe. Sie zeigt nicht das gesamte aktuelle Budget. Die späteren Rückgaben bei siebzehn und zweiundzwanzig liegen außerhalb des dargestellten Zeitraums und stehen in der folgenden Tabelle. <span class="math inline">\(Q=2\)</span> ist die Anfangskapazität, <span class="math inline">\(T=8\)</span> der Wiederauffüllzeitraum. Die Auftragsschreibweise gibt jeweils Freigabe und Bedarf an. Es gibt keine höher priorisierte Aufgabe und keine zusätzliche Rückgabe innerhalb eines laufenden Serverabschnitts.</p>
 <p>A rechnet eins bis zwei, B sechs bis sieben. Ihre jeweiligen Rückgaben von einer Einheit sind bei neun und vierzehn fällig. C kommt bei neun mit zwei Einheiten Bedarf an. Die gerade zurückgegebene eine Einheit reicht von neun bis zehn; danach fehlt Budget. Der Prozessor bleibt in unserem Modell von zehn bis vierzehn frei, obwohl C noch nicht fertig ist. Erst die Rückgabe bei vierzehn erlaubt seine letzte Einheit bis fünfzehn. Der eigene Bedarf <span class="math inline">\(C_C\)</span> beträgt zwei und die Antwortzeit <span class="math inline">\(R_C\)</span> sechs Millisekunden. Der Abschnitt neun bis zehn erzeugt die Rückgabe bei siebzehn; der Abschnitt vierzehn bis fünfzehn jene bei zweiundzwanzig. Diese späteren Einheiten bleiben ohne neue Aufträge ungenutzt verfügbar.</p>
+<p>Die neue dritte Spur macht den Zustand von C ausdrücklich sichtbar. Zwischen zehn und vierzehn ist C noch nicht fertig und wartet auf Budget, obwohl die Kernspur frei meldet. Zwischen neun und zehn sowie vierzehn und fünfzehn läuft C; dafür steht in der Zustandsspur CPU, also die Zuteilung des Prozessors. Ab fünfzehn ist es fertig. Die mittlere Spur nennt Rückgabeereignisse, die untere den Auftragszustand. Ein Rückgabeereignis ist damit weder ein neuer Auftrag noch automatisch dessen Fertigstellung.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1152,49 +1120,16 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="zweites-klassisches-ss-beispiel-mengen-bündeln" class="slide level2">
-<h2>Zweites klassisches SS-Beispiel: Mengen bündeln</h2>
-<p><span class="math inline">\(Q=3\)</span>, <span class="math inline">\(T=10\)</span> ms · keine Höherstörer · FIFO.</p>
-<table class="caption-top">
-<thead>
-<tr class="header">
-<th>Auftrag</th>
-<th>Freigabe / Bedarf</th>
-<th>Ausführung</th>
-<th>Rückgabe</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>A</td>
-<td>2 / 1</td>
-<td>2–3</td>
-<td><span class="math inline">\((12,1)\)</span></td>
-</tr>
-<tr class="even">
-<td>B</td>
-<td>7 / 2</td>
-<td>7–9</td>
-<td><span class="math inline">\((17,2)\)</span></td>
-</tr>
-<tr class="odd">
-<td>C</td>
-<td>11 / 3</td>
-<td>12–13</td>
-<td><span class="math inline">\((22,1)\)</span></td>
-</tr>
-<tr class="even">
-<td>C fortgesetzt</td>
-<td>—</td>
-<td>17–19</td>
-<td><span class="math inline">\((27,2)\)</span></td>
-</tr>
-</tbody>
-</table>
-<p>C: eigener Bedarf 3 ms, Antwortzeit <span class="math inline">\(19-11=8\)</span> ms.</p>
+<section id="ss-gebündelte-rückgaben" class="slide level2">
+<h2>SS: gebündelte Rückgaben</h2>
+<p><span class="math inline">\(Q=3\)</span>, <span class="math inline">\(T=10\)</span> ms · A<span class="math inline">\((2,1)\)</span>, B<span class="math inline">\((7,2)\)</span>, C<span class="math inline">\((11,3)\)</span> · keine Höherstörer.</p>
+<p><img data-src="../_livefigures/inline-plantuml-275f0de5.svg" class="livefigure"></p>
+<p>B rechnet 7–9: <strong>eine gebündelte Rückgabe <span class="math inline">\((17,2)\)</span></strong>.</p>
+<p>C: <span class="math inline">\(C_C=3\)</span> ms, <span class="math inline">\(R_C=19-11=8\)</span> ms.</p>
 <aside class="notes">
 <p>SS steht für Sporadic Server. <span class="math inline">\(Q=3\)</span> ist die Kapazität und <span class="math inline">\(T=10\)</span> der Wiederauffüllzeitraum. FIFO bedeutet First In, First Out, Bedienung nach Ankunft. Wie im ersten Beispiel gibt es keine höher priorisierten Aufgaben und keine weitere Rückgabe innerhalb eines laufenden Serverabschnitts. Die Zahlen sind neue didaktische Vorgaben, damit die Regel unabhängig vom ersten Beispiel nachvollzogen werden kann.</p>
 <p>A rechnet zwei bis drei, verbraucht eins und erzeugt die Rückgabe <span class="math inline">\((2+10,1)=(12,1)\)</span>. Zwei Einheiten bleiben verfügbar. B benutzt diese von sieben bis neun und erzeugt eine gebündelte Rückgabe von zwei bei siebzehn. Es sind ausdrücklich nicht zwei getrennte Quantenrückgaben bei siebzehn und achtzehn. C kommt bei elf an, trifft auf Budget null und wartet bis zwölf. Es rechnet eine Einheit bis dreizehn, wartet auf die Rückgabe von zwei bei siebzehn und endet nach zwei weiteren Einheiten bei neunzehn. Seine Abschnitte erzeugen <span class="math inline">\((22,1)\)</span> und <span class="math inline">\((27,2)\)</span>. C benötigt insgesamt drei eigene Millisekunden; fünf weitere Millisekunden entfallen auf Warten. Der größere Zeitraum zwischen Freigabe und Ende wird nicht als Budgetverbrauch abgerechnet.</p>
+<p>Oben wird die CPU-Belegung von null bis dreißig Millisekunden gelesen; unten stehen die Rückgabeereignisse mit Menge und Herkunft. Die untere Beschriftung bleibt bis zum nächsten Ereignis stehen und ist keine Darstellung des verfügbaren Restbudgets. B rechnet zusammenhängend zwei Millisekunden. Am Abschnittsende bei neun wird deshalb der einzige Eintrag <span class="math inline">\((17,2)\)</span> gebucht; seine Rückgabe ist bei siebzehn fällig. C kann bei siebzehn beide Einheiten nacheinander nutzen und endet bei neunzehn. Die späteren Rückgaben bei zweiundzwanzig und siebenundzwanzig bleiben bei leerer Auftragsqueue ungenutzt verfügbar. Wie zuvor gibt es keine höher priorisierte Arbeit und keine zusätzliche Rückgabe innerhalb eines aktiven Abschnitts.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1374,18 +1309,50 @@
           display:block!important;
       }</style></aside>
 </section>
-<section id="freertos-liefert-feste-prioritäten-keine-servermagie" class="slide level2">
-<h2>FreeRTOS liefert feste Prioritäten, keine Servermagie</h2>
-<ul>
-<li>Threadpriorität bestimmt die Auswahl bereiter Threads.</li>
-<li>Queue empfängt und bewahrt Aufträge auf.</li>
-<li>Budget, Auffüllliste und Erschöpfung brauchen eigene Logik.</li>
-<li>Native FreeRTOS-Tasks werden dadurch nicht automatisch Server.</li>
-</ul>
+<section id="freertos-braucht-serverlogik" class="slide level2">
+<h2>FreeRTOS braucht Serverlogik</h2>
+<div class="cell" data-reveal="true" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class=""><p></p>
+<div>
+
+<pre class="mermaid mermaid-js">%%{init: {"theme":"base","flowchart":{"htmlLabels":false,"nodeSpacing":24,"rankSpacing":28,"subGraphTitleMargin":{"top":8,"bottom":14}},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#656D76","primaryTextColor":"#1D1D1F","lineColor":"#656D76","secondaryColor":"#FFFFFF","tertiaryColor":"#FFFFFF"}}}%%
+flowchart TB
+  accTitle: Kernelbausteine und zusätzliche Serverlogik
+  accDescr: FreeRTOS stellt Queue, feste Prioritäten und zeitliches Warten bereit. Eigene CPU-Abrechnung, Budgetbegrenzung, Rückgabeliste und Erschöpfungskontrolle müssen ergänzt werden.
+  subgraph K["Kernel-Bausteine"]
+    direction LR
+    Q["Queue&lt;br/&gt;Aufträge speichern"]
+    P["Feste Priorität&lt;br/&gt;Threads auswählen"]
+    W["Ticks und Warten&lt;br/&gt;Zeitpunkte abwarten"]
+    Q ~~~ P ~~~ W
+  end
+  subgraph A["Zusätzliche Serverlogik"]
+    direction LR
+    C["CPU-Abrechnung&lt;br/&gt;Budget begrenzen"]
+    R["Rückgabeliste&lt;br/&gt;Erschöpfung durchsetzen"]
+    C --&gt; R
+  end
+  K -.-&gt; A
+  class Q,P,W,C,R standard
+classDef standard fill:#FFFFFF,stroke:#656D76,color:#1D1D1F
+linkStyle default stroke:#656D76
+  style K fill:#FFFFFF,stroke:#656D76,color:#1D1D1F
+  style A fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  style C fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+  style R fill:#FFFFFF,stroke:#E2001A,stroke-width:2px !important
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
 <p><code>osDelay()</code> allein misst und begrenzt keine eigene CPU-Zeit.</p>
 <aside class="notes">
 <p>FreeRTOS ist das im Kurs verwendete Echtzeitbetriebssystem. Ein Thread ist ein verwalteter Ausführungspfad mit eigenem gespeicherten Kontext; seine Priorität beeinflusst die Auswahl, sobald er bereit ist. Eine Queue ist eine Warteschlange, in der Aufträge bis zur Bearbeitung gespeichert werden können. Weder eine hohe Threadpriorität noch eine Queue aktiviert automatisch einen Polling, Deferrable oder Sporadic Server. Budgetprüfung, Wiederauffüllungen, Unterbrechung bei Erschöpfung und Überlastbehandlung sind zusätzliche Aufgaben der Umsetzung.</p>
 <p>osDelay ist eine Wartefunktion der verwendeten CMSIS-RTOS2-Schnittstelle. CMSIS heißt Common Microcontroller Software Interface Standard, RTOS Real-Time Operating System, Echtzeitbetriebssystem. Der Aufruf blockiert den aufrufenden Thread für eine Anzahl Kernel-Ticks, also Zeitschritte der Betriebssystemzeitbasis. Er misst nicht die zuvor ausschließlich von diesem Thread verbrauchte CPU-Zeit; CPU bedeutet Central Processing Unit, Prozessor. Eine Schleife aus Rechnen und osDelay wird deshalb nicht allein durch die gewählten Zahlen zu einer korrekten Sporadic-Server-Implementierung. Der praktische Teil bezeichnet seine modellierten Größen ausdrücklich als solche.</p>
+<p>Die Kernelbausteine benötigen zusätzliche Serverlogik. Die obere Gruppe nennt vorhandene Fähigkeiten: Aufträge speichern, bereite Threads nach fester Priorität auswählen und anhand der Kernelzeit warten. Der gestrichelte Pfeil zwischen den Gruppen bedeutet, dass die zusätzliche Anwendungslogik die Kernelbausteine verwendet; er behauptet keine bereits fertige Serverfunktion. Der durchgezogene Pfeil bezeichnet die Buchung tatsächlich verbrauchter eigener CPU-Zeit in die Rückgabeliste. Zusätzlich muss die Umsetzung Budgeterschöpfung rechtzeitig durchsetzen. Die räumliche Trennung der Gruppen zeigt Verantwortlichkeiten und keine Ausführungsreihenfolge. Insbesondere misst ein Warten in Kernel-Ticks keine eigene CPU-Zeit; eine Rückgabeliste und ein Timer allein ergeben keinen vollständigen präemptiven Sporadic Server.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
@@ -1734,6 +1701,7 @@
 <p>Giorgio C. Buttazzos Hard Real-Time Computing Systems: Predictable Scheduling Algorithms and Applications ist die zentrale Kursliteratur. Die dritte Auflage dient zur fachlichen Vertiefung der Einplanung aperiodischer Arbeit. Der klassische Primärbeitrag von Brinkley Sprunt, Lui Sha und John Lehoczky, Aperiodic Task Scheduling for Hard-Real-Time Systems, erschien 1989 in Real-Time Systems und führt den Sporadic Server ein. Für die Vertiefung ist entscheidend, die jeweilige Servervariante mit ihrer Aktivierungs- und Wiederauffüllregel zu lesen; ähnliche Namen allein garantieren keine gleichen Eigenschaften.</p>
 <p>FreeRTOS ist das verwendete Echtzeitbetriebssystem. CMSIS bedeutet Common Microcontroller Software Interface Standard und RTOS Real-Time Operating System; API bedeutet Application Programming Interface, Programmierschnittstelle. Die zugehörigen Referenzen beschreiben Prioritäten, Wartefunktionen und Queueoperationen der konkret eingesetzten Umgebung. Sie ersetzen keine Spezifikation eines zusätzlichen Serververfahrens.</p>
 <p>Vorlesung 7 erweitert nun das Ein-Kern-Modell. Multicore bedeutet mehrere Prozessorkerne; eine Firmware ist das für den Mikrocontroller übersetzte Programm. Zwei getrennte Firmwareprogramme benötigen ausdrückliche Regeln für gemeinsamen Datenbesitz und konkurrierende Hardwarezugriffe. Die heutigen Einprozessor-Schranken gelten für diese zusätzliche Konkurrenz nicht automatisch weiter. Vorlesung 8 untersucht anschließend die Aussagekraft von Messungen. In der Fallstudie aus Vorlesung 9 führen wir Eingangsmodell, Serverregel, Datenvertrag und Prüfstatus zusammen. LED bedeutet Light Emitting Diode, Leuchtdiode. Die heutige LED-Simulation liefert dafür Modellverständnis, aber keinen allgemeinen Laufzeitnachweis.</p>
+<p>Die zusätzlichen Architektur-, Warte- und Rückgabedarstellungen wurden anhand von sieben vom Lehrenden bereitgestellten Vorjahres-SVGs neu ausgearbeitet. Sie verwenden die hier eingeführten Modellwerte und Begriffe. Die Zeichnungen sind Lehrmodelle, keine gemessenen FreeRTOS-Abläufe; die Auswahl und fachlichen Anpassungen dokumentiert <code>docs/reviews/vorlesung06-abbildungen.md</code>.</p>
 <style type="text/css">
         span.MJX_Assistive_MathML {
           position:absolute!important;
