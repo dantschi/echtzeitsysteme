@@ -1,23 +1,27 @@
 ---
 title: "Probeklausur: Echtzeitsysteme (EZS)"
 author: "Prof. Dr.-Ing. Daniel Klünder"
+# Themenumfang: Vorlesungen 1–6
 # Studierende: quarto render probeklausur.qmd --to pdf
 # Musterlösung: gleicher Aufruf zusätzlich mit --profile solution
+header-includes: |
+  \usepackage{tikz}
+  \definecolor{rasterlinie}{HTML}{656D76}
 ---
 
-Beantworten Sie die nachfolgenden Fragen im Multiple-Choice-Format. Bei jeder Frage können eine, mehrere oder alle Antwortmöglichkeiten richtig sein. Jede Teilaufgabe wird mit einem Punkt bewertet – dieser wird nur bei vollständig korrekter Antwort vergeben.
+Diese Probeklausur prüft die Inhalte der **Vorlesungen 1 bis 6**: Zeitvertrag, Polling und Interrupts, Scheduling-Theorie, Echtzeitbetriebssysteme, Synchronisation, Inter-Task-Kommunikation und Server-Verfahren. Mehrkern-, Trace- und Fallstudienthemen sind nicht enthalten.
 
-Diese Bewertung gilt für die 20 Fragen in **Teil A**: Kreuzen Sie alle richtigen und keine falsche Antwort an. Jede Frage ergibt bei genau passender Auswahl 1 Punkt, sonst 0 Punkte; es gibt keine Teilpunkte und keine Minuspunkte. In **Teil B** gelten die jeweils angegebenen Teilpunkte.
+In **Teil A** beantworten Sie 20 Fragen im Multiple-Choice-Format. Bei jeder Frage können eine, mehrere oder alle Antwortmöglichkeiten richtig sein. Kreuzen Sie alle richtigen und keine falsche Antwort an. Jede Frage ergibt bei genau passender Auswahl 1 Punkt, sonst 0 Punkte; es gibt keine Teilpunkte und keine Minuspunkte. In **Teil B** gelten die jeweils angegebenen Teilpunkte.
 
-Bearbeitungszeit: **etwa 60 Minuten**. Gesamt: **60 Punkte**. Hilfsmittel: einfacher Taschenrechner, keine Unterlagen. Für Teil B können Sie zusätzliches Papier verwenden. Formeln und nötige Modellannahmen stehen in den Aufgaben.
+Bearbeitungszeit: **60 Minuten**. Gesamt: **60 Punkte**. Hilfsmittel: einfacher Taschenrechner, keine Unterlagen. Für Teil B können Sie zusätzliches Papier verwenden. Formeln und nötige Modellannahmen stehen in den Aufgaben. Alle Zahlenwerte sind Lehrannahmen, keine Boardmessungen.
 
 | Abschnitt | Richtzeit | Punkte |
 |---|---:|---:|
 | Teil A: 20 Multiple-Choice-Fragen | 20 Minuten | 20 |
-| B1: Scheduling und Antwortzeit | 10 Minuten | 10 |
-| B2: Prioritätsinversion | 10 Minuten | 10 |
-| B3: Kommunikation und Speicher | 10 Minuten | 10 |
-| B4: Timing und Fehlerreaktion | 10 Minuten | 10 |
+| B1: RMS, EDF und Antwortzeitanalyse | 10 Minuten | 10 |
+| B2: Ereignis, Mutex und Prioritätsinversion | 10 Minuten | 10 |
+| B3: Queue, Pufferbesitz und ISR-Übergabe | 10 Minuten | 10 |
+| B4: Server-Verfahren | 10 Minuten | 10 |
 | Gesamt | 60 Minuten | 60 |
 
 ::: {.content-visible when-profile="solution"}
@@ -31,33 +35,14 @@ Bearbeitungszeit: **etwa 60 Minuten**. Gesamt: **60 Punkte**. Hilfsmittel: einfa
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 01: Zeitvertrag und Echtzeitklasse · 1 Punkt
+### Frage 01: Zeitvertrag und Echtzeitklassen · 1 Punkt
 
-Ein Stellauftrag darf seine Frist nie verfehlen. Ein verspätetes Prüfbild ist wertlos, einzelne Bildausfälle sind aber erlaubt. Eine verspätete Statusanzeige besitzt noch Restnutzen. Welche Aussagen treffen zu?
+Eine Abfüllanlage hat drei Aufgaben. Ein Ventilbefehl darf seine relative Frist $D=6\,\mathrm{ms}$ nie verfehlen. Ein Füllstandswert ist nach Ende seines Messfensters wertlos; höchstens zwei fehlende Werte je 1000 Fenster sind zulässig. Eine Trendanzeige ist auch verspätet noch nützlich. Welche Aussagen treffen zu?
 
-- A) Der Stellauftrag hat eine harte Echtzeitanforderung.
-- B) Die Statusanzeige hat damit eine harte Echtzeitanforderung.
-- C) Für das Prüfbild liegt eine Firm-Echtzeitanforderung vor.
-- D) Eine konstante Antwortzeit oberhalb der Frist erfüllt den Zeitvertrag.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 02: Ein kurzer Eingangspuls · 1 Punkt
-
-Ein Eingang ist nur von 1 bis 2 ms High. Main liest ausschließlich den momentanen Pegel bei 0, 5 und 10 ms. Es gibt keine zusätzliche Ereignisspeicherung. Welche Aussagen treffen zu?
-
-- A) Main erkennt den Puls beim Lesen bei 5 ms verspätet.
-- B) `volatile` verlängert den elektrischen Puls bis zur nächsten Abfrage.
-- C) Eine kürzere Bearbeitungsfunktion nach der Abfrage sichert die Erkennung.
-- D) Ein zusätzliches Latch kann den Hinweis bis zur späteren Abfrage speichern.
+- A) Ein fachlich richtiger Ventilbefehl, freigegeben bei 4 ms und fertig bei 10,2 ms, erfüllt den Zeitvertrag.
+- B) Für den Füllstandswert liegt eine feste (Firm-)Echtzeitanforderung vor.
+- C) Die Trendanzeige hat eine harte Echtzeitanforderung, weil auch für sie eine Frist angegeben werden kann.
+- D) Ein rechtzeitig ausgegebener Ventilbefehl mit falscher Ventilstellung verletzt den Echtzeitvertrag.
 
 ```{=latex}
 \end{minipage}\par
@@ -69,33 +54,14 @@ Ein Eingang ist nur von 1 bis 2 ms High. Main liest ausschließlich den momentan
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 03: Eigene Arbeit und Antwortzeit · 1 Punkt
+### Frage 02: Latenz, Jitter und Schranke · 1 Punkt
 
-Ein Job wird bei $r=1\,\mathrm{ms}$ freigegeben, rechnet von 2 bis 4 und von 6 bis 7 ms und endet dort. Seine relative Deadline ist $D=7\,\mathrm{ms}$. Welche Aussagen treffen zu?
+Für dieselbe Latenzdefinition, von der Sensorflanke bis zum Marker im Callback, liegen vier Messwerte vor: 12, 15, 12 und 14 µs. Welche Aussagen treffen zu?
 
-- A) Der eigene Prozessorbedarf beträgt $C=3\,\mathrm{ms}$.
-- B) Die Antwortzeit beträgt $R=3\,\mathrm{ms}$.
-- C) Die absolute Deadline liegt bei $d=7\,\mathrm{ms}$.
-- D) Der angegebene Job hält seine Deadline ein.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 04: Eine überschrittene RMS-Schranke · 1 Punkt
-
-Drei unabhängige periodische Aufgaben haben $D_i=T_i$ und $U=85\,\%$. Das Modell hat einen Prozessor, vollständige Präemption, keine Sperren oder Selbstsuspendierung und keine Zusatzkosten. Die Auslastung beruht auf sicheren Ausführungszeitschranken. Die Liu-und-Layland-Schranke liegt bei etwa 78 %. Welche Aussagen treffen zu?
-
-- A) Mindestens eine RMS-Deadline ist durch diese Zahlen bereits als verletzt bewiesen.
-- B) Eine Antwortzeitanalyse kann das konkrete Set unter RMS genauer prüfen.
-- C) Der EDF-Auslastungstest weist das Set unter den genannten Annahmen nach.
-- D) Die RMS-Schranke gilt unverändert auch für einen kooperativen Aufrufring.
+- A) Der Latenzjitter als Spanne $\max(L_i)-\min(L_i)$ beträgt 3 µs.
+- B) Das Messmaximum von 15 µs ist eine sichere obere Schranke für alle zugelassenen Betriebsfälle.
+- C) Für einen Fristnachweis ist eine begründete obere Grenze maßgeblich, nicht der Mittelwert von 13,25 µs.
+- D) Eine konstante Latenz von 30 µs hätte keinen Jitter und hielte deshalb eine Frist von 20 µs ein.
 
 ```{=latex}
 \end{minipage}\par
@@ -107,33 +73,14 @@ Drei unabhängige periodische Aufgaben haben $D_i=T_i$ und $U=85\,\%$. Das Model
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 05: EDF im Idealmodell · 1 Punkt
+### Frage 03: Polling-Runde und Ereigniserfassung · 1 Punkt
 
-Es gelten unabhängige periodische Jobs auf einem Prozessor, $D_i=T_i$, vollständige Präemption, keine Sperren oder Selbstsuspendierung und keine Zusatzkosten. Welche Aussagen über Earliest Deadline First (EDF) treffen zu?
+Eine Hauptschleife ohne Interrupts prüft einen Eingang, reagiert gegebenenfalls und bearbeitet danach eine Anzeige. Obergrenzen je Runde: Prüfung 0,2 ms, Reaktion 0,3 ms, Anzeige 3,5 ms. Ein Latch speichert das Ereignis bis zur nächsten Prüfung. Für die konservative Antwortgrenze gilt wie in der Vorlesung: eine ganze maximale Runde bis zur Erkennung, danach die Reaktion. Welche Aussagen treffen zu?
 
-- A) Von bereiten Jobs erhält ein Job mit frühester absoluter Deadline Vorrang.
-- B) $U\le1$ ist unter diesen Annahmen ein notwendiger und hinreichender Test.
-- C) Ein RMS-Fristfehler beweist noch nicht, dass dasselbe Set unter EDF scheitert.
-- D) Unberücksichtigte Interruptkosten können eine Übertragung des Tests auf Hardware verhindern.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 06: Thread, Warteaufruf und Auswahl · 1 Punkt
-
-Ein präemptiver FreeRTOS-Kernel verwendet feste Taskprioritäten. Alle genannten Warteaufrufe sind gültig. Welche Aussagen treffen zu?
-
-- A) Ein Thread besitzt einen eigenen Stack und einen gesicherten Fortsetzungszustand.
-- B) Eine höhere Ready-Task muss auf die Rückkehr aus der niedrigeren Threadfunktion warten.
-- C) `osDelay` macht den Aufrufer Blocked; Zeitablauf macht ihn zunächst Ready.
-- D) `osThreadYield` macht eine dauerhaft bereite hohe Task für niedrigere Tasks Blocked.
+- A) Die maximale Rundendauer beträgt 4,0 ms.
+- B) Ein zusätzlicher Interrupt-Handler, der das Ereignis sofort speichert, garantiert ohne weitere Annahmen auch den rechtzeitigen Abschluss der Reaktion in der Hauptschleife.
+- C) Ohne Latch würde ein 1-ms-Puls zwischen zwei Abfragen sicher nur verspätet erkannt.
+- D) Die konservative Antwortgrenze beträgt 4,3 ms.
 
 ```{=latex}
 \end{minipage}\par
@@ -145,33 +92,14 @@ Ein präemptiver FreeRTOS-Kernel verwendet feste Taskprioritäten. Alle genannte
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 07: Tickphase · 1 Punkt
+### Frage 04: Deadline-Klassen und Machbarkeit · 1 Punkt
 
-Ein Kernel hat 100 Ticks/s. Ein Thread ruft `osDelay(1)` eine Millisekunde vor der nächsten Tickgrenze auf. Die Tickverarbeitung selbst ist unverzögert. Welche Aussagen treffen zu?
+Zwei unabhängige periodische Aufgaben werden erstmals bei null freigegeben: $\tau_1$ mit $C_1=3$, $T_1=20$, $D_1=4$ und $\tau_2$ mit $C_2=2$, $T_2=25$, $D_2=4$, alle Zeiten in ms. Es gibt einen Prozessor, vollständige Präemption und keine Zusatzkosten. Welche Aussagen treffen zu?
 
-- A) Die Mindestwartezeit beträgt aufgrund des Arguments immer zehn Millisekunden.
-- B) Der Thread kann bereits nach etwa einer Millisekunde Ready werden.
-- C) Beim nächsten Tick muss der Thread unabhängig von höheren Ready-Tasks Running werden.
-- D) Die übliche aktive `HAL_Delay` setzt den Thread in denselben Kernel-Wartezustand.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 08: Mutex und Ereignissemaphor · 1 Punkt
-
-Es geht um CMSIS-RTOS2 im verwendeten FreeRTOS-Adapter. Handles sind gültig und die ISR-Priorität erlaubt Kernelaufrufe. Welche Aussagen treffen zu?
-
-- A) Ein Mutex-Acquire ist in einer ISR erlaubt, wenn der Timeout null ist.
-- B) Den erworbenen Mutex gibt im normalen Besitzvertrag sein Besitzerthread frei.
-- C) Ein ISR-zulässiges Semaphor-Release kann eine wartende Task Ready machen.
-- D) `volatile` macht eine Folge aus Laden, Ändern und Schreiben unteilbar.
+- A) Wegen $U=23\,\%$ hält EDF alle Fristen sicher ein.
+- B) Vor $t=4\,\mathrm{ms}$ werden 5 ms Arbeit gefordert; keine Auswahlregel hält beide ersten Fristen ein.
+- C) Beide Aufgaben haben beschränkte (constrained) Deadlines mit $D_i\le T_i$.
+- D) Die Liu-und-Layland-Schranke ist anwendbar und weist das Set nach, weil $U$ unter 82,84 % liegt.
 
 ```{=latex}
 \end{minipage}\par
@@ -183,33 +111,14 @@ Es geht um CMSIS-RTOS2 im verwendeten FreeRTOS-Adapter. Handles sind gültig und
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 09: Ressourcenabhängigkeiten · 1 Punkt
+### Frage 05: Was ein Test entscheidet · 1 Punkt
 
-Für feste Prioritäten gilt $H>M>L$. L hält einen von H benötigten Mutex. M greift nicht auf ihn zu. Welche Aussagen treffen zu?
+Drei unabhängige periodische Aufgaben auf einem Prozessor haben $D_i=T_i$, sichere Ausführungszeitschranken, vollständige Präemption und keine Sperren, Selbstsuspendierung oder Zusatzkosten. Es gilt $U=81\,\%$ und $U_{\mathrm{LL}}(3)\approx77{,}98\,\%$. Eine korrekt durchgeführte Antwortzeitanalyse mit RMS-Prioritäten liefert für alle drei Aufgaben Fixpunkte unterhalb ihrer Deadlines. Welche Aussagen treffen zu?
 
-- A) Prioritätsvererbung kann die Verdrängung des Halters L durch M verhindern.
-- B) Eine von allen eingehaltene globale Erwerbsordnung verhindert den gegenläufigen Lockzyklus.
-- C) Ein Timeout beim zweiten Lock gibt ein bereits gehaltenes erstes Lock nicht automatisch frei.
-- D) Prioritätsvererbung löst einen geschlossenen Ressourcenwartezyklus auf.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 10: Nachrichtenkopie und Pufferbesitz · 1 Punkt
-
-Eine FIFO-Queue kopiert beim erfolgreichen Put die vereinbarten Elementbytes. Welche Aussagen treffen zu?
-
-- A) Eine eingereihte Wertkopie mit zehn wird durch spätere Änderung der Senderkopie auf 99 nicht zu 99.
-- B) Beim Einreihen eines Pointers kopiert die Queue auch den vollständigen dahinterliegenden Bildpuffer.
-- C) Zwei Get-Consumer derselben Queue erhalten automatisch beide jede Nachricht.
-- D) Nach einem fehlgeschlagenen Pointer-Put bleibt der Producer für den Puffer verantwortlich.
+- A) Die Antwortzeitanalyse weist die Einplanbarkeit unter RMS in diesem Modell nach.
+- B) Die beiden Ergebnisse widersprechen sich, weil die Schranke überschritten ist.
+- C) Unter EDF ist das Set in diesem Modell ebenfalls einplanbar.
+- D) Die Liu-und-Layland-Schranke allein weist die Einplanbarkeit unter RMS nach.
 
 ```{=latex}
 \end{minipage}\par
@@ -221,33 +130,14 @@ Eine FIFO-Queue kopiert beim erfolgreichen Put die vereinbarten Elementbytes. We
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 11: Kernelaufruf aus einer ISR · 1 Punkt
+### Frage 06: Antwortzeitanalyse · 1 Punkt
 
-Die logische Kernelaufrufgrenze sei fünf, mit passender NVIC-Gruppierung. Kleinere IRQ-Zahlen sind dringlicher. Alle Handles sind gültig. Welche Aussagen treffen zu?
+Feste Prioritäten $\tau_1>\tau_2$ im Idealmodell: ein Prozessor, vollständige Präemption, synchrone erste Freigabe bei null, keine Zusatzkosten. $\tau_1$ hat $C_1=2$ und $T_1=D_1=5$, $\tau_2$ hat $C_2=4$ und $T_2=D_2=12$, alle Zeiten in ms. Es gilt $R_2^{(0)}=C_2$ und $R_2^{(k+1)}=C_2+\lceil R_2^{(k)}/T_1\rceil C_1$. Welche Aussagen treffen zu?
 
-- A) IRQ-Priorität drei darf wegen ihrer höheren Dringlichkeit Queue-Put aufrufen.
-- B) IRQ-Priorität sieben darf einen CMSIS-Mutex mit Timeout null erwerben.
-- C) IRQ-Priorität sieben darf ein ISR-zulässiges Queue-Put mit Timeout null versuchen.
-- D) Ein erfolgreicher Put lässt den Worker noch innerhalb der laufenden ISR Threadcode ausführen.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 12: Pollingserver und ungenutztes Budget · 1 Punkt
-
-Ein Pollingserver prüft bei 0, 10, 20 ms und so weiter eine aperiodische Warteschlange. An jedem Prüfzeitpunkt erhält er höchstens 2 ms CPU-Budget. Ist die Schlange dann leer, verfällt dieses Budget bis zum nächsten Prüfzeitpunkt. Bei 0 ms ist sie leer. Bei 1 ms kommt genau ein Auftrag mit 1 ms eigener CPU-Arbeit an. Die CPU ist sonst frei, Zusatzkosten sind null. Welche Aussagen treffen zu?
-
-- A) Der Auftrag startet wegen der freien CPU sofort bei 1 ms.
-- B) Der Auftrag kann bei 10 ms starten und bei 11 ms enden.
-- C) Seine Antwortzeit beträgt unter diesen Annahmen 1 ms.
-- D) Das bei 0 ms verfallene Budget wird nicht zu einem zusätzlichen Vorrat bei 10 ms.
+- A) Die Iteration lautet $4\to6\to8\to8$ ms.
+- B) $R_2=8\,\mathrm{ms}$ setzt sich aus 4 ms eigener Arbeit und 4 ms Verdrängung durch $\tau_1$ zusammen.
+- C) $\tau_2$ hält seine Frist im Modell ein.
+- D) Für ein Fenster von genau 10 ms gilt $\lceil10/5\rceil=2$ Freigaben von $\tau_1$, weil die Freigabe bei 10 ms nicht mehr im halboffenen Fenster $[0,10)$ liegt.
 
 ```{=latex}
 \end{minipage}\par
@@ -259,33 +149,14 @@ Ein Pollingserver prüft bei 0, 10, 20 ms und so weiter eine aperiodische Wartes
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 13: CPU-Budget und Antwortzeit · 1 Punkt
+### Frage 07: Auswahl unter EDF · 1 Punkt
 
-Ein Server besitzt 2 ms CPU-Budget ohne Erneuerung im betrachteten Abschnitt. Ein Auftrag wird bei 3 ms freigegeben und läuft nur von 5 bis 6 ms sowie von 8 bis 8,5 ms; dort endet er. Nur seine eigene Ausführung verbraucht das genannte Budget, kein anderer Auftrag nutzt es. Welche Aussagen treffen zu?
+Präemptives Earliest Deadline First (EDF) auf einem Prozessor, keine Zusatzkosten. Bei $t=6\,\mathrm{ms}$ läuft Job A mit absoluter Deadline 11 ms und noch 2 ms Restarbeit. Ebenfalls bei 6 ms wird Job B mit $C=1\,\mathrm{ms}$ und relativer Deadline 4 ms freigegeben. Weitere Jobs treffen nicht ein. Welche Aussagen treffen zu?
 
-- A) Nach dem Abschluss bleiben 0,5 ms Budget übrig.
-- B) Die Antwortzeit des Auftrags beträgt 1,5 ms.
-- C) Alle Wartezeiten ab der Freigabe verbrauchen ebenfalls dieses CPU-Budget.
-- D) Die Budgetgrenze allein garantiert keine Abschlussfrist ab Freigabe.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 14: Grundidee des Sporadic-Servers · 1 Punkt
-
-Ein Sporadic-Server bedient aperiodische Aufträge mit begrenztem CPU-Budget und einer vereinbarten Serverperiode. Betrachten Sie die Grundidee ohne zusätzliche Hintergrundausführung: Verbrauchte Budgetanteile werden verbrauchsbezogen nach der Serverperiode erneuert. Höher priorisierte Arbeit darf den Server verdrängen. Welche Aussagen treffen zu?
-
-- A) Die Erneuerung ist an den vorausgegangenen Budgetverbrauch gekoppelt.
-- B) Jede neu eintreffende Anfrage füllt das Budget sofort vollständig auf.
-- C) Ohne Restbudget darf der Server bis zu einer Erneuerung keine weitere budgetierte CPU-Arbeit ausführen.
-- D) Eine Budgeterneuerung garantiert zugleich den sofortigen Abschluss aller wartenden Aufträge.
+- A) Unter EDF erhält stets die Aufgabe mit der kürzeren Periode Vorrang.
+- B) B verdrängt A, weil seine absolute Deadline von 10 ms früher liegt.
+- C) Hätte B eine relative Deadline von 6 ms, würde er A ebenfalls verdrängen.
+- D) A wird bei 9 ms fertig und hält seine Deadline ein.
 
 ```{=latex}
 \end{minipage}\par
@@ -297,33 +168,14 @@ Ein Sporadic-Server bedient aperiodische Aufträge mit begrenztem CPU-Budget und
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 15: Kernrollen auf dem H755 · 1 Punkt
+### Frage 08: Threadzustände nach einem Interrupt · 1 Punkt
 
-Cortex-M7 führt eine Bare-Metal-Hauptschleife aus, Cortex-M4 einen eigenen FreeRTOS-Kernel. Welche Aussagen treffen zu?
+Ein präemptiver FreeRTOS-Kernel mit festen Prioritäten läuft auf einem Kern. Thread E (hoch) wartet mit `osThreadFlagsWait` auf Bit 0, Thread R (mittel) wartet mit `osDelay`, Thread B (niedrig) läuft. Eine ISR mit zulässiger Priorität setzt mit gültigem Handle Bit 0 für E. Welche Aussagen treffen zu?
 
-- A) Die beschriebene Rollenaufteilung ist ein AMP-Modell.
-- B) Ein M4-Queue-Handle wird durch Ablage in SRAM4 zu einem direkt nutzbaren M7-Kernelobjekt.
-- C) Ein lokaler M4-Mutex sperrt automatisch jeden konkurrierenden M7-Zugriff.
-- D) Die getrennten Firmwarekontexte schließen Interferenz über gemeinsam genutzte Busse aus.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 16: Cache-Sichtbarkeit · 1 Punkt
-
-M7 verwendet Write Back; M4 greift auf SRAM zu. Beide verändern verschiedene Wörter derselben M7-Cachezeile. Welche Aussagen treffen zu?
-
-- A) Ein volatile-Load verwirft vor dem Lesen automatisch die lokale Cachekopie.
-- B) DMB kann Zugriffe ordnen, ohne Dirty-Daten automatisch in SRAM zurückzuschreiben.
-- C) Clean einer alten Dirty-Zeile kann ein inzwischen von M4 verändertes Nachbarwort überschreiben.
-- D) Wortausrichtung allein isoliert die beiden Schreibbereiche für Cachewartung voneinander.
+- A) Ein Aufruf von `osThreadYield()` in B hätte E schon vor dem Interrupt den Prozessor verschafft.
+- B) Setzt die ISR Bit 0 zweimal, bevor E es annimmt, erhält E zwei getrennte Hinweise.
+- C) Durch das Setzen wird E Ready; Running wird E erst nach dem Ende der ISR.
+- D) Nach der ISR erhält E den Prozessor vor B, sofern R weiterhin wartet.
 
 ```{=latex}
 \end{minipage}\par
@@ -335,33 +187,14 @@ M7 verwendet Write Back; M4 greift auf SRAM zu. Beide verändern verschiedene W�
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 17: MPU-Grenzen · 1 Punkt
+### Frage 09: Relative Pause und Sollraster · 1 Punkt
 
-Es geht um die aktive Armv7-M-MPU des M7. Passende Regionen sind aktiviert; Sonderzustände wie NMI sind nicht betrachtet. Welche Aussagen treffen zu?
+Der Kernel-Tick beträgt 1000 Hz. Ein Thread soll alle 20 ms eine Aktion starten; die ersten drei Aktionen dauern 3, 5 und 2 ms. Der erste Start liegt bei 0, alle Aktionsenden liegen auf Tickgrenzen, und der Thread wird beim Ready-Werden sofort zugeteilt. Welche Aussagen treffen zu?
 
-- A) Bei überlappenden passenden Regionen hat die höhere Regionsnummer Vorrang.
-- B) Das Shareable-Bit erzeugt auf dem H755 einen automatischen M7/M4-Cacheabgleich.
-- C) Die M7-MPU prüft automatisch auch DMA- und M4-Zugriffe auf SRAM4.
-- D) Eine wirksame No-Access-Region gilt auch für einen gewöhnlichen privilegierten M7-Interrupt-Handler.
-
-```{=latex}
-\end{minipage}\par
-\medskip
-```
-
-```{=latex}
-\par\noindent\begin{minipage}{\linewidth}
-\renewcommand{\labelitemi}{\(\square\)}
-```
-
-### Frage 18: Tracequellen und Datenqualität · 1 Punkt
-
-Ein Team plant eine Timing-Untersuchung mit CoreSight. Welche Aussagen treffen zu?
-
-- A) ITM-Softwaremarker können den untersuchten Ablauf durch zusätzliche Arbeit beeinflussen.
-- B) Eine ETM-Kontrollflussrekonstruktion benötigt das zum Lauf passende Maschinenbild.
-- C) Ein Debuggerhalt während der Aufnahme verändert die Bedingungen des beobachteten Laufs.
-- D) Ein verlorener Traceabschnitt darf ohne weitere Evidenz nicht als bekannte Zeitfolge interpoliert werden.
+- A) Mit „Aktion, dann `osDelay(20)`“ beginnen die ersten vier Aktionen bei 0, 23, 48 und 70 ms.
+- B) Mit einem absoluten 20-Tick-Sollraster über `osDelayUntil` beginnen sie bei 0, 20, 40 und 60 ms.
+- C) Mit der üblichen aktiv wartenden `HAL_Delay` wird der Thread während des Wartens nicht Blocked und verbraucht zugeteilte CPU-Zeit.
+- D) `osDelay(1)` blockiert bei 1000 Hz unabhängig vom Aufrufzeitpunkt genau 1 ms.
 
 ```{=latex}
 \end{minipage}\par
@@ -373,14 +206,14 @@ Ein Team plant eine Timing-Untersuchung mit CoreSight. Welche Aussagen treffen z
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 19: Ein lokales Zählerfenster · 1 Punkt
+### Frage 10: Ein Thread kommt nie an die Reihe · 1 Punkt
 
-Ein vorzeichenloser 32-Bit-Zykluszähler läuft kontinuierlich bei 400 MHz. Das Intervall ist bestätigt kürzer als ein Umlauf. Anfang ist `0xFFFFFFF0`, Ende `0x00000030`. Welche Aussagen treffen zu?
+Feste Prioritäten auf einem Kern. Thread Diagnose (hoch) rechnet dauernd ohne Warteaufruf und ruft regelmäßig `osThreadYield()` auf. Thread Anzeige (niedrig) ist Ready. Die beiden Threads nutzen keine gemeinsame Ressource. Welche Aussagen treffen zu?
 
-- A) Die Modulo-Differenz beträgt 64 Takte.
-- B) Das beobachtete Intervall entspricht $0{,}16\,\text{µs}$.
-- C) Bei einem zwischen den Lesungen weiterlaufenden Zähler kann Interruptarbeit im Intervall enthalten sein.
-- D) Ein einzelnes solches Intervall beweist die WCET der umschlossenen Funktion.
+- A) Es liegt eine Prioritätsinversion vor.
+- B) Die Anzeige kann verhungern (Starvation).
+- C) `osThreadYield()` macht Diagnose Blocked und gibt damit der Anzeige Prozessorzeit.
+- D) Ein blockierender Warteaufruf in Diagnose, etwa auf neue Daten, kann der Anzeige Prozessorzeit verschaffen.
 
 ```{=latex}
 \end{minipage}\par
@@ -392,14 +225,185 @@ Ein vorzeichenloser 32-Bit-Zykluszähler läuft kontinuierlich bei 400 MHz. Das 
 \renewcommand{\labelitemi}{\(\square\)}
 ```
 
-### Frage 20: Fortschritt sowie Daten- und Zeitvertrag · 1 Punkt
+### Frage 11: Ein gemeinsamer Lagerbestand · 1 Punkt
 
-Ein System hat zwei erforderliche Worker und einen Monitor. Jeder Worker erhöht seine Fortschrittsnummer erst nach dem vereinbarten vollständig abgeschlossenen Verarbeitungsschritt. Der Monitor soll ausbleibenden frischen Fortschritt erkennen. Eine getrennte Datenbilanz zählt angenommene und abgeschlossene Aufträge. Welche Aussagen treffen zu?
+Zwei Threads führen auf einem Kern je einmal `stock = stock - 1;` auf einer gemeinsamen Variablen mit Startwert 10 aus. Maschinenmodell: Laden, Ändern, Speichern; ein Kontextwechsel ist nach jedem Befehl möglich. Welche Aussagen treffen zu?
 
-- A) Wiederholtes Lesen derselben Fortschrittsnummer belegt keinen neuen abgeschlossenen Schritt.
-- B) Regelmäßige Ausführung der Idle-Task belegt den frischen Fortschritt beider Worker.
-- C) Eine Abschlussfrist benötigt passende Zeitmarken derselben Anforderung und einen verlässlichen Zeitbezug.
-- D) Eine korrekte finale Datenbilanz beweist zugleich die Einhaltung sämtlicher Abschlussfristen.
+- A) Der Endwert 9 ist möglich.
+- B) Deklariert man `stock` als `volatile`, kann kein Update mehr verloren gehen.
+- C) Es genügt, jeweils nur den Speicherbefehl zu schützen.
+- D) Schützen beide Threads ihr gesamtes Laden–Ändern–Speichern mit demselben Mutex, ist der Endwert 8.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 12: Mutex, Semaphor und ISR · 1 Punkt
+
+Es gilt CMSIS-RTOS2 über FreeRTOS wie im Kurs. Alle Handles sind gültig, die ISR-Priorität erlaubt Kernelaufrufe. Welche Aussagen treffen zu?
+
+- A) Ein leer angelegter binärer Semaphor speichert nach drei Releases ohne Acquire drei ausstehende Ereignisse.
+- B) Ein Zähl-Semaphor für drei Puffer gibt an, wie viele Puffer frei sind, aber nicht welche.
+- C) Eine ISR darf `osSemaphoreRelease` aufrufen, aber keinen Mutex erwerben.
+- D) Ein Mutex darf im normalen Besitzvertrag auch von einem anderen Thread als seinem Besitzer freigegeben werden.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 13: Zwei Mutexe, zwei Reihenfolgen · 1 Punkt
+
+Thread T1 erwirbt zuerst Mutex X und dann Mutex Y; Thread T2 erwirbt zuerst Y und dann X. Beide Erwerbsaufrufe warten unbegrenzt. Welche Aussagen treffen zu?
+
+- A) Ein Ablauf mit geschlossenem Wartezyklus ist möglich.
+- B) Prioritätsvererbung löst diesen Wartezyklus auf.
+- C) Erwerben beide Threads stets zuerst X und dann Y, kann dieser Zyklus nicht entstehen.
+- D) Ein Timeout beim zweiten Erwerb gibt den bereits gehaltenen ersten Mutex automatisch frei.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 14: Prioritätsinversion rechnen · 1 Punkt
+
+Ein Kern, feste Prioritäten $H>M>L$, vollständige Präemption, Wechsel- und API-Kosten null, einmalige Jobs. L erwirbt bei 0 ms einen Mutex und benötigt 3 ms CPU bis zu dessen Freigabe; danach ist L fertig. H wird bei 1 ms freigegeben, fordert sofort denselben Mutex an und benötigt nach dem Erwerb 2 ms. M wird bei 2 ms freigegeben und benötigt 5 ms ohne Mutex. Welche Aussagen treffen zu?
+
+- A) Ohne Prioritätsvererbung ist H bei 10 ms fertig.
+- B) Mit Prioritätsvererbung beträgt die Antwortzeit von H 4 ms.
+- C) Mit Prioritätsvererbung läuft M erst nach der Freigabe des Mutex durch L.
+- D) Prioritätsvererbung verkürzt die verbleibende geschützte Arbeit von L.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 15: Eine kleine Wertqueue · 1 Punkt
+
+Eine anfangs leere FIFO-Wertqueue hat zwei Plätze. Nacheinander erfolgen Put 4, Put 7, Put 9, Get, Put 11, Get; alle Aufrufe stammen aus Threads und verwenden Timeout 0. Welche Aussagen treffen zu?
+
+- A) Ein erfolgreicher Put 4 bedeutet, dass der Consumer den Wert bereits verarbeitet hat.
+- B) Am Ende enthält die Queue die Werte 9 und 11.
+- C) Put 9 liefert `osErrorResource` und verändert die Queue nicht.
+- D) Die beiden Gets liefern 4 und 7.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 16: Zeiger, Pufferbesitz und jüngster Zustand · 1 Punkt
+
+Eine Queue überträgt Zeiger auf Messpuffer. Der Producer befüllt Puffer P und reiht dessen Adresse ein. Welche Aussagen treffen zu?
+
+- A) Nach erfolgreichem Put darf der Producer P erst wieder befüllen, wenn der Consumer P zurückgegeben hat.
+- B) Die Queue kopiert beim Put den vollständigen Inhalt von P.
+- C) Unabhängig von P: Eine Wertqueue der Länge eins, in die ein Sensor-Thread mit Timeout 0 schreibt, liefert einem selten lesenden Display stets den jüngsten Messwert.
+- D) Scheitert der Put, bleibt der Producer für P verantwortlich.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 17: Kernelaufruf aus einer ISR · 1 Punkt
+
+Vier NVIC-Prioritätsbits mit passender Gruppierung; die logische Kernelaufrufgrenze ist 6, kleinere Zahlen bedeuten höhere Dringlichkeit. Es gilt CMSIS-RTOS2 im verwendeten FreeRTOS-Adapter mit gültigen Handles. Welche Aussagen treffen zu?
+
+- A) Ein IRQ mit logischer Priorität 4 darf `osMessageQueuePut` mit Timeout 0 aufrufen, weil er dringlicher ist.
+- B) Ein IRQ mit logischer Priorität 9 darf `osMessageQueuePut` mit Timeout 0 versuchen; das Ergebnis kann trotzdem `osErrorResource` sein.
+- C) Ein IRQ mit logischer Priorität 9 darf `osMessageQueuePut` mit Timeout 10 aufrufen, um auf einen freien Platz zu warten.
+- D) Ein Worker-Thread mit `osPriorityHigh` macht eine unzulässige IRQ-Priorität zulässig.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 18: Deferrable Server an der Periodengrenze · 1 Punkt
+
+Ein Deferrable Server hat $Q=2\,\mathrm{ms}$ und $T=10\,\mathrm{ms}$; sein Budget wird bei 0, 10, 20 ms … auf $Q$ gesetzt. Bis 8 ms gab es keine Aufträge. Auftrag X kommt bei 8 ms mit 4 ms eigenem Bedarf an. Es gibt keine anderen Aufgaben und keine Zusatzkosten. Welche Aussagen treffen zu?
+
+- A) X läuft ohne Unterbrechung von 8 bis 12 ms.
+- B) Im Intervall $[8,12)$ erhält der Server 4 ms CPU-Zeit, obwohl $Q/T=20\,\%$ beträgt.
+- C) Hätte der Server bei 10 ms noch 1 ms Restbudget, stünden nach der Grenze 3 ms bereit.
+- D) Ein Polling Server mit gleichem $Q$ und $T$ und Gelegenheiten bei 0, 10, 20 ms … hätte X erst bei 22 ms abgeschlossen.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 19: Polling Server im Fristnachweis · 1 Punkt
+
+Ein Polling Server mit $Q=1\,\mathrm{ms}$ und $T=5\,\mathrm{ms}$ wird in eine Antwortzeitanalyse mit festen Prioritäten aufgenommen; es gelten die Idealannahmen der Vorlesung. Welche Aussagen treffen zu?
+
+- A) Die Server-Antwortzeit $R_S$ aus der Analyse ist zugleich die Antwortzeit jedes Auftrags in seiner Queue.
+- B) Für den Nachweis wird der Server als periodische Aufgabe mit $C_S=Q$ und $T_S=T$ gerechnet, also so, als nutze er jede Gelegenheit voll.
+- C) Sein nominaler Budgetanteil beträgt $Q/T=20\,\%$.
+- D) Ein FreeRTOS-Thread, der je Runde höchstens zwei Aufträge bearbeitet und dann `osDelay(5)` aufruft, setzt dieses CPU-Budget bereits durch.
+
+```{=latex}
+\end{minipage}\par
+\medskip
+```
+
+```{=latex}
+\par\noindent\begin{minipage}{\linewidth}
+\renewcommand{\labelitemi}{\(\square\)}
+```
+
+### Frage 20: Dauerhafte Überlast am Server · 1 Punkt
+
+Ein Server stellt $Q=1\,\mathrm{ms}$ je $T=5\,\mathrm{ms}$ bereit; jedes Budget kann vollständig genutzt werden. Jeder Auftrag benötigt genau 0,25 ms CPU-Zeit. Langfristig treffen 1000 Aufträge pro Sekunde ein. Welche Aussagen treffen zu?
+
+- A) Eine doppelt so große Queue verhindert dauerhaft jeden Auftragsverlust.
+- B) Der Budgetanteil von 20 % garantiert, dass jeder angenommene Auftrag binnen 5 ms fertig wird.
+- C) Der Server kann langfristig höchstens 800 Aufträge pro Sekunde bedienen.
+- D) Ohne Annahme- oder Verwerfungsregel wächst der Rückstand im Mittel um 200 Aufträge pro Sekunde.
 
 ```{=latex}
 \end{minipage}\par
@@ -416,158 +420,158 @@ Ein Punkt wird ausschließlich für die vollständige richtige Kombination verge
 
 | Frage | Richtig | Frage | Richtig |
 |---|---|---|---|
-| 01 | A, C | 11 | C |
-| 02 | D | 12 | B, D |
-| 03 | A, D | 13 | A, D |
-| 04 | B, C | 14 | A, C |
-| 05 | A, B, C, D | 15 | A |
-| 06 | A, C | 16 | B, C |
-| 07 | B | 17 | A, D |
-| 08 | B, C | 18 | A, B, C, D |
-| 09 | A, B, C | 19 | A, B, C |
-| 10 | A, D | 20 | A, C |
+| 01 | B, D | 11 | A, D |
+| 02 | A, C | 12 | B, C |
+| 03 | A, D | 13 | A, C |
+| 04 | B, C | 14 | A, B, C |
+| 05 | A, C | 15 | C, D |
+| 06 | A, B, C, D | 16 | A, D |
+| 07 | B, D | 17 | B |
+| 08 | C, D | 18 | A, B, D |
+| 09 | A, B, C | 19 | B, C |
+| 10 | B, D | 20 | C, D |
 
 ### Begründungen zu allen Optionen
 
-**Frage 01 · Vorlesung 1 · richtig: A, C**
+**Frage 01 · Vorlesung 1 · richtig: B, D**
 
-- A) Richtig: Für den Stellauftrag ist kein Fristfehler erlaubt.
-- B) Falsch: Der genannte Restnutzen beschreibt Soft-Echtzeit, nicht Hard-Echtzeit.
-- C) Richtig: Verspätete Bilder haben keinen Nutzen; benannte Ausfälle sind erlaubt.
-- D) Falsch: Auch eine Latenz ohne Schwankung kann zu groß sein.
+- A) Falsch: Die absolute Deadline ist $d=r+D=4+6=10\,\mathrm{ms}$; der Abschluss bei 10,2 ms liegt danach.
+- B) Richtig: Verspätete Werte sind wertlos, eine begrenzte Zahl von Ausfällen ist ausdrücklich zugelassen.
+- C) Falsch: Restnutzen nach der Frist beschreibt eine weiche Anforderung. Die Klasse folgt aus den Folgen einer Fristverletzung, nicht aus der bloßen Existenz einer Frist.
+- D) Richtig: Echtzeitkorrektheit verlangt richtige Funktion und Rechtzeitigkeit.
 
-**Frage 02 · Vorlesung 1 · richtig: D**
+**Frage 02 · Vorlesung 1 · richtig: A, C**
 
-- A) Falsch: Alle genannten Abfragen sehen Low; es fehlt ein gespeicherter Hinweis.
-- B) Falsch: Die Compiler-Zugriffskonvention verändert keine elektrische Pulsdauer.
-- C) Falsch: Die verlorene Erfassung wird durch kürzere spätere Arbeit nicht repariert.
-- D) Richtig: Ein Latch hält einen Hinweis; seine Kapazität ist trotzdem begrenzt.
+- A) Richtig: $15-12=3\,\text{µs}$.
+- B) Falsch: Ein beobachtetes Maximum ist keine begründete Schranke für alle zugelassenen Eingaben, Pfade und Störungen.
+- C) Richtig: Eine Frist muss für jeden zugelassenen Fall gelten; der Mittelwert $(12+15+12+14)/4=13{,}25\,\text{µs}$ sagt darüber nichts.
+- D) Falsch: Kleiner Jitter ist keine kleine Latenz; 30 µs überschreiten 20 µs in jedem Fall.
 
-**Frage 03 · Vorlesung 2 · richtig: A, D**
+**Frage 03 · Vorlesung 1 · richtig: A, D**
 
-- A) Richtig: $C=(4-2)+(7-6)=3\,\mathrm{ms}$.
-- B) Falsch: $R=f-r=7-1=6\,\mathrm{ms}$ einschließlich Wartezeit.
-- C) Falsch: $d=r+D=1+7=8\,\mathrm{ms}$.
-- D) Richtig: $f=7\,\mathrm{ms}\le d=8\,\mathrm{ms}$.
+- A) Richtig: $0{,}2+0{,}3+3{,}5=4{,}0\,\mathrm{ms}$.
+- B) Falsch: Die Erfassung ist früh, die Bearbeitung hängt weiterhin von der Hauptschleife ab. Ohne Grenze für deren Startverzug fehlt der Abschlussnachweis.
+- C) Falsch: Ein reiner Pegelpoll kann einen Puls zwischen zwei Abfragen vollständig verlieren.
+- D) Richtig: $4{,}0+0{,}3=4{,}3\,\mathrm{ms}$ nach dem angegebenen konservativen Modell.
 
 **Frage 04 · Vorlesung 2 · richtig: B, C**
 
-- A) Falsch: Die hinreichende RMS-Schranke lässt oberhalb ihres Wertes die Entscheidung offen.
-- B) Richtig: Ein genauerer Test kann auch ein Set oberhalb der hinreichenden Schranke nachweisen.
-- C) Richtig: Hier gelten die Voraussetzungen des EDF-Tests und $U\le1$.
-- D) Falsch: Auswahlregel und Präemptionsmodell des Aufrufrings sind andere.
+- A) Falsch: Der einfache EDF-Test $U\le1$ ist nur für $D_i=T_i$ exakt; hier ist das Set sogar unmöglich.
+- B) Richtig: $3+2=5\,\mathrm{ms}$ Arbeit passen auf einem Prozessor nicht in die ersten 4 ms.
+- C) Richtig: $D_i=4\le T_i$ für beide Aufgaben.
+- D) Falsch: Die klassische RMS-Schranke setzt $D_i=T_i$ voraus.
 
-**Frage 05 · Vorlesung 2 · richtig: A, B, C, D**
+**Frage 05 · Vorlesung 2 · richtig: A, C**
 
-- A) Richtig: EDF ordnet nach den absoluten Deadlines der bereiten Jobs.
-- B) Richtig: Die angegebenen Voraussetzungen begrenzen genau den einfachen Test.
-- C) Richtig: Das Scheitern einer Auswahlregel ist kein allgemeiner Unmöglichkeitsbeweis.
-- D) Richtig: Zusätzliche Arbeit muss in einem passenden realen Modell berücksichtigt werden.
+- A) Richtig: Die Antwortzeitanalyse ist im angegebenen Modell für feste Prioritäten genauer als die Schranke.
+- B) Falsch: Die Schranke ist nur hinreichend; oberhalb bleibt sie unentschieden.
+- C) Richtig: Mit $D_i=T_i$ und $U\le1$ gilt der exakte EDF-Test.
+- D) Falsch: $81\,\%>77{,}98\,\%$; die Schranke entscheidet nicht.
 
-**Frage 06 · Vorlesung 3 · richtig: A, C**
+**Frage 06 · Vorlesung 2 · richtig: A, B, C, D**
 
-- A) Richtig: Der Thread kann seine Ausführung nach Warten oder Verdrängung fortsetzen.
-- B) Falsch: Im präemptiven Modell ist eine solche Rückkehr keine Voraussetzung.
-- C) Richtig: Ready bedeutet noch keine tatsächliche Prozessorzuteilung.
-- D) Falsch: Yield fordert Auswahl an, entfernt den Aufrufer aber nicht aus der Ready-Menge.
+- A) Richtig: $4+\lceil4/5\rceil2=6$, $4+\lceil6/5\rceil2=8$, $4+\lceil8/5\rceil2=8$.
+- B) Richtig: Zwei Jobs von $\tau_1$ liegen im Fenster $[0,8)$, also $2\cdot2=4\,\mathrm{ms}$ Verdrängung.
+- C) Richtig: $8\le12\,\mathrm{ms}$.
+- D) Richtig: Freigaben bei 0 und 5 ms liegen in $[0,10)$, die bei 10 ms nicht.
 
-**Frage 07 · Vorlesung 3 · richtig: B**
+**Frage 07 · Vorlesung 2 · richtig: B, D**
 
-- A) Falsch: Die Restzeit bis zur nächsten Tickgrenze kann kleiner als die Tickperiode sein.
-- B) Richtig: Im angegebenen Fall liegt diese Grenze nur eine Millisekunde entfernt.
-- C) Falsch: Ready-Werden und Auswahl sind verschiedene Schritte.
-- D) Falsch: Die übliche aktive HAL-Wartefunktion blockiert den Thread nicht im Kernel.
+- A) Falsch: Das ist die feste RMS-Regel; EDF vergleicht absolute Jobdeadlines.
+- B) Richtig: $d_B=6+4=10<11\,\mathrm{ms}$.
+- C) Falsch: $d_B=12>11\,\mathrm{ms}$; A liefe weiter.
+- D) Richtig: B läuft von 6 bis 7, A von 7 bis 9 ms; $9\le11$.
 
-**Frage 08 · Vorlesung 4 · richtig: B, C**
+**Frage 08 · Vorlesung 3 und 5 · richtig: C, D**
 
-- A) Falsch: Mutexfunktionen sind auch mit Timeout null nicht ISR-zulässig.
-- B) Richtig: Der Mutex hat Ownership; fremdes Release ist keine gewöhnliche Freigabe.
-- C) Richtig: Der Semaphor hat kein Mutex-Ownership und kann passend signalisieren.
-- D) Falsch: volatile ersetzt keine Synchronisation der gesamten Operation.
+- A) Falsch: E ist vor dem Interrupt Blocked und nimmt nicht an der Auswahl teil.
+- B) Falsch: Ein bereits gesetztes Bit bleibt gesetzt; es zählt keine Wiederholungen.
+- C) Richtig: Ready heißt ausführungsbereit; der Wechsel zu E erfolgt erst nach dem Ende der ISR.
+- D) Richtig: E ist dann der höchstpriorisierte bereite Thread.
 
-**Frage 09 · Vorlesung 4 · richtig: A, B, C**
+**Frage 09 · Vorlesung 3 · richtig: A, B, C**
 
-- A) Richtig: L kann im einfachen Fall vorübergehend Hs effektive Priorität erhalten.
-- B) Richtig: Einheitliche Ordnung unterbindet den beschriebenen Zyklus.
-- C) Richtig: Der Abbruchpfad muss eigenen Besitz und teilweise Änderungen behandeln.
-- D) Falsch: Höhere Halterpriorität beseitigt die gegenseitigen Ressourcenabhängigkeiten nicht.
+- A) Richtig: $3+20=23$, $23+5+20=48$, $48+2+20=70\,\mathrm{ms}$; Arbeitsdauern verschieben jeden folgenden Start.
+- B) Richtig: Das absolute Sollraster hängt nicht von den Arbeitsdauern ab, solange kein Ziel verpasst wird und die Zuteilung sofort erfolgt.
+- C) Richtig: Die übliche HAL-Wartefunktion wartet aktiv und blockiert den Thread nicht im Kernel.
+- D) Falsch: Die Wartezeit hängt von der Tickphase ab und kann deutlich kürzer als eine Tickperiode sein.
 
-**Frage 10 · Vorlesung 5 · richtig: A, D**
+**Frage 10 · Vorlesung 3 · richtig: B, D**
 
-- A) Richtig: Die Wertbytes wurden bereits kopiert.
-- B) Falsch: Der Pointervertrag kopiert die Adresse; Daten und Lebensdauer bleiben extern.
-- C) Falsch: Get verteilt Elemente; ein einzelnes Element wird nur einmal entnommen.
-- D) Richtig: Ohne erfolgreiche Übergabe ist der Besitz nicht auf den Consumer übergegangen.
+- A) Falsch: Ohne gemeinsame Ressource wartet kein höherer Thread auf einen niedrigeren Besitzer.
+- B) Richtig: Die dauerbereite höhere Priorität kann die Anzeige dauerhaft ausschließen.
+- C) Falsch: Yield fordert eine neue Auswahl an, Diagnose bleibt Ready und wird erneut gewählt.
+- D) Richtig: Ist Diagnose Blocked, wird die Anzeige höchster bereiter Thread.
 
-**Frage 11 · Vorlesung 5 · richtig: C**
+**Frage 11 · Vorlesung 4 · richtig: A, D**
 
-- A) Falsch: Die dringlichere Priorität drei liegt außerhalb des erlaubten Kernelbereichs.
-- B) Falsch: Die passende Priorität macht eine verbotene Mutexfunktion nicht zulässig.
-- C) Richtig: Funktion, nicht wartender Parameter und IRQ-Priorität passen; die Queue kann trotzdem voll sein.
-- D) Falsch: Ready bedeutet nicht Running im noch aktiven ISR-Kontext.
+- A) Richtig: Beide laden 10, beide speichern 9; ein Update geht verloren.
+- B) Falsch: `volatile` macht die Folge aus Laden, Ändern und Speichern nicht unteilbar.
+- C) Falsch: Der Konflikt entsteht bereits durch das veraltete Laden; das gesamte Lesen–Ändern–Schreiben gehört in den kritischen Abschnitt.
+- D) Richtig: Der gegenseitige Ausschluss ordnet beide Änderungen nacheinander: $10\to9\to8$.
 
-**Frage 12 · Vorlesung 6 · richtig: B, D**
+**Frage 12 · Vorlesung 4 · richtig: B, C**
 
-- A) Falsch: Nach einer leeren Prüfung verfällt das Budget; der Server prüft erst bei 10 ms erneut.
-- B) Richtig: Bei 10 ms ist der Auftrag vorhanden; 1 ms Arbeit passt in das neue Budget von 2 ms und endet bei 11 ms.
-- C) Falsch: Die Antwortzeit reicht von Freigabe bis Abschluss: $11-1=10\,\mathrm{ms}$. Eine Millisekunde ist hier die eigene CPU-Arbeit.
-- D) Richtig: Ungenutztes Budget wird im angegebenen Pollingmodell nicht angespart.
+- A) Falsch: Das Maximum ist eins; das zweite und dritte Release scheitern an der Kapazität.
+- B) Richtig: Der Zähler kennt die Anzahl verfügbarer Berechtigungen, keine Pufferadressen.
+- C) Richtig: Semaphor-Release ist ISR-zulässig, Mutexfunktionen sind es nicht.
+- D) Falsch: Der Mutex speichert seinen Besitzer; nur dieser gibt ihn regulär frei.
 
-**Frage 13 · Vorlesung 6 · richtig: A, D**
+**Frage 13 · Vorlesung 4 · richtig: A, C**
 
-- A) Richtig: Die eigene Ausführung verbraucht $(6-5)+(8{,}5-8)=1{,}5\,\mathrm{ms}$; von 2 ms bleiben 0,5 ms übrig.
-- B) Falsch: $R=8{,}5-3=5{,}5\,\mathrm{ms}$ einschließlich Anfangswarten und Verdrängung.
-- C) Falsch: Nach dem angegebenen Vertrag wird eigene CPU-Ausführung belastet; Warten verbraucht dieses Budget nicht.
-- D) Richtig: Verfügbares Ausführungsbudget begrenzt die CPU-Arbeit, nicht automatisch die gesamte Verzögerung ab Freigabe.
+- A) Richtig: T1 hält X und wartet auf Y, T2 hält Y und wartet auf X.
+- B) Falsch: Höhere wirksame Priorität beseitigt die gegenseitige Ressourcenabhängigkeit nicht.
+- C) Richtig: Eine einheitliche Erwerbsordnung verhindert die zirkuläre Wartebedingung.
+- D) Falsch: Der Fehlerpfad muss den gehaltenen Mutex selbst freigeben und begonnene Änderungen behandeln.
 
-**Frage 14 · Vorlesung 6 · richtig: A, C**
+**Frage 14 · Vorlesung 4 · richtig: A, B, C**
 
-- A) Richtig: Die verbrauchsbezogene Erneuerung ist die hier betrachtete Grundidee des Sporadic-Servers.
-- B) Falsch: Eine Ankunft ist keine Budgeterneuerung; sonst wäre die zugesagte Begrenzung nicht gewahrt.
-- C) Richtig: Ohne Restbudget muss der budgetierte Serveranteil auf eine zulässige Erneuerung warten.
-- D) Falsch: Erneuertes Budget erlaubt Ausführung; höher priorisierte Arbeit und die verbleibende Auftragsarbeit können den Abschluss weiterhin verzögern.
+- A) Richtig: Ohne Vererbung L $[0,2)$, M $[2,7)$, L $[7,8)$, H $[8,10)$.
+- B) Richtig: Mit Vererbung L $[0,3)$, H $[3,5)$, M $[5,10)$; $R_H=5-1=4\,\mathrm{ms}$.
+- C) Richtig: Ab 1 ms läuft L mit der wirksamen Priorität von H; M startet erst bei 5 ms.
+- D) Falsch: Die Restarbeit von L bleibt gleich; nur die Reihenfolge ändert sich.
 
-**Frage 15 · Vorlesung 7 · richtig: A**
+**Frage 15 · Vorlesung 5 · richtig: C, D**
 
-- A) Richtig: AMP bedeutet hier getrennte Firmware-/Betriebssystemkontexte.
-- B) Falsch: Der Handle und seine Wartelisten gehören zur lokalen Kernelverwaltung.
-- C) Falsch: Der Bare-Metal-Partner nimmt nicht automatisch an dieser lokalen Sperrregel teil.
-- D) Falsch: Die Kerne teilen weiterhin Hardwarewege und benötigen ein Interferenzmodell.
+- A) Falsch: Ein erfolgreicher Put bedeutet nur, dass eine Kopie eingereiht wurde.
+- B) Falsch: Put 9 wurde verworfen. Nach Get (4) und Put 11 liefert das zweite Get 7; übrig bleibt 11.
+- C) Richtig: Die Queue ist voll; der neue Wert bleibt draußen.
+- D) Richtig: FIFO-Reihenfolge der erfolgreich eingereihten Werte.
 
-**Frage 16 · Vorlesung 7 · richtig: B, C**
+**Frage 16 · Vorlesung 5 · richtig: A, D**
 
-- A) Falsch: volatile betrifft den Compilerzugriff, nicht die automatische Invalidierung.
-- B) Richtig: Reihenfolge und Cachewartung sind verschiedene Aufgaben.
-- C) Richtig: Clean betrifft die ganze Zeile einschließlich der alten Nachbarbytes.
-- D) Falsch: Der Besitzvertrag muss die vollständigen betroffenen Cachezeilen berücksichtigen.
+- A) Richtig: Die Queue überträgt nur die Adresse; der Puffer ist bis zur Rückgabe beim Consumer.
+- B) Falsch: Kopiert werden die vereinbarten Elementbytes, hier der Zeiger.
+- C) Falsch: Bei voller Queue der Länge eins scheitert Try-Put; der älteste Wert bleibt. Für den jüngsten Zustand braucht es einen Latest-Value-Vertrag.
+- D) Richtig: Ohne erfolgreiche Übergabe ist der Besitz nicht übergegangen.
 
-**Frage 17 · Vorlesung 7 · richtig: A, D**
+**Frage 17 · Vorlesung 5 · richtig: B**
 
-- A) Richtig: Die höher nummerierte passende Region bestimmt die wirksamen Attribute.
-- B) Falsch: Shareable ist hier keine automatische Cache-Kohärenzfunktion.
-- C) Falsch: Die MPU kontrolliert Zugriffe ihres eigenen Kerns.
-- D) Richtig: Privilegierung setzt die Rechte einer tatsächlich passenden No-Access-Region nicht außer Kraft.
+- A) Falsch: Priorität 4 ist dringlicher als die Grenze 6 und darf keine Kernelfunktionen aufrufen.
+- B) Richtig: Funktion, nicht wartender Parameter und Priorität passen; die Queue kann trotzdem voll sein.
+- C) Falsch: Aus einer ISR ist bei Queue-Put nur Timeout 0 zulässig.
+- D) Falsch: Thread- und Interruptprioritäten sind getrennte Skalen.
 
-**Frage 18 · Vorlesung 8 · richtig: A, B, C, D**
+**Frage 18 · Vorlesung 6 · richtig: A, B, D**
 
-- A) Richtig: Ein Softwaremarker hat eigene Aufruf-/Transportkosten und mögliche Rückwirkungen.
-- B) Richtig: Die Zuordnung der Kontrollflussdaten benötigt die tatsächlich ausgeführten Instruktionen.
-- C) Richtig: Halt, Freeze und Gegenstellenfortschritt beeinflussen den Messvertrag.
-- D) Richtig: Eine Lücke wird markiert; erst bestätigte neue Synchronisation erlaubt separate Auswertung.
+- A) Richtig: Von 8 bis 10 ms verbraucht X das alte Budget, ab 10 ms das neu gesetzte.
+- B) Richtig: Altes und neues Budget folgen direkt aufeinander; dieser Effekt verhindert eine naive periodische Analyse.
+- C) Falsch: Das Budget wird an der Grenze auf $Q=2\,\mathrm{ms}$ gesetzt, nicht aufaddiert.
+- D) Richtig: Bei 0 ms ist die Queue leer, das Budget verfällt. X läuft von 10 bis 12 und von 20 bis 22 ms.
 
-**Frage 19 · Vorlesung 8 · richtig: A, B, C**
+**Frage 19 · Vorlesung 6 · richtig: B, C**
 
-- A) Richtig: Sechzehn Takte bis zum Umlauf und achtundvierzig danach ergeben 64.
-- B) Richtig: $64/(400\cdot10^6)\,\mathrm{s}=0{,}16\,\text{µs}$.
-- C) Richtig: Der Zähler misst das lokale verstrichene Fenster, nicht ausschließlich eigene Funktionsarbeit.
-- D) Falsch: Ein beobachtetes Fenster ist kein allgemeiner Worst-Case-Nachweis.
+- A) Falsch: $R_S$ gilt für eine volle Bediengelegenheit. Ein Auftrag kann zusätzlich auf eine Gelegenheit warten oder mehrere benötigen.
+- B) Richtig: Diese konservative Annahme deckt kürzere oder leere Gelegenheiten ab.
+- C) Richtig: $1/5=0{,}2$.
+- D) Falsch: Eine Anzahlgrenze je Runde misst und begrenzt keine eigene CPU-Zeit.
 
-**Frage 20 · Vorlesung 9 · richtig: A, C**
+**Frage 20 · Vorlesung 6 · richtig: C, D**
 
-- A) Richtig: Der unveränderte Stand ist keine neue Ausführung des vereinbarten abgeschlossenen Schritts.
-- B) Falsch: Idle-Aktivität betrifft einen anderen Pfad und belegt keinen neuen Abschluss eines erforderlichen Workers.
-- C) Richtig: Freigabe und geforderter Abschluss derselben Anforderung müssen mit einem passenden gemeinsamen oder bestätigten Zeitbezug erfasst werden.
-- D) Falsch: Eine Datenbilanz beschreibt die gezählten Übergänge. Ihre zeitlichen Abstände und die Einhaltung von Fristen brauchen eigene Nachweise.
+- A) Falsch: Eine größere Queue verschiebt bei dauerhafter Überlast nur den Zeitpunkt des ersten Verlusts.
+- B) Falsch: Der Budgetanteil begrenzt die Server-CPU-Zeit; Wartezeiten bis zur Bedienung sind damit nicht begrenzt.
+- C) Richtig: $1\,\mathrm{ms}/0{,}25\,\mathrm{ms}=4$ Aufträge je 5 ms, also $800\,\mathrm{s}^{-1}$.
+- D) Richtig: $1000-800=200$ Aufträge pro Sekunde.
 
 :::
 
@@ -575,32 +579,35 @@ Ein Punkt wird ausschließlich für die vollständige richtige Kombination verge
 
 ## Teil B: Papieraufgaben · 40 Punkte · etwa 40 Minuten
 
-Zeigen Sie Rechenwege, beschriften Sie Zeitachsen und nennen Sie Einheiten. Verwenden Sie bei Bedarf zusätzliches Papier. In diesem Teil werden die angegebenen Teilpunkte vergeben; nachvollziehbare richtige Zwischenschritte können Punkte erhalten. Derselbe fortgeführte Rechenfehler wird nicht in jedem Folgeschritt erneut abgezogen. Alle Zahlen sind Lehrannahmen.
+Zeigen Sie Rechenwege, beschriften Sie Zeitachsen und nennen Sie Einheiten. Zeitintervalle sind halboffen, etwa $[2,5)$. In diesem Teil werden die angegebenen Teilpunkte vergeben; nachvollziehbare richtige Zwischenschritte können Punkte erhalten. Derselbe fortgeführte Rechenfehler wird nicht in jedem Folgeschritt erneut abgezogen.
 
 ```{=latex}
 \par\noindent\begin{minipage}{\linewidth}
 ```
 
-### B1: RMS und Antwortzeitanalyse · 10 Punkte · etwa 10 Minuten
+### B1: RMS, EDF und Antwortzeitanalyse · 10 Punkte · etwa 10 Minuten
 
-Zwei unabhängige periodische Aufgaben laufen auf genau einem Prozessor. Alle Jobs sind vollständig präemptierbar; es gibt keine Sperren, Selbstsuspendierung, Freigabejitter oder zusätzlichen Interrupt-/Wechselkosten. Die vorgegebenen $C_i$ sind sichere obere eigene Ausführungszeiten. Es gilt $D_i=T_i$; beide Aufgaben werden erstmals bei null freigegeben.
+Drei unabhängige periodische Aufgaben einer Prüfstation laufen auf genau einem Prozessor. Alle Jobs sind vollständig präemptierbar; es gibt keine Sperren, Selbstsuspendierung, Freigabejitter oder Zusatzkosten. Die $C_i$ sind sichere obere Schranken der eigenen Ausführungszeit. Es gilt $D_i=T_i$; alle Aufgaben werden erstmals bei null freigegeben.
 
 | Aufgabe | $C_i$ in ms | $T_i=D_i$ in ms |
 |---|---:|---:|
-| $\tau_1$ | 2 | 5 |
-| $\tau_2$ | 3 | 6 |
+| Messen $\tau_1$ | 1 | 4 |
+| Regeln $\tau_2$ | 2 | 6 |
+| Protokollieren $\tau_3$ | 3 | 12 |
 
-**B1.1 (3 Punkte):** Berechnen Sie $U$ und vergeben Sie die festen RMS-Prioritäten mit Begründung.
+**B1.1 (2 Punkte):** Berechnen Sie $U$ und vergeben Sie die festen RMS-Prioritäten mit Begründung.
 
-**B1.2 (2 Punkte):** Die Liu-und-Layland-Schranke für zwei Aufgaben beträgt etwa 82,84 %. Was ergibt ihr Vergleich mit Ihrem $U$? Unterscheiden Sie „nicht nachgewiesen“ von „Fristverletzung bewiesen“.
+**B1.2 (2 Punkte):** Vergleichen Sie $U$ mit $U_{\mathrm{LL}}(3)\approx77{,}98\,\%$. Was folgt daraus für RMS? Was folgt unter denselben Annahmen für EDF?
 
-**B1.3 (5 Punkte):** Prüfen Sie anschließend beide Aufgaben mit der Antwortzeitanalyse:
+**B1.3 (4 Punkte):** Bestimmen Sie die Antwortzeiten aller drei Aufgaben unter RMS mit
 
 $$R_i^{(0)}=C_i,\qquad
 R_i^{(k+1)}=C_i+\sum_{j\in hp(i)}
 \left\lceil\frac{R_i^{(k)}}{T_j}\right\rceil C_j.$$
 
-$hp(i)$ bezeichnet die höher priorisierten Aufgaben; $\lceil x\rceil$ rundet auf. Iterieren Sie bis zum Fixpunkt oder einer Deadlineüberschreitung. Zeigen Sie alle Iterationswerte, prüfen Sie jede Frist und erläutern Sie die Zählung bei einem Fenster von genau 5 ms. Zeitintervalle sind halboffen; Abschluss auf der Deadline ist zulässig.
+$hp(i)$ bezeichnet die höher priorisierten Aufgaben; $\lceil x\rceil$ rundet auf. Iterieren Sie bis zum Fixpunkt oder einer Deadlineüberschreitung. Zeigen Sie alle Iterationswerte und prüfen Sie jede Frist. Abschluss auf der Deadline ist zulässig.
+
+**B1.4 (2 Punkte):** Ein späterer Messlauf zeigt für einen Job von $\tau_3$ einmal 3,4 ms eigene Ausführungszeit. Was bedeutet das für Ihren Nachweis aus B1.3, und was ist zu tun? Eine neue Rechnung ist nicht verlangt.
 
 ```{=latex}
 \end{minipage}\par
@@ -610,42 +617,63 @@ $hp(i)$ bezeichnet die höher priorisierten Aufgaben; $\lceil x\rceil$ rundet au
 ::: {.content-visible when-profile="solution"}
 **Musterlösung B1 und Bewertung**
 
-B1.1: $U=2/5+3/6=0{,}4+0{,}5=0{,}9=90\,\%$ (1 P für Ansatz, 1 P für Ergebnis). RMS: $\tau_1>\tau_2$, weil 5 ms die kürzere Periode ist (1 P).
+B1.1: $U=\frac14+\frac26+\frac3{12}=\frac{3+4+3}{12}=\frac56\approx83{,}3\,\%$ (1 P). RMS: $\tau_1>\tau_2>\tau_3$, weil die kürzere Periode den höheren festen Rang erhält (1 P).
 
-B1.2: $90\,\%>82{,}84\,\%$ (1 P). Die hinreichende Schranke liefert keinen Nachweis; daraus folgt noch kein bewiesener Miss (1 P).
+B1.2: $83{,}3\,\%>77{,}98\,\%$: Die hinreichende Schranke entscheidet nicht; daraus folgt weder Erfolg noch Fristverletzung (1 P). EDF: Mit $D_i=T_i$, einem Prozessor und $U\le1$ ist das Set im Idealmodell unter EDF einplanbar; der Test ist hier exakt (1 P).
 
-B1.3: $R_1=2\,\mathrm{ms}\le5\,\mathrm{ms}$ (1 P). Für $\tau_2$:
+B1.3: $R_1=1\,\mathrm{ms}\le4\,\mathrm{ms}$. Für $\tau_2$ (1 P):
 
-$$R_2^{(0)}=3,\qquad
-R_2^{(1)}=3+\left\lceil\frac35\right\rceil2=5,\qquad
-R_2^{(2)}=3+\left\lceil\frac55\right\rceil2=5\quad[\mathrm{ms}].$$
+$$R_2^{(0)}=2,\quad R_2^{(1)}=2+\left\lceil\tfrac24\right\rceil1=3,\quad R_2^{(2)}=2+\left\lceil\tfrac34\right\rceil1=3\quad[\mathrm{ms}].$$
 
-Korrekte Iteration mit Fixpunkt 5 ms (2 P). $R_2=5\,\mathrm{ms}\le6\,\mathrm{ms}$; beide Aufgaben halten im Modell ihre Fristen (1 P). Bei genau 5 ms liegt die nächste höhere Freigabe am ausgeschlossenen rechten Rand. Der bereits dort abgeschlossene Job wird von ihr nicht rückwirkend verzögert; $\lceil5/5\rceil=1$ (1 P). Die Schrankenüberschreitung und der erfolgreiche genauere Nachweis widersprechen sich nicht.
+Für $\tau_3$ mit beiden Störern (2 P für die vollständige richtige Folge):
+
+| $R_3^{(k)}$ | $\lceil R/4\rceil\cdot1$ | $\lceil R/6\rceil\cdot2$ | $R_3^{(k+1)}$ |
+|---:|---:|---:|---:|
+| 3 | 1 | 2 | 6 |
+| 6 | 2 | 2 | 7 |
+| 7 | 2 | 4 | 9 |
+| 9 | 3 | 4 | 10 |
+| 10 | 3 | 4 | 10 |
+
+Fristen: $1\le4$, $3\le6$, $10\le12\,\mathrm{ms}$. Unter RMS ist das Set im Modell nachgewiesen (1 P). Die überschrittene Schranke und der erfolgreiche genauere Nachweis widersprechen sich nicht.
+
+B1.4: Der Nachweis setzt $C_3=3\,\mathrm{ms}$ als sichere obere Schranke voraus. Der beobachtete Wert widerlegt diese Annahme; der Nachweis aus B1.3 gilt damit nicht mehr (1 P). Es ist eine begründete neue obere Schranke festzulegen und die Analyse damit zu wiederholen. Auch 3,4 ms sind nur ein Messmaximum und noch keine WCET (1 P). Hinweis für Lehrende: Mit einer begründeten Schranke von 3,4 ms ergäbe sich $3{,}4\to6{,}4\to9{,}4\to10{,}4\to10{,}4\,\mathrm{ms}\le12\,\mathrm{ms}$.
 :::
 
 ```{=latex}
 \par\noindent\begin{minipage}{\linewidth}
 ```
 
-### B2: Prioritätsinversion auf der Zeitachse · 10 Punkte · etwa 10 Minuten
+### B2: Ereignis, Mutex und Prioritätsinversion · 10 Punkte · etwa 10 Minuten
 
-Ein Prozessor, feste Prioritäten $H>M>L$, einmalige Jobs, vollständige Präemption, null Wechsel- und API-Kosten. L erwirbt bei null den einzigen betrachteten Schutz; der erfolglose Anforderungsversuch von H kostet keine eigene CPU-Zeit. L hält keine weiteren Schlösser und wartet nicht auf Geräte.
+Ein Kern, präemptiver Kernel mit festen Prioritäten $A>R>L$. Wechsel-, ISR- und API-Kosten sind null; ein erfolgloser Erwerbsversuch kostet keine CPU-Zeit. Jeder Thread bearbeitet im betrachteten Abschnitt genau einen Job.
 
-| Job | Freigabe | Eigene Arbeit |
-|---|---:|---|
-| L | 0 ms | insgesamt 4 ms bis zur Schutzfreigabe, danach fertig |
-| H | 1 ms | fordert denselben Schutz, nach Erwerb 1 ms Arbeit |
-| M | 2 ms | 6 ms Arbeit, ohne Zugriff auf den Schutz |
+| Thread | Verhalten |
+|---|---|
+| L (Logger, niedrig) | ab 0 ms bereit; erwirbt sofort den Mutex S; benötigt 3 ms CPU bis zur Freigabe von S; danach fertig |
+| R (Regler, mittel) | Job bei 1 ms freigegeben; 4 ms CPU ohne S; relative Deadline $D_R=10\,\mathrm{ms}$ |
+| A (Alarm, hoch) | wartet mit `osThreadFlagsWait`; eine ISR setzt das Flag bei 2 ms; A fordert dann sofort S an und benötigt nach dem Erwerb 1 ms CPU; relative Deadline $D_A=4\,\mathrm{ms}$ ab dem Setzen des Flags |
 
-Für H gilt die relative Deadline $D_H=6\,\mathrm{ms}$.
+**B2.1 (4 Punkte):** Zeichnen Sie die CPU-Belegung im Intervall $[0,9)\,\mathrm{ms}$ einmal für einen Mutex S ohne und einmal mit Prioritätsvererbung. Beschriften Sie alle Intervalle.
 
-**B2.1 (4 Punkte):** Zeichnen Sie die CPU-Belegung bis 11 ms einmal ohne und einmal mit Prioritätsvererbung des Schutzes. Beschriften Sie alle Intervalle.
+**B2.2 (2 Punkte):** Geben Sie für beide Varianten die Zustände Ready, Running oder Blocked von A, R und L bei $t=3\,\mathrm{ms}$ an. Nennen Sie bei Blocked die Wartebedingung.
 
-**B2.2 (4 Punkte):** Berechnen Sie für beide Varianten Hs Lockwartezeit und Antwortzeit sowie seine absolute Deadline. Beurteilen Sie die Frist.
+**B2.3 (2 Punkte):** Berechnen Sie für A in beiden Varianten die Wartezeit auf S von der Anforderung bis zum Erwerb und die Antwortzeit ab dem Setzen des Flags. Prüfen Sie seine Frist. Prüfen Sie außerdem die Frist von R in der Variante mit Vererbung.
 
-**B2.3 (2 Punkte):** Welche Verzögerung entfernt die Vererbung, welche bleibt? Warum ist dies unter den angegebenen Voraussetzungen kein Deadlock?
+**B2.4 (2 Punkte):** Begründen Sie, warum R auch mit Vererbung von 1 bis 2 ms vor L läuft. Ein Kollege ersetzt S durch einen binären Semaphor mit Anfangswert 1. Welche Ihrer beiden Zeitachsen gilt dann und warum?
 
 ```{=latex}
+\begin{center}
+\begin{tikzpicture}[x=1.15cm,y=0.75cm,font=\small]
+\foreach \row/\name in {0/{mit Vererbung},1.2/{ohne Vererbung}} {
+  \node[anchor=east] at (-0.15,\row+0.4) {\name};
+  \foreach \x in {1,...,8} \draw[rasterlinie!45] (\x,\row) -- (\x,\row+0.8);
+  \draw[rasterlinie] (0,\row) rectangle (9,\row+0.8);
+}
+\foreach \x in {0,...,9} \node[below] at (\x,0) {\x};
+\node[below] at (4.5,-0.45) {$t$ in ms};
+\end{tikzpicture}
+\end{center}
 \end{minipage}\par
 \medskip
 ```
@@ -657,43 +685,58 @@ Ohne Vererbung:
 
 | Intervall in ms | CPU |
 |---|---|
-| $[0,2)$ | L; Hs erfolgloser dauerloser Versuch bei 1 |
-| $[2,8)$ | M |
-| $[8,10)$ | L |
-| $[10,11)$ | H |
+| $[0,1)$ | L erwirbt S und arbeitet |
+| $[1,5)$ | R verdrängt L; bei 2 ms wird A Ready, fordert S an und wird Blocked |
+| $[5,7)$ | L beendet den geschützten Abschnitt und gibt S bei 7 ms frei |
+| $[7,8)$ | A erwirbt S und arbeitet |
+| $[8,9)$ | Leerlauf |
 
 Mit Vererbung:
 
 | Intervall in ms | CPU |
 |---|---|
-| $[0,4)$ | L, von 1 bis 4 mit Hs effektiver Priorität |
-| $[4,5)$ | H |
-| $[5,11)$ | M |
+| $[0,1)$ | L erwirbt S und arbeitet |
+| $[1,2)$ | R verdrängt L |
+| $[2,4)$ | A wartet auf S; L läuft mit der wirksamen Priorität von A und gibt S bei 4 ms frei |
+| $[4,5)$ | A |
+| $[5,8)$ | R setzt seine Restarbeit von 3 ms fort |
+| $[8,9)$ | Leerlauf |
 
-B2.1: je 2 P pro vollständiger richtiger Zeitachse; je 1 P davon für die richtige Auswahlfolge, 1 P für die Intervallgrenzen. Tabellen mit denselben beschrifteten Intervallen sind gleichwertig.
+B2.1: je 2 P pro vollständiger richtiger Zeitachse, davon je 1 P für die Auswahlfolge und 1 P für Intervallgrenzen und Beschriftung. In beiden Varianten werden $3+4+1=8\,\mathrm{ms}$ gearbeitet.
 
-B2.2: Lockwarten ohne $10-1=9\,\mathrm{ms}$, mit $4-1=3\,\mathrm{ms}$ (1 P für beide). Antwortzeit ohne $11-1=10\,\mathrm{ms}$, mit $5-1=4\,\mathrm{ms}$ (1 P für beide). Absolute Deadline $d_H=1+6=7\,\mathrm{ms}$ (1 P). Ohne Vererbung verletzt, mit Vererbung erfüllt (1 P für beide begründeten Vergleiche).
+B2.2 (je Variante 1 P): Ohne Vererbung ist R Running, A Blocked am Mutex S und L Ready. L hält S weiterhin. Mit Vererbung ist L Running mit der wirksamen Priorität von A, A Blocked am Mutex S und R Ready.
 
-B2.3: Entfernt wird Ms Verdrängung des Halters vor H; Ls drei Millisekunden verbleibende geschützte Arbeit bleiben (1 P). L kann bei Zuteilung weiterarbeiten, es gibt keinen Ressourcenwartezyklus (1 P). In beiden Fällen wird insgesamt $4+1+6=11\,\mathrm{ms}$ gearbeitet; die Reihenfolge ändert Hs Antwort.
+B2.3: Ohne Vererbung wartet A $7-2=5\,\mathrm{ms}$ auf S; $R_A=8-2=6\,\mathrm{ms}>4\,\mathrm{ms}$. Die absolute Deadline $d_A=2+4=6\,\mathrm{ms}$ wird um 2 ms verfehlt. Mit Vererbung wartet A $4-2=2\,\mathrm{ms}$; $R_A=5-2=3\,\mathrm{ms}\le4\,\mathrm{ms}$ (1 P für die Werte beider Varianten). R endet mit Vererbung bei 8 ms: $R_R=8-1=7\,\mathrm{ms}\le10\,\mathrm{ms}$, $d_R=11\,\mathrm{ms}$ eingehalten. Für die Fristbewertungen von A und R gibt es zusammen 1 P.
+
+B2.4: Die Anhebung beginnt erst, wenn A bei 2 ms auf S wartet. Vorher hat L seine eigene niedrige Priorität, R verdrängt L also regulär (1 P). Ein Semaphor führt keinen Besitzer, deshalb gibt es keine Prioritätsvererbung. Es gilt die Zeitachse ohne Vererbung, und A verfehlt seine Frist (1 P).
 :::
+
+\newpage
 
 ```{=latex}
 \par\noindent\begin{minipage}{\linewidth}
 ```
 
-### B3: Queue, Mailbox und Sichtbarkeit · 10 Punkte · etwa 10 Minuten
+### B3: Queue, Pufferbesitz und ISR-Übergabe · 10 Punkte · etwa 10 Minuten
 
-**B3.1 (3 Punkte):** Eine anfangs leere FIFO-Wertqueue hat drei nutzbare Plätze. Nacheinander erfolgen Put 10, Put 20, Put 30, Put 40, Get, Get. Alle Aufrufe haben Timeout null; ein voller Put verwirft den neuen Wert ohne Queueänderung. Nennen Sie den verworfenen Wert, beide entnommenen Werte und die logische Restfolge mit Belegung.
+**B3.1 (4 Punkte):** Eine FIFO-Wertqueue mit vier Plätzen startet leer. Ein Producer bietet bei 1, 2, …, 12 ms je eine Nachricht an, deren Wert dem Zeitpunkt in ms entspricht. Er verwendet Try-Put mit Timeout 0; bei voller Queue wird die neue Nachricht verworfen. Ein Consumer entnimmt bei 3, 6, 9 und 12 ms je eine Nachricht. Bei gleichem Zeitpunkt gilt zuerst Get, dann Put; API-Zeiten sind null.
 
-**B3.2 (4 Punkte):** Ein anderer, konsistenter finaler Prüfpunkt einer Ereigniskette hat $I=12$ Eingaben, $D_q=3$ volle-Queue-Drops und keine technischen Putfehler. Die Queue ist leer, nichts ist in Bearbeitung und kein Worker verwirft nach Entnahme. M7 hat $S=5$ verschiedene publizierte Stände kopiert, darunter den letzten; $U=0$ ungelesene aktuelle Stände. Es gibt keinen Zählerüberlauf. Berechnen Sie Annahmen $A$, Publikationen $P$ und ungelesene Ersetzungen $O$. Schreiben Sie die drei Bilanzen mit Zahlen aus:
+1. Bestimmen Sie den ersten und alle weiteren verworfenen Werte (1 Punkt).
+2. Geben Sie die vier entnommenen Werte und den Queueinhalt nach 12 ms an (1 Punkt).
+3. Prüfen Sie mit $N_{\mathrm{ang}}$ Angeboten, $N_{\mathrm{ok}}$ erfolgreichen Puts, $N_{\mathrm{drop}}$ Verwürfen, $N_{\mathrm{get}}$ Entnahmen und $N_{\mathrm{rest}}$ verbliebenen Nachrichten die Bilanzen $N_{\mathrm{ang}}=N_{\mathrm{ok}}+N_{\mathrm{drop}}$ und $N_{\mathrm{ok}}=N_{\mathrm{get}}+N_{\mathrm{rest}}$ (1 Punkt).
+4. Bestimmen Sie Ankunfts- und Entnahmerate. Würde eine Queue mit acht Plätzen bei dauerhaft gleichen Raten Verluste verhindern? (1 Punkt)
 
-$$I=A+D_q+E_{\mathrm{put}},\qquad
-A=Q+F+P+D_{\mathrm{task}},\qquad
-P=S+O+U.$$
+**B3.2 (3 Punkte):** Eine zweite Queue hat vier Pointer-Slots zu je 4 Byte. Sie überträgt die Adressen von genau drei Messpuffern P0, P1 und P2 zu je 2 KiB. Momentan bearbeitet der Consumer P0; die Adressen von P1 und P2 sind eingereiht.
 
-$E_{\mathrm{put}}$ sind technische Putfehler, $Q$ Queue-Rest, $F$ in Bearbeitung und $D_{\mathrm{task}}$ Worker-Verwürfe.
+1. Berechnen Sie den Nutzspeicher der Slots und der Messpuffer getrennt (1 Punkt).
+2. Zwei Slots sind frei. Kann der Producer sofort eine neue Messung in einen eigenen Puffer schreiben? Begründen Sie mit dem Pufferbesitz (1 Punkt).
+3. Wer ist nach einem fehlgeschlagenen Pointer-Put für den Puffer verantwortlich, und wann darf ein erfolgreich eingereihter Puffer wieder befüllt werden? (1 Punkt)
 
-**B3.3 (3 Punkte):** In einem getrennten Sichtbarkeitsfall hält M7 neue Nutzdaten nur in einer Dirty-Write-Back-Cachekopie; SRAM enthält alte Daten. M4 liest SRAM. HSEM serialisiert die Zugriffe, DMB wird ausgeführt. Garantiert dies schon den neuen M4-Wert? Nennen Sie eine passende Cache-/Speicherstrategie und erläutern Sie, welche Besitz- und Reihenfolgeregel auch damit nötig bleibt.
+**B3.3 (3 Punkte):** Eine gemeinsame Modelluhr in µs liefert: Ereignis bei 0, ISR-Eintritt bei 4, Worker Ready durch ein Queue-Put in der ISR bei 9, ISR-Ende bei 11, Workerstart bei 15, Abschluss der Reaktion bei 27. Die relative Deadline beträgt 25 µs.
+
+1. Berechnen Sie Eintrittslatenz, ISR-Dauer und die Wartezeit von Ready bis Workerstart (1 Punkt).
+2. Berechnen Sie die Gesamtantwortzeit und prüfen Sie die Frist (1 Punkt).
+3. Warum dürfen ISR-Dauer und Ready-Wartezeit nicht einfach addiert werden? Geben Sie eine disjunkte Zerlegung der Gesamtantwortzeit an (1 Punkt).
 
 ```{=latex}
 \end{minipage}\par
@@ -703,32 +746,76 @@ $E_{\mathrm{put}}$ sind technische Putfehler, $Q$ Queue-Rest, $F$ in Bearbeitung
 ::: {.content-visible when-profile="solution"}
 **Musterlösung B3 und Bewertung**
 
-B3.1: Put 40 wird verworfen (1 P). Get liefert 10, danach 20 (1 P). Restfolge `[30]`, Belegung eins (1 P).
+B3.1: Belegung nach allen Operationen eines Zeitpunkts:
 
-B3.2: $A=12-3=9$ (1 P), $P=9$ (1 P), $O=9-5=4$ (1 P). Bilanzen $12=9+3+0$, $9=0+0+9+0$, $9=5+4+0$ (1 P für die drei konsistenten Gleichungen). Wiederholtes Lesen desselben Stands erhöht $S$ nicht.
+| $t$ in ms | Operationen | Queue danach |
+|---:|---|---|
+| 1, 2 | Put 1, Put 2 | `[1, 2]` |
+| 3 | Get → 1, Put 3 | `[2, 3]` |
+| 4, 5 | Put 4, Put 5 | `[2, 3, 4, 5]`, voll |
+| 6 | Get → 2, Put 6 | `[3, 4, 5, 6]` |
+| 7, 8 | Put 7 und Put 8 verworfen | unverändert |
+| 9 | Get → 3, Put 9 | `[4, 5, 6, 9]` |
+| 10, 11 | Put 10 und Put 11 verworfen | unverändert |
+| 12 | Get → 4, Put 12 | `[5, 6, 9, 12]` |
 
-B3.3: Nein. HSEM regelt Besitz und DMB die Ordnung; sie reinigen die Dirty-Zeile nicht automatisch (1 P). Beispielsweise ein tatsächlich wirksamer Normal-Non-Cacheable-Kanal mit vor Nutzung geprüfter MPU-/Startkonfiguration; alternativ ein vollständiger Clean-/Invalidate-Vertrag mit isolierten ganzen Cachezeilen (1 P). Auch dann exklusiven Besitz beziehungsweise Phasenbesitz einhalten, Nutzdaten vor Veröffentlichung des Zustands ordnen und nach bestätigtem Zustand vor dem Lesen eine passende Konsumbarriere verwenden (1 P). Nicht cachebar macht mehrteilige Updates nicht unteilbar.
+1. Erster Verwurf bei 7 ms; verworfen werden 7, 8, 10 und 11 (1 P).
+2. Entnommen werden 1, 2, 3 und 4; Rest `[5, 6, 9, 12]` mit Belegung vier (1 P).
+3. $12=8+4$ und $8=4+4$ (1 P).
+4. $\lambda=1000\,\mathrm{s}^{-1}$, $\mu=1/(3\,\mathrm{ms})\approx333\,\mathrm{s}^{-1}$. Bei $\lambda>\mu$ füllt sich jeder endliche Puffer; acht Plätze verschieben den ersten Verlust nur. Nötig sind eine höhere Bedienrate, eine begrenzte Quelle oder eine bewusste Überlastregel (1 P).
+
+B3.2:
+
+1. Slots $4\cdot4=16\,\mathrm{Byte}$; Puffer $3\cdot2\,\mathrm{KiB}=6\,\mathrm{KiB}$, ohne Kontrollblock und Verwaltung (1 P).
+2. Nein. Alle drei Puffer sind beim Consumer oder in der Queue. Freie Pointer-Slots sind keine freien Puffer; der Producer muss auf eine Rückgabe warten oder die Messung nach einer Überlastregel behandeln (1 P).
+3. Nach fehlgeschlagenem Put bleibt der Producer verantwortlich und muss den Puffer weiterverwenden oder zurückgeben. Ein eingereihter Puffer darf erst nach der Rückgabe durch den Consumer neu befüllt werden, etwa über eine Freiliste (1 P).
+
+B3.3:
+
+1. Eintrittslatenz $4-0=4\,\text{µs}$, ISR-Dauer $11-4=7\,\text{µs}$, Ready bis Start $15-9=6\,\text{µs}$ (1 P).
+2. $R=27-0=27\,\text{µs}>25\,\text{µs}$; die Frist wird um 2 µs verfehlt (1 P).
+3. ISR-Intervall und Ready-Warten überlappen von 9 bis 11 µs. Disjunkt: $4+7+4+12=27\,\text{µs}$ für Eintritt, ISR, Warten nach der ISR und Workerarbeit (1 P; gleichwertige disjunkte Zerlegungen gelten).
 :::
 
 ```{=latex}
 \par\noindent\begin{minipage}{\linewidth}
 ```
 
-### B4: Timing und Fehlerreaktion · 10 Punkte · etwa 10 Minuten
+### B4: Server-Verfahren · 10 Punkte · etwa 10 Minuten
 
-**B4.1 (4 Punkte):** Eine gemeinsame Modelluhr liefert: Ereignis bei 0 µs, ISR-Eintritt bei 2 µs, Worker Ready bei 5 µs, ISR-Ende bei 7 µs, Workerstart bei 10 µs, tatsächlicher Abschluss bei 14 µs. Die relative Deadline beträgt 12 µs. Berechnen Sie ISR-Dauer, Ready-bis-Running-Wartezeit und Gesamtantwortzeit und prüfen Sie die Frist. Warum dürfen Sie die vollständige ISR-Dauer und das Ready-Warten nicht zusätzlich zueinander auf die übrigen Zeitanteile aufsummieren?
+Ein Server mit $Q=2\,\mathrm{ms}$ und $T=5\,\mathrm{ms}$ bedient aperiodische Aufträge in FIFO-Reihenfolge. Das Anfangsbudget beträgt 2 ms, die Queue ist bei 0 ms leer. Es gibt keine anderen Aufgaben und keine Zusatzkosten. Ein Auftrag darf bei Budgetende unterbrochen und später fortgesetzt werden. Bei gleichen Zeitpunkten werden Ankünfte und fällige Auffüllungen vor der Auswahl berücksichtigt.
 
-**B4.2 (4 Punkte):** Frische- und Fehlerreaktionsmodell: Unmittelbar nach dem letzten vollständig bestätigten Fortschritt bei $t_0=0$ ms bleibt ein erforderlicher Worker stehen. Eine Fortschrittsnummer ändert sich danach nicht mehr. Der Monitor beurteilt bei jeder Freigabe einen konsistenten Stand auf derselben durchlaufenden Modelluhr. Ab Alter $\Theta=20$ ms gilt der Nachweis als veraltet. Monitorfreigaben liegen periodisch im Abstand $T_M=5$ ms; ihre Phase relativ zu $t_0$ ist beliebig. Nach einer Freigabe mit veraltetem Stand liegt die Fehlerentscheidung spätestens nach $R_M=2$ ms vor. Darin sind bereits alle Warte- und Ausführungsanteile des Monitors enthalten. Die anschließende Fehleraktion benötigt zusätzlich höchstens $T_A=3$ ms bis zum geforderten inaktiven Ausgang. Monitor, Uhr und Fehleraktion bleiben trotz des Workerfehlers funktionsfähig. Es gibt keinen Reset-/Bootumweg und keine weiteren Zeitanteile.
+| Auftrag | Ankunft | eigener Bedarf |
+|---|---:|---:|
+| A | 1 ms | 1 ms |
+| B | 4 ms | 2 ms |
 
-Verwenden Sie die konservative obere Schranke
+- Polling Server: Gelegenheiten bei 0, 5, 10 ms …; ist die Queue bei einer Gelegenheit leer, verfällt deren Budget; wird sie später leer, verfällt das Restbudget.
+- Deferrable Server: Das Budget wird bei 0, 5, 10 ms … auf $Q$ gesetzt; ungenutztes Budget bleibt bis dahin verfügbar.
+- Sporadic Server, Spezialfall der Vorlesung: Ein aktiver Abschnitt beginnt beim Serverstart $t_a$. Die bis zum Leerwerden oder zur Budgeterschöpfung verbrauchte Menge $q$ wird bei $t_a+T$ zurückgegeben. Es gibt keinen pauschalen Reset.
 
-$$L_{\max}=\Theta+T_M+R_M+T_A.$$
+**B4.1 (4 Punkte):** Zeichnen Sie für Polling und Deferrable Server die Serverausführung im Intervall $[0,12)$. Geben Sie Abschluss und Antwortzeit von A und B an.
 
-$L_{\max}$ ist die Fehlerreaktionsdauer ab $t_0$. Begründen Sie den Beitrag $T_M$ (1 Punkt), berechnen Sie $L_{\max}$ (1 Punkt), prüfen Sie eine geforderte obere Grenze von 28 ms (1 Punkt) und bestimmen Sie das größte zulässige $\Theta$ bei unveränderten übrigen Werten (1 Punkt).
+**B4.2 (3 Punkte):** Zeichnen Sie den Ablauf für den Sporadic Server. Geben Sie alle Rückgaben als (Zeitpunkt, Menge), das Budget unmittelbar nach dem Abschluss von B und die Antwortzeit von B an.
 
-**B4.3 (2 Punkte):** Ein Supervisor bedient den Hardware-Watchdog allein deshalb weiter, weil die Idle-Task regelmäßig läuft; die Fortschrittsnummer eines erforderlichen Workers bleibt unverändert. Warum genügt der Idle-Lauf nicht als Nachweis (1 Punkt)? Formulieren Sie eine verbesserte Freigaberegel, die frischen vollständigen Fortschritt aller erforderlichen Worker berücksichtigt und bei dessen Ausbleiben die vereinbarte Fehlerreaktion auslöst (1 Punkt).
+**B4.3 (3 Punkte):**
+
+1. Für B gilt eine relative Auftragsfrist von 3 ms. Welche Server halten sie in diesem Ablauf ein? (1 Punkt)
+2. Dauerhaft trifft alle 5 ms ein Auftrag mit 3 ms Bedarf ein. Hilft eine größere Queue? Nennen Sie eine geeignete Reaktion. (1 Punkt)
+3. Ihre Deferrable-Zeitachse zeigt bei B einen Effekt an der Grenze 5 ms. Erklären Sie, warum der Deferrable Server deshalb nicht ohne neue Analyse wie ein Polling Server mit $C_S=Q$ und $T_S=T$ in die Antwortzeitanalyse niedrigerer Aufgaben eingesetzt werden darf. (1 Punkt)
 
 ```{=latex}
+\begin{center}
+\begin{tikzpicture}[x=0.95cm,y=0.75cm,font=\small]
+\foreach \row/\name in {0/{Sporadic},1.2/{Deferrable},2.4/{Polling}} {
+  \node[anchor=east] at (-0.15,\row+0.4) {\name};
+  \foreach \x in {1,...,11} \draw[rasterlinie!45] (\x,\row) -- (\x,\row+0.8);
+  \draw[rasterlinie] (0,\row) rectangle (12,\row+0.8);
+}
+\foreach \x in {0,...,12} \node[below] at (\x,0) {\x};
+\node[below] at (6,-0.45) {$t$ in ms};
+\end{tikzpicture}
+\end{center}
 \end{minipage}\par
 \medskip
 ```
@@ -736,43 +823,72 @@ $L_{\max}$ ist die Fehlerreaktionsdauer ab $t_0$. Begründen Sie den Beitrag $T_
 ::: {.content-visible when-profile="solution"}
 **Musterlösung B4 und Bewertung**
 
-B4.1: ISR-Dauer $7-2=5\,\text{µs}$ (1 P); Ready-Warten $10-5=5\,\text{µs}$ (1 P). $R=14-0=14\,\text{µs}>12\,\text{µs}$, um 2 µs verletzt (1 P). Die Intervalle überlappen von 5 bis 7 µs. Eine disjunkte Zerlegung lautet $2+5+3+4=14\,\text{µs}$ für Eintritt, ISR, danach Warten und Workerarbeit (1 P für die Überlappungsbegründung; gleichwertige richtige Zerlegungen gelten).
+B4.1, Polling Server: Bei 0 ms ist die Queue leer, das Budget verfällt. Bei 5 ms warten A und B.
 
-B4.2: Die Frischegrenze kann unmittelbar nach einer Monitorfreigabe erreicht werden. Bis zur nächsten Freigabe vergehen deshalb im ungünstigsten Phasenfall bis zu $T_M=5$ ms. Der Betrag ist die zusätzliche Abtastwartezeit, keine weitere eigene Monitorarbeit (1 P).
+| Intervall in ms | Server | Budget danach |
+|---|---|---|
+| $[5,6)$ | A | 1 |
+| $[6,7)$ | B, erster Teil | 0 |
+| $[10,11)$ | B, Rest | 1, verfällt bei leerer Queue |
 
-$$L_{\max}=20+5+2+3=30\,\mathrm{ms}.$$
+A endet bei 6 ms, $R_A=5\,\mathrm{ms}$; B endet bei 11 ms, $R_B=7\,\mathrm{ms}$ (2 P).
 
-Ansatz und obere Dauer mit Einheit (1 P). Die geforderte obere Grenze von 28 ms wird durch diese Schranke nicht nachgewiesen; sie liegt 2 ms darunter. Ein ungünstiger, nach dem Modell zulässiger Verlauf kann die Forderung verletzen. Die Schranke behauptet nicht, dass jede Fehlerreaktion genau 30 ms dauert (1 P).
+Deferrable Server:
 
-Für einen Nachweis mit unveränderten übrigen Werten muss gelten
+| Intervall in ms | Server | Budget danach |
+|---|---|---|
+| $[1,2)$ | A | 1 |
+| $[4,5)$ | B mit altem Budget | 0 |
+| $[5,6)$ | B mit neu gesetztem Budget | 1 |
 
-$$\Theta+5+2+3\le28\,\mathrm{ms},\qquad\Theta\le18\,\mathrm{ms}.$$
+A endet bei 2 ms, $R_A=1\,\mathrm{ms}$; B endet bei 6 ms, $R_B=2\,\mathrm{ms}$ (2 P).
 
-Das größte zulässige Alter ist damit $\Theta=18$ ms (1 P). Eine reduzierte Frischegrenze muss im realen Entwurf außerdem mit dem zulässigen gesunden Workerfortschritt vereinbar sein; dieser ist hier nicht weiter vorgegeben.
+B4.2, Sporadic Server: A läuft $[1,2)$, daraus folgt die Rückgabe $(6,1)$. B läuft $[4,5)$ mit dem Restbudget 1; nach Erschöpfung folgt $(9,1)$. Bei 6 ms kehrt 1 ms zurück, B läuft $[6,7)$; daraus folgt $(11,1)$ (1 P für Intervalle, 1 P für die Liste). Unmittelbar nach dem Abschluss von B bei 7 ms ist das Budget 0, vorgemerkt sind $(9,1)$ und $(11,1)$. $R_B=7-4=3\,\mathrm{ms}$ (1 P).
 
-B4.3: Regelmäßige Idle-Ausführung belegt nur diesen Pfad. Ein erforderlicher Worker kann trotzdem feststehen; wiederholtes Lesen seiner unveränderten Nummer ist kein frischer Fortschritt (1 P). Der Supervisor prüft für jeden erforderlichen Worker einen innerhalb der vereinbarten Frischegrenze vollständig abgeschlossenen Verarbeitungsschritt. Nur bei erfülltem Gesamtvertrag darf er den Watchdog regulär weiter bedienen. Bei fehlendem oder veraltetem Nachweis löst er die vereinbarte Fehlerreaktion aus; ein bloßer Leerlauf- oder Eingangsaktivitätsnachweis genügt nicht (1 P).
+B4.3:
 
+1. $d_B=4+3=7\,\mathrm{ms}$. Polling (11 ms) verfehlt sie, Deferrable (6 ms) und Sporadic (7 ms, Abschluss auf der Frist) halten sie ein (1 P).
+2. Nein: 3 ms Arbeit je 5 ms übersteigen $Q=2\,\mathrm{ms}$ je 5 ms; der Rückstand wächst um 1 ms je 5 ms. Nötig ist eine Annahme- oder Verwerfungsregel, eine begrenzte Quelle oder ein größeres Budget mit neuem Fristnachweis aller Aufgaben (1 P).
+3. B verbraucht direkt vor der Grenze altes und direkt danach neues Budget. Allgemein kann ein Deferrable Server dadurch bis zu $2Q$ am Stück rechnen. Eine periodische Aufgabe mit $C_S=Q$ und $T_S=T$ bildet diese dichtere Störung nicht ab; die naive Analyse kann für niedrigere Aufgaben zu optimistisch sein (1 P).
 :::
 
 ::: {.content-visible when-profile="solution"}
 
-### Themenabdeckung und Bewertung
+### Themenabdeckung, Denkschritte und Bewertung
 
-| Vorlesung | Auswahlfragen | Papiervertiefung |
-|---|---|---|
-| 1 · Zeitvertrag, Klassen, Polling | 01–02 | B4.1: Antwortzeit und Frist |
-| 2 · Jobmodell, RMS, EDF | 03–05 | B1: Auslastung und Antwortzeitanalyse |
-| 3 · RTOS, Zustände, Ticks | 06–07 | B2: Zuteilung auf dem Prozessor |
-| 4 · Mutex, Semaphor, Inversion, Deadlock | 08–09 | B2: Vererbung und Blockierung |
-| 5 · Queues, Pufferbesitz, ISR-Übergabe | 10–11 | B3.1: FIFO-Ablauf |
-| 6 · Pollingserver, CPU-Budget, Sporadic-Server | 12–14 | Auswahlfragen: Budgetverbrauch und Erneuerungsregel |
-| 7 · AMP, Cache, MPU | 15–17 | B3.3: geordnete sichtbare Übergabe |
-| 8 · Trace und Zykluszählung | 18–19 | B4.1: disjunkte Zeitanteile |
-| 9 · Daten-/Zeitvertrag und Fortschrittsüberwachung | 20 | B3.2: Datenbilanzen; B4.2–B4.3: Frische und Fehlerreaktion |
+| Frage | Vorlesung | Eigenständiger Denkschritt |
+|----|----|------------------------------------|
+| 01 | 1 | Echtzeitklasse aus den Folgen einer Fristverletzung ableiten; Funktion und Frist getrennt prüfen |
+| 02 | 1 | Jitter berechnen; Messmaximum, Mittelwert und Schranke unterscheiden |
+| 03 | 1 | Polling-Grenze aus Rundenanteilen herleiten; Erfassung und Abschluss trennen |
+| 04 | 2 | Deadline-Klasse erkennen; Testvoraussetzung und Machbarkeit über den Bedarf bis zur ersten Frist prüfen |
+| 05 | 2 | hinreichenden, exakten und EDF-Test einordnen |
+| 06 | 2 | Fixpunktiteration durchführen und halboffene Zählung begründen |
+| 07 | 2 | EDF-Auswahl über absolute Deadlines treffen |
+| 08 | 3, 5 | Zustandsfolge nach ISR-Signal herleiten; Flagsemantik anwenden |
+| 09 | 3 | Drift relativer Pausen gegen absolutes Sollraster berechnen |
+| 10 | 3 | Starvation von Prioritätsinversion abgrenzen und Abhilfe beurteilen |
+| 11 | 4 | Verlorenes Update aus dem Maschinenmodell ableiten; Schutzumfang bestimmen |
+| 12 | 4 | Mutex, Semaphor und ISR-Regeln nach Zweck unterscheiden |
+| 13 | 4 | Deadlockbedingung erkennen; Erwerbsordnung und Fehlerpfad bewerten |
+| 14 | 4 | Inversion mit und ohne Vererbung auf der Zeitachse auswerten |
+| 15 | 5 | FIFO-Zustände und Statuswerte verfolgen |
+| 16 | 5 | Pufferbesitz und Latest-Value-Vertrag unterscheiden |
+| 17 | 5 | drei Bedingungen eines ISR-Kernelaufrufs prüfen |
+| 18 | 6 | Deferrable-Grenzeffekt und Polling-Ablauf berechnen |
+| 19 | 6 | Reichweite des Polling-Nachweises und einer Implementierung beurteilen |
+| 20 | 6 | Bedienrate und Überlastfolgen berechnen |
 
-Teil A: höchstens 20 Punkte; Teil B: $4\cdot10=40$ Punkte; insgesamt 60 Punkte. Die Richtzeiten ergeben 60 Minuten, als Planungswert etwa einen Punkt je Bearbeitungsminute. Individuelle Bearbeitungszeiten können abweichen. Für eine tatsächliche Prüfung Hilfsmittel und organisatorische Regeln separat festlegen.
+| Teil B | Vorlesung | Lernziel und Denkschritt |
+|----|----|------------------------------------|
+| B1 | 2, 1 | Auslastung, Schranke, Antwortzeitanalyse und EDF-Test unter Modellannahmen anwenden; Messwert und Schranke unterscheiden |
+| B2 | 3, 4 | Präemptive Zeitachse mit ISR-Signal und Mutex herleiten; Zustände, Antwortzeiten und Vererbungsbeginn begründen; Semaphor und Mutex abgrenzen |
+| B3 | 5, 1 | FIFO-Ablauf und Bilanzen prüfen, Dauerüberlast erkennen, Pufferbesitz begründen und Zeitanteile disjunkt zerlegen |
+| B4 | 6 | Drei Serverregeln an denselben Aufträgen anwenden; Auftragsfrist, Überlast und Analysegrenze des Deferrable Servers beurteilen |
 
-In Teil B gelten nachvollziehbare gleichwertige Lösungen. Ein korrekt weitergeführter eigener Zwischenwert erhält die dafür vorgesehenen methodischen Folgepunkte. Die Musterlösung gibt weder Boardmesswerte noch eine erfolgreiche Firmwareausführung vor.
+Teil A ergibt höchstens 20 Punkte, Teil B $4\cdot10=40$ Punkte, insgesamt 60 Punkte. Die Richtzeiten ergeben 60 Minuten und sind als Planungswert von etwa einem Punkt je Bearbeitungsminute geschätzt. Teil A setzt sichere Begriffsunterscheidungen und kurze Rechnungen voraus; Teil B verlangt eigenständig gezeichnete Zeitachsen und begründete Entscheidungen auf dem Niveau der Übungsblätter 1–6 ohne deren Hilfestellungen. Tatsächliche Bearbeitungszeiten und häufige Fehler sollten nach der Durchführung zur Kalibrierung festgehalten werden.
 
-Quellenbasis: Vorlesungen 1–9 und ihre Skriptnotizen; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; die dort verwendeten Arm-, FreeRTOS- und ST-Referenzen.
+In Teil B gelten nachvollziehbare gleichwertige Lösungen. Ein korrekt weitergeführter eigener Zwischenwert erhält die vorgesehenen methodischen Folgepunkte. Die Musterlösung gibt weder Boardmesswerte noch eine erfolgreiche Firmwareausführung vor; alle Abläufe sind Modellrechnungen. Für eine tatsächliche Prüfung sind Hilfsmittel und organisatorische Regeln separat festzulegen.
+
+Quellenbasis: Vorlesungen 1–6 mit ihren Skriptnotizen und Übungsblättern; Giorgio C. Buttazzo, *Hard Real-Time Computing Systems*; B. Sprunt, L. Sha, J. Lehoczky (1989) zum Sporadic Server; Arm CMSIS-RTOS2 und die FreeRTOS-Dokumentation zu den API-Regeln.
 :::
