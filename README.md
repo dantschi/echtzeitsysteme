@@ -6,15 +6,15 @@ Herzlich willkommen zur Vorlesung **Echtzeitsysteme (EZS)** an der Dualen Hochsc
 **Kurswebsite:** [dantschi.github.io/echtzeitsysteme](https://dantschi.github.io/echtzeitsysteme/)  
 **Repository:** [github.com/dantschi/echtzeitsysteme](https://github.com/dantschi/echtzeitsysteme)
 
-Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten und weichen Echtzeitanforderungen über Task-Modelle und Scheduling (RMS/EDF) bis zu Echtzeitbetriebssystemen mit **FreeRTOS**, Synchronisation, Inter-Task-Kommunikation, Server-Verfahren für ereignisgetriebene Last, Multicore-Architekturen (AMP) am **STM32H755** sowie Timing-Analyse. Den Abschluss bildet eine integrierte Fallstudie zu Zeit- und Datenverträgen, Fortschrittsüberwachung und begründeter Verifikation. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis umzusetzen — mit klarem Blick auf die Trennung von **funktioneller Korrektheit** und **Korrektheit im Zeitbereich**.
+Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten und weichen Echtzeitanforderungen über Task-Modelle und Scheduling (RMS/EDF) bis zu Echtzeitbetriebssystemen mit **FreeRTOS**, Synchronisation, Inter-Task-Kommunikation und Server-Verfahren für ereignisgetriebene Last. Den Abschluss bilden eine Zusammenfassung und eine Probeklausur. Sie lernen, Zeitverhalten systematisch zu spezifizieren, zu analysieren und in der Praxis umzusetzen — mit klarem Blick auf die Trennung von **funktioneller Korrektheit** und **Korrektheit im Zeitbereich**.
 
 ## Kursrahmen und Lernziele
 
 Der Kurs richtet sich an Bachelorstudierende der Elektro- und Informationstechnik. Echtzeitbetriebssysteme werden von Grund auf eingeführt; die Einheiten bauen auf den jeweils vorherigen Inhalten auf. Für die Programmierteile werden grundlegende C-Kenntnisse benötigt.
 
-- **Unterrichtsplanung:** neun Einheiten mit jeweils vier Schulstunden à 45 Minuten einschließlich Übungen und Quiz. Die Aufgabenblätter bilden einen Aufgabenpool, aus dem die Lehrperson passend zum Verlauf auswählt.
+- **Unterrichtsplanung:** sechs Einheiten mit jeweils vier Schulstunden à 45 Minuten einschließlich Übungen und Quiz sowie ein Abschlusstermin mit Zusammenfassung und Probeklausur. Die Aufgabenblätter bilden einen Aufgabenpool, aus dem die Lehrperson passend zum Verlauf auswählt.
 - **Prüfungsform:** Papierklausur. Rechen-, Ablauf- und Begründungsaufgaben bereiten darauf vor; Programmieraufgaben unterstützen das Verständnis durch eigene kleine Implementierungen. Die Probeklausur umfasst als Übungsformat 60 Minuten und 60 Punkte.
-- **Praxisplattform:** NUCLEO-H755ZI-Q mit STM32H755ZIT6, STM32CubeMX und VS Code mit STM32 VS Code Extension. Die Aufgaben verwenden die eingebauten LEDs und gegebenenfalls den Taster B1. Kernzuordnung, Grundstart und Kernelkonfiguration stehen in der jeweiligen Implementierungshilfe; der Mehrkernteil wird gesondert eingeführt.
+- **Praxisplattform:** NUCLEO-H755ZI-Q mit STM32H755ZIT6, STM32CubeMX und VS Code mit STM32 VS Code Extension. Die Aufgaben verwenden die eingebauten LEDs und gegebenenfalls den Taster B1. Kernzuordnung, Grundstart und Kernelkonfiguration stehen in der jeweiligen Implementierungshilfe.
 - **Sprache und Modelle:** Die Firmwarebeispiele verwenden C und FreeRTOS über CMSIS-RTOS2. Konkrete Compiler-, Kernel- und Adapterversionen, Optionen und Takte sind am jeweiligen Projektstand zu prüfen. Papieraufgaben benennen ihre Zeit-, Ressourcen- und Ereignisannahmen; angenommene Laufzeiten sind keine Boardmessungen.
 
 Eine verbindliche Modulhandbuchfassung, Semesterzuordnung und Vorgabe zur Selbstlernzeit sind im Repository nicht hinterlegt. Der hier beschriebene Umfang und die folgenden Lernziele dokumentieren die Unterrichtsplanung.
@@ -24,14 +24,13 @@ Nach Bearbeitung des Kurses können Sie:
 - Echtzeitanforderungen mit Latenz, Jitter und Deadline beschreiben und funktionelle von zeitlicher Korrektheit unterscheiden.
 - Scheduling-Abläufe und Antwortzeiten unter benannten Modellannahmen herleiten sowie die Wirkung von Server-Budgets und Überlastregeln beurteilen.
 - Threadzustände, Synchronisation, Nachrichtenübergabe und Speicherbesitz erklären und geeignete Zugriffsverträge begründen.
-- Sichtbarkeit und Verantwortlichkeit gemeinsam genutzter Daten im Mehrkernsystem analysieren.
-- Zeitmessungen, angenommene Schranken und belastbare Fristnachweise unterscheiden sowie eine integrierte Systemlösung auf ihre Zeit- und Datenverträge prüfen.
+- Zeitmessungen, angenommene Schranken und belastbare Fristnachweise unterscheiden.
 
 ## Kursübersicht
 
 Der rote Faden der Veranstaltung:
 
-**Anforderungen → Scheduling → RTOS → Kommunikation → Server-Verfahren → Multicore → Timing-Analyse → Systemprüfung**
+**Anforderungen → Scheduling → RTOS → Synchronisation → Kommunikation → Server-Verfahren**
 
 Pro Einheit: Folien (Reveal.js), Handout-PDF, Übungsblatt (Studierende / Musterlösung) und Implementierungshilfe mit Projektanleitung sowie je nach Übung Codebausteinen im Blatt oder Startdateien. Folien und PDFs liegen auf der Kurswebsite, Anleitungen und Code im Repository.
 
@@ -43,9 +42,6 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF, Übungsblatt (Studierende / Muster
 | 4 | Synchronisation und Ressourcenverwaltung | Race Conditions, Mutex, Deadlocks, Priority Inversion | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/04_synchronisation-ressourcen-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_04_race-conditions-mutex-priority-inversion.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_04_race-conditions-mutex-priority-inversion-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_04_programmierung.md) · [Code](https://github.com/dantschi/echtzeitsysteme/tree/main/code/lab04) |
 | 5 | Inter-Task-Kommunikation und Interrupts | Queues, Deferred Interrupt Processing (Top-/Bottom-Half) | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/05_inter-task-kommunikation-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_05_deferred-interrupt-processing.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_05_deferred-interrupt-processing-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_05_programmierung.md) · [Code](https://github.com/dantschi/echtzeitsysteme/tree/main/code/lab05) |
 | 6 | Server-Verfahren für ereignisgetriebene Last | CPU-Budget, Polling, Deferrable, Sporadic, Überlast | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_server-verfahren.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/06_server-verfahren-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_06_server-verfahren.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_06_server-verfahren-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_06_programmierung.md) · [Code im Blatt](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/lab_06_server-verfahren.qmd#aufgabe-6-einen-polling-server-als-led-modell-selbst-simulieren) |
-| 7 | Multicore-Echtzeit | AMP vs. SMP, Shared Memory, Cache-Kohärenz, MPU | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_multicore-echtzeit.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/07_multicore-echtzeit-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_07_multicore-shared-memory-cache-kohaerenz.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_07_multicore-shared-memory-cache-kohaerenz-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_07_programmierung.md) · [Code](https://github.com/dantschi/echtzeitsysteme/tree/main/code/lab07) |
-| 8 | Timing-Analyse und Messmethoden | Messvertrag, Beobachtereffekt, CPU-/Antwortzeit, Nachweisgrenzen | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_tracing-timing-analyse.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/08_tracing-timing-analyse-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_08_tracing-timing-analyse.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_08_tracing-timing-analyse-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_08_programmierung.md) · [Code](https://github.com/dantschi/echtzeitsysteme/tree/main/code/lab08) |
-| 9 | Integrierte Fallstudie und Verifikation | Polling, Antwortzeiten, Datenvertrag, Fortschritt, Watchdog | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/09_capstone-architekturmuster.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/09_capstone-architekturmuster-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_09_capstone-timing-verifikation.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/lab_09_capstone-timing-verifikation-musterloesung.pdf) | [Anleitung](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/vertiefung/lab_09_programmierung.md) · [Code im Blatt](https://github.com/dantschi/echtzeitsysteme/blob/main/labs/lab_09_capstone-timing-verifikation.qmd) |
 | Abschluss | Zusammenfassung und Probeklausur | Rückblick auf die Vorlesungen 1–6, Nachweise zuordnen, Klausurstrategie | [HTML](https://dantschi.github.io/echtzeitsysteme/vorlesungen/zusammenfassung.html) | [PDF](https://dantschi.github.io/echtzeitsysteme/vorlesungen/zusammenfassung-handout.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) | — |
 
 **Hinweise:** Folien im Browser öffnen (Speaker View: Taste **S**). Handout-PDF = Folieninhalt mit Skriptnotizen. Quelltexte unter [`vorlesungen/`](vorlesungen/) und [`labs/`](labs/).
@@ -56,7 +52,7 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF, Übungsblatt (Studierende / Muster
 |----------|:-----------:|:------------:|
 | Probeklausur zu den Vorlesungen 1–6 (60 Min., 60 Punkte: 20 MC-Fragen und vier Papieraufgaben) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) |
 
-Die Probeklausur deckt die Vorlesungen 1–6 ab; Inhalte der Einheiten 7–9 sind nicht enthalten. Die [Zusammenfassungsfolien](https://dantschi.github.io/echtzeitsysteme/vorlesungen/zusammenfassung.html) bereiten im Abschlusstermin darauf vor. Quelltexte: [`labs/probeklausur.qmd`](labs/probeklausur.qmd) und [`vorlesungen/zusammenfassung.qmd`](vorlesungen/zusammenfassung.qmd).
+Die Probeklausur deckt die Vorlesungen 1–6 ab. Die [Zusammenfassungsfolien](https://dantschi.github.io/echtzeitsysteme/vorlesungen/zusammenfassung.html) bereiten im Abschlusstermin darauf vor. Quelltexte: [`labs/probeklausur.qmd`](labs/probeklausur.qmd) und [`vorlesungen/zusammenfassung.qmd`](vorlesungen/zusammenfassung.qmd).
 
 ## Literatur
 
@@ -82,7 +78,6 @@ Zur Vertiefung empfohlen:
 | **FreeRTOS Kernel Docs** | Referenz zu Scheduling, Interrupts und Synchronisation | [freertos.org/Documentation](https://www.freertos.org/Documentation/RTOS_book.html) |
 | **STM32CubeMX** | Board, Pins, Takte, FreeRTOS und CMake-Projekt konfigurieren | [st.com/stm32cubemx](https://www.st.com/en/development-tools/stm32cubemx.html) |
 | **VS Code mit STM32 VS Code Extension** | STM32-Firmware bauen, laden und debuggen | [ST-Dokumentation](https://www.st.com/en/development-tools/stm32-vscode-extension.html) |
-| **TASKING BlueBox / winIDEA** (optional) | zusätzlicher geprüfter Debug-/Tracepfad, keine Voraussetzung der Übungen | [tasking.com](https://www.tasking.com/) |
 | **Cheddar** | Scheduling-Simulation und Schedulability-Analysen zum Üben | [beru.univ-brest.fr/cheddar](http://beru.univ-brest.fr/~singhoff/cheddar/) |
 | **Tracealyzer** (optional) | Laufzeit-Tracing von Tasks und Prioritätswechseln | [percepio.com/tracealyzer](https://percepio.com/tracealyzer/) |
 
