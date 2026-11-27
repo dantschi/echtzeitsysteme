@@ -13,7 +13,7 @@ Das Modul vermittelt die Grundlagen **zeitkritischer Rechensysteme**: von harten
 Der Kurs richtet sich an Bachelorstudierende der Elektro- und Informationstechnik. Echtzeitbetriebssysteme werden von Grund auf eingeführt; die Einheiten bauen auf den jeweils vorherigen Inhalten auf. Für die Programmierteile werden grundlegende C-Kenntnisse benötigt.
 
 - **Unterrichtsplanung:** sechs Einheiten mit jeweils vier Schulstunden à 45 Minuten einschließlich Übungen und Quiz sowie ein Abschlusstermin mit Zusammenfassung und Probeklausur. Die Aufgabenblätter bilden einen Aufgabenpool, aus dem die Lehrperson passend zum Verlauf auswählt.
-- **Prüfungsform:** Papierklausur. Rechen-, Ablauf- und Begründungsaufgaben bereiten darauf vor; Programmieraufgaben unterstützen das Verständnis durch eigene kleine Implementierungen. Die Probeklausur umfasst als Übungsformat 60 Minuten und 60 Punkte.
+- **Prüfungsform:** Papierklausur. Rechen-, Ablauf- und Begründungsaufgaben bereiten darauf vor; Programmieraufgaben unterstützen das Verständnis durch eigene kleine Implementierungen. Die Probeklausur ist ein Übungsformat mit Multiple-Choice-Fragen und Papieraufgaben.
 - **Praxisplattform:** NUCLEO-H755ZI-Q mit STM32H755ZIT6, STM32CubeMX und VS Code mit STM32 VS Code Extension. Die Aufgaben verwenden die eingebauten LEDs und gegebenenfalls den Taster B1. Kernzuordnung, Grundstart und Kernelkonfiguration stehen in der jeweiligen Implementierungshilfe.
 - **Sprache und Modelle:** Die Firmwarebeispiele verwenden C und FreeRTOS über CMSIS-RTOS2. Konkrete Compiler-, Kernel- und Adapterversionen, Optionen und Takte sind am jeweiligen Projektstand zu prüfen. Papieraufgaben benennen ihre Zeit-, Ressourcen- und Ereignisannahmen; angenommene Laufzeiten sind keine Boardmessungen.
 
@@ -50,7 +50,7 @@ Pro Einheit: Folien (Reveal.js), Handout-PDF, Übungsblatt (Studierende / Muster
 
 | Dokument | Studierende | Musterlösung |
 |----------|:-----------:|:------------:|
-| Probeklausur zu den Vorlesungen 1–6 (60 Min., 60 Punkte: 20 MC-Fragen und vier Papieraufgaben) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) |
+| Probeklausur zu den Vorlesungen 1–6 (52 Punkte: 12 MC-Fragen und vier Papieraufgaben) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur.pdf) | [PDF](https://dantschi.github.io/echtzeitsysteme/labs/probeklausur-musterloesung.pdf) |
 
 Die Probeklausur deckt die Vorlesungen 1–6 ab. Die [Zusammenfassungsfolien](https://dantschi.github.io/echtzeitsysteme/vorlesungen/zusammenfassung.html) bereiten im Abschlusstermin darauf vor. Quelltexte: [`labs/probeklausur.qmd`](labs/probeklausur.qmd) und [`vorlesungen/zusammenfassung.qmd`](vorlesungen/zusammenfassung.qmd).
 
